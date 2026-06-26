@@ -1,46 +1,67 @@
-# Changelog
+# 更新日志
 
-All notable changes to this project will be documented in this file.
+本文档用于记录项目的重要变更。
 
 ## 2026-06-26
 
-### Added
+### 新增
 
-- Added Rust backend based on Axum and SeaORM for apps, forms, schemas, versions, navigation, and form records.
-- Added PostgreSQL-backed dynamic form schema storage and form record persistence.
-- Added automatic frontend API client generation with `@hey-api/openapi-ts` before `pnpm dev`.
-- Added MyApp application card actions including open, enable/disable, rename, settings entry, and delete flow.
-- Added application-level form navigation with built-in system pages.
-- Added grouped navigation with recursive form/group structure and drag-based ordering.
-- Added form designer workbench with:
-  - outline tree
-  - component palette
-  - data sources panel
-  - unified action editor
-  - schema source viewer
-- Added Monaco-based action editor for unified lifecycle and event scripting.
-- Added form preview modal powered by the runtime renderer.
-- Added runtime form pages with built-in submit/data views and drawer-based record creation.
-- Added form schema version history, publish, and restore capabilities.
+- 新增基于 Rust、Axum、SeaORM 的后端服务。
+- 新增 PostgreSQL 持久化，用于存储应用、表单、导航、Schema 与表单记录。
+- 新增应用管理接口与前端应用列表页面。
+- 新增空白应用创建能力。
+- 新增应用卡片工具栏能力，包括访问、启用/关闭、编辑名称、设置入口、删除。
+- 新增应用内置系统页面导航。
+- 新增应用下表单导航与分组导航。
+- 新增导航分组递归结构支持。
+- 新增导航拖拽排序能力。
+- 新增表单设计器页面。
+- 新增组件箱、大纲树、数据源面板、动作面板、页面源码面板。
+- 新增分组容器组件，支持收纳子组件。
+- 新增 Monaco Editor 作为动作脚本编辑器。
+- 新增统一动作脚本模型，支持：
+  - `didMount(ctx)`
+  - `onFieldEvent(ctx)`
+  - `onSubmit(ctx)`
+- 新增表单预览能力。
+- 新增表单 Schema 草稿保存能力。
+- 新增表单发布能力。
+- 新增表单历史版本查询与恢复能力。
+- 新增表单运行时页面。
+- 新增表单记录保存与查询能力。
+- 新增基于 `@hey-api/openapi-ts` 的前端 API Client 自动生成能力。
 
-### Changed
+### 调整
 
-- Reworked designer workbench into a compact icon-only left rail with resizable content panel.
-- Replaced several native or ad hoc UI interactions with HeroUI-based components.
-- Simplified action editing flow by auto-syncing code before preview/save/publish.
-- Updated preview/runtime execution path to share a single runtime form renderer.
-- Optimized designer header layout, version restore interaction, and contextual controls.
+- 将设计器左侧工作台改为图标收纳式导航。
+- 将设计器工作台与设计区域合并为统一工作界面。
+- 为设计器左侧工作台增加宽度拖拽调整能力。
+- 将动作面板调整为统一脚本编辑方式，减少多入口配置成本。
+- 在预览、保存、发布前自动同步动作编辑器内容到 Schema。
+- 将页面源码查看改为 Monaco 编辑器只读模式。
+- 优化设计器头部布局、版本恢复交互与按钮样式。
+- 优化组件箱、数据源卡片与动作上下文展示方式。
+- 优化 MyApp 与应用内多处按钮和交互，优先切换为 HeroUI 组件。
 
-### Fixed
+### 修复
 
-- Fixed multiple nested button hydration issues in navigation and action menus.
-- Fixed incorrect form navigation behavior and routing back to the wrong page.
-- Fixed preview update loops that caused `Maximum update depth exceeded`.
-- Fixed duplicate debug event key collisions in preview logs.
-- Reduced unnecessary runtime remounts by removing `JSON.stringify(...)` keys in preview/runtime wrappers.
-- Fixed multiple layout and indentation issues in the form navigation sidebar.
+- 修复多个页面中 `<button>` 嵌套 `<button>` 导致的 hydration 警告。
+- 修复部分页面因服务端与客户端结构不一致导致的 hydration 失败问题。
+- 修复表单导航排序错乱问题。
+- 修复导航拖拽时部分位置不触发接口的问题。
+- 修复导航拖拽后残留样式问题。
+- 修复分组与表单在导航中的缩进和布局异常问题。
+- 修复表单无法正确拖入某些顶级分组的问题。
+- 修复表单详情页中编辑、删除、视图切换等交互位置不合理的问题。
+- 修复预览模式下重复渲染、重复挂载带来的报错问题。
+- 修复 `Maximum update depth exceeded` 相关循环更新问题。
+- 修复调试日志列表 key 重复问题。
+- 修复预览和运行时包装层使用 `JSON.stringify(...)` 作为 key 导致的不必要重建问题。
+- 修复设计器部分面板内容不显示的问题。
+- 修复本地开发中部分跳转路径错误的问题。
 
-## Notes
+### 说明
 
-- Runtime pages use published schema by default.
-- Designer preview uses draft schema by default.
+- 设计器预览使用草稿 Schema。
+- 运行时页面默认使用已发布 Schema。
+- 当前仓库已完成本地 Git 初始化与首个提交。
