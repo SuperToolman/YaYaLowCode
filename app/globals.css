@@ -1,0 +1,140 @@
+@import "tailwindcss";
+@import "@heroui/styles"; 
+
+:root {
+  --background: #f3f7fd;
+  --foreground: #14213d;
+  --surface: #ffffff;
+  --surface-soft: #eef5ff;
+  --brand-blue: #2f6bff;
+  --brand-green: #17b466;
+  --text-primary: #14213d;
+  --text-secondary: #4f6484;
+  --text-muted: #7587a3;
+  --text-subtle: #9aa9be;
+  --line: #dde7f5;
+  --nav-line: #edf2fb;
+  --font-sans-ui: "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", sans-serif;
+  --font-mono-ui: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans-ui);
+  --font-mono: var(--font-mono-ui);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--background);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.designer-properties-drawer {
+  position: fixed !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: auto !important;
+  width: 380px !important;
+  max-width: calc(100vw - 24px) !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+}
+
+.low-code-number-field {
+  display: block !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: normal !important;
+}
+
+.low-code-number-field .number-field__group {
+  align-items: stretch !important;
+  display: flex !important;
+  height: 40px !important;
+  margin: 0 !important;
+  min-height: 40px !important;
+  padding: 0 !important;
+}
+
+.low-code-number-field .number-field__input,
+.low-code-number-field .number-field__decrement-button,
+.low-code-number-field .number-field__increment-button {
+  align-items: center !important;
+  display: flex !important;
+  height: 100% !important;
+  margin: 0 !important;
+}
+
+.low-code-number-field .number-field__input {
+  min-height: 0 !important;
+}
+
+.low-code-choice-field {
+  align-content: flex-start !important;
+  gap: 8px !important;
+  margin: 0 !important;
+  min-height: 24px !important;
+  overflow: visible !important;
+  padding: 0 !important;
+}
+
+.low-code-choice-field > * {
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+.low-code-choice-horizontal {
+  align-items: start !important;
+  column-gap: 18px !important;
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)) !important;
+  overflow: visible !important;
+  row-gap: 10px !important;
+  white-space: normal !important;
+}
+
+.low-code-choice-horizontal > * {
+  min-width: 0 !important;
+  white-space: normal !important;
+  width: 100% !important;
+  word-break: break-word !important;
+}
+
+.low-code-choice-vertical {
+  align-items: flex-start !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.low-code-select-field {
+  display: block !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.low-code-date-range-picker {
+  max-width: 100% !important;
+}

@@ -1,0 +1,37 @@
+{
+  "name": "yaya-lowcode",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "codegen:api": "openapi-ts",
+    "predev": "pnpm codegen:api",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@heroui/react": "^3.1.0",
+    "@heroui/styles": "^3.1.0",
+    "@internationalized/date": "^3.12.2",
+    "@monaco-editor/react": "^4.7.0",
+    "@uiw/react-textarea-code-editor": "^3.1.1",
+    "monaco-editor": "^0.55.1",
+    "next": "16.2.7",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "shuttle-formula": "^0.1.8"
+  },
+  "devDependencies": {
+    "@gravity-ui/icons": "^2.18.0",
+    "@hey-api/openapi-ts": "^0.99.0",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.7",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

@@ -1,0 +1,322 @@
+{
+  "formUuid": "FORM-7A9E77707AAC452D9E9C10D98D841812FTHO",
+  "formName": "组件示例表单",
+  "columns": 6,
+  "rows": 9,
+  "fields": [
+    {
+      "id": "singleLineText-demo",
+      "type": "singleLineText",
+      "label": "姓名",
+      "row": 0,
+      "column": 0,
+      "rowSpan": 1,
+      "colSpan": 2,
+      "props": {
+        "defaultValue": "",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": true,
+        "placeholder": "请输入姓名",
+        "showClearButton": true,
+        "showCounter": true
+      }
+    },
+    {
+      "id": "number-demo",
+      "type": "number",
+      "label": "年龄",
+      "row": 0,
+      "column": 2,
+      "rowSpan": 1,
+      "colSpan": 1,
+      "props": {
+        "defaultValue": 18,
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "placeholder": "请输入年龄",
+        "minValue": 0,
+        "maxValue": 120,
+        "step": 1
+      }
+    },
+    {
+      "id": "select-demo",
+      "type": "select",
+      "label": "城市",
+      "row": 0,
+      "column": 3,
+      "rowSpan": 1,
+      "colSpan": 3,
+      "props": {
+        "defaultValue": "hangzhou",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "placeholder": "请选择城市",
+        "options": [
+          { "label": "上海", "value": "shanghai" },
+          { "label": "杭州", "value": "hangzhou" },
+          { "label": "深圳", "value": "shenzhen" }
+        ]
+      }
+    },
+    {
+      "id": "multiLineText-demo",
+      "type": "multiLineText",
+      "label": "备注",
+      "row": 1,
+      "column": 0,
+      "rowSpan": 2,
+      "colSpan": 3,
+      "props": {
+        "defaultValue": "",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "placeholder": "请输入备注",
+        "showClearButton": false,
+        "showCounter": true,
+        "rows": 3
+      }
+    },
+    {
+      "id": "multiSelect-demo",
+      "type": "multiSelect",
+      "label": "标签",
+      "row": 1,
+      "column": 3,
+      "rowSpan": 1,
+      "colSpan": 3,
+      "props": {
+        "defaultValue": ["urgent", "feature"],
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "placeholder": "请选择标签",
+        "options": [
+          { "label": "紧急", "value": "urgent" },
+          { "label": "需求", "value": "feature" },
+          { "label": "缺陷", "value": "bug" }
+        ]
+      }
+    },
+    {
+      "id": "date-demo",
+      "type": "date",
+      "label": "日期",
+      "row": 2,
+      "column": 3,
+      "rowSpan": 1,
+      "colSpan": 1,
+      "props": {
+        "defaultValue": "2026-06-09",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "placeholder": "请选择日期"
+      }
+    },
+    {
+      "id": "dateRange-demo",
+      "type": "dateRange",
+      "label": "日期区间",
+      "row": 2,
+      "column": 4,
+      "rowSpan": 1,
+      "colSpan": 2,
+      "props": {
+        "defaultValue": ["2026-06-09", "2026-06-12"],
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "placeholder": "请选择日期区间"
+      }
+    },
+    {
+      "id": "radio-demo",
+      "type": "radio",
+      "label": "优先级",
+      "row": 3,
+      "column": 0,
+      "rowSpan": 1,
+      "colSpan": 3,
+      "props": {
+        "defaultValue": "middle",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "orientation": "horizontal",
+        "options": [
+          { "label": "低", "value": "low" },
+          { "label": "中", "value": "middle" },
+          { "label": "高", "value": "high" }
+        ]
+      }
+    },
+    {
+      "id": "checkbox-demo",
+      "type": "checkbox",
+      "label": "兴趣",
+      "row": 3,
+      "column": 3,
+      "rowSpan": 1,
+      "colSpan": 3,
+      "props": {
+        "defaultValue": ["reading", "travel"],
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "orientation": "horizontal",
+        "options": [
+          { "label": "阅读", "value": "reading" },
+          { "label": "运动", "value": "sport" },
+          { "label": "旅行", "value": "travel" }
+        ]
+      }
+    },
+    {
+      "id": "attachment-demo",
+      "type": "attachment",
+      "label": "附件",
+      "row": 4,
+      "column": 0,
+      "rowSpan": 2,
+      "colSpan": 2,
+      "props": {
+        "accept": ".pdf,.doc,.docx",
+        "buttonText": "上传附件",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "multiple": true,
+        "placeholder": "上传附件"
+      }
+    },
+    {
+      "id": "imageUpload-demo",
+      "type": "imageUpload",
+      "label": "图片",
+      "row": 4,
+      "column": 2,
+      "rowSpan": 2,
+      "colSpan": 2,
+      "props": {
+        "accept": "image/*",
+        "buttonText": "上传图片",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "multiple": true,
+        "placeholder": "上传图片"
+      }
+    },
+    {
+      "id": "member-demo",
+      "type": "member",
+      "label": "成员",
+      "row": 4,
+      "column": 4,
+      "rowSpan": 1,
+      "colSpan": 2,
+      "props": {
+        "defaultValue": "zhangsan",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "placeholder": "请选择成员",
+        "options": [
+          { "label": "张三", "value": "zhangsan" },
+          { "label": "李四", "value": "lisi" },
+          { "label": "王五", "value": "wangwu" }
+        ]
+      }
+    },
+    {
+      "id": "department-demo",
+      "type": "department",
+      "label": "部门",
+      "row": 5,
+      "column": 4,
+      "rowSpan": 1,
+      "colSpan": 2,
+      "props": {
+        "defaultValue": "engineering",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "placeholder": "请选择部门",
+        "options": [
+          { "label": "产品部", "value": "product" },
+          { "label": "研发部", "value": "engineering" },
+          { "label": "运营部", "value": "operations" }
+        ]
+      }
+    },
+    {
+      "id": "link-demo",
+      "type": "link",
+      "label": "链接",
+      "row": 6,
+      "column": 0,
+      "rowSpan": 1,
+      "colSpan": 2,
+      "props": {
+        "defaultValue": "打开官网",
+        "href": "https://example.com",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "target": "_blank"
+      }
+    },
+    {
+      "id": "description-demo",
+      "type": "description",
+      "label": "说明",
+      "row": 7,
+      "column": 0,
+      "rowSpan": 1,
+      "colSpan": 4,
+      "props": {
+        "defaultValue": "请按实际情况填写表单信息，带星号字段为必填。",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "placeholder": "请输入描述内容"
+      }
+    },
+    {
+      "id": "button-demo",
+      "type": "button",
+      "label": "按钮",
+      "row": 6,
+      "column": 2,
+      "rowSpan": 1,
+      "colSpan": 1,
+      "props": {
+        "buttonText": "执行操作",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false
+      }
+    }
+  ]
+}
