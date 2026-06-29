@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateAppData, CreateAppErrors, CreateAppResponses, CreateFormData, CreateFormErrors, CreateFormRecordData, CreateFormRecordErrors, CreateFormRecordResponses, CreateFormResponses, DeleteAppData, DeleteAppErrors, DeleteAppResponses, GetFormSchemaData, GetFormSchemaErrors, GetFormSchemaResponses, GetFormVersionData, GetFormVersionErrors, GetFormVersionResponses, ListAppNavigationData, ListAppNavigationErrors, ListAppNavigationResponses, ListAppsData, ListAppsErrors, ListAppsResponses, ListFormRecordsData, ListFormRecordsErrors, ListFormRecordsResponses, ListFormsData, ListFormsErrors, ListFormsResponses, ListFormVersionsData, ListFormVersionsErrors, ListFormVersionsResponses, PublishFormSchemaData, PublishFormSchemaErrors, PublishFormSchemaResponses, RestoreFormVersionData, RestoreFormVersionErrors, RestoreFormVersionResponses, SaveFormSchemaDraftData, SaveFormSchemaDraftErrors, SaveFormSchemaDraftResponses, UpdateAppData, UpdateAppErrors, UpdateAppResponses } from './types.gen';
+import type { CreateAppData, CreateAppErrors, CreateAppResponses, CreateAutomationFlowData, CreateAutomationFlowErrors, CreateAutomationFlowResponses, CreateFormData, CreateFormErrors, CreateFormRecordData, CreateFormRecordErrors, CreateFormRecordResponses, CreateFormResponses, DeleteAppData, DeleteAppErrors, DeleteAppResponses, DeleteAutomationFlowData, DeleteAutomationFlowErrors, DeleteAutomationFlowResponses, DeleteFormRecordData, DeleteFormRecordErrors, DeleteFormRecordResponses, GetAutomationFlowData, GetAutomationFlowErrors, GetAutomationFlowResponses, GetFormSchemaData, GetFormSchemaErrors, GetFormSchemaResponses, GetFormVersionData, GetFormVersionErrors, GetFormVersionResponses, ListAppNavigationData, ListAppNavigationErrors, ListAppNavigationResponses, ListAppsData, ListAppsErrors, ListAppsResponses, ListAutomationFlowsData, ListAutomationFlowsErrors, ListAutomationFlowsResponses, ListAutomationFlowVersionsData, ListAutomationFlowVersionsErrors, ListAutomationFlowVersionsResponses, ListFormRecordsData, ListFormRecordsErrors, ListFormRecordsResponses, ListFormsData, ListFormsErrors, ListFormsResponses, ListFormVersionsData, ListFormVersionsErrors, ListFormVersionsResponses, PublishFormSchemaData, PublishFormSchemaErrors, PublishFormSchemaResponses, RestoreFormVersionData, RestoreFormVersionErrors, RestoreFormVersionResponses, SaveFormSchemaDraftData, SaveFormSchemaDraftErrors, SaveFormSchemaDraftResponses, UpdateAppData, UpdateAppErrors, UpdateAppResponses, UpdateAutomationFlowData, UpdateAutomationFlowErrors, UpdateAutomationFlowResponses, UpdateFormRecordData, UpdateFormRecordErrors, UpdateFormRecordResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -68,6 +68,50 @@ export const listForms = <ThrowOnError extends boolean = false>(options: Options
 export const createForm = <ThrowOnError extends boolean = false>(options: Options<CreateFormData, ThrowOnError>): RequestResult<CreateFormResponses, CreateFormErrors, ThrowOnError> => (options.client ?? client).post<CreateFormResponses, CreateFormErrors, ThrowOnError>({ url: '/api/apps/{appId}/forms', ...options });
 
 /**
+ * List automation flows by app
+ */
+export const listAutomationFlows = <ThrowOnError extends boolean = false>(options: Options<ListAutomationFlowsData, ThrowOnError>): RequestResult<ListAutomationFlowsResponses, ListAutomationFlowsErrors, ThrowOnError> => (options.client ?? client).get<ListAutomationFlowsResponses, ListAutomationFlowsErrors, ThrowOnError>({ url: '/api/apps/{appId}/automations', ...options });
+
+/**
+ * Create automation flow
+ */
+export const createAutomationFlow = <ThrowOnError extends boolean = false>(options: Options<CreateAutomationFlowData, ThrowOnError>): RequestResult<CreateAutomationFlowResponses, CreateAutomationFlowErrors, ThrowOnError> => (options.client ?? client).post<CreateAutomationFlowResponses, CreateAutomationFlowErrors, ThrowOnError>({
+    url: '/api/apps/{appId}/automations',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Delete automation flow
+ */
+export const deleteAutomationFlow = <ThrowOnError extends boolean = false>(options: Options<DeleteAutomationFlowData, ThrowOnError>): RequestResult<DeleteAutomationFlowResponses, DeleteAutomationFlowErrors, ThrowOnError> => (options.client ?? client).delete<DeleteAutomationFlowResponses, DeleteAutomationFlowErrors, ThrowOnError>({ url: '/api/automations/{automationId}', ...options });
+
+/**
+ * Get automation flow detail
+ */
+export const getAutomationFlow = <ThrowOnError extends boolean = false>(options: Options<GetAutomationFlowData, ThrowOnError>): RequestResult<GetAutomationFlowResponses, GetAutomationFlowErrors, ThrowOnError> => (options.client ?? client).get<GetAutomationFlowResponses, GetAutomationFlowErrors, ThrowOnError>({ url: '/api/automations/{automationId}', ...options });
+
+/**
+ * Update automation flow
+ */
+export const updateAutomationFlow = <ThrowOnError extends boolean = false>(options: Options<UpdateAutomationFlowData, ThrowOnError>): RequestResult<UpdateAutomationFlowResponses, UpdateAutomationFlowErrors, ThrowOnError> => (options.client ?? client).patch<UpdateAutomationFlowResponses, UpdateAutomationFlowErrors, ThrowOnError>({
+    url: '/api/automations/{automationId}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * List automation flow versions
+ */
+export const listAutomationFlowVersions = <ThrowOnError extends boolean = false>(options: Options<ListAutomationFlowVersionsData, ThrowOnError>): RequestResult<ListAutomationFlowVersionsResponses, ListAutomationFlowVersionsErrors, ThrowOnError> => (options.client ?? client).get<ListAutomationFlowVersionsResponses, ListAutomationFlowVersionsErrors, ThrowOnError>({ url: '/api/automations/{automationId}/versions', ...options });
+
+/**
  * Get latest schema by form uuid
  */
 export const getFormSchema = <ThrowOnError extends boolean = false>(options: Options<GetFormSchemaData, ThrowOnError>): RequestResult<GetFormSchemaResponses, GetFormSchemaErrors, ThrowOnError> => (options.client ?? client).get<GetFormSchemaResponses, GetFormSchemaErrors, ThrowOnError>({ url: '/api/forms/{formUuid}/schema', ...options });
@@ -82,6 +126,23 @@ export const listFormRecords = <ThrowOnError extends boolean = false>(options: O
  */
 export const createFormRecord = <ThrowOnError extends boolean = false>(options: Options<CreateFormRecordData, ThrowOnError>): RequestResult<CreateFormRecordResponses, CreateFormRecordErrors, ThrowOnError> => (options.client ?? client).post<CreateFormRecordResponses, CreateFormRecordErrors, ThrowOnError>({
     url: '/api/forms/{formUuid}/records',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Delete form record
+ */
+export const deleteFormRecord = <ThrowOnError extends boolean = false>(options: Options<DeleteFormRecordData, ThrowOnError>): RequestResult<DeleteFormRecordResponses, DeleteFormRecordErrors, ThrowOnError> => (options.client ?? client).delete<DeleteFormRecordResponses, DeleteFormRecordErrors, ThrowOnError>({ url: '/api/forms/{formUuid}/records/{recordUuid}', ...options });
+
+/**
+ * Update form record
+ */
+export const updateFormRecord = <ThrowOnError extends boolean = false>(options: Options<UpdateFormRecordData, ThrowOnError>): RequestResult<UpdateFormRecordResponses, UpdateFormRecordErrors, ThrowOnError> => (options.client ?? client).patch<UpdateFormRecordResponses, UpdateFormRecordErrors, ThrowOnError>({
+    url: '/api/forms/{formUuid}/records/{recordUuid}',
     ...options,
     headers: {
         'Content-Type': 'application/json',

@@ -147,6 +147,7 @@ type RuntimeFormRendererProps = {
   submitLabel: string;
   submitting?: boolean;
   showSubmitButton?: boolean;
+  initialValues?: Record<string, unknown>;
   urlParams?: Record<string, string>;
   onDebugEvent?: (event: RuntimeDebugEvent) => void;
   onSubmit: (values: Record<string, unknown>) => Promise<void> | void;
@@ -174,6 +175,7 @@ export function RuntimeFormRenderer({
   submitLabel,
   submitting = false,
   showSubmitButton = true,
+  initialValues,
   urlParams = {},
   onDebugEvent,
   onSubmit,
@@ -192,6 +194,7 @@ export function RuntimeFormRenderer({
     buildInitialRuntimeState(
       fields,
       schema.pageProps?.dataSources,
+      initialValues,
     ),
   );
   const values = runtimeState.values;
@@ -959,7 +962,10 @@ function Counter({ value }: { value: string }) {
   );
 }
 
-function getInitialValues(fields: RuntimeSchemaField[]) {
+function getInitialValues(
+  fields: RuntimeSchemaField[],
+  initialValues?: Record<string, unknown>,
+) {
   const values: Record<string, unknown> = {};
 
   for (const field of fields) {
@@ -968,11 +974,11 @@ function getInitialValues(fields: RuntimeSchemaField[]) {
     }
 
     if (field.type === "button") {
-      values[field.id] = field.props?.defaultValue ?? "";
+      values[field.id] = initialValues?.[field.id] ?? field.props?.defaultValue ?? "";
       continue;
     }
 
-    values[field.id] = getFieldDefaultValue(field);
+    values[field.id] = initialValues?.[field.id] ?? getFieldDefaultValue(field);
   }
 
   return values;
@@ -1153,8 +1159,9 @@ type RuntimeActionModule = {
 function buildInitialRuntimeState(
   fields: RuntimeSchemaField[],
   dataSourceDefinitions: RuntimeDataSource[] | undefined,
+  initialValues?: Record<string, unknown>,
 ): RuntimeRendererState {
-  const values = getInitialValues(fields);
+  const values = getInitialValues(fields, initialValues);
   const dataSources = getInitialDataSources(dataSourceDefinitions);
   return { values, dataSources, debugEvent: undefined };
 }

@@ -10,6 +10,7 @@ import {
   getFormsByRouteAppId,
 } from "../../lib/apps";
 import { AppShell } from "./components/app-shell";
+import { AppTopNav } from "./components/app-top-nav";
 import { FormSidebar } from "./components/form-sidebar";
 
 export default async function AppLayout({
@@ -59,17 +60,7 @@ export default async function AppLayout({
               </span>
             </div>
 
-            <nav className="hidden items-center gap-10 text-sm text-[var(--text-secondary)] lg:flex">
-              <a
-                className="border-b-[3px] border-[var(--brand-blue)] pb-4 text-[var(--text-primary)]"
-                href="#"
-              >
-                页面管理
-              </a>
-              <a href="#">集成&amp;自动化</a>
-              <a href="#">应用设置</a>
-              <a href="#">应用发布</a>
-            </nav>
+            <AppTopNav appId={routeAppId} />
 
             <div className="flex items-center gap-3">
               <Button

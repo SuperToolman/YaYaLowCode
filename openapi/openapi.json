@@ -320,6 +320,288 @@
         }
       }
     },
+    "/api/apps/{appId}/automations": {
+      "get": {
+        "operationId": "listAutomationFlows",
+        "summary": "List automation flows by app",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped automation flow list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationFlowListResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Backend unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createAutomationFlow",
+        "summary": "Create automation flow",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAutomationFlowRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Wrapped created automation flow",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationFlowResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid automation configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Backend unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automations/{automationId}": {
+      "get": {
+        "operationId": "getAutomationFlow",
+        "summary": "Get automation flow detail",
+        "parameters": [
+          {
+            "name": "automationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped automation flow detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationFlowDetailResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Automation flow not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateAutomationFlow",
+        "summary": "Update automation flow",
+        "parameters": [
+          {
+            "name": "automationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAutomationFlowRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Wrapped updated automation flow",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationFlowResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid automation configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Automation flow not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAutomationFlow",
+        "summary": "Delete automation flow",
+        "parameters": [
+          {
+            "name": "automationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped delete result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericSuccessResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Automation flow not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automations/{automationId}/versions": {
+      "get": {
+        "operationId": "listAutomationFlowVersions",
+        "summary": "List automation flow versions",
+        "parameters": [
+          {
+            "name": "automationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped automation version list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationFlowVersionListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Automation flow not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/forms/{formUuid}/schema": {
       "get": {
         "operationId": "getFormSchema",
@@ -458,6 +740,106 @@
           },
           "404": {
             "description": "Form not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/records/{recordUuid}": {
+      "patch": {
+        "operationId": "updateFormRecord",
+        "summary": "Update form record",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "recordUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFormRecordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Wrapped updated form record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormRecordResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Form or record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteFormRecord",
+        "summary": "Delete form record",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "recordUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped delete result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericSuccessResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Form or record not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -980,6 +1362,221 @@
           }
         }
       },
+      "AutomationFlow": {
+        "type": "object",
+        "required": [
+          "id",
+          "appId",
+          "name",
+          "status",
+          "currentVersion",
+          "triggerEvent",
+          "triggerLabel",
+          "nodesCount",
+          "createdBy",
+          "updatedBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "appId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "paused",
+              "draft"
+            ]
+          },
+          "currentVersion": {
+            "type": "integer"
+          },
+          "triggerFormUuid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "triggerEvent": {
+            "type": "string",
+            "enum": [
+              "before_create",
+              "after_create",
+              "before_update",
+              "after_update",
+              "before_delete",
+              "after_delete"
+            ]
+          },
+          "triggerLabel": {
+            "type": "string"
+          },
+          "nodesCount": {
+            "type": "integer"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AutomationFlowList": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "enabled",
+          "paused",
+          "draft"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AutomationFlow"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "integer"
+          },
+          "paused": {
+            "type": "integer"
+          },
+          "draft": {
+            "type": "integer"
+          }
+        }
+      },
+      "AutomationFlowDetail": {
+        "type": "object",
+        "required": [
+          "id",
+          "appId",
+          "name",
+          "status",
+          "currentVersion",
+          "triggerEvent",
+          "triggerLabel",
+          "triggerConfig",
+          "nodes",
+          "edges",
+          "nodesCount",
+          "createdBy",
+          "updatedBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "appId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "paused",
+              "draft"
+            ]
+          },
+          "currentVersion": {
+            "type": "integer"
+          },
+          "triggerFormUuid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "triggerEvent": {
+            "type": "string",
+            "enum": [
+              "before_create",
+              "after_create",
+              "before_update",
+              "after_update",
+              "before_delete",
+              "after_delete"
+            ]
+          },
+          "triggerLabel": {
+            "type": "string"
+          },
+          "triggerConfig": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "nodesCount": {
+            "type": "integer"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "FormVersionSummary": {
         "type": "object",
         "required": [
@@ -1008,6 +1605,45 @@
           "createdAt": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "AutomationFlowVersionSummary": {
+        "type": "object",
+        "required": [
+          "version",
+          "name",
+          "status",
+          "createdBy",
+          "createdAt"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "paused",
+              "draft"
+            ]
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "changeSummary": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -1066,6 +1702,106 @@
           "data": {
             "type": "object",
             "additionalProperties": true
+          },
+          "operator": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateFormRecordRequest": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "operator": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateAutomationFlowRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "triggerFormUuid": {
+            "type": "string"
+          },
+          "triggerEvent": {
+            "type": "string",
+            "enum": [
+              "before_create",
+              "after_create",
+              "before_update",
+              "after_update",
+              "before_delete",
+              "after_delete"
+            ]
+          },
+          "operator": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateAutomationFlowRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "paused",
+              "draft"
+            ]
+          },
+          "triggerFormUuid": {
+            "type": "string"
+          },
+          "triggerEvent": {
+            "type": "string",
+            "enum": [
+              "before_create",
+              "after_create",
+              "before_update",
+              "after_update",
+              "before_delete",
+              "after_delete"
+            ]
+          },
+          "triggerConfig": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "changeSummary": {
+            "type": "string"
           },
           "operator": {
             "type": "string"
@@ -1173,6 +1909,57 @@
             "required": ["data"],
             "properties": {
               "data": { "$ref": "#/components/schemas/FormRecordList" }
+            }
+          }
+        ]
+      },
+      "AutomationFlowResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": { "$ref": "#/components/schemas/AutomationFlow" }
+            }
+          }
+        ]
+      },
+      "AutomationFlowListResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": { "$ref": "#/components/schemas/AutomationFlowList" }
+            }
+          }
+        ]
+      },
+      "AutomationFlowDetailResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": { "$ref": "#/components/schemas/AutomationFlowDetail" }
+            }
+          }
+        ]
+      },
+      "AutomationFlowVersionListResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/AutomationFlowVersionSummary" }
+              }
             }
           }
         ]

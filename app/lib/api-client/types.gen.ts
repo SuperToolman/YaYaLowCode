@@ -75,6 +75,57 @@ export type FormRecordList = {
     total: number;
 };
 
+export type AutomationFlow = {
+    id: string;
+    appId: string;
+    name: string;
+    description?: string | null;
+    status: 'enabled' | 'paused' | 'draft';
+    currentVersion: number;
+    triggerFormUuid?: string | null;
+    triggerEvent: 'before_create' | 'after_create' | 'before_update' | 'after_update' | 'before_delete' | 'after_delete';
+    triggerLabel: string;
+    nodesCount: number;
+    createdBy: string;
+    updatedBy: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type AutomationFlowList = {
+    items: Array<AutomationFlow>;
+    total: number;
+    enabled: number;
+    paused: number;
+    draft: number;
+};
+
+export type AutomationFlowDetail = {
+    id: string;
+    appId: string;
+    name: string;
+    description?: string | null;
+    status: 'enabled' | 'paused' | 'draft';
+    currentVersion: number;
+    triggerFormUuid?: string | null;
+    triggerEvent: 'before_create' | 'after_create' | 'before_update' | 'after_update' | 'before_delete' | 'after_delete';
+    triggerLabel: string;
+    triggerConfig: {
+        [key: string]: unknown;
+    };
+    nodes: Array<{
+        [key: string]: unknown;
+    }>;
+    edges: Array<{
+        [key: string]: unknown;
+    }>;
+    nodesCount: number;
+    createdBy: string;
+    updatedBy: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
 export type FormVersionSummary = {
     version: number;
     published: boolean;
@@ -82,6 +133,15 @@ export type FormVersionSummary = {
     isCurrentPublished: boolean;
     changeLog?: string | null;
     createdAt: string;
+};
+
+export type AutomationFlowVersionSummary = {
+    version: number;
+    name: string;
+    status: 'enabled' | 'paused' | 'draft';
+    createdBy: string;
+    createdAt: string;
+    changeSummary?: string | null;
 };
 
 export type CreateAppRequest = {
@@ -109,6 +169,40 @@ export type CreateFormRecordRequest = {
     data: {
         [key: string]: unknown;
     };
+    operator?: string;
+};
+
+export type UpdateFormRecordRequest = {
+    data: {
+        [key: string]: unknown;
+    };
+    operator?: string;
+};
+
+export type CreateAutomationFlowRequest = {
+    name?: string;
+    description?: string;
+    triggerFormUuid?: string;
+    triggerEvent?: 'before_create' | 'after_create' | 'before_update' | 'after_update' | 'before_delete' | 'after_delete';
+    operator?: string;
+};
+
+export type UpdateAutomationFlowRequest = {
+    name?: string;
+    description?: string;
+    status?: 'enabled' | 'paused' | 'draft';
+    triggerFormUuid?: string;
+    triggerEvent?: 'before_create' | 'after_create' | 'before_update' | 'after_update' | 'before_delete' | 'after_delete';
+    triggerConfig?: {
+        [key: string]: unknown;
+    };
+    nodes?: Array<{
+        [key: string]: unknown;
+    }>;
+    edges?: Array<{
+        [key: string]: unknown;
+    }>;
+    changeSummary?: string;
     operator?: string;
 };
 
@@ -142,6 +236,22 @@ export type FormRecordResponse = ApiMeta & {
 
 export type FormRecordListResponse = ApiMeta & {
     data: FormRecordList;
+};
+
+export type AutomationFlowResponse = ApiMeta & {
+    data: AutomationFlow;
+};
+
+export type AutomationFlowListResponse = ApiMeta & {
+    data: AutomationFlowList;
+};
+
+export type AutomationFlowDetailResponse = ApiMeta & {
+    data: AutomationFlowDetail;
+};
+
+export type AutomationFlowVersionListResponse = ApiMeta & {
+    data: Array<AutomationFlowVersionSummary>;
 };
 
 export type GenericSuccessResponse = ApiMeta & {
@@ -363,6 +473,184 @@ export type CreateFormResponses = {
 
 export type CreateFormResponse = CreateFormResponses[keyof CreateFormResponses];
 
+export type ListAutomationFlowsData = {
+    body?: never;
+    path: {
+        appId: string;
+    };
+    query?: never;
+    url: '/api/apps/{appId}/automations';
+};
+
+export type ListAutomationFlowsErrors = {
+    /**
+     * Backend error
+     */
+    500: ErrorResponse;
+    /**
+     * Backend unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type ListAutomationFlowsError = ListAutomationFlowsErrors[keyof ListAutomationFlowsErrors];
+
+export type ListAutomationFlowsResponses = {
+    /**
+     * Wrapped automation flow list
+     */
+    200: AutomationFlowListResponse;
+};
+
+export type ListAutomationFlowsResponse = ListAutomationFlowsResponses[keyof ListAutomationFlowsResponses];
+
+export type CreateAutomationFlowData = {
+    body?: CreateAutomationFlowRequest;
+    path: {
+        appId: string;
+    };
+    query?: never;
+    url: '/api/apps/{appId}/automations';
+};
+
+export type CreateAutomationFlowErrors = {
+    /**
+     * Invalid automation configuration
+     */
+    400: ErrorResponse;
+    /**
+     * Backend error
+     */
+    500: ErrorResponse;
+    /**
+     * Backend unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type CreateAutomationFlowError = CreateAutomationFlowErrors[keyof CreateAutomationFlowErrors];
+
+export type CreateAutomationFlowResponses = {
+    /**
+     * Wrapped created automation flow
+     */
+    201: AutomationFlowResponse;
+};
+
+export type CreateAutomationFlowResponse = CreateAutomationFlowResponses[keyof CreateAutomationFlowResponses];
+
+export type DeleteAutomationFlowData = {
+    body?: never;
+    path: {
+        automationId: string;
+    };
+    query?: never;
+    url: '/api/automations/{automationId}';
+};
+
+export type DeleteAutomationFlowErrors = {
+    /**
+     * Automation flow not found
+     */
+    404: ErrorResponse;
+};
+
+export type DeleteAutomationFlowError = DeleteAutomationFlowErrors[keyof DeleteAutomationFlowErrors];
+
+export type DeleteAutomationFlowResponses = {
+    /**
+     * Wrapped delete result
+     */
+    200: GenericSuccessResponse;
+};
+
+export type DeleteAutomationFlowResponse = DeleteAutomationFlowResponses[keyof DeleteAutomationFlowResponses];
+
+export type GetAutomationFlowData = {
+    body?: never;
+    path: {
+        automationId: string;
+    };
+    query?: never;
+    url: '/api/automations/{automationId}';
+};
+
+export type GetAutomationFlowErrors = {
+    /**
+     * Automation flow not found
+     */
+    404: ErrorResponse;
+};
+
+export type GetAutomationFlowError = GetAutomationFlowErrors[keyof GetAutomationFlowErrors];
+
+export type GetAutomationFlowResponses = {
+    /**
+     * Wrapped automation flow detail
+     */
+    200: AutomationFlowDetailResponse;
+};
+
+export type GetAutomationFlowResponse = GetAutomationFlowResponses[keyof GetAutomationFlowResponses];
+
+export type UpdateAutomationFlowData = {
+    body: UpdateAutomationFlowRequest;
+    path: {
+        automationId: string;
+    };
+    query?: never;
+    url: '/api/automations/{automationId}';
+};
+
+export type UpdateAutomationFlowErrors = {
+    /**
+     * Invalid automation configuration
+     */
+    400: ErrorResponse;
+    /**
+     * Automation flow not found
+     */
+    404: ErrorResponse;
+};
+
+export type UpdateAutomationFlowError = UpdateAutomationFlowErrors[keyof UpdateAutomationFlowErrors];
+
+export type UpdateAutomationFlowResponses = {
+    /**
+     * Wrapped updated automation flow
+     */
+    200: AutomationFlowResponse;
+};
+
+export type UpdateAutomationFlowResponse = UpdateAutomationFlowResponses[keyof UpdateAutomationFlowResponses];
+
+export type ListAutomationFlowVersionsData = {
+    body?: never;
+    path: {
+        automationId: string;
+    };
+    query?: never;
+    url: '/api/automations/{automationId}/versions';
+};
+
+export type ListAutomationFlowVersionsErrors = {
+    /**
+     * Automation flow not found
+     */
+    404: ErrorResponse;
+};
+
+export type ListAutomationFlowVersionsError = ListAutomationFlowVersionsErrors[keyof ListAutomationFlowVersionsErrors];
+
+export type ListAutomationFlowVersionsResponses = {
+    /**
+     * Wrapped automation version list
+     */
+    200: AutomationFlowVersionListResponse;
+};
+
+export type ListAutomationFlowVersionsResponse = ListAutomationFlowVersionsResponses[keyof ListAutomationFlowVersionsResponses];
+
 export type GetFormSchemaData = {
     body?: never;
     path: {
@@ -450,6 +738,62 @@ export type CreateFormRecordResponses = {
 };
 
 export type CreateFormRecordResponse = CreateFormRecordResponses[keyof CreateFormRecordResponses];
+
+export type DeleteFormRecordData = {
+    body?: never;
+    path: {
+        formUuid: string;
+        recordUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/records/{recordUuid}';
+};
+
+export type DeleteFormRecordErrors = {
+    /**
+     * Form or record not found
+     */
+    404: ErrorResponse;
+};
+
+export type DeleteFormRecordError = DeleteFormRecordErrors[keyof DeleteFormRecordErrors];
+
+export type DeleteFormRecordResponses = {
+    /**
+     * Wrapped delete result
+     */
+    200: GenericSuccessResponse;
+};
+
+export type DeleteFormRecordResponse = DeleteFormRecordResponses[keyof DeleteFormRecordResponses];
+
+export type UpdateFormRecordData = {
+    body: UpdateFormRecordRequest;
+    path: {
+        formUuid: string;
+        recordUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/records/{recordUuid}';
+};
+
+export type UpdateFormRecordErrors = {
+    /**
+     * Form or record not found
+     */
+    404: ErrorResponse;
+};
+
+export type UpdateFormRecordError = UpdateFormRecordErrors[keyof UpdateFormRecordErrors];
+
+export type UpdateFormRecordResponses = {
+    /**
+     * Wrapped updated form record
+     */
+    200: FormRecordResponse;
+};
+
+export type UpdateFormRecordResponse = UpdateFormRecordResponses[keyof UpdateFormRecordResponses];
 
 export type ListFormVersionsData = {
     body?: never;

@@ -65,11 +65,13 @@ export default function FormHome({
   const [records, setRecords] = useState<FormRecord[]>([]);
   const [recordsTotal, setRecordsTotal] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<FormRecord | null>(null);
   const [loadingRecords, setLoadingRecords] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deletingRecordId, setDeletingRecordId] = useState<string | null>(null);
 
   const activeView: ViewKey = searchParams.get("view") === "submit" ? "submit" : "records";
   const submitButtonText = schema.pageProps?.submitButtonText?.trim() || "提交";
@@ -201,6 +203,69 @@ export default function FormHome({
       });
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleUpdateRecord(
+    recordId: string,
+    values: Record<string, unknown>,
+  ) {
+    setSubmitting(true);
+
+    try {
+      const response = await fetch(`/api/forms/${formUuid}/records/${recordId}`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          data: values,
+          operator: "管理员",
+        }),
+      });
+      const payload = (await response.json()) as ApiEnvelope<FormRecord>;
+
+      if (payload.code !== 0 || !payload.data) {
+        throw new Error(payload.message || "update failed");
+      }
+
+      await loadRecords();
+      setEditingRecord(null);
+      toast.success("表单数据已更新", {
+        description: `记录 ${recordId} 已保存`,
+      });
+    } catch {
+      toast.danger("更新失败", {
+        description: "请确认后端服务正常。",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDeleteRecord(recordId: string) {
+    setDeletingRecordId(recordId);
+
+    try {
+      const response = await fetch(`/api/forms/${formUuid}/records/${recordId}`, {
+        method: "DELETE",
+      });
+      const payload = (await response.json()) as ApiEnvelope<Record<string, unknown>>;
+
+      if (payload.code !== 0) {
+        throw new Error(payload.message || "delete failed");
+      }
+
+      await loadRecords();
+      toast.success("记录已删除", {
+        description: `记录 ${recordId} 已移除`,
+      });
+    } catch {
+      toast.danger("删除记录失败", {
+        description: "请确认后端服务正常。",
+      });
+    } finally {
+      setDeletingRecordId(null);
     }
   }
 
@@ -374,6 +439,9 @@ export default function FormHome({
               records={filteredRecords}
               total={recordsTotal}
               loading={loadingRecords}
+              deletingRecordId={deletingRecordId}
+              onDeleteRecord={handleDeleteRecord}
+              onEditRecord={setEditingRecord}
             />
           ) : (
             <RuntimeFormPanel
@@ -414,11 +482,57 @@ export default function FormHome({
               <Drawer.Body className="flex-1 overflow-y-auto px-6 py-6">
                 <RuntimeFormPanel
                   schema={schema}
+                  initialValues={editingRecord?.data}
                   submitLabel={submitButtonText}
                   submitting={submitting}
                   urlParams={{ appId, formUuid }}
-                  onSubmit={(values) => handleCreateRecord(values, "drawer")}
+                  onSubmit={(values) =>
+                    editingRecord
+                      ? handleUpdateRecord(editingRecord.id, values)
+                      : handleCreateRecord(values, "drawer")
+                  }
                 />
+              </Drawer.Body>
+            </Drawer.Dialog>
+          </Drawer.Content>
+        </Drawer.Backdrop>
+      </Drawer>
+
+      <Drawer isOpen={editingRecord !== null} onOpenChange={(open) => !open && setEditingRecord(null)}>
+        <Drawer.Backdrop className="bg-[#14213d]/10" isDismissable>
+          <Drawer.Content placement="right" className="w-full max-w-[880px]">
+            <Drawer.Dialog className="flex h-full w-full flex-col bg-white text-[#202f45] shadow-[0_30px_80px_rgba(20,33,61,0.18)]">
+              <Drawer.Header className="border-b border-[#eef2f7] px-6 py-4">
+                <div className="flex w-full items-center justify-between gap-4">
+                  <div>
+                    <Drawer.Heading className="text-lg font-semibold text-[#14213d]">
+                      编辑数据
+                    </Drawer.Heading>
+                    <p className="mt-1 text-sm text-[#6a7d99]">
+                      修改当前记录后保存，可触发更新自动化。
+                    </p>
+                  </div>
+                  <Button
+                    isIconOnly
+                    variant="ghost"
+                    onClick={() => setEditingRecord(null)}
+                    className="h-10 w-10 rounded-full border border-[#d7e2f1] bg-white text-[#60738f]"
+                  >
+                    ×
+                  </Button>
+                </div>
+              </Drawer.Header>
+              <Drawer.Body className="flex-1 overflow-y-auto px-6 py-6">
+                {editingRecord ? (
+                  <RuntimeFormPanel
+                    schema={schema}
+                    initialValues={editingRecord.data}
+                    submitLabel="保存修改"
+                    submitting={submitting}
+                    urlParams={{ appId, formUuid }}
+                    onSubmit={(values) => handleUpdateRecord(editingRecord.id, values)}
+                  />
+                ) : null}
               </Drawer.Body>
             </Drawer.Dialog>
           </Drawer.Content>
@@ -486,12 +600,14 @@ function ViewTab({
 }
 
 function RuntimeFormPanel({
+  initialValues,
   schema,
   submitLabel,
   submitting,
   urlParams,
   onSubmit,
 }: {
+  initialValues?: Record<string, unknown>;
   schema: FormSchema;
   submitLabel: string;
   submitting: boolean;
@@ -500,6 +616,11 @@ function RuntimeFormPanel({
 }) {
   return (
     <RuntimeFormRenderer
+      key={JSON.stringify({
+        formUuid: schema.formUuid,
+        values: initialValues ?? null,
+      })}
+      initialValues={initialValues}
       schema={schema}
       submitLabel={submitLabel}
       submitting={submitting}
@@ -510,15 +631,21 @@ function RuntimeFormPanel({
 }
 
 function RecordsTable({
+  deletingRecordId,
   fields,
   records,
   total,
   loading,
+  onDeleteRecord,
+  onEditRecord,
 }: {
+  deletingRecordId: string | null;
   fields: SchemaField[];
   records: FormRecord[];
   total: number;
   loading: boolean;
+  onDeleteRecord: (recordId: string) => void;
+  onEditRecord: (record: FormRecord) => void;
 }) {
   const columns = fields.slice(0, 6);
 
@@ -549,9 +676,9 @@ function RecordsTable({
       </div>
       <div className="overflow-x-auto">
         <div
-          className="grid min-w-[960px] border-t border-[#edf2f8] bg-[#f7faff] px-4 py-3 text-sm font-medium text-[#4b5f7c]"
+          className="grid min-w-[1080px] border-t border-[#edf2f8] bg-[#f7faff] px-4 py-3 text-sm font-medium text-[#4b5f7c]"
           style={{
-            gridTemplateColumns: `repeat(${columns.length}, minmax(140px, 1fr)) 120px 180px`,
+            gridTemplateColumns: `repeat(${columns.length}, minmax(140px, 1fr)) 120px 180px 160px`,
           }}
         >
           {columns.map((field) => (
@@ -559,13 +686,14 @@ function RecordsTable({
           ))}
           <span>提交人</span>
           <span>提交时间</span>
+          <span>操作</span>
         </div>
         {records.map((record) => (
           <div
             key={record.id}
-            className="grid min-w-[960px] border-t border-[#edf2f8] px-4 py-4 text-sm text-[#263a5c]"
+            className="grid min-w-[1080px] border-t border-[#edf2f8] px-4 py-4 text-sm text-[#263a5c]"
             style={{
-              gridTemplateColumns: `repeat(${columns.length}, minmax(140px, 1fr)) 120px 180px`,
+              gridTemplateColumns: `repeat(${columns.length}, minmax(140px, 1fr)) 120px 180px 160px`,
             }}
           >
             {columns.map((field) => (
@@ -575,6 +703,23 @@ function RecordsTable({
             ))}
             <span>{record.createdBy}</span>
             <span>{formatDateTime(record.createdAt)}</span>
+            <span className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                className="h-8 rounded-md border border-[#d7e2f1] bg-white px-3 text-[#263a5c]"
+                onClick={() => onEditRecord(record)}
+              >
+                编辑
+              </Button>
+              <Button
+                variant="ghost"
+                className="h-8 rounded-md border border-[#f2d4d7] bg-white px-3 text-[#c24152]"
+                isDisabled={deletingRecordId === record.id}
+                onClick={() => onDeleteRecord(record.id)}
+              >
+                {deletingRecordId === record.id ? "删除中..." : "删除"}
+              </Button>
+            </span>
           </div>
         ))}
       </div>

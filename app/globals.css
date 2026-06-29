@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@heroui/styles"; 
+@import "@xyflow/react/dist/style.css";
 
 :root {
   --background: #f3f7fd;
