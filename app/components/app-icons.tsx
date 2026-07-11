@@ -206,6 +206,15 @@ export function FolderIcon() {
   );
 }
 
+export function FolderOpenIcon() {
+  return (
+    <IconBase className="h-4 w-4">
+      <path d="M3.5 8A2.5 2.5 0 0 1 6 5.5h3l1.5 2H18a2.5 2.5 0 0 1 2.35 3.35l-1.7 5A2.5 2.5 0 0 1 16.3 17.5H5.7a2.5 2.5 0 0 1-2.35-3.35l1.7-5A2.5 2.5 0 0 1 7.4 7.5Z" />
+      <path d="M3.5 8h17" />
+    </IconBase>
+  );
+}
+
 export function FormIcon() {
   return (
     <IconBase className="h-4 w-4">

@@ -16,9 +16,8 @@ import { Modal } from "@heroui/react/modal";
 import { Card } from "@heroui/react/card";
 import {
   AddIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
   FolderIcon,
+  FolderOpenIcon,
   FormIcon,
   LinkIcon,
   ListIcon,
@@ -214,7 +213,12 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
   ) {
     const draggingItemId = draggingItemIdRef.current;
 
-    if (!draggingItemId || draggingItemId === item.id || item.itemType === "system") {
+    if (
+      !draggingItemId ||
+      draggingItemId === item.id ||
+      item.itemType === "system" ||
+      isNavigationDescendant(items, item.id, draggingItemId)
+    ) {
       return;
     }
 
@@ -257,35 +261,43 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
     }
 
     startTransition(async () => {
-      const response = await fetch(`/api/apps/${routeAppId}/navigation`, {
-        method: "PATCH",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          item_id: nextDragState.itemId,
-          target_item_id: nextDragState.targetId,
-          placement: nextDragState.placement,
-        }),
-      });
-      const payload = (await response.json()) as ApiEnvelope<NavigationItem[]>;
+      try {
+        const response = await fetch(`/api/apps/${routeAppId}/navigation`, {
+          method: "PATCH",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            item_id: nextDragState.itemId,
+            target_item_id: nextDragState.targetId,
+            placement: nextDragState.placement,
+          }),
+        });
+        const payload = (await response.json()) as ApiEnvelope<NavigationItem[]>;
 
-      if (payload.code === 0 && payload.data) {
-        const nextItems = payload.data;
-        setItems(nextItems);
-        setExpandedGroups((current) => expandGroupsFromItems(nextItems, current));
-      } else {
-        setErrorMessage(payload.message || "更新导航顺序失败。");
+        if (payload.code === 0 && payload.data) {
+          const nextItems = payload.data;
+          setItems(nextItems);
+          setExpandedGroups((current) => expandGroupsFromItems(nextItems, current));
+        } else {
+          setErrorMessage(payload.message || "更新导航顺序失败。");
+        }
+      } catch {
+        setErrorMessage("更新导航顺序失败，请稍后重试。");
+      } finally {
+        clearDragState();
       }
-
-      clearDragState();
     });
   }
 
   function handleDropInsideGroup(groupId: string) {
     const draggingItemId = draggingItemIdRef.current;
 
-    if (!draggingItemId || draggingItemId === groupId) {
+    if (
+      !draggingItemId ||
+      draggingItemId === groupId ||
+      isNavigationDescendant(items, groupId, draggingItemId)
+    ) {
       clearDragState();
       return;
     }
@@ -307,7 +319,11 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
   ) {
     const draggingItemId = draggingItemIdRef.current;
 
-    if (!draggingItemId || draggingItemId === groupId) {
+    if (
+      !draggingItemId ||
+      draggingItemId === groupId ||
+      isNavigationDescendant(items, groupId, draggingItemId)
+    ) {
       return;
     }
 
@@ -341,8 +357,8 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
   }
 
   return (
-    <Card className="h-full w-full rounded-none border-none bg-white p-4 shadow-none">
-      <div className="mb-4 flex items-center gap-2">
+    <Card className="flex h-full w-full flex-col items-stretch justify-start self-start overflow-hidden rounded-xl border-0 bg-transparent p-3 text-left text-[var(--text-primary)] shadow-none">
+      <div className="mb-3 flex shrink-0 items-center gap-2">
         <SearchField aria-label="搜索表单" name="search" className="min-w-0 flex-1">
           <SearchField.Group>
             <SearchField.SearchIcon />
@@ -355,8 +371,8 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
             <span
               aria-label="新增导航项"
               className={[
-                "inline-flex h-11 w-11 min-w-11 shrink-0 items-center justify-center rounded-2xl border border-[var(--line)] bg-white text-[var(--brand-blue)] transition-colors",
-                isPending ? "opacity-60" : "hover:bg-[#f7faff]",
+                "inline-flex h-10 w-10 min-w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--panel-border)] bg-[var(--panel-background)] text-[var(--accent-strong)] transition-colors",
+                isPending ? "opacity-60" : "hover:bg-[var(--surface-soft)]",
               ].join(" ")}
             >
               <AddIcon />
@@ -389,7 +405,7 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
         </Alert>
       ) : null}
 
-      <div className="max-h-[calc(100vh-164px)] overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
         {tree.map((node) => (
           <SidebarTreeItem
             key={node.id}
@@ -418,11 +434,11 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
           }
         }}
       >
-        <Modal.Backdrop className="bg-[#14213d]/20" isDismissable>
+        <Modal.Backdrop className="bg-black/30" isDismissable>
           <Modal.Container placement="center" size="md">
-            <Modal.Dialog className="rounded-2xl bg-white text-[#202f45] shadow-[0_30px_90px_rgba(20,33,61,0.24)]">
-              <Modal.Header className="border-b border-[#eef2f7] px-5 py-4">
-                <Modal.Heading className="text-lg font-semibold text-[#14213d]">
+            <Modal.Dialog className="theme-menu-surface rounded-2xl shadow-[0_30px_90px_rgba(20,33,61,0.24)]">
+              <Modal.Header className="border-b border-[var(--panel-border)] px-5 py-4">
+                <Modal.Heading className="text-lg font-semibold text-[var(--text-primary)]">
                   创建分组
                 </Modal.Heading>
               </Modal.Header>
@@ -460,18 +476,18 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
                   </Select.Popover>
                 </Select>
               </Modal.Body>
-              <Modal.Footer className="flex justify-end gap-3 border-t border-[#eef2f7] px-5 py-3">
+              <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--panel-border)] px-5 py-3">
                 <Button
                   variant="ghost"
                   onClick={() => setCreateGroupOpen(false)}
-                  className="h-10 rounded-lg border border-[#d7e2f1] bg-white px-4 text-[#263a5c]"
+                  className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
                 >
                   取消
                 </Button>
                 <Button
                   onClick={handleCreateGroup}
                   isDisabled={isPending || !groupName.trim()}
-                  className="h-10 rounded-lg bg-[#2f6bff] px-4 text-white"
+                  className="h-10 rounded-lg bg-[var(--accent-strong)] px-4 text-white"
                 >
                   创建
                 </Button>
@@ -520,8 +536,9 @@ function SidebarTreeItem({
   const isActive = Boolean(node.href && pathname === node.href);
   const isDropTarget = dragState?.targetId === node.id;
   const showChildren = node.itemType !== "group" || isExpanded;
-  const paddingLeft = 12 + level * 18;
-  const nodeIcon = getSidebarNodeIcon(node.itemType);
+  const paddingLeft = 10 + level * 14;
+  const nodeIcon = getSidebarNodeIcon(node.itemType, isExpanded);
+  const nodeIconColor = getSidebarNodeIconColor(node.itemType);
 
   return (
     <div>
@@ -538,18 +555,18 @@ function SidebarTreeItem({
         }}
         onDragEnd={onDragEnd}
         className={[
-          "mb-1 rounded-xl border transition-colors",
+          "mb-0.5 rounded-lg border transition-colors",
           isActive
-            ? "border-[#cfe0ff] bg-[var(--surface-soft)] text-[var(--text-primary)]"
-            : "border-transparent text-[var(--text-secondary)] hover:bg-[#f7faff]",
+            ? "border-[var(--panel-border)] bg-[var(--surface-soft)] text-[var(--text-primary)]"
+            : "border-transparent text-[var(--text-secondary)] hover:bg-[var(--panel-background-soft)]",
           isDropTarget && dragState?.placement === "inside"
-            ? "border-dashed border-[#2f6bff]"
+            ? "border-dashed border-[var(--accent-strong)]"
             : "",
           isDropTarget && dragState?.placement === "before"
-            ? "shadow-[inset_0_3px_0_0_#2f6bff]"
+            ? "shadow-[inset_0_3px_0_0_var(--accent-strong)]"
             : "",
           isDropTarget && dragState?.placement === "after"
-            ? "shadow-[inset_0_-3px_0_0_#2f6bff]"
+            ? "shadow-[inset_0_-3px_0_0_var(--accent-strong)]"
             : "",
         ].join(" ")}
       >
@@ -557,32 +574,24 @@ function SidebarTreeItem({
           <button
             type="button"
             onClick={() => onToggleGroup(node.id)}
-            className="flex w-full items-center gap-3 px-3 py-3 text-left"
+            className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left"
             style={{ paddingLeft }}
           >
-            <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-[#7f91aa]">
-              {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
-            </span>
-            <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-[#5a8df8]">
+            <span className={`inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center ${nodeIconColor}`}>
               {nodeIcon}
             </span>
-            <span className="truncate text-sm">{node.name}</span>
+            <span className="truncate text-xs font-medium">{node.name}</span>
           </button>
         ) : (
           <Link
             href={node.href ?? "#"}
-            className="flex w-full items-center gap-3 px-3 py-3 text-left"
+            className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left"
             style={{ paddingLeft }}
           >
-            <span className="inline-flex h-4 w-4 shrink-0" />
-            <span
-              className={`inline-flex h-4 w-4 shrink-0 items-center justify-center ${
-                node.itemType === "system" ? "text-[#7f91aa]" : "text-[#5a8df8]"
-              }`}
-            >
+            <span className={`inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center ${nodeIconColor}`}>
               {nodeIcon}
             </span>
-            <span className="truncate text-sm">{node.name}</span>
+            <span className="truncate text-xs font-medium">{node.name}</span>
           </Link>
         )}
       </div>
@@ -591,7 +600,7 @@ function SidebarTreeItem({
           className={[
             "mb-1 rounded-lg",
             dragState?.targetId === node.id && dragState.placement === "inside"
-              ? "bg-[#eef4ff]"
+              ? "bg-[var(--accent-soft)]"
               : "",
           ].join(" ")}
           onDragOver={(event) => onDragOverInsideGroup(event, node.id)}
@@ -619,14 +628,14 @@ function SidebarTreeItem({
                 resolveExpanded={resolveExpanded}
               />
             ))
-          ) : (
+          ) : dragState ? (
             <div
-              className="mb-2 ml-12 flex h-8 items-center rounded-lg border border-dashed border-[#d7e2f1] px-3 text-xs text-[#7f91aa]"
+              className="mb-2 ml-12 flex h-8 items-center rounded-lg border border-dashed border-[var(--panel-border)] px-3 text-xs text-[var(--text-muted)]"
               style={{ marginRight: 4 }}
             >
               拖拽到这里放入分组
             </div>
-          )}
+          ) : null}
         </div>
       ) : null}
       {node.itemType !== "group" && node.children.length > 0 && showChildren
@@ -660,6 +669,26 @@ function handleGroupContentDrop(
 ) {
   event.stopPropagation();
   onDropInsideGroup(groupId);
+}
+
+function isNavigationDescendant(
+  items: NavigationItem[],
+  candidateId: string,
+  ancestorId: string,
+) {
+  let current = items.find((item) => item.id === candidateId);
+  const visited = new Set<string>();
+
+  while (current?.parentId && !visited.has(current.id)) {
+    if (current.parentId === ancestorId) {
+      return true;
+    }
+
+    visited.add(current.id);
+    current = items.find((item) => item.id === current?.parentId);
+  }
+
+  return false;
 }
 
 function buildNavigationTree(routeAppId: string, items: NavigationItem[]) {
@@ -705,10 +734,13 @@ function buildNavigationTree(routeAppId: string, items: NavigationItem[]) {
   return roots;
 }
 
-function getSidebarNodeIcon(itemType: NavigationItem["itemType"]) {
+function getSidebarNodeIcon(
+  itemType: NavigationItem["itemType"],
+  isExpanded = false,
+) {
   switch (itemType) {
     case "group":
-      return <FolderIcon />;
+      return isExpanded ? <FolderOpenIcon /> : <FolderIcon />;
     case "system":
       return <ListIcon />;
     case "link":
@@ -716,6 +748,20 @@ function getSidebarNodeIcon(itemType: NavigationItem["itemType"]) {
     case "form":
     default:
       return <FormIcon />;
+  }
+}
+
+function getSidebarNodeIconColor(itemType: NavigationItem["itemType"]) {
+  switch (itemType) {
+    case "group":
+      return "text-[var(--nav-group-icon)]";
+    case "form":
+      return "text-[var(--nav-form-icon)]";
+    case "link":
+      return "text-[var(--nav-link-icon)]";
+    case "system":
+    default:
+      return "text-[var(--text-muted)]";
   }
 }
 

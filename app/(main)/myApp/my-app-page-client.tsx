@@ -4,28 +4,23 @@ import type { ReactNode } from "react";
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Alert, Button, Dropdown, Input } from "@heroui/react";
+import { Button, Dropdown, Input } from "@heroui/react";
 import { AlertDialog } from "@heroui/react/alert-dialog";
 import { Modal } from "@heroui/react/modal";
 import {
   ArrowRight,
   Calendar,
-  CircleCheck,
-  CircleMinus,
   Ellipsis,
   Clock,
   Funnel,
-  LayoutHeaderCellsLarge,
-  LayoutList,
   Magnifier,
   Plus,
   Rocket,
-  Sliders,
 } from "@gravity-ui/icons";
 import { createApp, listApps, type App as ApiApp } from "../../lib/api-client";
 import { AppIcon } from "../../components/app-icons";
 import { appStatusLabel, appStatusTone, type AppItem, type AppStatus } from "../../lib/apps";
-import { PlatformHeader } from "../components/platform-header";
+// import { PlatformHeader } from "../components/platform-header";
 
 const statusOrder: AppStatus[] = ["enabled", "paused", "draft"];
 
@@ -36,7 +31,6 @@ type MyAppPageClientProps = {
 export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
   const [apps, setApps] = useState(sortApps(initialApps.map(normalizeAppItem)));
   const [isPending, startTransition] = useTransition();
-  const [errorMessage, setErrorMessage] = useState("");
   const [busyAppId, setBusyAppId] = useState<string | null>(null);
   const [renameApp, setRenameApp] = useState<AppItem | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -59,11 +53,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
         if (!cancelled && data.data.length > 0) {
           setApps(sortApps(data.data.map(toAppItem).map(normalizeAppItem)));
         }
-      } catch {
-        if (!cancelled) {
-          setErrorMessage("后端暂不可用，当前展示本地演示数据。");
-        }
-      }
+      } catch { }
     });
 
     return () => {
@@ -72,6 +62,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
   }, []);
 
   const enabledCount = apps.filter((app) => app.status === "enabled").length;
+  const pausedCount = apps.filter((app) => app.status === "paused").length;
   const totalRecords = apps.reduce((total, app) => total + app.records, 0);
   const appGroups = [
     { label: "全部应用", count: apps.length, active: true },
@@ -93,8 +84,6 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
   ];
 
   async function handleCreateApp() {
-    setErrorMessage("");
-
     startTransition(async () => {
       try {
         const { data, error } = await createApp({
@@ -109,14 +98,11 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
         const createdApp = toAppItem(data.data);
         setApps((current) => sortApps([normalizeAppItem(createdApp), ...current]));
         router.push(`/${createdApp.id}`);
-      } catch {
-        setErrorMessage("创建应用失败，请确认 Rust API 和 PostgreSQL 已启动。");
-      }
+      } catch { }
     });
   }
 
   async function handleToggleApp(app: AppItem) {
-    setErrorMessage("");
     setBusyAppId(app.id);
 
     try {
@@ -143,7 +129,6 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
         sortApps(current.map((item) => (item.id === app.id ? updatedApp : item))),
       );
     } catch {
-      setErrorMessage("更新应用状态失败。");
     } finally {
       setBusyAppId(null);
     }
@@ -157,7 +142,6 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
       return;
     }
 
-    setErrorMessage("");
     setBusyAppId(app.id);
 
     try {
@@ -184,14 +168,12 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
       );
       setRenameApp(null);
     } catch {
-      setErrorMessage("更新应用名称失败。");
     } finally {
       setBusyAppId(null);
     }
   }
 
   async function handleDeleteApp(app: AppItem) {
-    setErrorMessage("");
     setBusyAppId(app.id);
 
     try {
@@ -210,198 +192,180 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
       setApps((current) => current.filter((item) => item.id !== app.id));
       setDeleteApp(null);
     } catch {
-      setErrorMessage("删除应用失败。");
     } finally {
       setBusyAppId(null);
     }
   }
 
   return (
-    <div className="min-h-screen bg-[#f5f8fc] text-[#14213d]">
-      <PlatformHeader active="apps" />
-      <main className="mx-auto grid max-w-[1440px] gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-        <aside className="hidden lg:block">
-          <div className="sticky top-[84px] space-y-4">
-            <section className="rounded-lg border border-[#dfe7f3] bg-white p-4 shadow-[0_10px_30px_rgba(20,33,61,0.05)]">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold">应用分组</h2>
-                <Funnel className="h-4 w-4 text-[#7587a3]" />
-              </div>
-              <div className="mt-3 space-y-1">
-                {appGroups.map((group) => (
-                  <Button
-                    key={group.label}
-                    variant="ghost"
-                    className={[
-                      "flex h-10 w-full items-center justify-between rounded-lg px-3 text-sm transition-colors",
-                      group.active
-                        ? "bg-[#edf4ff] font-medium text-[#2f6bff]"
-                        : "text-[#4f6484] hover:bg-[#f6f9fe] hover:text-[#14213d]",
-                    ].join(" ")}
-                  >
-                    <span>{group.label}</span>
-                    <span>{group.count}</span>
-                  </Button>
-                ))}
-              </div>
-            </section>
-
-            <section className="rounded-lg border border-[#dfe7f3] bg-white p-4 shadow-[0_10px_30px_rgba(20,33,61,0.05)]">
-              <h2 className="text-sm font-semibold">状态统计</h2>
-              <div className="mt-4 space-y-3">
-                <StatusLine
-                  icon={<CircleCheck />}
-                  label="已启用"
-                  value={`${enabledCount} 个`}
-                  color="text-[#17a25b]"
-                />
-                <StatusLine
-                  icon={<CircleMinus />}
-                  label="已关闭"
-                  value={`${apps.filter((app) => app.status === "paused").length} 个`}
-                  color="text-[#6d7f9a]"
-                />
-              </div>
-            </section>
-          </div>
-        </aside>
-
+    <div className="theme-page-shell">
+      {/* <PlatformHeader active="apps" /> */}
+      <main className="space-y-5 px-4 py-5 sm:px-6">
         <section className="min-w-0 space-y-5">
-          <section className="rounded-lg border border-[#d9e5f5] bg-white p-5 shadow-[0_16px_40px_rgba(20,33,61,0.06)]">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-              <div>
-                <p className="text-sm font-medium text-[#4f6484]">
-                  应用管理中心
-                </p>
-                <h1 className="mt-2 text-3xl font-semibold leading-tight text-[#14213d] sm:text-4xl">
-                  我的应用
-                </h1>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-[#5f718e]">
-                  管理企业低代码应用、表单入口、运行状态和数据规模。
-                </p>
-                {errorMessage ? (
-                  <Alert className="mt-3" status="danger">
-                    <Alert.Content>
-                      <Alert.Title>操作失败</Alert.Title>
-                      <Alert.Description>{errorMessage}</Alert.Description>
-                    </Alert.Content>
-                  </Alert>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <Button
-                  onClick={handleCreateApp}
-                  isDisabled={isPending}
-                  className="h-10 gap-2 rounded-lg bg-[#2f6bff] px-4 text-sm font-medium text-white"
-                >
-                  <Plus className="h-4 w-4" />
-                  {isPending ? "创建中..." : "创建应用"}
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="h-10 gap-2 rounded-lg border border-[#d7e2f1] bg-white px-4 text-sm font-medium text-[#263a5c]"
-                >
-                  <Rocket className="h-4 w-4" />
-                  导入应用
-                </Button>
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <Metric label="全部应用" value={apps.length} suffix="个" />
-              <Metric label="运行中" value={enabledCount} suffix="个" tone="text-[#17a25b]" />
-              <Metric label="数据记录" value={totalRecords} suffix="条" tone="text-[#b4237a]" />
-              <Metric
-                label="本次会话新增"
-                value={Math.max(0, apps.length - initialApps.length)}
-                suffix="个"
-                tone="text-[#d97706]"
-              />
-            </div>
-          </section>
-
-          <section className="rounded-lg border border-[#dfe7f3] bg-white p-4 shadow-[0_10px_30px_rgba(20,33,61,0.05)]">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex flex-wrap gap-2">
-                {statusTabs.map((tab, index) => (
-                  <Button
-                    key={tab.label}
-                    variant="ghost"
-                    className={[
-                      "h-9 rounded-lg px-3 text-sm font-medium transition-colors",
-                      index === 0
-                        ? "bg-[#edf4ff] text-[#2f6bff]"
-                        : "text-[#4f6484] hover:bg-[#f6f9fe] hover:text-[#14213d]",
-                    ].join(" ")}
-                  >
-                    {tab.label}
-                    <span className="ml-2 text-xs opacity-75">{tab.count}</span>
-                  </Button>
-                ))}
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="flex h-10 min-w-[260px] items-center gap-2 rounded-lg border border-[#dfe7f3] bg-[#f7faff] px-3">
-                  <Magnifier className="h-4 w-4 shrink-0 text-[#7587a3]" />
-                  <Input
-                    aria-label="搜索应用"
-                    className="flex-1"
-                    placeholder="搜索应用名称或负责人"
-                  />
+          <section className="">
+            <div className="flex flex-col gap-5">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div className="min-w-0">
+                  <h1 className="mt-4 text-3xl font-semibold leading-tight text-[var(--text-primary)] sm:text-4xl">
+                    应用中心
+                  </h1>
+                  <p className="mt-3 max-w-3xl text-sm leading-6 text-[var(--text-secondary)]">
+                    管理企业低代码应用、表单入口、运行状态和数据规模，集中维护你创建和参与的业务系统。
+                  </p>
                 </div>
-                <Button
-                  variant="ghost"
-                  className="h-10 gap-2 rounded-lg border border-[#d7e2f1] bg-white px-3 text-sm font-medium text-[#4f6484]"
-                >
-                  <Sliders className="h-4 w-4" />
-                  筛选
-                </Button>
-                <div className="flex h-10 rounded-lg border border-[#d7e2f1] bg-white p-1">
+
+                <div className="flex shrink-0 flex-wrap gap-3">
                   <Button
-                    aria-label="卡片视图"
-                    variant="ghost"
-                    className="flex h-8 w-8 min-w-8 items-center justify-center rounded-md bg-[#edf4ff] p-0 text-[#2f6bff]"
+                    onClick={handleCreateApp}
+                    isDisabled={isPending}
+                    className="h-10 gap-2 rounded-lg bg-[var(--accent-strong)] px-4 text-sm font-medium text-white"
                   >
-                    <LayoutHeaderCellsLarge className="h-4 w-4" />
+                    <Plus className="h-4 w-4" />
+                    {isPending ? "创建中..." : "创建应用"}
                   </Button>
                   <Button
-                    aria-label="列表视图"
                     variant="ghost"
-                    className="flex h-8 w-8 min-w-8 items-center justify-center rounded-md p-0 text-[#7587a3]"
+                    className="theme-panel h-10 gap-2 rounded-lg px-4 text-sm font-medium text-[var(--text-primary)]"
                   >
-                    <LayoutList className="h-4 w-4" />
+                    <Rocket className="h-4 w-4" />
+                    导入应用
                   </Button>
                 </div>
               </div>
+
+              <div className="grid gap-3 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.95fr)]">
+                <section className="theme-panel-soft rounded-[18px] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-sm font-semibold text-[var(--text-primary)]">应用分组</h2>
+                    </div>
+                    <Funnel className="h-4 w-4 text-[var(--text-muted)]" />
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {appGroups.map((group) => (
+                      <button
+                        key={group.label}
+                        type="button"
+                        className={[
+                          "inline-flex h-10 items-center gap-2 rounded-full border px-4 text-sm transition-colors",
+                          group.active
+                            ? "border-[var(--panel-border)] bg-[var(--accent-soft)] font-medium text-[var(--accent-strong)]"
+                            : "border-[var(--panel-border)] bg-[var(--panel-background-strong)] text-[var(--text-secondary)] hover:border-[var(--panel-border)] hover:bg-[var(--panel-background)] hover:text-[var(--text-primary)]",
+                        ].join(" ")}
+                      >
+                        <span>{group.label}</span>
+                        <span className="rounded-full bg-[var(--neutral-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--neutral-strong)]">
+                          {group.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
+
+                  <div className="flex justify-between mt-4">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-[var(--text-primary)]">
+                        全部应用
+                        <span className="ml-2 text-xs font-medium text-[var(--text-muted)]">
+                          共 {apps.length} 个
+                        </span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        {statusTabs.map((tab, index) => (
+                          <Button
+                            key={tab.label}
+                            variant="ghost"
+                            className={[
+                              "h-9 rounded-lg px-3 text-sm font-medium transition-colors",
+                              index === 0
+                                ? "bg-[var(--accent-soft)] text-[var(--accent-strong)]"
+                                : "text-[var(--text-secondary)] hover:bg-[var(--panel-background-soft)] hover:text-[var(--text-primary)]",
+                            ].join(" ")}
+                          >
+                            {tab.label}
+                            <span className="ml-2 text-xs opacity-75">{tab.count}</span>
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="theme-search-surface flex h-10 w-[280px] items-center gap-2 rounded-xl px-3">
+                      <Magnifier className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
+                      <Input
+                        aria-label="搜索应用"
+                        className="flex-1"
+                        placeholder="搜索应用名称或负责人"
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                <section className="theme-panel-soft rounded-[18px] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-sm font-semibold text-[var(--text-primary)]">状态统计</h2>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                    <MetricCard
+                      label="应用总数"
+                      value={`${apps.length}`}
+                      hint="总览"
+                      tone="blue"
+                    />
+                    <MetricCard
+                      label="已启用"
+                      value={`${enabledCount}`}
+                      hint="在线"
+                      tone="green"
+                    />
+                    <MetricCard
+                      label="已关闭"
+                      value={`${pausedCount}`}
+                      hint="停用"
+                      tone="slate"
+                    />
+                    <MetricCard
+                      label="数据记录"
+                      value={`${totalRecords}`}
+                      hint="累计"
+                      tone="amber"
+                    />
+                  </div>
+                </section>
+
+
+              </div>
             </div>
           </section>
 
-          <section className="grid gap-4 xl:grid-cols-2">
+
+          <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
             {sortApps(apps).map((app) => (
               <article
                 key={app.id}
-                className="rounded-lg border border-[#dfe7f3] bg-white p-4 shadow-[0_10px_30px_rgba(20,33,61,0.05)] transition-colors hover:border-[#aac5ff]"
+                className="group theme-panel-strong flex min-w-0 flex-col rounded-xl border border-[var(--panel-border)] p-3.5 shadow-[0_4px_14px_rgba(20,33,61,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--accent-strong)] hover:shadow-[0_12px_24px_rgba(20,33,61,0.09)]"
               >
-                <div className="flex items-start gap-4">
+                <div className="flex min-w-0 items-start gap-3">
                   <span
-                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg ${app.color}`}
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${app.color}`}
                   >
                     <AppIcon type={app.icon} />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <h2 className="truncate text-base font-semibold">
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <h2 className="truncate text-sm font-semibold text-[var(--text-primary)]">
                             {app.name}
                           </h2>
                           {app.badge ? (
-                            <span className="shrink-0 rounded-md bg-[#fff0f3] px-2 py-0.5 text-xs font-medium text-[#c73655]">
+                            <span className="shrink-0 rounded bg-[#fff0f3] px-1.5 py-0.5 text-[10px] font-semibold text-[#c73655]">
                               {app.badge}
                             </span>
                           ) : null}
                         </div>
-                        <p className="mt-1 line-clamp-2 text-sm leading-6 text-[#60718a]">
+                        <p className="mt-1 line-clamp-2 min-h-9 text-xs leading-[18px] text-[var(--text-secondary)]">
                           {app.desc}
                         </p>
                       </div>
@@ -409,7 +373,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                         <Dropdown.Trigger>
                           <span
                             aria-label={`${app.name} 更多操作`}
-                            className="inline-flex h-8 w-8 min-w-8 shrink-0 items-center justify-center rounded-lg p-0 text-[#7587a3]"
+                            className="inline-flex h-7 w-7 min-w-7 shrink-0 items-center justify-center rounded-md p-0 text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--panel-background-soft)] group-hover:opacity-100 focus:opacity-100"
                           >
                             <Ellipsis className="h-4 w-4" />
                           </span>
@@ -451,35 +415,34 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                         </Dropdown.Popover>
                       </Dropdown>
                     </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <span
-                        className={`rounded-md px-2 py-1 text-xs font-medium ${appStatusTone[app.status]}`}
-                      >
-                        {appStatusLabel[app.status]}
-                      </span>
-                      <InfoPill icon={<Calendar />} text={app.createdAt} />
-                      <InfoPill icon={<Clock />} text={`${app.records} 条数据`} />
-                    </div>
                   </div>
                 </div>
 
-                <div className="mt-4 flex flex-col gap-3 border-t border-[#edf2f8] pt-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-2 text-sm text-[#7587a3]">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[#17324f] text-xs font-semibold text-white">
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  <span
+                    className={`inline-flex items-center rounded-md px-1.5 py-1 text-[11px] font-medium ${appStatusTone[app.status]}`}
+                  >
+                    {appStatusLabel[app.status]}
+                  </span>
+                  <InfoPill icon={<Clock />} text={`${app.records} 条`} />
+                  <InfoPill icon={<Calendar />} text={app.createdAt} />
+                </div>
+
+                <div className="mt-3 flex items-center justify-between border-t border-[var(--panel-border)] pt-3">
+                  <div className="flex min-w-0 items-center gap-2 text-xs text-[var(--text-secondary)]">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary)] text-[10px] font-semibold text-[var(--panel-background)]">
                       {app.owner.slice(0, 1)}
                     </span>
-                    <span>{app.owner}</span>
+                    <span className="truncate">{app.owner}</span>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Link
-                      href={`/${app.id}`}
-                      className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#2f6bff] px-3 text-sm font-medium text-white transition-colors hover:bg-[#245be6]"
-                    >
-                      访问
-                      <ArrowRight className="h-4 w-4" />
-                    </Link>
-                  </div>
+                  <Link
+                    href={`/${app.id}`}
+                    aria-label={`访问 ${app.name}`}
+                    className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-[var(--accent-strong)] px-2 text-xs font-medium text-white transition-colors hover:brightness-95"
+                  >
+                    打开
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
                 </div>
               </article>
             ))}
@@ -584,49 +547,36 @@ function normalizeAppItem(app: AppItem): AppItem {
   };
 }
 
-function StatusLine({
-  color,
-  icon,
+function MetricCard({
+  hint,
   label,
+  tone,
   value,
 }: {
-  color: string;
-  icon: ReactNode;
+  hint: string;
   label: string;
+  tone: "blue" | "green" | "amber" | "slate";
   value: string;
 }) {
-  return (
-    <div className="flex items-center justify-between gap-3 text-sm">
-      <span className="flex min-w-0 items-center gap-2 text-[#4f6484]">
-        <span className={`flex h-4 w-4 shrink-0 items-center justify-center ${color} [&>svg]:h-4 [&>svg]:w-4`}>
-          {icon}
-        </span>
-        {label}
-      </span>
-      <span className="font-medium text-[#14213d]">{value}</span>
-    </div>
-  );
-}
+  const toneClassName = {
+    blue: "bg-[#edf4ff] text-[#2f6bff]",
+    green: "bg-[#eefbf3] text-[#17a25b]",
+    amber: "bg-[#fff6e8] text-[#c47a1f]",
+    slate: "bg-[#f4f7fb] text-[#60718a]",
+  }[tone];
 
-function Metric({
-  label,
-  suffix,
-  tone = "text-[#2f6bff]",
-  value,
-}: {
-  label: string;
-  suffix: string;
-  tone?: string;
-  value: number;
-}) {
   return (
-    <article className="rounded-lg border border-[#e3ebf6] bg-[#fbfdff] p-4">
-      <p className="text-sm text-[#7587a3]">{label}</p>
-      <div className="mt-2 flex items-end gap-1">
-        <strong className={`text-3xl font-semibold ${tone}`}>
-          {value.toLocaleString()}
-        </strong>
-        <span className="pb-1 text-sm text-[#7587a3]">{suffix}</span>
+    <article className="rounded-2xl border border-[#e3ebf6] bg-[#fbfdff] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-[#6b7f99] text-sm">{label}</p>
+          <div className="mt-2 text-3xl font-semibold leading-none text-[#14213d]">
+            {value}
+          </div>
+        </div>
+        <span className={`rounded-full px-2 py-1 text-xs font-semibold ${toneClassName}`}>
+          {hint}
+        </span>
       </div>
     </article>
   );
@@ -634,11 +584,11 @@ function Metric({
 
 function InfoPill({ icon, text }: { icon: ReactNode; text: string }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md bg-[#f4f7fb] px-2 py-1 text-xs text-[#60718a]">
-      <span className="flex h-3.5 w-3.5 items-center justify-center [&>svg]:h-3.5 [&>svg]:w-3.5">
+    <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-[var(--panel-background-soft)] px-1.5 py-1 text-[11px] text-[var(--text-secondary)]">
+      <span className="flex h-3 w-3 shrink-0 items-center justify-center [&>svg]:h-3 [&>svg]:w-3">
         {icon}
       </span>
-      {text}
+      <span className="truncate">{text}</span>
     </span>
   );
 }

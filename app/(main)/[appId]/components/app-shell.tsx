@@ -18,6 +18,8 @@ export function AppShell({
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const [dragging, setDragging] = useState(false);
   const frameRef = useRef<number | null>(null);
+  const sidebarRef = useRef<HTMLDivElement | null>(null);
+  const pendingWidthRef = useRef(DEFAULT_SIDEBAR_WIDTH);
   const hideSidebar = /\/automations\/[^/]+$/.test(pathname);
 
   useEffect(() => {
@@ -26,20 +28,28 @@ export function AppShell({
     }
 
     const onPointerMove = (event: PointerEvent) => {
+      const nextWidth = Math.min(
+        MAX_SIDEBAR_WIDTH,
+        Math.max(MIN_SIDEBAR_WIDTH, event.clientX),
+      );
+      pendingWidthRef.current = nextWidth;
+
       if (frameRef.current !== null) {
         cancelAnimationFrame(frameRef.current);
       }
 
       frameRef.current = requestAnimationFrame(() => {
-        const nextWidth = Math.min(
-          MAX_SIDEBAR_WIDTH,
-          Math.max(MIN_SIDEBAR_WIDTH, event.clientX),
-        );
-        setSidebarWidth(nextWidth);
+        sidebarRef.current?.style.setProperty("width", `${pendingWidthRef.current}px`);
+        frameRef.current = null;
       });
     };
 
     const onPointerUp = () => {
+      if (frameRef.current !== null) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+      setSidebarWidth(pendingWidthRef.current);
       setDragging(false);
     };
 
@@ -56,13 +66,14 @@ export function AppShell({
   }, [dragging]);
 
   return (
-    <div className="flex min-h-screen gap-4 overflow-x-hidden p-2">
+    <div className="flex h-full min-h-0 gap-3 overflow-x-hidden p-2 sm:gap-4">
       {!hideSidebar ? (
         <div
-          className="relative shrink-0 rounded-xl bg-white"
+          ref={sidebarRef}
+          className="relative shrink-0 rounded-xl will-change-[width]"
           style={{ width: `${sidebarWidth}px` }}
         >
-          <div className="h-full min-h-[calc(100vh-1rem)] overflow-hidden rounded-xl border border-[var(--line)] bg-white">
+          <div className="theme-panel-strong h-full min-h-0 overflow-hidden rounded-xl shadow-[0_6px_18px_rgba(20,33,61,0.035)]">
             {sidebar}
           </div>
           <div
@@ -72,7 +83,10 @@ export function AppShell({
             aria-valuemax={MAX_SIDEBAR_WIDTH}
             aria-valuenow={sidebarWidth}
             aria-orientation="vertical"
-            onPointerDown={() => setDragging(true)}
+            onPointerDown={() => {
+              pendingWidthRef.current = sidebarWidth;
+              setDragging(true);
+            }}
             className={`absolute right-[-5px] top-0 h-full w-[10px] cursor-col-resize ${
               dragging ? "bg-[var(--brand-blue)]/10" : "bg-transparent"
             }`}
@@ -82,7 +96,7 @@ export function AppShell({
         </div>
       ) : null}
 
-      <div className="flex min-h-[calc(100vh-1rem)] min-w-0 flex-1 flex-col gap-4">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
         {children}
       </div>
     </div>

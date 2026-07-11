@@ -317,23 +317,23 @@ export default function FormHome({
   }
 
   return (
-    <div className="p-6">
-      <Card className="mx-auto max-w-[1280px] border border-[#dce7f5] bg-white/95 p-6 shadow-[0_20px_70px_rgba(31,65,122,0.08)]">
-        <div className="flex flex-col gap-4 border-b border-[#e9eff8] pb-5">
+    <div className="p-3 sm:p-5 lg:p-6">
+      <Card className="theme-panel-strong mx-auto max-w-[1280px] p-4 shadow-[0_20px_70px_rgba(31,65,122,0.08)] sm:p-6">
+        <div className="flex flex-col gap-4 border-b border-[var(--panel-border)] pb-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#7c8ca6]">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--text-muted)]">
                 Runtime View
               </p>
-              <h1 className="mt-1 text-2xl font-semibold text-[#14213d]">
+              <h1 className="mt-1 text-2xl font-semibold text-[var(--text-primary)]">
                 {schema.formName || "表单详情"}
               </h1>
-              <p className="mt-1 text-sm text-[#65748f]">
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">
                 App：{appId} / Form：{formUuid} / 已保存 {recordsTotal} 条数据
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-[#edf4ff] px-3 py-1 text-sm font-medium text-[#2f6bff]">
+              <span className="rounded-full bg-[var(--accent-soft)] px-3 py-1 text-sm font-medium text-[var(--accent-strong)]">
                 {visibleFields.length} 个字段
               </span>
             </div>
@@ -352,7 +352,7 @@ export default function FormHome({
             />
             <Button
               variant="ghost"
-              className="h-10 rounded-lg border border-dashed border-[#ccd8ea] px-4 text-sm text-[#6a7d99]"
+              className="h-10 rounded-lg border border-dashed border-[var(--panel-border)] px-4 text-sm text-[var(--text-secondary)]"
             >
               新建视图
             </Button>
@@ -360,10 +360,10 @@ export default function FormHome({
         </div>
 
         <div className="flex flex-col gap-4 py-5">
-          <div className="flex flex-col gap-3 rounded-xl border border-[#e5edf8] bg-[#f9fbff] p-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-3 rounded-xl border border-[var(--panel-border)] bg-[var(--panel-background-soft)] p-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               <Button
-                className="h-10 rounded-lg bg-[#2f6bff] px-4 text-white"
+                className="h-10 rounded-lg bg-[var(--accent-strong)] px-4 text-white"
                 onClick={() => setDrawerOpen(true)}
               >
                 新增
@@ -371,32 +371,32 @@ export default function FormHome({
               <Button
                 variant="ghost"
                 onClick={() => router.push(`/designer/${formUuid}?appId=${appId}`)}
-                className="h-10 rounded-lg border border-[#d7e2f1] bg-white px-4 text-[#263a5c]"
+                className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
               >
                 编辑
               </Button>
               <Button
                 variant="ghost"
                 onClick={() => setDeleteOpen(true)}
-                className="h-10 rounded-lg border border-[#f2d4d7] bg-white px-4 text-[#c24152]"
+                className="h-10 rounded-lg border border-[var(--danger-strong)]/30 bg-[var(--panel-background)] px-4 text-[var(--danger-strong)]"
               >
                 删除
               </Button>
               <Button
                 variant="ghost"
-                className="h-10 rounded-lg border border-[#d7e2f1] bg-white px-4 text-[#263a5c]"
+                className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
               >
                 导入
               </Button>
               <Button
                 variant="ghost"
-                className="h-10 rounded-lg border border-[#d7e2f1] bg-white px-4 text-[#263a5c]"
+                className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
               >
                 导出
               </Button>
               <Button
                 variant="ghost"
-                className="h-10 rounded-lg border border-[#d7e2f1] bg-white px-4 text-[#263a5c]"
+                className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
               >
                 更多
               </Button>
@@ -405,7 +405,7 @@ export default function FormHome({
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <Input
                 aria-label="搜索数据"
-                className="min-w-[220px] bg-white"
+                className="min-w-[220px] bg-[var(--input-background)]"
                 placeholder="搜索数据"
                 value={searchValue}
                 onChange={(event: ChangeEvent<HTMLInputElement>) =>
@@ -414,19 +414,19 @@ export default function FormHome({
               />
               <Button
                 variant="ghost"
-                className="h-10 rounded-lg border border-[#d7e2f1] bg-white px-4 text-[#263a5c]"
+                className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
               >
                 筛选
               </Button>
               <Button
                 variant="ghost"
-                className="h-10 rounded-lg border border-[#d7e2f1] bg-white px-4 text-[#263a5c]"
+                className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
               >
                 显示列
               </Button>
               <Button
                 variant="ghost"
-                className="h-10 rounded-lg border border-[#d7e2f1] bg-white px-4 text-[#263a5c]"
+                className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
               >
                 排序
               </Button>
@@ -456,16 +456,16 @@ export default function FormHome({
       </Card>
 
       <Drawer isOpen={drawerOpen} onOpenChange={setDrawerOpen}>
-        <Drawer.Backdrop className="bg-[#14213d]/10" isDismissable>
+        <Drawer.Backdrop className="bg-black/30" isDismissable>
           <Drawer.Content placement="right" className="w-full max-w-[880px]">
-            <Drawer.Dialog className="flex h-full w-full flex-col bg-white text-[#202f45] shadow-[0_30px_80px_rgba(20,33,61,0.18)]">
-              <Drawer.Header className="border-b border-[#eef2f7] px-6 py-4">
+            <Drawer.Dialog className="theme-menu-surface flex h-full w-full flex-col shadow-[0_30px_80px_rgba(20,33,61,0.18)]">
+              <Drawer.Header className="border-b border-[var(--panel-border)] px-6 py-4">
                 <div className="flex w-full items-center justify-between gap-4">
                   <div>
-                    <Drawer.Heading className="text-lg font-semibold text-[#14213d]">
+                    <Drawer.Heading className="text-lg font-semibold text-[var(--text-primary)]">
                       新增数据
                     </Drawer.Heading>
-                    <p className="mt-1 text-sm text-[#6a7d99]">
+                    <p className="mt-1 text-sm text-[var(--text-secondary)]">
                       使用已发布的表单设计填写并提交数据。
                     </p>
                   </div>
@@ -473,7 +473,7 @@ export default function FormHome({
                     isIconOnly
                     variant="ghost"
                     onClick={() => setDrawerOpen(false)}
-                    className="h-10 w-10 rounded-full border border-[#d7e2f1] bg-white text-[#60738f]"
+                    className="h-10 w-10 rounded-full border border-[var(--panel-border)] bg-[var(--panel-background)] text-[var(--text-secondary)]"
                   >
                     ×
                   </Button>
@@ -499,16 +499,16 @@ export default function FormHome({
       </Drawer>
 
       <Drawer isOpen={editingRecord !== null} onOpenChange={(open) => !open && setEditingRecord(null)}>
-        <Drawer.Backdrop className="bg-[#14213d]/10" isDismissable>
+        <Drawer.Backdrop className="bg-black/30" isDismissable>
           <Drawer.Content placement="right" className="w-full max-w-[880px]">
-            <Drawer.Dialog className="flex h-full w-full flex-col bg-white text-[#202f45] shadow-[0_30px_80px_rgba(20,33,61,0.18)]">
-              <Drawer.Header className="border-b border-[#eef2f7] px-6 py-4">
+            <Drawer.Dialog className="theme-menu-surface flex h-full w-full flex-col shadow-[0_30px_80px_rgba(20,33,61,0.18)]">
+              <Drawer.Header className="border-b border-[var(--panel-border)] px-6 py-4">
                 <div className="flex w-full items-center justify-between gap-4">
                   <div>
-                    <Drawer.Heading className="text-lg font-semibold text-[#14213d]">
+                    <Drawer.Heading className="text-lg font-semibold text-[var(--text-primary)]">
                       编辑数据
                     </Drawer.Heading>
-                    <p className="mt-1 text-sm text-[#6a7d99]">
+                    <p className="mt-1 text-sm text-[var(--text-secondary)]">
                       修改当前记录后保存，可触发更新自动化。
                     </p>
                   </div>
@@ -516,7 +516,7 @@ export default function FormHome({
                     isIconOnly
                     variant="ghost"
                     onClick={() => setEditingRecord(null)}
-                    className="h-10 w-10 rounded-full border border-[#d7e2f1] bg-white text-[#60738f]"
+                    className="h-10 w-10 rounded-full border border-[var(--panel-border)] bg-[var(--panel-background)] text-[var(--text-secondary)]"
                   >
                     ×
                   </Button>
@@ -540,29 +540,29 @@ export default function FormHome({
       </Drawer>
 
       <AlertDialog isOpen={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialog.Backdrop className="bg-[#14213d]/20" />
+        <AlertDialog.Backdrop className="bg-black/40" />
         <AlertDialog.Container placement="center" size="md">
-          <AlertDialog.Dialog className="rounded-2xl bg-white text-[#202f45] shadow-[0_30px_90px_rgba(20,33,61,0.24)]">
-            <AlertDialog.Header className="border-b border-[#eef2f7] px-5 py-4">
-              <AlertDialog.Heading className="text-lg font-semibold text-[#14213d]">
+          <AlertDialog.Dialog className="theme-menu-surface rounded-2xl shadow-[0_30px_90px_rgba(20,33,61,0.24)]">
+            <AlertDialog.Header className="border-b border-[var(--panel-border)] px-5 py-4">
+              <AlertDialog.Heading className="text-lg font-semibold text-[var(--text-primary)]">
                 删除表单
               </AlertDialog.Heading>
             </AlertDialog.Header>
-            <AlertDialog.Body className="px-5 py-4 text-sm leading-6 text-[#5f718e]">
+            <AlertDialog.Body className="px-5 py-4 text-sm leading-6 text-[var(--text-secondary)]">
               删除后，表单设计、提交记录和导航项都会被移除。
             </AlertDialog.Body>
-            <AlertDialog.Footer className="flex justify-end gap-3 border-t border-[#eef2f7] px-5 py-3">
+            <AlertDialog.Footer className="flex justify-end gap-3 border-t border-[var(--panel-border)] px-5 py-3">
               <Button
                 variant="ghost"
                 onClick={() => setDeleteOpen(false)}
-                className="h-10 rounded-lg border border-[#d7e2f1] bg-white px-4 text-[#263a5c]"
+                className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
               >
                 取消
               </Button>
               <Button
                 onClick={handleDeleteForm}
                 isDisabled={deleting}
-                className="h-10 rounded-lg bg-[#c24152] px-4 text-white"
+                className="h-10 rounded-lg bg-[var(--danger-strong)] px-4 text-white"
               >
                 {deleting ? "删除中..." : "确认删除"}
               </Button>
@@ -590,8 +590,8 @@ function ViewTab({
       className={[
         "h-10 rounded-lg px-4 text-sm",
         isActive
-          ? "bg-[#edf4ff] font-medium text-[#2f6bff]"
-          : "border border-transparent text-[#5f718e] hover:bg-[#f4f8ff]",
+          ? "bg-[var(--accent-soft)] font-medium text-[var(--accent-strong)]"
+          : "border border-transparent text-[var(--text-secondary)] hover:bg-[var(--panel-background-soft)]",
       ].join(" ")}
     >
       {label}
@@ -651,7 +651,7 @@ function RecordsTable({
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-[#e1e8f3] px-4 py-10 text-center text-sm text-[#6d7f9a]">
+      <div className="rounded-xl border border-[var(--panel-border)] px-4 py-10 text-center text-sm text-[var(--text-muted)]">
         正在加载数据...
       </div>
     );
@@ -659,9 +659,9 @@ function RecordsTable({
 
   if (records.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-[#d8e3f3] px-4 py-12 text-center">
-        <div className="text-base font-medium text-[#14213d]">暂无数据</div>
-        <div className="mt-2 text-sm text-[#6d7f9a]">
+      <div className="rounded-xl border border-dashed border-[var(--panel-border)] px-4 py-12 text-center">
+        <div className="text-base font-medium text-[var(--text-primary)]">暂无数据</div>
+        <div className="mt-2 text-sm text-[var(--text-muted)]">
           当前表单还没有提交记录，可以先通过“新增”填写一条数据。
         </div>
       </div>
@@ -669,14 +669,14 @@ function RecordsTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[#e1e8f3]">
-      <div className="flex items-center justify-between bg-[#f7faff] px-4 py-3 text-sm text-[#4b5f7c]">
+    <div className="overflow-hidden rounded-xl border border-[var(--panel-border)]">
+      <div className="flex items-center justify-between bg-[var(--panel-background-soft)] px-4 py-3 text-sm text-[var(--text-secondary)]">
         <span>共 {total} 条数据</span>
         <span>当前展示 {records.length} 条</span>
       </div>
       <div className="overflow-x-auto">
         <div
-          className="grid min-w-[1080px] border-t border-[#edf2f8] bg-[#f7faff] px-4 py-3 text-sm font-medium text-[#4b5f7c]"
+          className="grid min-w-[1080px] border-t border-[var(--panel-border)] bg-[var(--panel-background-soft)] px-4 py-3 text-sm font-medium text-[var(--text-secondary)]"
           style={{
             gridTemplateColumns: `repeat(${columns.length}, minmax(140px, 1fr)) 120px 180px 160px`,
           }}
@@ -691,7 +691,7 @@ function RecordsTable({
         {records.map((record) => (
           <div
             key={record.id}
-            className="grid min-w-[1080px] border-t border-[#edf2f8] px-4 py-4 text-sm text-[#263a5c]"
+            className="grid min-w-[1080px] border-t border-[var(--panel-border)] px-4 py-4 text-sm text-[var(--text-primary)]"
             style={{
               gridTemplateColumns: `repeat(${columns.length}, minmax(140px, 1fr)) 120px 180px 160px`,
             }}
@@ -706,14 +706,14 @@ function RecordsTable({
             <span className="flex items-center gap-2">
               <Button
                 variant="ghost"
-                className="h-8 rounded-md border border-[#d7e2f1] bg-white px-3 text-[#263a5c]"
+                className="h-8 rounded-md border border-[var(--panel-border)] bg-[var(--panel-background)] px-3 text-[var(--text-primary)]"
                 onClick={() => onEditRecord(record)}
               >
                 编辑
               </Button>
               <Button
                 variant="ghost"
-                className="h-8 rounded-md border border-[#f2d4d7] bg-white px-3 text-[#c24152]"
+                className="h-8 rounded-md border border-[var(--danger-strong)]/30 bg-[var(--panel-background)] px-3 text-[var(--danger-strong)]"
                 isDisabled={deletingRecordId === record.id}
                 onClick={() => onDeleteRecord(record.id)}
               >
@@ -739,15 +739,15 @@ function SystemPageView({
   const rows = buildSystemRows(appId, pageSlug);
 
   return (
-    <div className="p-6">
-      <Card className="mx-auto max-w-[1180px] border border-[#dce7f5] bg-white/95 p-6 shadow-[0_20px_70px_rgba(31,65,122,0.08)]">
-        <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+    <div className="">
+      <div className=" shadow-[0_20px_70px_rgba(31,65,122,0.08)]">
+        <Card className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#7c8ca6]">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--text-muted)]">
               System Page
             </p>
-            <h1 className="mt-1 text-2xl font-semibold text-[#14213d]">{pageTitle}</h1>
-            <p className="mt-1 text-sm text-[#65748f]">
+            <h1 className="mt-1 text-2xl font-semibold text-[var(--text-primary)]">{pageTitle}</h1>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">
               应用 {appId} 的内置工作台页面，当前路由为 {pageSlug}。
             </p>
           </div>
@@ -757,12 +757,12 @@ function SystemPageView({
               className="w-full min-w-[220px] md:w-[280px]"
               placeholder="搜索标题、流程或发起人"
             />
-            <Button className="bg-[#2f6bff] text-white">筛选</Button>
+            <Button className="bg-[var(--accent-strong)] text-white">筛选</Button>
           </div>
-        </div>
+        </Card>
 
-        <div className="overflow-hidden rounded-xl border border-[#e1e8f3]">
-          <div className="grid grid-cols-[minmax(0,2fr)_120px_160px_180px] gap-4 bg-[#f7faff] px-4 py-3 text-sm font-medium text-[#4b5f7c]">
+        <div className="overflow-hidden rounded-xl border border-[var(--panel-border)]">
+          <div className="grid grid-cols-[minmax(0,2fr)_120px_160px_180px] gap-4 bg-[var(--panel-background-soft)] px-4 py-3 text-sm font-medium text-[var(--text-secondary)]">
             <span>标题</span>
             <span>状态</span>
             <span>发起人</span>
@@ -771,11 +771,11 @@ function SystemPageView({
           {rows.map((row) => (
             <div
               key={row.id}
-              className="grid grid-cols-[minmax(0,2fr)_120px_160px_180px] gap-4 border-t border-[#edf2f8] px-4 py-4 text-sm text-[#263a5c]"
+              className="grid grid-cols-[minmax(0,2fr)_120px_160px_180px] gap-4 border-t border-[var(--panel-border)] px-4 py-4 text-sm text-[var(--text-primary)]"
             >
               <div className="min-w-0">
-                <div className="truncate font-medium text-[#14213d]">{row.title}</div>
-                <div className="mt-1 truncate text-xs text-[#6d7f9a]">{row.description}</div>
+                <div className="truncate font-medium text-[var(--text-primary)]">{row.title}</div>
+                <div className="mt-1 truncate text-xs text-[var(--text-muted)]">{row.description}</div>
               </div>
               <span>{row.status}</span>
               <span>{row.owner}</span>
@@ -783,7 +783,7 @@ function SystemPageView({
             </div>
           ))}
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

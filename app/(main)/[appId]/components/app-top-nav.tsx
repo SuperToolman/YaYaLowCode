@@ -37,11 +37,11 @@ export function AppTopNav({ appId }: AppTopNavProps) {
   ];
 
   return (
-    <nav className="hidden items-center gap-10 text-sm text-[var(--text-secondary)] lg:flex">
+    <nav className="order-3 flex w-full items-center gap-1 overflow-x-auto border-t border-[var(--nav-line)] pt-2 text-sm text-[var(--text-secondary)] lg:order-none lg:w-auto lg:border-t-0 lg:pt-0">
       {items.map((item) => {
         const className = item.active
-          ? "border-b-[3px] border-[var(--brand-blue)] pb-4 text-[var(--text-primary)]"
-          : "pb-4";
+          ? "rounded-md bg-[var(--accent-soft)] px-3 py-2 font-medium text-[var(--text-primary)]"
+          : "rounded-md px-3 py-2 transition-colors hover:bg-[var(--panel-background-soft)] hover:text-[var(--text-primary)]";
 
         return (
           <Link key={item.label} href={item.href} className={className}>

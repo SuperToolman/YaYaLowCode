@@ -30,31 +30,33 @@ export default async function AppLayout({
   const forms = getFormsByRouteAppId(routeAppId);
 
   return (
-    <div className="min-h-screen bg-[#f5f8fc]">
+    <div className="theme-page-shell">
       <AppShell
         sidebar={
           <FormSidebar initialForms={forms} routeAppId={routeAppId} />
         }
       >
-        <Card className="header border-b border-[var(--nav-line)] bg-white">
-          <div className="mx-auto flex items-center justify-between gap-4 lg:px-6">
-            <div className="flex min-w-0 items-center gap-3">
+        <Card className="app-detail-header sticky top-0 z-20 shrink-0 overflow-hidden border border-[var(--panel-border)] bg-[var(--panel-background-strong)] shadow-[0_8px_24px_rgba(20,33,61,0.04)] backdrop-blur-xl">
+          <div className="flex min-h-16 flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2 sm:px-4 lg:px-5">
+            <div className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3">
               <Link
-                href="/"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-soft)]"
+                href="/myApp"
+                aria-label="返回我的应用"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-soft)]"
               >
                 <ArrowLeftIcon />
               </Link>
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[linear-gradient(145deg,#49c76d,#19a84d)] text-white shadow-[0_10px_20px_rgba(25,168,77,0.2)]">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[linear-gradient(145deg,#49c76d,#19a84d)] text-white shadow-[0_8px_18px_rgba(25,168,77,0.2)]">
                 <LogoIcon />
               </div>
               <div className="min-w-0">
-                <div className="truncate text-lg font-semibold text-[var(--text-primary)]">
+                <div className="truncate text-base font-semibold text-[var(--text-primary)] sm:text-lg">
                   {app.name}
                 </div>
+                <p className="hidden truncate text-xs text-[var(--text-muted)] sm:block">应用工作台</p>
               </div>
               <span
-                className={`hidden rounded-lg px-2.5 py-1 text-xs font-medium sm:inline-flex ${appStatusTone[app.status]}`}
+                className={`hidden shrink-0 rounded-md px-2 py-1 text-xs font-medium md:inline-flex ${appStatusTone[app.status]}`}
               >
                 {appStatusLabel[app.status]}
               </span>
@@ -62,15 +64,15 @@ export default async function AppLayout({
 
             <AppTopNav appId={routeAppId} />
 
-            <div className="flex items-center gap-3">
+            <div className="ml-auto flex shrink-0 items-center gap-2">
               <Button
                 type="button"
                 aria-label="应用设置"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--line)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-soft)]"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-soft)]"
               >
                 <GearIcon />
               </Button>
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" className="h-9 rounded-lg bg-[var(--accent-strong)] px-3 text-white hover:brightness-95">
                 访问
               </Button>
             </div>

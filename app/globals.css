@@ -18,6 +18,121 @@
   --font-sans-ui: "Segoe UI", "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", sans-serif;
   --font-mono-ui: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  --app-gradient: linear-gradient(135deg, #d5e6ff 0%, #eaf1ff 46%, #ffd7ef 100%);
+  --glass-background: rgba(255, 255, 255, 0.38);
+  --glass-border: rgba(255, 255, 255, 0.48);
+  --glass-shadow: 0 28px 90px rgba(40, 67, 112, 0.22);
+  --panel-background: rgba(255, 255, 255, 0.58);
+  --panel-background-strong: rgba(255, 255, 255, 0.72);
+  --panel-background-soft: rgba(248, 251, 255, 0.52);
+  --panel-border: rgba(190, 210, 239, 0.82);
+  --input-background: rgba(247, 250, 255, 0.82);
+  --menu-background: rgba(255, 255, 255, 0.92);
+  --menu-item-hover: rgba(237, 244, 255, 0.92);
+  --accent-soft: #edf4ff;
+  --accent-strong: #2f6bff;
+  --danger-soft: #fff0f3;
+  --danger-strong: #c73655;
+  --success-soft: #eaf8f0;
+  --success-strong: #16864b;
+  --success-dot: #17b466;
+  --warning-soft: #fff6df;
+  --warning-strong: #a36a08;
+  --warning-dot: #f0a516;
+  --neutral-dot: #9aa9be;
+  --neutral-soft: #f4f7fb;
+  --neutral-strong: #60718a;
+  --sidebar-active-bg: rgba(255, 255, 255, 0.62);
+  --sidebar-soft-bg: rgba(255, 255, 255, 0.22);
+  --sidebar-soft-border: rgba(255, 255, 255, 0.28);
+  --nav-group-icon: #7d5ec4;
+  --nav-form-icon: #2f6bff;
+  --nav-link-icon: #b36f16;
+}
+
+html[data-resolved-theme="light"] {
+  --background: #f1f6ff;
+  --foreground: #14213d;
+  --surface: #ffffff;
+  --surface-soft: #eef5ff;
+  --text-primary: #14213d;
+  --text-secondary: #4f6484;
+  --text-muted: #7587a3;
+  --line: rgba(190, 210, 239, 0.85);
+  --nav-line: rgba(207, 223, 246, 0.8);
+  --app-gradient: linear-gradient(135deg, #d4e5ff 0%, #e9f1ff 44%, #ffcde8 100%);
+  --glass-background: rgba(255, 255, 255, 0.36);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  --glass-shadow: 0 28px 90px rgba(34, 72, 124, 0.2);
+  --panel-background: rgba(255, 255, 255, 0.58);
+  --panel-background-strong: rgba(255, 255, 255, 0.72);
+  --panel-background-soft: rgba(248, 251, 255, 0.52);
+  --panel-border: rgba(190, 210, 239, 0.82);
+  --input-background: rgba(247, 250, 255, 0.82);
+  --menu-background: rgba(255, 255, 255, 0.92);
+  --menu-item-hover: rgba(237, 244, 255, 0.92);
+  --accent-soft: #edf4ff;
+  --accent-strong: #2f6bff;
+  --danger-soft: #fff0f3;
+  --danger-strong: #c73655;
+  --success-soft: #eaf8f0;
+  --success-strong: #16864b;
+  --success-dot: #17b466;
+  --warning-soft: #fff6df;
+  --warning-strong: #a36a08;
+  --warning-dot: #f0a516;
+  --neutral-dot: #9aa9be;
+  --neutral-soft: #f4f7fb;
+  --neutral-strong: #60718a;
+  --sidebar-active-bg: rgba(255, 255, 255, 0.7);
+  --sidebar-soft-bg: rgba(255, 255, 255, 0.18);
+  --sidebar-soft-border: rgba(255, 255, 255, 0.26);
+  --nav-group-icon: #7d5ec4;
+  --nav-form-icon: #2f6bff;
+  --nav-link-icon: #b36f16;
+}
+
+html[data-resolved-theme="dark"] {
+  --background: #0d0b17;
+  --foreground: #f3efff;
+  --surface: rgba(27, 21, 46, 0.82);
+  --surface-soft: rgba(120, 86, 212, 0.18);
+  --text-primary: #f3efff;
+  --text-secondary: #d0c7f2;
+  --text-muted: #a79ecf;
+  --text-subtle: #8278a8;
+  --line: rgba(133, 110, 196, 0.28);
+  --nav-line: rgba(133, 110, 196, 0.24);
+  --app-gradient: linear-gradient(135deg, #06060c 0%, #171125 42%, #32154d 100%);
+  --glass-background: rgba(17, 12, 30, 0.34);
+  --glass-border: rgba(173, 146, 242, 0.26);
+  --glass-shadow: 0 30px 100px rgba(2, 0, 8, 0.58);
+  --panel-background: rgba(28, 21, 45, 0.48);
+  --panel-background-strong: rgba(31, 23, 52, 0.62);
+  --panel-background-soft: rgba(39, 28, 63, 0.42);
+  --panel-border: rgba(133, 110, 196, 0.28);
+  --input-background: rgba(26, 19, 43, 0.72);
+  --menu-background: rgba(24, 18, 40, 0.96);
+  --menu-item-hover: rgba(93, 69, 155, 0.34);
+  --accent-soft: rgba(93, 69, 155, 0.34);
+  --accent-strong: #c5b5ff;
+  --danger-soft: rgba(145, 44, 86, 0.28);
+  --danger-strong: #ff9fbe;
+  --success-soft: rgba(36, 122, 77, 0.3);
+  --success-strong: #8ee6b5;
+  --success-dot: #62cf91;
+  --warning-soft: rgba(135, 93, 20, 0.32);
+  --warning-strong: #f2cf80;
+  --warning-dot: #edba4b;
+  --neutral-dot: #b8add8;
+  --neutral-soft: rgba(255, 255, 255, 0.08);
+  --neutral-strong: #c3badf;
+  --sidebar-active-bg: rgba(93, 69, 155, 0.34);
+  --sidebar-soft-bg: rgba(255, 255, 255, 0.06);
+  --sidebar-soft-border: rgba(154, 126, 232, 0.18);
+  --nav-group-icon: #c9b7ff;
+  --nav-form-icon: #c5b5ff;
+  --nav-link-icon: #f2c778;
 }
 
 @theme inline {
@@ -32,13 +147,18 @@
 }
 
 html {
-  background: var(--background);
+  background: var(--app-gradient);
+  min-height: 100%;
 }
 
 body {
-  background: var(--background);
+  background: var(--app-gradient);
   color: var(--foreground);
   font-family: var(--font-sans);
+  min-height: 100%;
+  transition:
+    background 180ms ease,
+    color 180ms ease;
 }
 
 a {
@@ -50,6 +170,99 @@ button,
 input,
 select {
   font: inherit;
+}
+
+.app-root-shell {
+  display: flex;
+  min-height: 100dvh;
+  gap: 12px;
+  padding: 12px;
+  align-items: stretch;
+}
+
+.app-main-region {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.app-main-glass {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  border: 1px solid var(--glass-border);
+  border-radius: 28px;
+  background: var(--glass-background);
+  backdrop-filter: blur(34px) saturate(180%);
+  -webkit-backdrop-filter: blur(34px) saturate(180%);
+  box-shadow: var(--glass-shadow);
+}
+
+.app-main-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.08) 34%, rgba(255, 255, 255, 0.02) 100%),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.24) 0%, transparent 34%),
+    radial-gradient(circle at bottom right, rgba(255, 192, 235, 0.12) 0%, transparent 28%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.44),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08);
+}
+
+html[data-resolved-theme="dark"] .app-main-glass::before {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.03) 32%, rgba(255, 255, 255, 0.01) 100%),
+    radial-gradient(circle at top left, rgba(173, 146, 242, 0.18) 0%, transparent 30%),
+    radial-gradient(circle at bottom right, rgba(92, 42, 160, 0.22) 0%, transparent 34%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.theme-page-shell {
+  min-height: 100%;
+  color: var(--text-primary);
+}
+
+.theme-panel {
+  border: 1px solid var(--panel-border);
+  background: var(--panel-background);
+  color: var(--text-primary);
+  backdrop-filter: blur(18px);
+}
+
+.theme-panel-strong {
+  border: 1px solid var(--panel-border);
+  background: var(--panel-background-strong);
+  color: var(--text-primary);
+  backdrop-filter: blur(18px);
+}
+
+.theme-panel-soft {
+  border: 1px solid var(--panel-border);
+  background: var(--panel-background-soft);
+  color: var(--text-primary);
+  backdrop-filter: blur(14px);
+}
+
+.theme-search-surface {
+  border: 1px solid var(--panel-border);
+  background: var(--input-background);
+  color: var(--text-primary);
+}
+
+.theme-menu-surface {
+  border: 1px solid var(--panel-border);
+  background: var(--menu-background);
+  color: var(--text-primary);
+  backdrop-filter: blur(18px);
 }
 
 .designer-properties-drawer {

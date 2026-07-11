@@ -53,15 +53,15 @@ export default async function AppEntryPage({
 
   return (
     <div className="flex min-h-[calc(100vh-140px)] items-center justify-center p-6">
-      <div className="w-full max-w-[560px] rounded-lg border border-[#dfe7f3] bg-white p-8 text-center shadow-[0_10px_30px_rgba(20,33,61,0.05)]">
-        <h1 className="text-2xl font-semibold text-[#14213d]">应用还没有页面</h1>
-        <p className="mt-3 text-sm leading-6 text-[#5f718e]">
+      <div className="theme-panel-strong w-full max-w-[560px] rounded-xl p-8 text-center shadow-[0_10px_30px_rgba(20,33,61,0.05)]">
+        <h1 className="text-2xl font-semibold text-[var(--text-primary)]">应用还没有页面</h1>
+        <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
           当前应用下还没有可访问的表单。请先在应用内创建表单，再从这里访问。
         </p>
         <div className="mt-6 flex justify-center">
           <Link
             href="/myApp"
-            className="inline-flex h-10 items-center rounded-lg bg-[#2f6bff] px-4 text-sm font-medium text-white transition-colors hover:bg-[#245be6]"
+            className="inline-flex h-10 items-center rounded-lg bg-[var(--accent-strong)] px-4 text-sm font-medium text-white transition-colors hover:brightness-95"
           >
             返回我的应用
           </Link>
