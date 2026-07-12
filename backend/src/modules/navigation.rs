@@ -1,7 +1,8 @@
-use super::*;
+use crate::platform::prelude::*;
 use crate::shared::*;
+use axum::http::StatusCode;
 
-pub(super) async fn list_navigation_items(
+pub(crate) async fn list_navigation_items(
     State(state): State<AppState>,
     Path(app_id): Path<String>,
 ) -> Result<Json<ApiResponse<Vec<ApiNavigationItem>>>, AppError> {
@@ -21,7 +22,7 @@ pub(super) async fn list_navigation_items(
     )))
 }
 
-pub(super) async fn create_navigation_group(
+pub(crate) async fn create_navigation_group(
     State(state): State<AppState>,
     Path(app_id): Path<String>,
     Json(payload): Json<CreateNavigationGroupRequest>,
@@ -67,7 +68,7 @@ pub(super) async fn create_navigation_group(
     ))
 }
 
-pub(super) async fn reorder_navigation_item(
+pub(crate) async fn reorder_navigation_item(
     State(state): State<AppState>,
     Path(app_id): Path<String>,
     Json(payload): Json<ReorderNavigationRequest>,
@@ -89,7 +90,7 @@ pub(super) async fn reorder_navigation_item(
     )))
 }
 
-pub(super) async fn sync_navigation_title(
+pub(crate) async fn sync_navigation_title(
     db: &DatabaseConnection,
     form_uuid: &str,
     name: &str,
@@ -118,7 +119,9 @@ const SYSTEM_NAV_ITEMS: [(&str, &str, bool); 4] = [
     ("copied", "抄送我的", false),
 ];
 
-pub(super) async fn ensure_system_navigation_items(db: &DatabaseConnection) -> Result<(), AppError> {
+pub(crate) async fn ensure_system_navigation_items(
+    db: &DatabaseConnection,
+) -> Result<(), AppError> {
     let apps = AppEntity::find().all(db).await?;
 
     for app in apps {
@@ -128,7 +131,7 @@ pub(super) async fn ensure_system_navigation_items(db: &DatabaseConnection) -> R
     Ok(())
 }
 
-pub(super) async fn ensure_system_navigation_for_app(
+pub(crate) async fn ensure_system_navigation_for_app(
     db: &DatabaseConnection,
     app_id: &str,
 ) -> Result<(), AppError> {
@@ -173,7 +176,7 @@ pub(super) async fn ensure_system_navigation_for_app(
     Ok(())
 }
 
-pub(super) async fn resolve_group_parent_id(
+pub(crate) async fn resolve_group_parent_id(
     db: &DatabaseConnection,
     app_id: &str,
     parent_id: Option<&str>,
@@ -196,7 +199,7 @@ pub(super) async fn resolve_group_parent_id(
     Ok(Some(parent_uuid))
 }
 
-pub(super) async fn next_navigation_sort_order(
+pub(crate) async fn next_navigation_sort_order(
     db: &DatabaseConnection,
     app_id: &str,
     parent_id: Option<Uuid>,
@@ -221,7 +224,7 @@ pub(super) async fn next_navigation_sort_order(
 
 const ROOT_NON_SYSTEM_SORT_BASE: i32 = 100;
 
-pub(super) async fn normalize_navigation_orders(
+pub(crate) async fn normalize_navigation_orders(
     db: &DatabaseConnection,
     app_id: &str,
 ) -> Result<(), AppError> {
@@ -282,7 +285,7 @@ pub(super) async fn normalize_navigation_orders(
     normalize_child_orders_recursive(db, &grouped_children, None, now).await
 }
 
-pub(super) async fn normalize_child_orders_recursive(
+pub(crate) async fn normalize_child_orders_recursive(
     db: &DatabaseConnection,
     grouped_children: &std::collections::HashMap<Option<Uuid>, Vec<app_navigation_entity::Model>>,
     parent_id: Option<Uuid>,
@@ -330,7 +333,7 @@ pub(super) async fn normalize_child_orders_recursive(
     Ok(())
 }
 
-pub(super) async fn apply_navigation_reorder(
+pub(crate) async fn apply_navigation_reorder(
     db: &DatabaseConnection,
     app_id: &str,
     payload: &ReorderNavigationRequest,
@@ -433,7 +436,7 @@ pub(super) async fn apply_navigation_reorder(
     Ok(())
 }
 
-pub(super) fn collect_navigation_descendants(
+pub(crate) fn collect_navigation_descendants(
     items: &[app_navigation_entity::Model],
     root_id: Uuid,
 ) -> std::collections::HashSet<Uuid> {
@@ -453,4 +456,6 @@ pub(super) fn collect_navigation_descendants(
 
     result
 }
+mod dto;
 
+use dto::*;

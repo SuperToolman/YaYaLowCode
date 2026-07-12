@@ -1,0 +1,196 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+type ApiEnvelope<T> = {
+  code: number;
+  message: string;
+  data: T | null;
+};
+
+type DatabaseSettings = {
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  passwordConfigured: boolean;
+};
+
+type FormState = {
+  host: string;
+  port: string;
+  database: string;
+  username: string;
+  password: string;
+};
+
+const inputClassName =
+  "mt-2 h-11 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--input-background)] px-3 text-sm text-[var(--text-primary)] outline-none transition focus:border-[var(--accent-strong)] focus:ring-4 focus:ring-[var(--accent-soft)]";
+
+export default function SettingsPage() {
+  const [form, setForm] = useState<FormState>({
+    host: "localhost",
+    port: "5432",
+    database: "yaya_low_code",
+    username: "postgres",
+    password: "",
+  });
+  const [passwordConfigured, setPasswordConfigured] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  async function loadSettings() {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/settings/database", { cache: "no-store" });
+      const payload = (await response.json()) as ApiEnvelope<DatabaseSettings>;
+      if (!response.ok || payload.code !== 0 || !payload.data) {
+        throw new Error(payload.message || "无法加载数据库配置");
+      }
+      setForm((current) => ({
+        ...current,
+        host: payload.data!.host,
+        port: String(payload.data!.port),
+        database: payload.data!.database,
+        username: payload.data!.username,
+      }));
+      setPasswordConfigured(payload.data.passwordConfigured);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "无法加载数据库配置");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadSettings();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  function updateField(field: keyof FormState, value: string) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function saveSettings(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/settings/database", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          host: form.host,
+          port: Number(form.port),
+          database: form.database,
+          username: form.username,
+          password: form.password || undefined,
+        }),
+      });
+      const payload = (await response.json()) as ApiEnvelope<DatabaseSettings>;
+      if (!response.ok || payload.code !== 0) {
+        throw new Error(payload.message || "保存失败");
+      }
+
+      setPasswordConfigured(true);
+      setForm((current) => ({ ...current, password: "" }));
+      setMessage("连接已验证，配置已保存。后端正在重启，请稍候…");
+      await waitForBackend();
+      setMessage("后端已重启，新的数据库连接配置已生效。");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function waitForBackend() {
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      try {
+        const response = await fetch("/api/settings/database", { cache: "no-store" });
+        if (response.ok) return;
+      } catch {
+        // The replacement backend has not bound its port yet.
+      }
+    }
+    throw new Error("后端重启超时，请检查后端进程日志");
+  }
+
+  return (
+    <div className="theme-page-shell">
+      <main className="mx-auto w-full max-w-5xl space-y-5 px-4 py-5 sm:px-6">
+        <section className="theme-panel-strong rounded-[28px] p-6 shadow-[0_20px_60px_rgba(20,33,61,0.08)]">
+          <p className="text-xs font-semibold tracking-[0.14em] text-[var(--accent-strong)]">
+            PLATFORM SETTINGS
+          </p>
+          <h1 className="mt-2 text-3xl font-semibold text-[var(--text-primary)]">设置</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--text-secondary)]">
+            配置平台使用的 PostgreSQL 连接。保存前会先验证连接；验证通过后，后端会自动重启以加载新配置。
+          </p>
+        </section>
+
+        <section className="theme-panel rounded-[24px] p-6 shadow-[0_14px_40px_rgba(20,33,61,0.06)]">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">数据库连接</h2>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">PostgreSQL · 本地持久化配置</p>
+            </div>
+            <span className="rounded-full bg-[var(--success-soft)] px-3 py-1 text-xs font-semibold text-[var(--success-strong)]">
+              {passwordConfigured ? "密码已配置" : "需要配置密码"}
+            </span>
+          </div>
+
+          <form className="mt-6 space-y-5" onSubmit={saveSettings}>
+            <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_160px]">
+              <Field label="主机地址">
+                <input className={inputClassName} value={form.host} onChange={(event) => updateField("host", event.target.value)} required disabled={loading || saving} />
+              </Field>
+              <Field label="端口">
+                <input className={inputClassName} type="number" min="1" max="65535" value={form.port} onChange={(event) => updateField("port", event.target.value)} required disabled={loading || saving} />
+              </Field>
+            </div>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field label="数据库名称">
+                <input className={inputClassName} value={form.database} onChange={(event) => updateField("database", event.target.value)} required disabled={loading || saving} />
+              </Field>
+              <Field label="用户名">
+                <input className={inputClassName} value={form.username} onChange={(event) => updateField("username", event.target.value)} required disabled={loading || saving} />
+              </Field>
+            </div>
+            <Field label="密码" hint={passwordConfigured ? "留空则保留当前密码；密码不会回显。" : "首次保存必须填写密码。"}>
+              <input className={inputClassName} type="password" autoComplete="new-password" value={form.password} onChange={(event) => updateField("password", event.target.value)} disabled={loading || saving} />
+            </Field>
+
+            {error ? <p className="rounded-xl bg-[var(--danger-soft)] px-4 py-3 text-sm text-[var(--danger-strong)]">{error}</p> : null}
+            {message ? <p className="rounded-xl bg-[var(--success-soft)] px-4 py-3 text-sm text-[var(--success-strong)]">{message}</p> : null}
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--panel-border)] pt-5">
+              <p className="text-xs leading-5 text-[var(--text-muted)]">配置文件只保存在后端运行目录，不会发送到浏览器。</p>
+              <button className="h-11 rounded-xl bg-[var(--accent-strong)] px-5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(30,96,255,0.22)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60" type="submit" disabled={loading || saving}>
+                {saving ? "正在验证并重启…" : "保存并重启后端"}
+              </button>
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function Field({ children, hint, label }: { children: React.ReactNode; hint?: string; label: string }) {
+  return (
+    <label className="block text-sm font-medium text-[var(--text-primary)]">
+      {label}
+      {children}
+      {hint ? <span className="mt-2 block text-xs font-normal text-[var(--text-muted)]">{hint}</span> : null}
+    </label>
+  );
+}

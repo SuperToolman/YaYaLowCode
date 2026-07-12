@@ -1,7 +1,14 @@
-use super::*;
+use crate::modules::automations;
+use crate::modules::navigation::{
+    ensure_system_navigation_for_app, next_navigation_sort_order, normalize_navigation_orders,
+    sync_navigation_title,
+};
+use crate::platform::prelude::*;
+use crate::platform::records::{decrement_app_records_count, insert_form_record};
 use crate::shared::*;
+use axum::http::StatusCode;
 
-pub(super) async fn list_forms(
+pub(crate) async fn list_forms(
     State(state): State<AppState>,
     Path(app_id): Path<String>,
 ) -> Result<Json<ApiResponse<Vec<ApiFormSummary>>>, AppError> {
@@ -16,7 +23,7 @@ pub(super) async fn list_forms(
         forms.into_iter().map(ApiFormSummary::from).collect(),
     )))
 }
-pub(super) async fn create_form(
+pub(crate) async fn create_form(
     State(state): State<AppState>,
     Path(app_id): Path<String>,
 ) -> Result<(StatusCode, Json<ApiResponse<ApiFormSummary>>), AppError> {
@@ -96,7 +103,7 @@ pub(super) async fn create_form(
     ))
 }
 
-pub(super) async fn delete_form(
+pub(crate) async fn delete_form(
     State(state): State<AppState>,
     Path(form_uuid): Path<String>,
 ) -> Result<Json<ApiResponse<Value>>, AppError> {
@@ -150,7 +157,7 @@ pub(super) async fn delete_form(
     )))
 }
 
-pub(super) async fn get_form_schema(
+pub(crate) async fn get_form_schema(
     State(state): State<AppState>,
     Path(form_uuid): Path<String>,
     Query(query): Query<GetSchemaQuery>,
@@ -165,7 +172,7 @@ pub(super) async fn get_form_schema(
     )))
 }
 
-pub(super) async fn list_form_records(
+pub(crate) async fn list_form_records(
     State(state): State<AppState>,
     Path(form_uuid): Path<String>,
 ) -> Result<Json<ApiResponse<ApiFormRecordList>>, AppError> {
@@ -188,7 +195,7 @@ pub(super) async fn list_form_records(
     )))
 }
 
-pub(super) async fn create_form_record(
+pub(crate) async fn create_form_record(
     State(state): State<AppState>,
     Path(form_uuid): Path<String>,
     Json(payload): Json<CreateFormRecordRequest>,
@@ -211,14 +218,7 @@ pub(super) async fn create_form_record(
         error!("run automation before create failed: {err:?}");
     }
 
-    let record = insert_form_record(
-        &state.db,
-        &definition,
-        trigger_data,
-        &operator,
-        now,
-    )
-    .await?;
+    let record = insert_form_record(&state.db, &definition, trigger_data, &operator, now).await?;
 
     if let Err(err) = automations::execute_automation_flows_for_event(
         &state.db,
@@ -242,7 +242,7 @@ pub(super) async fn create_form_record(
     ))
 }
 
-pub(super) async fn update_form_record(
+pub(crate) async fn update_form_record(
     State(state): State<AppState>,
     Path((form_uuid, record_uuid)): Path<(String, String)>,
     Json(payload): Json<UpdateFormRecordRequest>,
@@ -292,7 +292,7 @@ pub(super) async fn update_form_record(
     )))
 }
 
-pub(super) async fn delete_form_record(
+pub(crate) async fn delete_form_record(
     State(state): State<AppState>,
     Path((form_uuid, record_uuid)): Path<(String, String)>,
 ) -> Result<Json<ApiResponse<Value>>, AppError> {
@@ -338,7 +338,7 @@ pub(super) async fn delete_form_record(
     )))
 }
 
-pub(super) async fn save_form_schema(
+pub(crate) async fn save_form_schema(
     State(state): State<AppState>,
     Path(form_uuid): Path<String>,
     Json(payload): Json<SaveSchemaRequest>,
@@ -403,7 +403,7 @@ pub(super) async fn save_form_schema(
     )))
 }
 
-pub(super) async fn list_form_versions(
+pub(crate) async fn list_form_versions(
     State(state): State<AppState>,
     Path(form_uuid): Path<String>,
 ) -> Result<Json<ApiResponse<Vec<ApiFormVersionSummary>>>, AppError> {
@@ -430,7 +430,7 @@ pub(super) async fn list_form_versions(
     )))
 }
 
-pub(super) async fn get_form_version(
+pub(crate) async fn get_form_version(
     State(state): State<AppState>,
     Path((form_uuid, version)): Path<(String, i32)>,
 ) -> Result<Json<ApiResponse<ApiSchemaPayload>>, AppError> {
@@ -443,7 +443,7 @@ pub(super) async fn get_form_version(
     )))
 }
 
-pub(super) async fn publish_form_schema(
+pub(crate) async fn publish_form_schema(
     State(state): State<AppState>,
     Path(form_uuid): Path<String>,
 ) -> Result<Json<ApiResponse<ApiSchemaPayload>>, AppError> {
@@ -480,7 +480,7 @@ pub(super) async fn publish_form_schema(
     )))
 }
 
-pub(super) async fn restore_form_version(
+pub(crate) async fn restore_form_version(
     State(state): State<AppState>,
     Path((form_uuid, version)): Path<(String, i32)>,
     payload: Option<Json<RestoreVersionRequest>>,
@@ -536,7 +536,7 @@ pub(super) async fn restore_form_version(
     )))
 }
 
-pub(super) async fn find_form_definition(
+pub(crate) async fn find_form_definition(
     db: &DatabaseConnection,
     form_uuid: &str,
 ) -> Result<form_definition_entity::Model, AppError> {
@@ -547,7 +547,7 @@ pub(super) async fn find_form_definition(
         .ok_or_else(|| AppError::NotFound("form not found".to_string()))
 }
 
-pub(super) async fn find_form_record(
+pub(crate) async fn find_form_record(
     db: &DatabaseConnection,
     form_uuid: &str,
     record_uuid: &str,
@@ -560,7 +560,7 @@ pub(super) async fn find_form_record(
         .ok_or_else(|| AppError::NotFound("record not found".to_string()))
 }
 
-pub(super) fn collect_changed_fields(previous: &Value, next: &Value) -> HashSet<String> {
+pub(crate) fn collect_changed_fields(previous: &Value, next: &Value) -> HashSet<String> {
     let mut changed = HashSet::new();
     let previous_map = previous.as_object().cloned().unwrap_or_default();
     let next_map = next.as_object().cloned().unwrap_or_default();
@@ -579,7 +579,7 @@ pub(super) fn collect_changed_fields(previous: &Value, next: &Value) -> HashSet<
     changed
 }
 
-pub(super) async fn load_schema_version(
+pub(crate) async fn load_schema_version(
     db: &DatabaseConnection,
     form_uuid: &str,
     version: i32,
@@ -587,7 +587,7 @@ pub(super) async fn load_schema_version(
     load_schema_version_for_connection(db, form_uuid, version).await
 }
 
-pub(super) async fn load_schema_version_for_connection<C>(
+pub(crate) async fn load_schema_version_for_connection<C>(
     db: &C,
     form_uuid: &str,
     version: i32,
@@ -603,7 +603,7 @@ where
         .ok_or_else(|| AppError::NotFound("schema not found".to_string()))
 }
 
-pub(super) fn resolve_schema_version(
+pub(crate) fn resolve_schema_version(
     definition: &form_definition_entity::Model,
     query: &GetSchemaQuery,
 ) -> i32 {
@@ -619,7 +619,7 @@ pub(super) fn resolve_schema_version(
     }
 }
 
-pub(super) fn build_schema_payload(
+pub(crate) fn build_schema_payload(
     definition: &form_definition_entity::Model,
     schema: form_schema_entity::Model,
 ) -> ApiSchemaPayload {
@@ -633,4 +633,6 @@ pub(super) fn build_schema_payload(
         published: schema.published,
     }
 }
+pub(crate) mod dto;
 
+use dto::*;

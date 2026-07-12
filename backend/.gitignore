@@ -1,3 +1,4 @@
 /target
 /.run/
 *.log
+.yaya-lowcode-settings.json

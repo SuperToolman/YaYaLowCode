@@ -724,20 +724,77 @@ mod m20260629_000007_add_automation_flow_versions {
                     Table::create()
                         .table(AutomationFlowVersions::Table)
                         .if_not_exists()
-                        .col(ColumnDef::new(AutomationFlowVersions::Id).uuid().not_null().primary_key())
-                        .col(ColumnDef::new(AutomationFlowVersions::FlowId).uuid().not_null())
-                        .col(ColumnDef::new(AutomationFlowVersions::Version).integer().not_null())
-                        .col(ColumnDef::new(AutomationFlowVersions::Name).string_len(120).not_null())
-                        .col(ColumnDef::new(AutomationFlowVersions::Description).string_len(255).null())
-                        .col(ColumnDef::new(AutomationFlowVersions::Status).string_len(24).not_null())
-                        .col(ColumnDef::new(AutomationFlowVersions::TriggerFormUuid).string_len(40).null())
-                        .col(ColumnDef::new(AutomationFlowVersions::TriggerEvent).string_len(32).not_null())
-                        .col(ColumnDef::new(AutomationFlowVersions::TriggerConfig).json_binary().not_null())
-                        .col(ColumnDef::new(AutomationFlowVersions::NodesJson).json_binary().not_null())
-                        .col(ColumnDef::new(AutomationFlowVersions::EdgesJson).json_binary().not_null())
-                        .col(ColumnDef::new(AutomationFlowVersions::ChangeSummary).string_len(255).null())
-                        .col(ColumnDef::new(AutomationFlowVersions::CreatedBy).string_len(80).not_null())
-                        .col(ColumnDef::new(AutomationFlowVersions::CreatedAt).timestamp_with_time_zone().not_null())
+                        .col(
+                            ColumnDef::new(AutomationFlowVersions::Id)
+                                .uuid()
+                                .not_null()
+                                .primary_key(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationFlowVersions::FlowId)
+                                .uuid()
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationFlowVersions::Version)
+                                .integer()
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationFlowVersions::Name)
+                                .string_len(120)
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationFlowVersions::Description)
+                                .string_len(255)
+                                .null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationFlowVersions::Status)
+                                .string_len(24)
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationFlowVersions::TriggerFormUuid)
+                                .string_len(40)
+                                .null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationFlowVersions::TriggerEvent)
+                                .string_len(32)
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationFlowVersions::TriggerConfig)
+                                .json_binary()
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationFlowVersions::NodesJson)
+                                .json_binary()
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationFlowVersions::EdgesJson)
+                                .json_binary()
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationFlowVersions::ChangeSummary)
+                                .string_len(255)
+                                .null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationFlowVersions::CreatedBy)
+                                .string_len(80)
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationFlowVersions::CreatedAt)
+                                .timestamp_with_time_zone()
+                                .not_null(),
+                        )
                         .to_owned(),
                 )
                 .await?;
@@ -757,7 +814,11 @@ mod m20260629_000007_add_automation_flow_versions {
 
         async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
             manager
-                .drop_table(Table::drop().table(AutomationFlowVersions::Table).to_owned())
+                .drop_table(
+                    Table::drop()
+                        .table(AutomationFlowVersions::Table)
+                        .to_owned(),
+                )
                 .await
         }
     }
@@ -796,19 +857,68 @@ mod m20260629_000008_create_automation_nodes_table {
                     Table::create()
                         .table(AutomationNodes::Table)
                         .if_not_exists()
-                        .col(ColumnDef::new(AutomationNodes::Id).uuid().not_null().primary_key())
+                        .col(
+                            ColumnDef::new(AutomationNodes::Id)
+                                .uuid()
+                                .not_null()
+                                .primary_key(),
+                        )
                         .col(ColumnDef::new(AutomationNodes::FlowId).uuid().not_null())
-                        .col(ColumnDef::new(AutomationNodes::Version).integer().not_null())
-                        .col(ColumnDef::new(AutomationNodes::NodeKey).string_len(96).not_null())
-                        .col(ColumnDef::new(AutomationNodes::NodeKind).string_len(40).not_null())
-                        .col(ColumnDef::new(AutomationNodes::Label).string_len(120).not_null())
-                        .col(ColumnDef::new(AutomationNodes::Description).string_len(255).null())
-                        .col(ColumnDef::new(AutomationNodes::PositionX).double().not_null())
-                        .col(ColumnDef::new(AutomationNodes::PositionY).double().not_null())
-                        .col(ColumnDef::new(AutomationNodes::ConfigJson).json_binary().not_null())
-                        .col(ColumnDef::new(AutomationNodes::RawJson).json_binary().not_null())
-                        .col(ColumnDef::new(AutomationNodes::CreatedAt).timestamp_with_time_zone().not_null())
-                        .col(ColumnDef::new(AutomationNodes::UpdatedAt).timestamp_with_time_zone().not_null())
+                        .col(
+                            ColumnDef::new(AutomationNodes::Version)
+                                .integer()
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationNodes::NodeKey)
+                                .string_len(96)
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationNodes::NodeKind)
+                                .string_len(40)
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationNodes::Label)
+                                .string_len(120)
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationNodes::Description)
+                                .string_len(255)
+                                .null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationNodes::PositionX)
+                                .double()
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationNodes::PositionY)
+                                .double()
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationNodes::ConfigJson)
+                                .json_binary()
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationNodes::RawJson)
+                                .json_binary()
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationNodes::CreatedAt)
+                                .timestamp_with_time_zone()
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationNodes::UpdatedAt)
+                                .timestamp_with_time_zone()
+                                .not_null(),
+                        )
                         .to_owned(),
                 )
                 .await?;
@@ -867,17 +977,58 @@ mod m20260629_000009_create_automation_edges_table {
                     Table::create()
                         .table(AutomationEdges::Table)
                         .if_not_exists()
-                        .col(ColumnDef::new(AutomationEdges::Id).uuid().not_null().primary_key())
+                        .col(
+                            ColumnDef::new(AutomationEdges::Id)
+                                .uuid()
+                                .not_null()
+                                .primary_key(),
+                        )
                         .col(ColumnDef::new(AutomationEdges::FlowId).uuid().not_null())
-                        .col(ColumnDef::new(AutomationEdges::Version).integer().not_null())
-                        .col(ColumnDef::new(AutomationEdges::EdgeKey).string_len(96).not_null())
-                        .col(ColumnDef::new(AutomationEdges::SourceNodeKey).string_len(96).not_null())
-                        .col(ColumnDef::new(AutomationEdges::TargetNodeKey).string_len(96).not_null())
-                        .col(ColumnDef::new(AutomationEdges::SourceHandle).string_len(96).null())
-                        .col(ColumnDef::new(AutomationEdges::TargetHandle).string_len(96).null())
-                        .col(ColumnDef::new(AutomationEdges::RawJson).json_binary().not_null())
-                        .col(ColumnDef::new(AutomationEdges::CreatedAt).timestamp_with_time_zone().not_null())
-                        .col(ColumnDef::new(AutomationEdges::UpdatedAt).timestamp_with_time_zone().not_null())
+                        .col(
+                            ColumnDef::new(AutomationEdges::Version)
+                                .integer()
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationEdges::EdgeKey)
+                                .string_len(96)
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationEdges::SourceNodeKey)
+                                .string_len(96)
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationEdges::TargetNodeKey)
+                                .string_len(96)
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationEdges::SourceHandle)
+                                .string_len(96)
+                                .null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationEdges::TargetHandle)
+                                .string_len(96)
+                                .null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationEdges::RawJson)
+                                .json_binary()
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationEdges::CreatedAt)
+                                .timestamp_with_time_zone()
+                                .not_null(),
+                        )
+                        .col(
+                            ColumnDef::new(AutomationEdges::UpdatedAt)
+                                .timestamp_with_time_zone()
+                                .not_null(),
+                        )
                         .to_owned(),
                 )
                 .await?;

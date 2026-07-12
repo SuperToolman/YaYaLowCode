@@ -1,7 +1,9 @@
-use super::*;
+use crate::modules::navigation::ensure_system_navigation_for_app;
+use crate::platform::prelude::*;
 use crate::shared::*;
+use axum::http::StatusCode;
 
-pub(super) async fn list_apps(
+pub(crate) async fn list_apps(
     State(state): State<AppState>,
 ) -> Result<Json<ApiResponse<Vec<ApiApp>>>, AppError> {
     let items = AppEntity::find()
@@ -15,7 +17,7 @@ pub(super) async fn list_apps(
     )))
 }
 
-pub(super) async fn create_app(
+pub(crate) async fn create_app(
     State(state): State<AppState>,
     payload: Option<Json<CreateAppRequest>>,
 ) -> Result<(StatusCode, Json<ApiResponse<ApiApp>>), AppError> {
@@ -60,7 +62,7 @@ pub(super) async fn create_app(
     ))
 }
 
-pub(super) async fn update_app(
+pub(crate) async fn update_app(
     State(state): State<AppState>,
     Path(app_id): Path<String>,
     Json(payload): Json<UpdateAppRequest>,
@@ -96,7 +98,7 @@ pub(super) async fn update_app(
     )))
 }
 
-pub(super) async fn delete_app(
+pub(crate) async fn delete_app(
     State(state): State<AppState>,
     Path(app_id): Path<String>,
 ) -> Result<Json<ApiResponse<Value>>, AppError> {
@@ -176,4 +178,6 @@ pub(super) async fn delete_app(
         json!({ "deleted": true }),
     )))
 }
+mod dto;
 
+use dto::*;

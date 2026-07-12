@@ -1,7 +1,15 @@
-use super::*;
+use crate::modules::forms;
+use crate::modules::forms::dto::RestoreVersionRequest;
+use crate::platform::automation_runs::{
+    RetrySource, create_automation_run, create_automation_run_node_log, finalize_automation_run,
+    finalize_automation_run_node_log,
+};
+use crate::platform::prelude::*;
+use crate::platform::records::{decrement_app_records_count, insert_form_record};
 use crate::shared::*;
+use axum::http::StatusCode;
 
-pub(super) async fn list_automation_flows(
+pub(crate) async fn list_automation_flows(
     State(state): State<AppState>,
     Path(app_id): Path<String>,
 ) -> Result<Json<ApiResponse<ApiAutomationFlowList>>, AppError> {
@@ -28,7 +36,7 @@ pub(super) async fn list_automation_flows(
     )))
 }
 
-pub(super) async fn create_automation_flow(
+pub(crate) async fn create_automation_flow(
     State(state): State<AppState>,
     Path(app_id): Path<String>,
     payload: Option<Json<CreateAutomationFlowRequest>>,
@@ -51,8 +59,9 @@ pub(super) async fn create_automation_flow(
     let now = Utc::now();
     let operator = normalize_operator(payload.operator);
     let trigger_form_uuid = normalize_optional_text(payload.trigger_form_uuid);
-    let trigger_event =
-        normalize_automation_trigger_event(payload.trigger_event.as_deref().unwrap_or("after_create"))?;
+    let trigger_event = normalize_automation_trigger_event(
+        payload.trigger_event.as_deref().unwrap_or("after_create"),
+    )?;
 
     if let Some(form_uuid) = trigger_form_uuid.as_deref() {
         ensure_form_belongs_to_app(&state.db, &app_id, form_uuid).await?;
@@ -63,10 +72,8 @@ pub(super) async fn create_automation_flow(
         id: Set(Uuid::new_v4()),
         flow_uuid: Set(generate_automation_flow_uuid()),
         app_route_app_id: Set(app_id),
-        name: Set(
-            normalize_optional_text(payload.name)
-                .unwrap_or_else(|| format!("未命名自动化 {}", now.format("%m%d%H%M"))),
-        ),
+        name: Set(normalize_optional_text(payload.name)
+            .unwrap_or_else(|| format!("未命名自动化 {}", now.format("%m%d%H%M")))),
         description: Set(normalize_optional_text(payload.description)),
         status: Set("draft".to_string()),
         current_version: Set(1),
@@ -95,7 +102,7 @@ pub(super) async fn create_automation_flow(
     ))
 }
 
-pub(super) async fn get_automation_flow(
+pub(crate) async fn get_automation_flow(
     State(state): State<AppState>,
     Path(flow_uuid): Path<String>,
 ) -> Result<Json<ApiResponse<ApiAutomationFlowDetail>>, AppError> {
@@ -111,7 +118,7 @@ pub(super) async fn get_automation_flow(
     )))
 }
 
-pub(super) async fn list_automation_flow_versions(
+pub(crate) async fn list_automation_flow_versions(
     State(state): State<AppState>,
     Path(flow_uuid): Path<String>,
 ) -> Result<Json<ApiResponse<Vec<ApiAutomationFlowVersionSummary>>>, AppError> {
@@ -136,7 +143,7 @@ pub(super) async fn list_automation_flow_versions(
     )))
 }
 
-pub(super) async fn restore_automation_flow_version(
+pub(crate) async fn restore_automation_flow_version(
     State(state): State<AppState>,
     Path((flow_uuid, version)): Path<(String, i32)>,
     payload: Option<Json<RestoreVersionRequest>>,
@@ -183,7 +190,7 @@ pub(super) async fn restore_automation_flow_version(
     )))
 }
 
-pub(super) async fn list_automation_flow_runs(
+pub(crate) async fn list_automation_flow_runs(
     State(state): State<AppState>,
     Path(flow_uuid): Path<String>,
 ) -> Result<Json<ApiResponse<Vec<ApiAutomationRun>>>, AppError> {
@@ -238,7 +245,7 @@ pub(super) async fn list_automation_flow_runs(
     )))
 }
 
-pub(super) async fn retry_automation_flow_run(
+pub(crate) async fn retry_automation_flow_run(
     State(state): State<AppState>,
     Path((flow_uuid, run_uuid)): Path<(String, String)>,
 ) -> Result<Json<ApiResponse<Value>>, AppError> {
@@ -249,7 +256,7 @@ pub(super) async fn retry_automation_flow_run(
     )))
 }
 
-pub(super) async fn retry_automation_flow_run_node(
+pub(crate) async fn retry_automation_flow_run_node(
     State(state): State<AppState>,
     Path((flow_uuid, run_uuid, node_key)): Path<(String, String, String)>,
 ) -> Result<Json<ApiResponse<Value>>, AppError> {
@@ -260,7 +267,7 @@ pub(super) async fn retry_automation_flow_run_node(
     )))
 }
 
-pub(super) async fn update_automation_flow(
+pub(crate) async fn update_automation_flow(
     State(state): State<AppState>,
     Path(flow_uuid): Path<String>,
     Json(payload): Json<UpdateAutomationFlowRequest>,
@@ -373,7 +380,7 @@ pub(super) async fn update_automation_flow(
     )))
 }
 
-pub(super) async fn delete_automation_flow(
+pub(crate) async fn delete_automation_flow(
     State(state): State<AppState>,
     Path(flow_uuid): Path<String>,
 ) -> Result<Json<ApiResponse<Value>>, AppError> {
@@ -408,7 +415,7 @@ pub(super) async fn delete_automation_flow(
     )))
 }
 
-pub(super) async fn execute_automation_flows_for_event(
+pub(crate) async fn execute_automation_flows_for_event(
     db: &DatabaseConnection,
     definition: &form_definition_entity::Model,
     event: &str,
@@ -417,8 +424,12 @@ pub(super) async fn execute_automation_flows_for_event(
     changed_fields: Option<&HashSet<String>>,
 ) -> Result<(), AppError> {
     let flows = AutomationFlowEntity::find()
-        .filter(automation_flow_entity::Column::AppRouteAppId.eq(definition.app_route_app_id.clone()))
-        .filter(automation_flow_entity::Column::TriggerFormUuid.eq(Some(definition.form_uuid.clone())))
+        .filter(
+            automation_flow_entity::Column::AppRouteAppId.eq(definition.app_route_app_id.clone()),
+        )
+        .filter(
+            automation_flow_entity::Column::TriggerFormUuid.eq(Some(definition.form_uuid.clone())),
+        )
         .filter(automation_flow_entity::Column::TriggerEvent.eq(event))
         .filter(automation_flow_entity::Column::Status.eq("enabled"))
         .all(db)
@@ -431,7 +442,10 @@ pub(super) async fn execute_automation_flows_for_event(
         if let Err(err) =
             execute_automation_flow(db, &flow, trigger_payload, operator, None, None, None).await
         {
-            error!("execute automation flow failed, flow={}: {err:?}", flow.flow_uuid);
+            error!(
+                "execute automation flow failed, flow={}: {err:?}",
+                flow.flow_uuid
+            );
         }
     }
 
@@ -451,8 +465,14 @@ async fn execute_add_data_node(
     let rows = json_array_items(&config.get("rows").cloned().unwrap_or_else(|| json!([])));
     let now = Utc::now();
 
-    if config.get("recordMode").and_then(Value::as_str).unwrap_or("single") == "multiple" {
-        let source_node_id = read_json_string(config.get("multipleSourceNodeId")).unwrap_or_default();
+    if config
+        .get("recordMode")
+        .and_then(Value::as_str)
+        .unwrap_or("single")
+        == "multiple"
+    {
+        let source_node_id =
+            read_json_string(config.get("multipleSourceNodeId")).unwrap_or_default();
         let source_items = context
             .outputs
             .get(&source_node_id)
@@ -462,17 +482,22 @@ async fn execute_add_data_node(
         let mut inserted = Vec::new();
         for source_item in source_items {
             let mut scoped_outputs = context.outputs.clone();
-            scoped_outputs.insert(source_node_id.clone(), Value::Array(vec![source_item.clone()]));
+            scoped_outputs.insert(
+                source_node_id.clone(),
+                Value::Array(vec![source_item.clone()]),
+            );
             let row_data = build_record_data_from_rows(&rows, &scoped_outputs);
             let record =
-                insert_form_record(db, &target_definition, row_data, &context.operator, now).await?;
+                insert_form_record(db, &target_definition, row_data, &context.operator, now)
+                    .await?;
             inserted.push(record.record_data);
         }
         return Ok(Value::Array(inserted));
     }
 
     let row_data = build_record_data_from_rows(&rows, &context.outputs);
-    let record = insert_form_record(db, &target_definition, row_data, &context.operator, now).await?;
+    let record =
+        insert_form_record(db, &target_definition, row_data, &context.operator, now).await?;
     info!(
         "automation add-data executed: flow={}, form={}, record={}",
         flow.flow_uuid, target_form_uuid, record.record_uuid
@@ -485,7 +510,10 @@ async fn execute_get_one_node(
     config: &Value,
     context: &AutomationExecutionContext,
 ) -> Result<Value, AppError> {
-    let source_mode = config.get("sourceMode").and_then(Value::as_str).unwrap_or("form");
+    let source_mode = config
+        .get("sourceMode")
+        .and_then(Value::as_str)
+        .unwrap_or("form");
     if source_mode == "data-node" {
         let source_node_id = read_json_string(config.get("dataNodeId")).unwrap_or_default();
         if let Some(value) = context.outputs.get(&source_node_id) {
@@ -520,7 +548,10 @@ async fn execute_get_many_node(
     config: &Value,
     context: &AutomationExecutionContext,
 ) -> Result<Value, AppError> {
-    let source_mode = config.get("sourceMode").and_then(Value::as_str).unwrap_or("form");
+    let source_mode = config
+        .get("sourceMode")
+        .and_then(Value::as_str)
+        .unwrap_or("form");
     if source_mode == "data-node" {
         let source_node_id = read_json_string(config.get("dataNodeId")).unwrap_or_default();
         if let Some(value) = context.outputs.get(&source_node_id) {
@@ -544,7 +575,9 @@ async fn execute_get_many_node(
         .all(db)
         .await?;
     let matched = filter_records_by_expression(records, config.get("filterExpression"), context);
-    Ok(Value::Array(matched.into_iter().map(|item| item.record_data).collect()))
+    Ok(Value::Array(
+        matched.into_iter().map(|item| item.record_data).collect(),
+    ))
 }
 
 async fn execute_update_data_node(
@@ -603,7 +636,10 @@ async fn execute_delete_data_node(
         .await?;
     let matched = filter_records_by_expression(records, config.get("matchRule"), context);
     let deleted_count = matched.len() as i64;
-    let deleted_payloads = matched.iter().map(|item| item.record_data.clone()).collect::<Vec<_>>();
+    let deleted_payloads = matched
+        .iter()
+        .map(|item| item.record_data.clone())
+        .collect::<Vec<_>>();
 
     for record in matched {
         FormRecordEntity::delete_many()
@@ -613,14 +649,13 @@ async fn execute_delete_data_node(
     }
 
     if deleted_count > 0 {
-        decrement_app_records_count(db, &definition.app_route_app_id, deleted_count, Utc::now()).await?;
+        decrement_app_records_count(db, &definition.app_route_app_id, deleted_count, Utc::now())
+            .await?;
     }
 
     info!(
         "automation delete-data executed: flow={}, form={}, count={}",
-        flow.flow_uuid,
-        target_form_uuid,
-        deleted_count
+        flow.flow_uuid, target_form_uuid, deleted_count
     );
     Ok(Value::Array(deleted_payloads))
 }
@@ -652,8 +687,9 @@ async fn execute_http_request_node(
         &context.outputs,
     );
     if !headers_text.trim().is_empty() {
-        let headers_value: Value = serde_json::from_str(&headers_text)
-            .map_err(|_| AppError::BadRequest("http-request headers must be valid json".to_string()))?;
+        let headers_value: Value = serde_json::from_str(&headers_text).map_err(|_| {
+            AppError::BadRequest("http-request headers must be valid json".to_string())
+        })?;
         if let Some(headers) = headers_value.as_object() {
             for (key, value) in headers {
                 request = request.header(key, normalize_scalar(value));
@@ -684,220 +720,6 @@ async fn execute_http_request_node(
         "status": status,
         "body": payload,
     }))
-}
-
-fn build_record_data_from_rows(rows: &[Value], outputs: &HashMap<String, Value>) -> Value {
-    let mut result = serde_json::Map::new();
-
-    for row in rows {
-        let field_id = read_json_string(row.get("fieldId")).unwrap_or_default();
-        if field_id.is_empty() {
-            continue;
-        }
-        let value_type = read_json_string(row.get("valueType")).unwrap_or_else(|| "value".to_string());
-        let next_value = match value_type.as_str() {
-            "field" => resolve_source_field_values(
-                outputs,
-                &read_json_string(row.get("sourceFieldKey")).unwrap_or_default(),
-            )
-            .into_iter()
-            .next()
-            .unwrap_or(Value::Null),
-            "formula" => Value::String(read_json_string(row.get("formula")).unwrap_or_default()),
-            _ => read_json_value(row.get("rawValue")),
-        };
-        result.insert(field_id, next_value);
-    }
-
-    Value::Object(result)
-}
-
-fn filter_records_by_expression(
-    records: Vec<form_record_entity::Model>,
-    expression: Option<&Value>,
-    context: &AutomationExecutionContext,
-) -> Vec<form_record_entity::Model> {
-    let expression = read_json_string(expression).unwrap_or_default();
-    if expression.trim().is_empty() {
-        return records;
-    }
-
-    records
-        .into_iter()
-        .filter(|record| evaluate_record_expression(&expression, &record.record_data, context))
-        .collect()
-}
-
-fn evaluate_context_expression(
-    expression: &str,
-    context: &AutomationExecutionContext,
-) -> bool {
-    let trimmed = expression.trim();
-    if trimmed.is_empty() {
-        return false;
-    }
-    evaluate_record_expression(trimmed, &json!({}), context)
-}
-
-fn evaluate_record_expression(
-    expression: &str,
-    record_data: &Value,
-    context: &AutomationExecutionContext,
-) -> bool {
-    let clauses = expression
-        .split("&&")
-        .map(str::trim)
-        .filter(|item| !item.is_empty())
-        .collect::<Vec<_>>();
-
-    if clauses.is_empty() {
-        return true;
-    }
-
-    clauses
-        .into_iter()
-        .all(|clause| evaluate_record_clause(clause, record_data, context))
-}
-
-fn evaluate_record_clause(
-    clause: &str,
-    record_data: &Value,
-    context: &AutomationExecutionContext,
-) -> bool {
-    let (operator, lhs, rhs) = if let Some((lhs, rhs)) = clause.split_once("!=") {
-        ("!=", lhs.trim(), rhs.trim())
-    } else if let Some((lhs, rhs)) = clause.split_once("==") {
-        ("==", lhs.trim(), rhs.trim())
-    } else {
-        return false;
-    };
-
-    let left_values = resolve_expression_operand(lhs, record_data, context);
-    let right_values = resolve_expression_operand(rhs, record_data, context);
-
-    if operator == "!=" {
-        left_values.iter().all(|left| {
-            right_values.is_empty()
-                || right_values
-                    .iter()
-                    .all(|right| normalize_scalar(left) != normalize_scalar(right))
-        })
-    } else {
-        left_values.iter().any(|left| {
-            right_values
-                .iter()
-                .any(|right| normalize_scalar(left) == normalize_scalar(right))
-        })
-    }
-}
-
-fn resolve_expression_operand(
-    operand: &str,
-    record_data: &Value,
-    context: &AutomationExecutionContext,
-) -> Vec<Value> {
-    let trimmed = operand.trim();
-    if trimmed.is_empty() {
-        return vec![Value::String(String::new())];
-    }
-
-    if let Some(token) = trimmed
-        .strip_prefix("{{")
-        .and_then(|value| value.strip_suffix("}}"))
-    {
-        return resolve_source_field_values(&context.outputs, token);
-    }
-
-    if (trimmed.starts_with('"') && trimmed.ends_with('"'))
-        || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
-    {
-        return vec![Value::String(trimmed[1..trimmed.len() - 1].to_string())];
-    }
-
-    if let Ok(number) = trimmed.parse::<i64>() {
-        return vec![Value::Number(number.into())];
-    }
-
-    if let Ok(number) = trimmed.parse::<f64>() {
-        if let Some(number) = serde_json::Number::from_f64(number) {
-            return vec![Value::Number(number)];
-        }
-    }
-
-    if trimmed == "true" || trimmed == "false" {
-        return vec![Value::Bool(trimmed == "true")];
-    }
-
-    match record_data {
-        Value::Object(map) => map.get(trimmed).cloned().into_iter().collect(),
-        _ => vec![Value::String(trimmed.to_string())],
-    }
-}
-
-fn render_text_template(template: &str, outputs: &HashMap<String, Value>) -> String {
-    let mut result = String::new();
-    let mut remaining = template;
-
-    while let Some(start) = remaining.find("{{") {
-        result.push_str(&remaining[..start]);
-        let after_start = &remaining[start + 2..];
-        if let Some(end) = after_start.find("}}") {
-            let token = &after_start[..end];
-            let value = resolve_source_field_values(outputs, token)
-                .into_iter()
-                .next()
-                .map(|item| normalize_scalar(&item))
-                .unwrap_or_default();
-            result.push_str(&value);
-            remaining = &after_start[end + 2..];
-        } else {
-            result.push_str(&remaining[start..]);
-            remaining = "";
-            break;
-        }
-    }
-
-    result.push_str(remaining);
-    result
-}
-
-fn merge_record_payload(current: Value, patch: &Value) -> Value {
-    let mut next = current.as_object().cloned().unwrap_or_default();
-    if let Some(patch_map) = patch.as_object() {
-        for (key, value) in patch_map {
-            next.insert(key.clone(), value.clone());
-        }
-    }
-    Value::Object(next)
-}
-
-fn normalize_scalar(value: &Value) -> String {
-    match value {
-        Value::Null => String::new(),
-        Value::Bool(inner) => inner.to_string(),
-        Value::Number(inner) => inner.to_string(),
-        Value::String(inner) => inner.trim().to_string(),
-        Value::Array(_) | Value::Object(_) => value.to_string(),
-    }
-}
-
-fn parse_multi_values(value: &str) -> HashSet<String> {
-    value
-        .split(',')
-        .map(str::trim)
-        .filter(|item| !item.is_empty())
-        .map(ToString::to_string)
-        .collect()
-}
-
-fn value_has_content(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::String(inner) => !inner.trim().is_empty(),
-        Value::Array(items) => !items.is_empty(),
-        Value::Object(map) => !map.is_empty(),
-        _ => true,
-    }
 }
 
 async fn create_automation_snapshot<C>(
@@ -969,17 +791,19 @@ where
             .and_then(Value::as_object)
             .cloned()
             .unwrap_or_default();
-        let config_json = data
-            .get("config")
-            .cloned()
-            .unwrap_or_else(|| json!({}));
+        let config_json = data.get("config").cloned().unwrap_or_else(|| json!({}));
         let node = automation_node_entity::ActiveModel {
             id: Set(Uuid::new_v4()),
             flow_id: Set(flow_id),
             version: Set(version),
-            node_key: Set(read_json_string(raw.get("id")).unwrap_or_else(|| format!("node-{}", Uuid::new_v4()))),
-            node_kind: Set(read_json_string(data.get("kind")).unwrap_or_else(|| "unknown".to_string())),
-            label: Set(read_json_string(data.get("label")).unwrap_or_else(|| "未命名节点".to_string())),
+            node_key: Set(read_json_string(raw.get("id"))
+                .unwrap_or_else(|| format!("node-{}", Uuid::new_v4()))),
+            node_kind: Set(
+                read_json_string(data.get("kind")).unwrap_or_else(|| "unknown".to_string())
+            ),
+            label: Set(
+                read_json_string(data.get("label")).unwrap_or_else(|| "未命名节点".to_string())
+            ),
             description: Set(read_json_string(data.get("description"))),
             position_x: Set(read_json_number(position.get("x")).unwrap_or(0.0)),
             position_y: Set(read_json_number(position.get("y")).unwrap_or(0.0)),
@@ -997,7 +821,8 @@ where
             id: Set(Uuid::new_v4()),
             flow_id: Set(flow_id),
             version: Set(version),
-            edge_key: Set(read_json_string(raw.get("id")).unwrap_or_else(|| format!("edge-{}", Uuid::new_v4()))),
+            edge_key: Set(read_json_string(raw.get("id"))
+                .unwrap_or_else(|| format!("edge-{}", Uuid::new_v4()))),
             source_node_key: Set(read_json_string(raw.get("source")).unwrap_or_default()),
             target_node_key: Set(read_json_string(raw.get("target")).unwrap_or_default()),
             source_handle: Set(read_json_string(raw.get("sourceHandle"))),
@@ -1007,141 +832,6 @@ where
             updated_at: Set(now.into()),
         };
         edge.insert(db).await?;
-    }
-
-    Ok(())
-}
-
-fn json_array_items(value: &Value) -> Vec<Value> {
-    value.as_array().cloned().unwrap_or_default()
-}
-
-fn read_json_string(value: Option<&Value>) -> Option<String> {
-    value.and_then(Value::as_str).map(ToString::to_string)
-}
-
-fn read_json_number(value: Option<&Value>) -> Option<f64> {
-    value.and_then(Value::as_f64)
-}
-
-fn read_json_value(value: Option<&Value>) -> Value {
-    value.cloned().unwrap_or(Value::Null)
-}
-
-fn normalize_automation_nodes(data: Value) -> Result<Value, AppError> {
-    let mut seen_node_ids = HashSet::new();
-    let items = normalize_json_array(data);
-    let mut nodes = Vec::new();
-
-    for item in json_array_items(&items) {
-        let raw = item
-            .as_object()
-            .ok_or_else(|| AppError::BadRequest("automation node must be object".to_string()))?;
-        let node_id = read_json_string(raw.get("id"))
-            .filter(|value| !value.trim().is_empty())
-            .ok_or_else(|| AppError::BadRequest("automation node id is required".to_string()))?;
-
-        if !seen_node_ids.insert(node_id.clone()) {
-            return Err(AppError::BadRequest(
-                "automation node id must be unique".to_string(),
-            ));
-        }
-
-        let position = raw.get("position").and_then(Value::as_object);
-        let x = read_json_number(position.and_then(|value| value.get("x"))).unwrap_or(0.0);
-        let y = read_json_number(position.and_then(|value| value.get("y"))).unwrap_or(0.0);
-        let data = raw
-            .get("data")
-            .and_then(Value::as_object)
-            .ok_or_else(|| AppError::BadRequest("automation node data is required".to_string()))?;
-        let kind = normalize_automation_node_kind(
-            read_json_string(data.get("kind")).as_deref().unwrap_or(""),
-        )?;
-
-        nodes.push(json!({
-            "id": node_id,
-            "type": read_json_string(raw.get("type")).unwrap_or_else(|| "workflow".to_string()),
-            "position": { "x": x, "y": y },
-            "data": {
-                "kind": kind,
-                "label": read_json_string(data.get("label")).unwrap_or_else(|| default_node_label(&kind).to_string()),
-                "description": read_json_string(data.get("description")).unwrap_or_else(|| default_node_description(&kind).to_string()),
-                "config": normalize_automation_node_config(&kind, data.get("config").cloned().unwrap_or_else(|| json!({})))?,
-            },
-        }));
-    }
-
-    Ok(Value::Array(nodes))
-}
-
-fn normalize_automation_edges(data: Value) -> Result<Value, AppError> {
-    let mut seen_edge_ids = HashSet::new();
-    let items = normalize_json_array(data);
-    let mut edges = Vec::new();
-
-    for item in json_array_items(&items) {
-        let raw = item
-            .as_object()
-            .ok_or_else(|| AppError::BadRequest("automation edge must be object".to_string()))?;
-        let edge_id = read_json_string(raw.get("id"))
-            .filter(|value| !value.trim().is_empty())
-            .ok_or_else(|| AppError::BadRequest("automation edge id is required".to_string()))?;
-
-        if !seen_edge_ids.insert(edge_id.clone()) {
-            return Err(AppError::BadRequest(
-                "automation edge id must be unique".to_string(),
-            ));
-        }
-
-        let source = read_json_string(raw.get("source"))
-            .filter(|value| !value.trim().is_empty())
-            .ok_or_else(|| AppError::BadRequest("automation edge source is required".to_string()))?;
-        let target = read_json_string(raw.get("target"))
-            .filter(|value| !value.trim().is_empty())
-            .ok_or_else(|| AppError::BadRequest("automation edge target is required".to_string()))?;
-
-        edges.push(json!({
-            "id": edge_id,
-            "source": source,
-            "target": target,
-            "sourceHandle": read_json_string(raw.get("sourceHandle")),
-            "targetHandle": read_json_string(raw.get("targetHandle")),
-            "type": read_json_string(raw.get("type")).unwrap_or_else(|| "insertable".to_string()),
-        }));
-    }
-
-    Ok(Value::Array(edges))
-}
-
-fn validate_automation_graph(nodes_json: &Value, edges_json: &Value) -> Result<(), AppError> {
-    let node_ids = json_array_items(nodes_json)
-        .into_iter()
-        .filter_map(|item| read_json_string(item.get("id")))
-        .collect::<HashSet<_>>();
-
-    if !node_ids.iter().any(|id| id == "trigger-1") {
-        return Err(AppError::BadRequest(
-            "automation graph must include trigger node".to_string(),
-        ));
-    }
-
-    for edge in json_array_items(edges_json) {
-        let source = read_json_string(edge.get("source"))
-            .ok_or_else(|| AppError::BadRequest("automation edge source is required".to_string()))?;
-        let target = read_json_string(edge.get("target"))
-            .ok_or_else(|| AppError::BadRequest("automation edge target is required".to_string()))?;
-
-        if !node_ids.contains(&source) || !node_ids.contains(&target) {
-            return Err(AppError::BadRequest(
-                "automation edge references unknown node".to_string(),
-            ));
-        }
-
-        if target == "trigger-1" {
-            return Err(AppError::BadRequest(
-                "trigger node cannot be target of edge".to_string(),
-            ));
-        }
     }
 
     Ok(())
@@ -1308,7 +998,9 @@ fn normalize_field_mapping_rows(data: Value) -> Value {
         let Some(raw) = item.as_object() else {
             continue;
         };
-        let Some(field_id) = read_json_string(raw.get("fieldId")).filter(|value| !value.trim().is_empty()) else {
+        let Some(field_id) =
+            read_json_string(raw.get("fieldId")).filter(|value| !value.trim().is_empty())
+        else {
             continue;
         };
 
@@ -1580,8 +1272,16 @@ fn execute_automation_children<'a>(
         }
 
         for target_node in normal_nodes {
-            execute_automation_node(db, flow, &target_node, node_map, outgoing_map, context, path)
-                .await?;
+            execute_automation_node(
+                db,
+                flow,
+                &target_node,
+                node_map,
+                outgoing_map,
+                context,
+                path,
+            )
+            .await?;
         }
 
         if !condition_nodes.is_empty() {
@@ -1652,10 +1352,7 @@ fn execute_automation_node<'a>(
             .get("data")
             .and_then(Value::as_object)
             .ok_or_else(|| AppError::BadRequest("automation node data missing".to_string()))?;
-        let kind = data
-            .get("kind")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
+        let kind = data.get("kind").and_then(Value::as_str).unwrap_or_default();
         let label = data
             .get("label")
             .and_then(Value::as_str)
@@ -1663,8 +1360,15 @@ fn execute_automation_node<'a>(
         let config = data.get("config").cloned().unwrap_or_else(|| json!({}));
         let node_log_id = if let Some(run_id) = context.run_id {
             Some(
-                create_automation_run_node_log(db, run_id, &node_id, kind, label, json!(context.outputs))
-                    .await?,
+                create_automation_run_node_log(
+                    db,
+                    run_id,
+                    &node_id,
+                    kind,
+                    label,
+                    json!(context.outputs),
+                )
+                .await?,
             )
         } else {
             None
@@ -1788,7 +1492,9 @@ fn evaluate_branch_rule(rule: &Value, context: &AutomationExecutionContext) -> b
         }
         "neq" => {
             actual_values.is_empty()
-                || actual_values.iter().all(|value| normalize_scalar(value) != expected)
+                || actual_values
+                    .iter()
+                    .all(|value| normalize_scalar(value) != expected)
         }
         "inAny" => {
             let expected_items = parse_multi_values(&expected);
@@ -1806,27 +1512,6 @@ fn evaluate_branch_rule(rule: &Value, context: &AutomationExecutionContext) -> b
         _ => actual_values
             .iter()
             .any(|value| normalize_scalar(value) == expected),
-    }
-}
-
-fn resolve_source_field_values(
-    outputs: &HashMap<String, Value>,
-    source_field_key: &str,
-) -> Vec<Value> {
-    let Some((node_id, field_id)) = source_field_key.split_once(':') else {
-        return Vec::new();
-    };
-    let Some(source) = outputs.get(node_id) else {
-        return Vec::new();
-    };
-
-    match source {
-        Value::Object(map) => map.get(field_id).cloned().into_iter().collect(),
-        Value::Array(items) => items
-            .iter()
-            .filter_map(|item| item.get(field_id).cloned())
-            .collect(),
-        _ => Vec::new(),
     }
 }
 
@@ -1924,3 +1609,12 @@ fn flow_matches_changed_fields(
         _ => true,
     }
 }
+mod dto;
+mod expression;
+mod graph;
+mod runtime;
+
+use dto::*;
+use expression::*;
+use graph::*;
+use runtime::AutomationExecutionContext;
