@@ -915,13 +915,28 @@ fn normalize_automation_node_config(kind: &str, config: Value) -> Result<Value, 
         "trigger" => json!({
             "changedFieldsText": read_json_string(object.get("changedFieldsText")),
         }),
-        "condition" => json!({
-            "mode": normalize_condition_mode(object.get("mode").and_then(Value::as_str)),
-            "priority": normalize_condition_priority(object.get("priority").and_then(Value::as_i64)),
-            "rules": normalize_branch_rules(object.get("rules").cloned().unwrap_or_else(|| json!([])))?,
-            "expression": read_json_string(object.get("expression")),
-            "hitLabel": read_json_string(object.get("hitLabel")),
-        }),
+        "condition" => {
+            if object
+                .get("branches")
+                .and_then(Value::as_array)
+                .map(|branches| !branches.is_empty())
+                .unwrap_or(false)
+            {
+                json!({
+                    "branches": normalize_condition_branches(
+                        object.get("branches").cloned().unwrap_or_else(|| json!([])),
+                    )?,
+                })
+            } else {
+                json!({
+                    "mode": normalize_condition_mode(object.get("mode").and_then(Value::as_str)),
+                    "priority": normalize_condition_priority(object.get("priority").and_then(Value::as_i64)),
+                    "rules": normalize_branch_rules(object.get("rules").cloned().unwrap_or_else(|| json!([])))?,
+                    "expression": read_json_string(object.get("expression")),
+                    "hitLabel": read_json_string(object.get("hitLabel")),
+                })
+            }
+        }
         "get-one" | "get-many" => json!({
             "sourceMode": normalize_data_source_mode(object.get("sourceMode").and_then(Value::as_str)),
             "formUuid": read_json_string(object.get("formUuid")),
@@ -979,15 +994,51 @@ fn normalize_branch_rules(data: Value) -> Result<Value, AppError> {
             "parentId": read_json_string(raw.get("parentId")),
             "fieldKey": read_json_string(raw.get("fieldKey")),
             "operator": operator,
+            "valueType": if raw.get("valueType").and_then(Value::as_str) == Some("field") { "field" } else { "value" },
             "rawValue": if matches!(operator, "hasValue" | "noValue") {
                 None::<String>
             } else {
                 read_json_string(raw.get("rawValue"))
             },
+            "sourceFieldKey": read_json_string(raw.get("sourceFieldKey")),
         }));
     }
 
     Ok(Value::Array(rules))
+}
+
+fn normalize_condition_branches(data: Value) -> Result<Value, AppError> {
+    let items = normalize_json_array(data);
+    let mut seen_ids = HashSet::new();
+    let mut branches = Vec::new();
+
+    for (index, item) in json_array_items(&items).into_iter().enumerate() {
+        let raw = item
+            .as_object()
+            .ok_or_else(|| AppError::BadRequest("condition branch must be object".to_string()))?;
+        let branch_id = read_json_string(raw.get("id"))
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| AppError::BadRequest("condition branch id is required".to_string()))?;
+        if !seen_ids.insert(branch_id.clone()) {
+            return Err(AppError::BadRequest(
+                "condition branch id must be unique".to_string(),
+            ));
+        }
+
+        branches.push(json!({
+            "id": branch_id,
+            "name": read_json_string(raw.get("name")).unwrap_or_else(|| format!("条件分支 {}", index + 1)),
+            "mode": normalize_condition_mode(raw.get("mode").and_then(Value::as_str)),
+            "priority": normalize_condition_priority(
+                raw.get("priority").and_then(Value::as_i64).or(Some((index + 1) as i64)),
+            ),
+            "rules": normalize_branch_rules(raw.get("rules").cloned().unwrap_or_else(|| json!([])))?,
+            "expression": read_json_string(raw.get("expression")),
+            "hitLabel": read_json_string(raw.get("hitLabel")),
+        }));
+    }
+
+    Ok(Value::Array(branches))
 }
 
 fn normalize_field_mapping_rows(data: Value) -> Value {
@@ -1218,15 +1269,24 @@ async fn execute_automation_flow_from_snapshot(
     result
 }
 
+#[derive(Clone)]
+struct AutomationGraphEdge {
+    target: String,
+    source_handle: Option<String>,
+}
+
 fn build_automation_graph(
     nodes: Vec<Value>,
     edges: Vec<Value>,
-) -> (HashMap<String, Value>, HashMap<String, Vec<String>>) {
+) -> (
+    HashMap<String, Value>,
+    HashMap<String, Vec<AutomationGraphEdge>>,
+) {
     let node_map = nodes
         .iter()
         .filter_map(|item| read_json_string(item.get("id")).map(|id| (id, item.clone())))
         .collect::<HashMap<_, _>>();
-    let mut outgoing_map: HashMap<String, Vec<String>> = HashMap::new();
+    let mut outgoing_map: HashMap<String, Vec<AutomationGraphEdge>> = HashMap::new();
     for edge in edges {
         let Some(source) = read_json_string(edge.get("source")) else {
             continue;
@@ -1234,7 +1294,13 @@ fn build_automation_graph(
         let Some(target) = read_json_string(edge.get("target")) else {
             continue;
         };
-        outgoing_map.entry(source).or_default().push(target);
+        outgoing_map
+            .entry(source)
+            .or_default()
+            .push(AutomationGraphEdge {
+                target,
+                source_handle: read_json_string(edge.get("sourceHandle")),
+            });
     }
     (node_map, outgoing_map)
 }
@@ -1244,19 +1310,28 @@ fn execute_automation_children<'a>(
     flow: &'a automation_flow_entity::Model,
     node_id: &'a str,
     node_map: &'a HashMap<String, Value>,
-    outgoing_map: &'a HashMap<String, Vec<String>>,
+    outgoing_map: &'a HashMap<String, Vec<AutomationGraphEdge>>,
     context: &'a mut AutomationExecutionContext,
     path: &'a mut HashSet<String>,
 ) -> Pin<Box<dyn Future<Output = Result<(), AppError>> + Send + 'a>> {
     Box::pin(async move {
-        let Some(target_ids) = outgoing_map.get(node_id) else {
+        let Some(outgoing_edges) = outgoing_map.get(node_id) else {
             return Ok(());
         };
+        let branch_filter = node_map
+            .get(node_id)
+            .and_then(|node| select_condition_branch_handle(node, context));
         let mut normal_nodes = Vec::new();
         let mut condition_nodes = Vec::new();
 
-        for target_id in target_ids {
-            let Some(target_node) = node_map.get(target_id) else {
+        for edge in outgoing_edges {
+            if let Some(selected_handle) = &branch_filter {
+                match selected_handle {
+                    Some(handle) if edge.source_handle.as_ref() == Some(handle) => {}
+                    _ => continue,
+                }
+            }
+            let Some(target_node) = node_map.get(&edge.target) else {
                 continue;
             };
             let kind = target_node
@@ -1285,13 +1360,7 @@ fn execute_automation_children<'a>(
         }
 
         if !condition_nodes.is_empty() {
-            condition_nodes.sort_by_key(|node| {
-                node.get("data")
-                    .and_then(|value| value.get("config"))
-                    .and_then(|value| value.get("priority"))
-                    .and_then(Value::as_i64)
-                    .unwrap_or(1)
-            });
+            condition_nodes.sort_by_key(|node| condition_node_priority(node));
 
             for target_node in condition_nodes {
                 if evaluate_condition_node(&target_node, context) {
@@ -1319,7 +1388,7 @@ fn execute_automation_from_node<'a>(
     flow: &'a automation_flow_entity::Model,
     node_key: &'a str,
     node_map: &'a HashMap<String, Value>,
-    outgoing_map: &'a HashMap<String, Vec<String>>,
+    outgoing_map: &'a HashMap<String, Vec<AutomationGraphEdge>>,
     context: &'a mut AutomationExecutionContext,
     path: &'a mut HashSet<String>,
 ) -> Pin<Box<dyn Future<Output = Result<(), AppError>> + Send + 'a>> {
@@ -1337,7 +1406,7 @@ fn execute_automation_node<'a>(
     flow: &'a automation_flow_entity::Model,
     node: &'a Value,
     node_map: &'a HashMap<String, Value>,
-    outgoing_map: &'a HashMap<String, Vec<String>>,
+    outgoing_map: &'a HashMap<String, Vec<AutomationGraphEdge>>,
     context: &'a mut AutomationExecutionContext,
     path: &'a mut HashSet<String>,
 ) -> Pin<Box<dyn Future<Output = Result<(), AppError>> + Send + 'a>> {
@@ -1448,6 +1517,14 @@ fn evaluate_condition_node(node: &Value, context: &AutomationExecutionContext) -
         .get("data")
         .and_then(|value| value.get("config"))
         .and_then(Value::as_object);
+    if let Some(branches) = config
+        .and_then(|value| value.get("branches"))
+        .and_then(Value::as_array)
+    {
+        return branches
+            .iter()
+            .any(|branch| evaluate_condition_branch(branch, context));
+    }
     let mode = config
         .and_then(|value| value.get("mode"))
         .and_then(Value::as_str)
@@ -1470,6 +1547,63 @@ fn evaluate_condition_node(node: &Value, context: &AutomationExecutionContext) -
     }
 }
 
+fn condition_node_priority(node: &Value) -> i64 {
+    let config = node.get("data").and_then(|value| value.get("config"));
+    if let Some(branches) = config
+        .and_then(|value| value.get("branches"))
+        .and_then(Value::as_array)
+    {
+        return branches
+            .iter()
+            .filter_map(|branch| branch.get("priority").and_then(Value::as_i64))
+            .min()
+            .unwrap_or(1);
+    }
+    config
+        .and_then(|value| value.get("priority"))
+        .and_then(Value::as_i64)
+        .unwrap_or(1)
+}
+
+fn select_condition_branch_handle(
+    node: &Value,
+    context: &AutomationExecutionContext,
+) -> Option<Option<String>> {
+    let data = node.get("data")?;
+    if data.get("kind").and_then(Value::as_str) != Some("condition") {
+        return None;
+    }
+    let branches = data
+        .get("config")
+        .and_then(|value| value.get("branches"))
+        .and_then(Value::as_array)?;
+    let mut ordered = branches.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|branch| branch.get("priority").and_then(Value::as_i64).unwrap_or(1));
+
+    let selected = ordered
+        .into_iter()
+        .find(|branch| evaluate_condition_branch(branch, context))
+        .and_then(|branch| read_json_string(branch.get("id")))
+        .map(|branch_id| format!("condition-branch:{branch_id}"));
+    Some(selected)
+}
+
+fn evaluate_condition_branch(branch: &Value, context: &AutomationExecutionContext) -> bool {
+    let mode = branch.get("mode").and_then(Value::as_str).unwrap_or("all");
+    match mode {
+        "rules" => evaluate_branch_rules(
+            branch.get("rules").cloned().unwrap_or_else(|| json!([])),
+            context,
+        ),
+        "expression" => branch
+            .get("expression")
+            .and_then(Value::as_str)
+            .map(|value| evaluate_context_expression(value, context))
+            .unwrap_or(false),
+        _ => true,
+    }
+}
+
 fn evaluate_branch_rules(rules: Value, context: &AutomationExecutionContext) -> bool {
     for item in json_array_items(&rules) {
         if !evaluate_branch_rule(&item, context) {
@@ -1482,7 +1616,18 @@ fn evaluate_branch_rules(rules: Value, context: &AutomationExecutionContext) -> 
 fn evaluate_branch_rule(rule: &Value, context: &AutomationExecutionContext) -> bool {
     let field_key = read_json_string(rule.get("fieldKey")).unwrap_or_default();
     let operator = read_json_string(rule.get("operator")).unwrap_or_else(|| "eq".to_string());
-    let expected = read_json_string(rule.get("rawValue")).unwrap_or_default();
+    let expected = if rule.get("valueType").and_then(Value::as_str) == Some("field") {
+        read_json_string(rule.get("sourceFieldKey"))
+            .and_then(|field_key| {
+                resolve_source_field_values(&context.outputs, &field_key)
+                    .into_iter()
+                    .next()
+            })
+            .map(|value| normalize_scalar(&value))
+            .unwrap_or_default()
+    } else {
+        read_json_string(rule.get("rawValue")).unwrap_or_default()
+    };
     let actual_values = resolve_source_field_values(&context.outputs, &field_key);
 
     match operator.as_str() {

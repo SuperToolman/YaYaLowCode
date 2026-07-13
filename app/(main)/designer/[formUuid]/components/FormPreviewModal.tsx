@@ -2,6 +2,7 @@
 
 import { Modal } from "@heroui/react/modal";
 import type { FormDesignerSchema } from "../designer-schema";
+import { useTheme } from "../../../../components/theme-provider";
 import {
   RuntimeFormRenderer,
   type RuntimeDebugEvent,
@@ -21,6 +22,7 @@ export function FormPreviewModal({
   onDebugEvent,
   onOpenChange,
 }: FormPreviewModalProps) {
+  const { resolvedTheme } = useTheme();
   const visibleFields = schema.fields.filter((field) => !field.props.isHidden);
   const runtimeSchema: RuntimeFormSchema = {
     ...schema,
@@ -29,24 +31,24 @@ export function FormPreviewModal({
 
   return (
     <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
-      <Modal.Backdrop className="bg-[#14213d]/20" isDismissable>
+      <Modal.Backdrop className="designer-modal-backdrop" isDismissable>
         <Modal.Container
           placement="center"
           scroll="inside"
           size="cover"
         >
-          <Modal.Dialog className="flex h-[90vh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-2xl bg-white text-[#202f45] shadow-[0_30px_90px_rgba(20,33,61,0.24)]">
-            <Modal.Header className="border-b border-[#eef2f7] px-5 py-4">
+          <Modal.Dialog
+            data-theme={resolvedTheme}
+            className="designer-theme-surface flex h-[90vh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-2xl bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]"
+          >
+            <Modal.Header className="border-b border-[var(--designer-border)] bg-[var(--designer-surface-solid)] px-5 py-4">
               <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#7c8ca6]">
-                    Preview
-                  </p>
-                  <Modal.Heading className="mt-1 truncate text-xl font-semibold text-[#14213d]">
+                  <Modal.Heading className="mt-1 truncate text-xl font-semibold text-[var(--color-text-primary)]">
                     {schema.formName}
                   </Modal.Heading>
                 </div>
-                <span className="shrink-0 rounded-full bg-[#edf4ff] px-3 py-1 text-sm font-medium text-[#2f6bff]">
+                <span className="shrink-0 rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-sm font-medium text-[var(--color-primary)]">
                   {visibleFields.length} 个控件
                 </span>
                 <Modal.CloseTrigger
@@ -56,8 +58,8 @@ export function FormPreviewModal({
               </div>
             </Modal.Header>
 
-            <Modal.Body className="flex-1 overflow-auto bg-[#f5f8fc] p-5">
-              <div className="mx-auto min-h-full max-w-[1180px] rounded-2xl border border-[#dce7f5] bg-white p-6 shadow-[0_20px_70px_rgba(31,65,122,0.08)]">
+            <Modal.Body className="flex-1 overflow-auto bg-[var(--designer-surface-soft)] p-5">
+              <div className="mx-auto min-h-full max-w-[1180px] rounded-2xl border border-[var(--designer-border)] bg-[var(--designer-surface-solid)] p-6 shadow-[var(--shadow-designer)]">
                 {visibleFields.length > 0 ? (
                   <RuntimeFormRenderer
                     schema={runtimeSchema}
@@ -70,7 +72,7 @@ export function FormPreviewModal({
                     }}
                   />
                 ) : (
-                  <div className="flex min-h-[320px] items-center justify-center rounded-2xl border border-dashed border-[#cbd8ea] bg-[#f7faff] text-sm text-[#7d8da8]">
+                  <div className="flex min-h-[320px] items-center justify-center rounded-2xl border border-dashed border-[var(--designer-border)] bg-[var(--designer-surface-muted)] text-sm text-[var(--color-text-secondary)]">
                     当前没有可预览控件
                   </div>
                 )}

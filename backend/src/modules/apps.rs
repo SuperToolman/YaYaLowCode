@@ -45,7 +45,7 @@ pub(crate) async fn create_app(
         description: Set("空白应用".to_string()),
         icon: Set("general".to_string()),
         badge: Set(None),
-        color: Set("bg-[#edf4ff] text-[#3b82f6]".to_string()),
+        color: Set("primary".to_string()),
         status: Set("paused".to_string()),
         owner_name: Set(owner_name),
         records_count: Set(0),

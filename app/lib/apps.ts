@@ -1,4 +1,5 @@
 export type AppStatus = "enabled" | "draft" | "paused";
+export type AppColorTone = "primary" | "secondary" | "accent" | "success" | "warning";
 
 export type AppItem = {
   id: string;
@@ -6,7 +7,7 @@ export type AppItem = {
   desc: string;
   icon: string;
   badge?: string;
-  color: string;
+  color: AppColorTone;
   active?: boolean;
   status: AppStatus;
   createdAt: string;
@@ -55,10 +56,37 @@ export const appStatusLabel: Record<AppStatus, string> = {
 };
 
 export const appStatusTone: Record<AppStatus, string> = {
-  enabled: "bg-[#ecfaef] text-[#2aa85a]",
-  draft: "bg-[#fff8e1] text-[#b78103]",
-  paused: "bg-[#f2f5fb] text-[#6d7f9a]",
+  enabled: "bg-[var(--color-success-soft)] text-[var(--color-success)]",
+  draft: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
+  paused: "bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]",
 };
+
+export const appColorToneClass: Record<AppColorTone, string> = {
+  primary: "bg-[var(--color-primary-soft)] text-[var(--color-primary)]",
+  secondary: "bg-[var(--color-secondary-soft)] text-[var(--color-secondary)]",
+  accent: "bg-[var(--color-accent-soft)] text-[var(--color-accent)]",
+  success: "bg-[var(--color-success-soft)] text-[var(--color-success)]",
+  warning: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
+};
+
+export function normalizeAppColorTone(value: string | null | undefined): AppColorTone {
+  if (
+    value === "primary" ||
+    value === "secondary" ||
+    value === "accent" ||
+    value === "success" ||
+    value === "warning"
+  ) {
+    return value;
+  }
+
+  const legacyValue = value?.toLowerCase() ?? "";
+  if (legacyValue.includes("green") || legacyValue.includes("emerald")) return "success";
+  if (legacyValue.includes("amber") || legacyValue.includes("yellow")) return "warning";
+  if (legacyValue.includes("pink") || legacyValue.includes("rose")) return "accent";
+  if (legacyValue.includes("teal") || legacyValue.includes("cyan")) return "secondary";
+  return "primary";
+}
 
 export const formsByAppId: Record<string, AppForm[]> = {
 
@@ -328,7 +356,7 @@ function createRuntimeApp(appId: string): AppItem {
     name: `应用 ${appId.slice(0, 12)}`,
     desc: "运行时应用",
     icon: "general",
-    color: "bg-[#edf4ff] text-[#3b82f6]",
+    color: "primary",
     status: "enabled",
     createdAt: "2026-06-09",
     owner: "系统",

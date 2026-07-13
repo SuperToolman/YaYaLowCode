@@ -36,27 +36,24 @@ function applyTheme(theme: ThemeMode, resolvedTheme: ResolvedTheme) {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<ThemeMode>(() => {
-    if (typeof window === "undefined") {
-      return "system";
-    }
-
-    return (window.localStorage.getItem(STORAGE_KEY) as ThemeMode | null) ?? "system";
-  });
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => {
-    if (typeof window === "undefined") {
-      return "light";
-    }
-
-    const initialTheme =
-      (window.localStorage.getItem(STORAGE_KEY) as ThemeMode | null) ?? "system";
-
-    return initialTheme === "system" ? getSystemTheme() : initialTheme;
-  });
+  const [theme, setThemeState] = useState<ThemeMode>("system");
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("light");
 
   useEffect(() => {
-    applyTheme(theme, resolvedTheme);
-  }, [resolvedTheme, theme]);
+    const savedTheme = window.localStorage.getItem(STORAGE_KEY);
+    const initialTheme: ThemeMode =
+      savedTheme === "light" || savedTheme === "dark" || savedTheme === "system"
+        ? savedTheme
+        : "system";
+    const initialResolvedTheme =
+      initialTheme === "system" ? getSystemTheme() : initialTheme;
+
+    applyTheme(initialTheme, initialResolvedTheme);
+    queueMicrotask(() => {
+      setThemeState(initialTheme);
+      setResolvedTheme(initialResolvedTheme);
+    });
+  }, []);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -73,7 +70,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       });
     };
 
-    updateSystemTheme();
     media.addEventListener("change", updateSystemTheme);
 
     return () => {

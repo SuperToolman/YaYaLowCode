@@ -71,16 +71,19 @@ export function PagePropertyDrawer({
 
   return (
     <Drawer isOpen={isOpen} onOpenChange={onOpenChange}>
-      <Drawer.Backdrop className="bg-[#14213d]/10" isDismissable>
+      <Drawer.Backdrop className="theme-modal-backdrop" isDismissable>
         <Drawer.Content placement="right" className="designer-properties-drawer">
-          <Drawer.Dialog className="flex h-full w-full flex-col bg-white text-[#202f45] shadow-[0_30px_80px_rgba(20,33,61,0.18)]">
-            <Drawer.Header className="border-b border-[#eef2f7] px-0 py-0">
+          <Drawer.Dialog className="flex h-full w-full flex-col bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)] shadow-[var(--shadow-drawer)]">
+            <Drawer.Header className="border-b border-[var(--designer-border)] px-4 py-3">
               <Drawer.Heading className="sr-only">页面属性</Drawer.Heading>
-              <div className="relative flex h-10 items-center justify-center text-sm font-medium text-[#1d2d44]">
-                页面属性
+              <div className="relative flex h-12 items-center pr-10">
+                <div>
+                  <div className="font-semibold text-[var(--color-text-primary)]">页面属性</div>
+                  <div className="text-xs text-[var(--color-text-secondary)]">校验、事件与数据源配置</div>
+                </div>
                 <Drawer.CloseTrigger
                   aria-label="关闭页面属性"
-                  className="absolute right-1 top-1"
+                  className="absolute right-0 top-1"
                 />
               </div>
             </Drawer.Header>
@@ -357,9 +360,9 @@ function PageSection({
 }) {
   return (
     <section className="space-y-2">
-      <div className="flex h-8 items-center justify-between border border-[#eef2f7] bg-[#fafbfd] px-2 text-sm font-semibold text-[#202f45]">
+      <div className="flex h-8 items-center justify-between border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2 text-sm font-semibold text-[var(--color-text-primary)]">
         <span>{title}</span>
-        {rightIcon ? <span className="text-[#8d9aae]">{rightIcon}</span> : null}
+        {rightIcon ? <span className="text-[var(--color-text-disabled)]">{rightIcon}</span> : null}
       </div>
       <div className="space-y-2 px-1 pb-2">{children}</div>
     </section>
@@ -388,7 +391,7 @@ function RuleList({
       {rules.map((rule) => (
         <div
           key={rule.id}
-          className="flex min-w-0 items-center gap-2 px-1 text-sm text-[#202f45]"
+          className="flex min-w-0 items-center gap-2 px-1 text-sm text-[var(--color-text-primary)]"
         >
           <Input
             aria-label="规则名称"
@@ -403,7 +406,7 @@ function RuleList({
             size="sm"
             variant="ghost"
             onPress={() => onRemove(rule.id)}
-            className="h-7 w-7 min-w-7 shrink-0 rounded-lg p-0 text-[#8d9aae] hover:bg-[#f2f5fa] hover:text-[#d14343]"
+            className="h-7 w-7 min-w-7 shrink-0 rounded-lg p-0 text-[var(--color-text-disabled)] hover:bg-[var(--color-danger-soft)] hover:text-[var(--color-danger)]"
           >
             <DeleteIcon />
           </Button>

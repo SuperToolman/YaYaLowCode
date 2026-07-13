@@ -4,7 +4,7 @@ use serde::Serialize;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
-use crate::modules::{apps, automations, forms, navigation, settings};
+use crate::modules::{agents, apps, automations, forms, navigation, settings};
 use crate::platform::runtime::AppState;
 
 #[derive(Debug, Serialize)]
@@ -18,6 +18,18 @@ pub(crate) fn build(state: AppState) -> Router {
         .route(
             "/api/settings/database",
             get(settings::get_database_settings).put(settings::update_database_settings),
+        )
+        .route(
+            "/api/settings/agent",
+            get(settings::get_agent_settings).put(settings::update_agent_settings),
+        )
+        .route(
+            "/api/agent/sessions",
+            get(agents::list_agent_sessions).post(agents::create_agent_session),
+        )
+        .route(
+            "/api/agent/sessions/{session_uuid}/messages",
+            get(agents::list_agent_messages).post(agents::send_agent_message),
         )
         .route("/api/apps", get(apps::list_apps).post(apps::create_app))
         .route(

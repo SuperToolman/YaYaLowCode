@@ -77,31 +77,28 @@ export function FieldPropertyDrawer({
 
   return (
     <Drawer isOpen={isOpen} onOpenChange={onOpenChange}>
-      <Drawer.Backdrop className="bg-[#14213d]/10" isDismissable>
+      <Drawer.Backdrop className="theme-modal-backdrop" isDismissable>
         <Drawer.Content placement="right" className="designer-properties-drawer">
-          <Drawer.Dialog className="flex h-full w-full flex-col bg-white text-[#202f45] shadow-[0_30px_80px_rgba(20,33,61,0.18)]">
-            <Drawer.Header className="border-b border-[#eef2f7] px-0 py-0">
+          <Drawer.Dialog className="flex h-full w-full flex-col bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)] shadow-[var(--shadow-drawer)]">
+            <Drawer.Header className="border-b border-[var(--designer-border)] px-4 py-3">
               <Drawer.Heading className="sr-only">组件属性</Drawer.Heading>
-              <div className="relative grid h-10 grid-cols-2 text-sm">
-                <Button
-                  type="button"
-                  className="relative font-medium text-[#1d2d44]"
-                >
-                  属性
-                  <span className="absolute bottom-0 left-1/2 h-0.5 w-8 -translate-x-1/2 rounded-full bg-[#2f6bff]" />
-                </Button>
-                <Button type="button" className="text-[#66758c]">
-                  高级
-                </Button>
+              <div className="relative flex min-h-12 items-center gap-3 pr-10">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] font-mono text-xs font-bold text-[var(--color-primary)]">
+                  {field.type.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate font-semibold text-[var(--color-text-primary)]">{field.label}</div>
+                  <div className="text-xs text-[var(--color-text-secondary)]">组件属性 · {field.type}</div>
+                </div>
                 <Drawer.CloseTrigger
                   aria-label="关闭属性栏"
-                  className="absolute right-1 top-1"
+                  className="absolute right-0 top-1"
                 />
               </div>
             </Drawer.Header>
 
             <Drawer.Body className="flex-1 overflow-y-auto px-0 py-0">
-              <div className="py-2">
+              <div className="py-1">
                 <PropertyPanel>
                   <PropertyRow label="标题">
                     <TextWithActions
@@ -252,12 +249,12 @@ export function FieldPropertyDrawer({
               </div>
             </Drawer.Body>
 
-            <Drawer.Footer className="border-t border-[#eef2f7] px-3 py-3">
+            <Drawer.Footer className="border-t border-[var(--designer-border)] bg-[var(--designer-surface-soft)] px-4 py-3">
               <Button
                 fullWidth
                 variant="ghost"
                 onPress={() => onDelete(field.id)}
-                className="text-[#d14343]"
+                className="border border-transparent text-[var(--color-danger)] hover:border-[var(--designer-border)] hover:bg-[var(--color-danger-soft)]"
               >
                 删除组件
               </Button>
@@ -360,7 +357,7 @@ function StatusSegmented({
   ];
 
   return (
-    <div className="flex h-8 flex-1 rounded-lg bg-[#f1f3f6] p-0.5">
+    <div className="flex h-8 flex-1 rounded-lg bg-[var(--color-bg-subtle)] p-0.5">
       {options.map((option) => (
         <button
           key={option.value}
@@ -375,8 +372,8 @@ function StatusSegmented({
           className={[
             "flex-1 rounded-md px-2 text-xs transition",
             current === option.value
-              ? "bg-white text-[#202f45] shadow-sm"
-              : "text-[#66758c]",
+              ? "bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-sm"
+              : "text-[var(--color-text-secondary)]",
           ].join(" ")}
         >
           {option.label}

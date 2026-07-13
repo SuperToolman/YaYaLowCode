@@ -3,16 +3,26 @@
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button, Input, toast } from "@heroui/react";
+import { Button, Dropdown, Input, toast } from "@heroui/react";
 import { AlertDialog } from "@heroui/react/alert-dialog";
 import { Card } from "@heroui/react/card";
 import { Drawer } from "@heroui/react/drawer";
+import {
+  ArrowDownToLine,
+  ArrowUpArrowDown,
+  ArrowUpFromLine,
+  Ellipsis,
+  Funnel,
+  Pencil,
+  Plus,
+  Sliders,
+  TrashBin,
+} from "@gravity-ui/icons";
 import {
   RuntimeFormRenderer,
   type RuntimeFormSchema,
   type RuntimeSchemaField,
 } from "../../../components/runtime-form-renderer";
-import testSchema from "../../../lib/testSchema.json";
 import { getSystemPageBySlug, isSystemPageSlug } from "../../../lib/system-pages";
 
 type SchemaField = RuntimeSchemaField;
@@ -58,7 +68,7 @@ export default function FormHome({
   const { appId, formUuid } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [schema, setSchema] = useState<FormSchema>(testSchema as FormSchema);
+  const [schema, setSchema] = useState<FormSchema | null>(null);
   const [systemPageTitle, setSystemPageTitle] = useState<string | null>(
     isSystemPageSlug(formUuid) ? (getSystemPageBySlug(formUuid)?.title ?? null) : null,
   );
@@ -74,10 +84,10 @@ export default function FormHome({
   const [deletingRecordId, setDeletingRecordId] = useState<string | null>(null);
 
   const activeView: ViewKey = searchParams.get("view") === "submit" ? "submit" : "records";
-  const submitButtonText = schema.pageProps?.submitButtonText?.trim() || "提交";
+  const submitButtonText = schema?.pageProps?.submitButtonText?.trim() || "提交";
   const visibleFields = useMemo(
-    () => getVisibleDataFields(schema.fields),
-    [schema.fields],
+    () => getVisibleDataFields(schema?.fields ?? []),
+    [schema?.fields],
   );
 
   const loadRecords = useCallback(async () => {
@@ -312,34 +322,26 @@ export default function FormHome({
     return <SystemPageView appId={appId} pageSlug={formUuid} pageTitle={systemPageTitle} />;
   }
 
+  if (!schema) {
+    return (
+      <div className="flex h-full min-h-0 items-center justify-center">
+        <p className="text-sm text-[var(--color-text-secondary)]">正在加载表单...</p>
+      </div>
+    );
+  }
+
   function handleViewChange(view: ViewKey) {
     router.replace(`/${appId}/${formUuid}${view === "submit" ? "?view=submit" : ""}`);
   }
 
   return (
-    <div className="p-3 sm:p-5 lg:p-6">
-      <Card className="theme-panel-strong mx-auto max-w-[1280px] p-4 shadow-[0_20px_70px_rgba(31,65,122,0.08)] sm:p-6">
-        <div className="flex flex-col gap-4 border-b border-[var(--panel-border)] pb-5">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--text-muted)]">
-                Runtime View
-              </p>
-              <h1 className="mt-1 text-2xl font-semibold text-[var(--text-primary)]">
-                {schema.formName || "表单详情"}
-              </h1>
-              <p className="mt-1 text-sm text-[var(--text-secondary)]">
-                App：{appId} / Form：{formUuid} / 已保存 {recordsTotal} 条数据
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-[var(--accent-soft)] px-3 py-1 text-sm font-medium text-[var(--accent-strong)]">
-                {visibleFields.length} 个字段
-              </span>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
+    <div className="h-full min-h-0 overflow-hidden">
+      <Card className="theme-panel-strong mx-auto flex h-full min-h-0 flex-col overflow-hidden shadow-[var(--shadow-designer)]">
+        <div className="flex shrink-0 flex-col gap-3 border-b border-[var(--color-border)] pb-4 md:flex-row md:items-center md:justify-between">
+          <h1 className="min-w-0 truncate text-xl font-semibold text-[var(--color-text-primary)]">
+            {schema?.formName || "表单详情"}
+          </h1>
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <ViewTab
               isActive={activeView === "records"}
               label="全部数据"
@@ -352,52 +354,58 @@ export default function FormHome({
             />
             <Button
               variant="ghost"
-              className="h-10 rounded-lg border border-dashed border-[var(--panel-border)] px-4 text-sm text-[var(--text-secondary)]"
+              className="h-9 rounded-lg border border-dashed border-[var(--color-border)] px-3 text-xs text-[var(--color-text-secondary)]"
             >
               新建视图
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => router.push(`/designer/${formUuid}?appId=${appId}`)}
+              className="h-9 gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-text-primary)]"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              表单编辑
             </Button>
           </div>
         </div>
 
-        <div className="flex flex-col gap-4 py-5">
-          <div className="flex flex-col gap-3 rounded-xl border border-[var(--panel-border)] bg-[var(--panel-background-soft)] p-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+          <div className="flex shrink-0 flex-col gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-panel-soft)] p-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               <Button
-                className="h-10 rounded-lg bg-[var(--accent-strong)] px-4 text-white"
+                className="h-9 gap-1.5 rounded-lg bg-[var(--color-primary)] px-3 text-xs text-[var(--color-text-on-primary)]"
                 onClick={() => setDrawerOpen(true)}
               >
+                <Plus className="h-3.5 w-3.5" />
                 新增
               </Button>
               <Button
                 variant="ghost"
-                onClick={() => router.push(`/designer/${formUuid}?appId=${appId}`)}
-                className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
-              >
-                编辑
-              </Button>
-              <Button
-                variant="ghost"
                 onClick={() => setDeleteOpen(true)}
-                className="h-10 rounded-lg border border-[var(--danger-strong)]/30 bg-[var(--panel-background)] px-4 text-[var(--danger-strong)]"
+                className="h-9 gap-1.5 rounded-lg border border-[var(--color-danger)]/30 bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-danger)]"
               >
+                <TrashBin className="h-3.5 w-3.5" />
                 删除
               </Button>
               <Button
                 variant="ghost"
-                className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
+                className="h-9 gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-text-primary)]"
               >
+                <ArrowUpFromLine className="h-3.5 w-3.5" />
                 导入
               </Button>
               <Button
                 variant="ghost"
-                className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
+                className="h-9 gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-text-primary)]"
               >
+                <ArrowDownToLine className="h-3.5 w-3.5" />
                 导出
               </Button>
               <Button
                 variant="ghost"
-                className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
+                className="h-9 gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-text-primary)]"
               >
+                <Ellipsis className="h-3.5 w-3.5" />
                 更多
               </Button>
             </div>
@@ -405,7 +413,7 @@ export default function FormHome({
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <Input
                 aria-label="搜索数据"
-                className="min-w-[220px] bg-[var(--input-background)]"
+                className="min-w-[220px] bg-[var(--color-bg-input)]"
                 placeholder="搜索数据"
                 value={searchValue}
                 onChange={(event: ChangeEvent<HTMLInputElement>) =>
@@ -414,20 +422,23 @@ export default function FormHome({
               />
               <Button
                 variant="ghost"
-                className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
+                className="h-9 gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-text-primary)]"
               >
+                <Funnel className="h-3.5 w-3.5" />
                 筛选
               </Button>
               <Button
                 variant="ghost"
-                className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
+                className="h-9 gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-text-primary)]"
               >
+                <Sliders className="h-3.5 w-3.5" />
                 显示列
               </Button>
               <Button
                 variant="ghost"
-                className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
+                className="h-9 gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-text-primary)]"
               >
+                <ArrowUpArrowDown className="h-3.5 w-3.5" />
                 排序
               </Button>
             </div>
@@ -444,28 +455,30 @@ export default function FormHome({
               onEditRecord={setEditingRecord}
             />
           ) : (
-            <RuntimeFormPanel
-              schema={schema}
-              submitLabel={submitButtonText}
-              submitting={submitting}
-              urlParams={{ appId, formUuid }}
-              onSubmit={(values) => handleCreateRecord(values, "page")}
-            />
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <RuntimeFormPanel
+                schema={schema}
+                submitLabel={submitButtonText}
+                submitting={submitting}
+                urlParams={{ appId, formUuid }}
+                onSubmit={(values) => handleCreateRecord(values, "page")}
+              />
+            </div>
           )}
         </div>
       </Card>
 
       <Drawer isOpen={drawerOpen} onOpenChange={setDrawerOpen}>
-        <Drawer.Backdrop className="bg-black/30" isDismissable>
-          <Drawer.Content placement="right" className="w-full max-w-[880px]">
-            <Drawer.Dialog className="theme-menu-surface flex h-full w-full flex-col shadow-[0_30px_80px_rgba(20,33,61,0.18)]">
-              <Drawer.Header className="border-b border-[var(--panel-border)] px-6 py-4">
+        <Drawer.Backdrop className="theme-modal-backdrop" isDismissable>
+          <Drawer.Content placement="right" className="!w-[80vw] !max-w-[80vw]">
+            <Drawer.Dialog className="theme-menu-surface flex h-full w-full flex-col shadow-[var(--shadow-drawer)]">
+              <Drawer.Header className="border-b border-[var(--color-border)] px-6 py-4">
                 <div className="flex w-full items-center justify-between gap-4">
                   <div>
-                    <Drawer.Heading className="text-lg font-semibold text-[var(--text-primary)]">
+                    <Drawer.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
                       新增数据
                     </Drawer.Heading>
-                    <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                    <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
                       使用已发布的表单设计填写并提交数据。
                     </p>
                   </div>
@@ -473,7 +486,7 @@ export default function FormHome({
                     isIconOnly
                     variant="ghost"
                     onClick={() => setDrawerOpen(false)}
-                    className="h-10 w-10 rounded-full border border-[var(--panel-border)] bg-[var(--panel-background)] text-[var(--text-secondary)]"
+                    className="h-10 w-10 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-panel)] text-[var(--color-text-secondary)]"
                   >
                     ×
                   </Button>
@@ -499,16 +512,16 @@ export default function FormHome({
       </Drawer>
 
       <Drawer isOpen={editingRecord !== null} onOpenChange={(open) => !open && setEditingRecord(null)}>
-        <Drawer.Backdrop className="bg-black/30" isDismissable>
-          <Drawer.Content placement="right" className="w-full max-w-[880px]">
-            <Drawer.Dialog className="theme-menu-surface flex h-full w-full flex-col shadow-[0_30px_80px_rgba(20,33,61,0.18)]">
-              <Drawer.Header className="border-b border-[var(--panel-border)] px-6 py-4">
+        <Drawer.Backdrop className="theme-modal-backdrop" isDismissable>
+          <Drawer.Content placement="right" className="!w-[80vw] !max-w-[80vw]">
+            <Drawer.Dialog className="theme-menu-surface flex h-full w-full flex-col shadow-[var(--shadow-drawer)]">
+              <Drawer.Header className="border-b border-[var(--color-border)] px-6 py-4">
                 <div className="flex w-full items-center justify-between gap-4">
                   <div>
-                    <Drawer.Heading className="text-lg font-semibold text-[var(--text-primary)]">
+                    <Drawer.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
                       编辑数据
                     </Drawer.Heading>
-                    <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                    <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
                       修改当前记录后保存，可触发更新自动化。
                     </p>
                   </div>
@@ -516,7 +529,7 @@ export default function FormHome({
                     isIconOnly
                     variant="ghost"
                     onClick={() => setEditingRecord(null)}
-                    className="h-10 w-10 rounded-full border border-[var(--panel-border)] bg-[var(--panel-background)] text-[var(--text-secondary)]"
+                    className="h-10 w-10 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-panel)] text-[var(--color-text-secondary)]"
                   >
                     ×
                   </Button>
@@ -540,35 +553,36 @@ export default function FormHome({
       </Drawer>
 
       <AlertDialog isOpen={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialog.Backdrop className="bg-black/40" />
-        <AlertDialog.Container placement="center" size="md">
-          <AlertDialog.Dialog className="theme-menu-surface rounded-2xl shadow-[0_30px_90px_rgba(20,33,61,0.24)]">
-            <AlertDialog.Header className="border-b border-[var(--panel-border)] px-5 py-4">
-              <AlertDialog.Heading className="text-lg font-semibold text-[var(--text-primary)]">
-                删除表单
-              </AlertDialog.Heading>
-            </AlertDialog.Header>
-            <AlertDialog.Body className="px-5 py-4 text-sm leading-6 text-[var(--text-secondary)]">
-              删除后，表单设计、提交记录和导航项都会被移除。
-            </AlertDialog.Body>
-            <AlertDialog.Footer className="flex justify-end gap-3 border-t border-[var(--panel-border)] px-5 py-3">
-              <Button
-                variant="ghost"
-                onClick={() => setDeleteOpen(false)}
-                className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
-              >
-                取消
-              </Button>
-              <Button
-                onClick={handleDeleteForm}
-                isDisabled={deleting}
-                className="h-10 rounded-lg bg-[var(--danger-strong)] px-4 text-white"
-              >
-                {deleting ? "删除中..." : "确认删除"}
-              </Button>
-            </AlertDialog.Footer>
-          </AlertDialog.Dialog>
-        </AlertDialog.Container>
+        <AlertDialog.Backdrop className="theme-modal-backdrop">
+          <AlertDialog.Container placement="center" size="md">
+            <AlertDialog.Dialog className="theme-menu-surface rounded-2xl shadow-[var(--shadow-dialog)]">
+              <AlertDialog.Header className="border-b border-[var(--color-border)] px-5 py-4">
+                <AlertDialog.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
+                  删除表单
+                </AlertDialog.Heading>
+              </AlertDialog.Header>
+              <AlertDialog.Body className="px-5 py-4 text-sm leading-6 text-[var(--color-text-secondary)]">
+                删除后，表单设计、提交记录和导航项都会被移除。
+              </AlertDialog.Body>
+              <AlertDialog.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
+                <Button
+                  variant="ghost"
+                  onClick={() => setDeleteOpen(false)}
+                  className="h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-4 text-[var(--color-text-primary)]"
+                >
+                  取消
+                </Button>
+                <Button
+                  onClick={handleDeleteForm}
+                  isDisabled={deleting}
+                  className="h-10 rounded-lg bg-[var(--color-danger)] px-4 text-[var(--color-text-on-primary)]"
+                >
+                  {deleting ? "删除中..." : "确认删除"}
+                </Button>
+              </AlertDialog.Footer>
+            </AlertDialog.Dialog>
+          </AlertDialog.Container>
+        </AlertDialog.Backdrop>
       </AlertDialog>
     </div>
   );
@@ -588,10 +602,10 @@ function ViewTab({
       variant="ghost"
       onClick={onClick}
       className={[
-        "h-10 rounded-lg px-4 text-sm",
+        "h-9 rounded-lg px-3 text-xs",
         isActive
-          ? "bg-[var(--accent-soft)] font-medium text-[var(--accent-strong)]"
-          : "border border-transparent text-[var(--text-secondary)] hover:bg-[var(--panel-background-soft)]",
+          ? "bg-[var(--color-primary-soft)] font-medium text-[var(--color-primary)]"
+          : "border border-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-panel-soft)]",
       ].join(" ")}
     >
       {label}
@@ -648,10 +662,11 @@ function RecordsTable({
   onEditRecord: (record: FormRecord) => void;
 }) {
   const columns = fields.slice(0, 6);
+  const customActions = ["查看详情", "复制数据", "发起流程"];
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-[var(--panel-border)] px-4 py-10 text-center text-sm text-[var(--text-muted)]">
+      <div className="flex min-h-0 flex-1 items-center justify-center rounded-xl border border-[var(--color-border)] px-4 py-10 text-center text-sm text-[var(--color-text-secondary)]">
         正在加载数据...
       </div>
     );
@@ -659,9 +674,9 @@ function RecordsTable({
 
   if (records.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-[var(--panel-border)] px-4 py-12 text-center">
-        <div className="text-base font-medium text-[var(--text-primary)]">暂无数据</div>
-        <div className="mt-2 text-sm text-[var(--text-muted)]">
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-[var(--color-border)] px-4 py-12 text-center">
+        <div className="text-base font-medium text-[var(--color-text-primary)]">暂无数据</div>
+        <div className="mt-2 text-sm text-[var(--color-text-secondary)]">
           当前表单还没有提交记录，可以先通过“新增”填写一条数据。
         </div>
       </div>
@@ -669,18 +684,19 @@ function RecordsTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--panel-border)]">
-      <div className="flex items-center justify-between bg-[var(--panel-background-soft)] px-4 py-3 text-sm text-[var(--text-secondary)]">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--color-border)]">
+      <div className="flex shrink-0 items-center justify-between bg-[var(--color-bg-panel-soft)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
         <span>共 {total} 条数据</span>
         <span>当前展示 {records.length} 条</span>
       </div>
-      <div className="overflow-x-auto">
+      <div className="min-h-0 flex-1 overflow-auto">
         <div
-          className="grid min-w-[1080px] border-t border-[var(--panel-border)] bg-[var(--panel-background-soft)] px-4 py-3 text-sm font-medium text-[var(--text-secondary)]"
+          className="sticky top-0 z-10 grid min-w-[1080px] border-t border-[var(--color-border)] bg-[var(--color-bg-panel-soft)] px-4 py-3 text-sm font-medium text-[var(--color-text-secondary)] shadow-[0_1px_0_var(--color-border)]"
           style={{
-            gridTemplateColumns: `repeat(${columns.length}, minmax(140px, 1fr)) 120px 180px 160px`,
+            gridTemplateColumns: `64px repeat(${columns.length}, minmax(140px, 1fr)) 120px 180px 190px`,
           }}
         >
+          <span>序号</span>
           {columns.map((field) => (
             <span key={field.id}>{field.label}</span>
           ))}
@@ -688,14 +704,15 @@ function RecordsTable({
           <span>提交时间</span>
           <span>操作</span>
         </div>
-        {records.map((record) => (
+        {records.map((record, index) => (
           <div
             key={record.id}
-            className="grid min-w-[1080px] border-t border-[var(--panel-border)] px-4 py-4 text-sm text-[var(--text-primary)]"
+            className="grid min-w-[1080px] border-t border-[var(--color-border)] px-4 py-4 text-sm text-[var(--color-text-primary)]"
             style={{
-              gridTemplateColumns: `repeat(${columns.length}, minmax(140px, 1fr)) 120px 180px 160px`,
+              gridTemplateColumns: `64px repeat(${columns.length}, minmax(140px, 1fr)) 120px 180px 190px`,
             }}
           >
+            <span className="text-[var(--color-text-secondary)]">{index + 1}</span>
             {columns.map((field) => (
               <span key={field.id} className="truncate">
                 {formatRecordValue(record.data[field.id])}
@@ -703,22 +720,41 @@ function RecordsTable({
             ))}
             <span>{record.createdBy}</span>
             <span>{formatDateTime(record.createdAt)}</span>
-            <span className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5">
               <Button
                 variant="ghost"
-                className="h-8 rounded-md border border-[var(--panel-border)] bg-[var(--panel-background)] px-3 text-[var(--text-primary)]"
+                className="h-8 gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-text-primary)]"
                 onClick={() => onEditRecord(record)}
               >
+                <Pencil className="h-3.5 w-3.5" />
                 编辑
               </Button>
               <Button
                 variant="ghost"
-                className="h-8 rounded-md border border-[var(--danger-strong)]/30 bg-[var(--panel-background)] px-3 text-[var(--danger-strong)]"
+                className="h-8 gap-1 rounded-md border border-[var(--color-danger)]/30 bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-danger)]"
                 isDisabled={deletingRecordId === record.id}
                 onClick={() => onDeleteRecord(record.id)}
               >
+                <TrashBin className="h-3.5 w-3.5" />
                 {deletingRecordId === record.id ? "删除中..." : "删除"}
               </Button>
+              <Dropdown>
+                <Dropdown.Trigger
+                  aria-label={`记录 ${index + 1} 更多操作`}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel)] text-[var(--color-text-secondary)]"
+                >
+                  <Ellipsis className="h-3.5 w-3.5" />
+                </Dropdown.Trigger>
+                <Dropdown.Popover>
+                  <Dropdown.Menu aria-label={`记录 ${index + 1} 自定义操作`}>
+                    {customActions.map((action) => (
+                      <Dropdown.Item key={action} id={action} isDisabled>
+                        {action}（开发中）
+                      </Dropdown.Item>
+                    ))}
+                  </Dropdown.Menu>
+                </Dropdown.Popover>
+              </Dropdown>
             </span>
           </div>
         ))}
@@ -739,15 +775,12 @@ function SystemPageView({
   const rows = buildSystemRows(appId, pageSlug);
 
   return (
-    <div className="">
-      <div className=" shadow-[0_20px_70px_rgba(31,65,122,0.08)]">
+    <div className="h-full min-h-0 overflow-auto">
+      <div className="shadow-[var(--shadow-designer)]">
         <Card className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--text-muted)]">
-              System Page
-            </p>
-            <h1 className="mt-1 text-2xl font-semibold text-[var(--text-primary)]">{pageTitle}</h1>
-            <p className="mt-1 text-sm text-[var(--text-secondary)]">
+            <h1 className="mt-1 text-2xl font-semibold text-[var(--color-text-primary)]">{pageTitle}</h1>
+            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
               应用 {appId} 的内置工作台页面，当前路由为 {pageSlug}。
             </p>
           </div>
@@ -757,12 +790,12 @@ function SystemPageView({
               className="w-full min-w-[220px] md:w-[280px]"
               placeholder="搜索标题、流程或发起人"
             />
-            <Button className="bg-[var(--accent-strong)] text-white">筛选</Button>
+            <Button className="bg-[var(--color-primary)] text-[var(--color-text-on-primary)]">筛选</Button>
           </div>
         </Card>
 
-        <div className="overflow-hidden rounded-xl border border-[var(--panel-border)]">
-          <div className="grid grid-cols-[minmax(0,2fr)_120px_160px_180px] gap-4 bg-[var(--panel-background-soft)] px-4 py-3 text-sm font-medium text-[var(--text-secondary)]">
+        <div className="overflow-hidden rounded-xl border border-[var(--color-border)]">
+          <div className="grid grid-cols-[minmax(0,2fr)_120px_160px_180px] gap-4 bg-[var(--color-bg-panel-soft)] px-4 py-3 text-sm font-medium text-[var(--color-text-secondary)]">
             <span>标题</span>
             <span>状态</span>
             <span>发起人</span>
@@ -771,11 +804,11 @@ function SystemPageView({
           {rows.map((row) => (
             <div
               key={row.id}
-              className="grid grid-cols-[minmax(0,2fr)_120px_160px_180px] gap-4 border-t border-[var(--panel-border)] px-4 py-4 text-sm text-[var(--text-primary)]"
+              className="grid grid-cols-[minmax(0,2fr)_120px_160px_180px] gap-4 border-t border-[var(--color-border)] px-4 py-4 text-sm text-[var(--color-text-primary)]"
             >
               <div className="min-w-0">
-                <div className="truncate font-medium text-[var(--text-primary)]">{row.title}</div>
-                <div className="mt-1 truncate text-xs text-[var(--text-muted)]">{row.description}</div>
+                <div className="truncate font-medium text-[var(--color-text-primary)]">{row.title}</div>
+                <div className="mt-1 truncate text-xs text-[var(--color-text-secondary)]">{row.description}</div>
               </div>
               <span>{row.status}</span>
               <span>{row.owner}</span>
@@ -806,6 +839,7 @@ function getVisibleDataFields(fields: SchemaField[]) {
     (field) =>
       !field.props?.isHidden &&
       field.type !== "description" &&
+      field.type !== "groupContainer" &&
       field.type !== "button" &&
       field.type !== "link",
   );

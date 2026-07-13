@@ -1,6 +1,10 @@
 //! SeaORM persistence mappings. Business modules depend on these mappings only at their
 //! repository boundary.
 
+pub mod agent_message_entity;
+pub mod agent_run_entity;
+pub mod agent_run_step_entity;
+pub mod agent_session_entity;
 pub mod app_entity;
 pub mod app_navigation_entity;
 pub mod automation_edge_entity;

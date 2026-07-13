@@ -33,7 +33,7 @@ import {
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
   loading: () => (
-    <div className="flex h-[360px] items-center justify-center rounded-2xl bg-[#0f1726] text-sm text-[#8ea1c2]">
+    <div className="flex h-[360px] items-center justify-center rounded-2xl bg-[var(--color-code-bg)] text-sm text-[var(--color-code-text)]">
       编辑器加载中...
     </div>
   ),
@@ -55,8 +55,6 @@ type DesignerWorkbenchSidebarProps = {
   debugEvents: RuntimeDebugEvent[];
   onActivePanelChange: (panel: DesignerPanelKey) => void;
   onBeforeDesignerActionRegister?: (handler: (() => boolean) | null) => void;
-  onComponentDragEnd: () => void;
-  onComponentDragStart: () => void;
   onPagePropsChange: (props: PageDesignerProps) => void;
 };
 
@@ -81,8 +79,6 @@ export function DesignerWorkbenchSidebar({
   debugEvents,
   onActivePanelChange,
   onBeforeDesignerActionRegister,
-  onComponentDragEnd,
-  onComponentDragStart,
   onPagePropsChange,
 }: DesignerWorkbenchSidebarProps) {
   const activePanelMeta =
@@ -91,8 +87,6 @@ export function DesignerWorkbenchSidebar({
     activePanel,
     debugEvents,
     fields,
-    onComponentDragEnd,
-    onComponentDragStart,
     onBeforeDesignerActionRegister,
     onPagePropsChange,
     pageProps,
@@ -100,8 +94,8 @@ export function DesignerWorkbenchSidebar({
   });
 
   return (
-    <Card className="flex h-full min-h-0 min-w-0 flex-row items-stretch overflow-hidden rounded-[28px] border border-[#dce7f5] bg-white/90 p-2 shadow-[0_20px_60px_rgba(31,65,122,0.08)] backdrop-blur">
-      <div className="flex h-full min-h-0 w-14 shrink-0 flex-col gap-2 border-r border-[#e4edf8] pr-2">
+    <Card className="flex h-full min-h-0 min-w-0 flex-row items-stretch overflow-hidden rounded-[28px] border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-2 shadow-[var(--shadow-panel)] backdrop-blur">
+      <div className="flex h-full min-h-0 w-14 shrink-0 flex-col gap-2 border-r border-[var(--color-border)] pr-2">
         <div className="flex min-h-0 flex-1 flex-col gap-2 pt-1">
           {DESIGNER_PANELS.map((panel) => {
             const isActive = panel.key === activePanel;
@@ -112,8 +106,10 @@ export function DesignerWorkbenchSidebar({
                 aria-label={panel.label}
                 variant="ghost"
                 className={[
-                  "h-11 w-11 min-w-11 justify-center rounded-2xl px-0 text-[#47658f]",
-                  isActive ? "bg-[#edf4ff] text-[#2f6bff]" : "hover:bg-[#f7faff]",
+                  "h-11 w-11 min-w-11 justify-center rounded-2xl px-0 text-[var(--color-text-secondary)]",
+                  isActive
+                    ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]"
+                    : "hover:bg-[var(--color-bg-subtle)]",
                 ].join(" ")}
                 onPress={() => onActivePanelChange(panel.key)}
               >
@@ -126,12 +122,9 @@ export function DesignerWorkbenchSidebar({
         </div>
       </div>
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col pl-3">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="mb-3 shrink-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#7c8ca6]">
-            Designer
-          </p>
-          <h2 className="mt-1 text-xl font-semibold text-[#14213d]">
+          <h2 className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">
             {activePanelMeta.label}
           </h2>
         </div>
@@ -150,8 +143,6 @@ function renderDesignerPanelContent({
   activePanel,
   debugEvents,
   fields,
-  onComponentDragEnd,
-  onComponentDragStart,
   onBeforeDesignerActionRegister,
   onPagePropsChange,
   pageProps,
@@ -160,8 +151,6 @@ function renderDesignerPanelContent({
   activePanel: DesignerPanelKey;
   debugEvents: RuntimeDebugEvent[];
   fields: PlacedField[];
-  onComponentDragEnd: () => void;
-  onComponentDragStart: () => void;
   onBeforeDesignerActionRegister?: (handler: (() => boolean) | null) => void;
   onPagePropsChange: (props: PageDesignerProps) => void;
   pageProps: PageDesignerProps;
@@ -172,13 +161,7 @@ function renderDesignerPanelContent({
   }
 
   if (activePanel === "components") {
-    return (
-      <CompTool
-        embedded
-        onDragStart={onComponentDragStart}
-        onDragEnd={onComponentDragEnd}
-      />
-    );
+    return <CompTool embedded />;
   }
 
   if (activePanel === "dataSources") {
@@ -203,10 +186,46 @@ function renderDesignerPanelContent({
   }
 
   if (activePanel === "fieldOutline") {
-    return <PlaceholderPanel title="字段大纲" />;
+    return <FieldOutlinePanel fields={fields} />;
   }
 
   return <SchemaPanel schema={schema} />;
+}
+
+function FieldOutlinePanel({ fields }: { fields: PlacedField[] }) {
+  const orderedFields = [...fields].sort(
+    (left, right) => left.row - right.row || left.column - right.column,
+  );
+
+  if (orderedFields.length === 0) {
+    return <PlaceholderPanel title="暂无字段，先从组件面板拖入一个组件" />;
+  }
+
+  return (
+    <div className="space-y-2 pr-1">
+      {orderedFields.map((field) => (
+        <div
+          key={field.id}
+          className="rounded-xl border border-[var(--designer-border)] bg-[var(--designer-surface-muted)] px-3 py-2.5"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="min-w-0 truncate text-sm font-semibold text-[var(--color-text-primary)]">
+              {field.label}
+            </span>
+            <span className="shrink-0 rounded-md bg-[var(--color-primary-soft)] px-2 py-0.5 font-mono text-[10px] text-[var(--color-primary)]">
+              {field.type}
+            </span>
+          </div>
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--color-text-secondary)]">
+            <span>字段 ID：{field.id}</span>
+            <span>位置：R{field.row + 1} / C{field.column + 1}</span>
+            <span>尺寸：{field.rowSpan} × {field.colSpan}</span>
+            {field.parentGroupId ? <span>分组：{field.parentGroupId}</span> : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function OutlinePanel({ fields }: { fields: PlacedField[] }) {
@@ -241,10 +260,10 @@ function OutlineNode({
   return (
     <div>
       <div
-        className="flex items-center gap-3 rounded-2xl px-3 py-2 text-sm text-[#324968] hover:bg-[#f7faff]"
+        className="flex items-center gap-3 rounded-2xl px-3 py-2 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-subtle)]"
         style={{ paddingLeft: 12 + level * 18 }}
       >
-        <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-[#7f91aa]">
+        <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-[var(--color-text-secondary)]">
           {field.type === "groupContainer" ? <GridIcon /> : <ListIcon />}
         </span>
         <span className="truncate">{field.label}</span>
@@ -268,12 +287,12 @@ function DataSourcesPanel({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="mb-3 flex items-center justify-between">
-        <div className="text-xs text-[#60718a]">
+        <div className="text-xs text-[var(--color-text-secondary)]">
           变量会注入到 <code>this.state.dataSources</code>
         </div>
         <Button
           size="sm"
-          className="bg-[#2f6bff] text-white"
+          className="bg-[var(--color-primary)] text-[var(--color-text-on-primary)]"
           onPress={() =>
             onChange([
               ...dataSources,
@@ -295,7 +314,7 @@ function DataSourcesPanel({
         {dataSources.map((source) => (
           <div
             key={source.id}
-            className="rounded-xl border border-[#e1eaf6] bg-[#fbfdff] px-3 py-2.5"
+            className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2.5"
           >
             <div className="grid grid-cols-[minmax(0,1fr)_96px_64px] gap-2">
               <CompactInput
@@ -331,7 +350,7 @@ function DataSourcesPanel({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="min-w-0 px-2 text-[#c24152]"
+                  className="min-w-0 px-2 text-[var(--color-danger)]"
                   onPress={() => onChange(dataSources.filter((item) => item.id !== source.id))}
                 >
                   删除
@@ -441,11 +460,11 @@ function ActionPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto pr-1">
-      <Card className="rounded-2xl border border-[#dce7f5] bg-white p-3 shadow-none">
+      <Card className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-3 shadow-none">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold text-[#263a5c]">统一动作编辑器</div>
-            <div className="mt-1 text-xs text-[#60718a]">
+            <div className="text-sm font-semibold text-[var(--color-text-primary)]">统一动作编辑器</div>
+            <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
               在一个脚本中统一维护 didMount、onSubmit 和 onFieldEvent
             </div>
           </div>
@@ -453,7 +472,7 @@ function ActionPanel({
             <Button
               isIconOnly
               variant="ghost"
-              className="h-9 w-9 min-w-9 rounded-xl text-[#35507b]"
+              className="h-9 w-9 min-w-9 rounded-xl text-[var(--color-text-secondary)]"
               aria-label="查看动作上下文"
               onPress={() => setIsContextOpen(true)}
             >
@@ -485,7 +504,7 @@ function ActionPanel({
           }}
         />
         {parseError ? (
-          <div className="mt-2 rounded-xl border border-[#f5d4da] bg-[#fff7f8] px-3 py-2 text-xs text-[#c24152]">
+          <div className="mt-2 rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-soft)] px-3 py-2 text-xs text-[var(--color-danger)]">
             {parseError}
           </div>
         ) : null}
@@ -505,7 +524,7 @@ function ActionPanel({
           <AddIcon />
           生成模板
         </Button>
-        <div className="text-xs text-[#7c8ca6]">调试日志保留最近 20 条</div>
+        <div className="text-xs text-[var(--color-text-secondary)]">调试日志保留最近 20 条</div>
       </div>
       <ActionDebugPanel debugEvents={debugEvents} />
       <ActionContextDialog isOpen={isContextOpen} onOpenChange={setIsContextOpen} />
@@ -522,26 +541,26 @@ function ActionContextDialog({
 }) {
   return (
     <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
-      <Modal.Backdrop className="bg-[#14213d]/20" isDismissable>
+      <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
         <Modal.Container placement="center" scroll="inside" size="lg">
-          <Modal.Dialog className="rounded-3xl bg-white text-[#20314c] shadow-[0_30px_90px_rgba(20,33,61,0.24)]">
-            <Modal.Header className="border-b border-[#eef2f7] px-5 py-4">
+          <Modal.Dialog className="designer-theme-surface rounded-3xl bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]">
+            <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
               <div className="flex items-center gap-3">
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-[#eef4ff] text-[#2f6bff]">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
                   <CodeIcon />
                 </span>
                 <div>
-                  <Modal.Heading className="text-lg font-semibold text-[#14213d]">
+                  <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
                     动作上下文
                   </Modal.Heading>
-                  <p className="mt-1 text-sm text-[#60718a]">
+                  <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
                     统一脚本可直接使用的生命周期、状态和工具方法
                   </p>
                 </div>
               </div>
               <Modal.CloseTrigger aria-label="关闭动作上下文" />
             </Modal.Header>
-            <Modal.Body className="space-y-3 px-5 py-5 text-sm text-[#35507b]">
+            <Modal.Body className="space-y-3 px-5 py-5 text-sm text-[var(--color-text-secondary)]">
               <ContextRow code="function didMount(ctx)">页面加载完成后执行</ContextRow>
               <ContextRow code="function onFieldEvent(ctx)">任意字段事件统一入口</ContextRow>
               <ContextRow code="function onSubmit(ctx)">表单提交前执行</ContextRow>
@@ -570,19 +589,19 @@ function ContextRow({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-[#e1eaf6] bg-[#f8fbff] px-4 py-3">
-      <code className="text-xs font-semibold text-[#20314c]">{code}</code>
-      <div className="mt-1 text-xs leading-6 text-[#60718a]">{children}</div>
+    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 py-3">
+      <code className="text-xs font-semibold text-[var(--color-text-primary)]">{code}</code>
+      <div className="mt-1 text-xs leading-6 text-[var(--color-text-secondary)]">{children}</div>
     </div>
   );
 }
 
 function ActionDebugPanel({ debugEvents }: { debugEvents: RuntimeDebugEvent[] }) {
   return (
-    <Card className="rounded-2xl border border-[#dce7f5] bg-white p-3 shadow-none">
+    <Card className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-3 shadow-none">
       <div className="mb-2 flex items-center justify-between">
-        <div className="text-sm font-semibold text-[#263a5c]">调试日志</div>
-        <div className="text-xs text-[#7c8ca6]">最近 {debugEvents.length} 条</div>
+        <div className="text-sm font-semibold text-[var(--color-text-primary)]">调试日志</div>
+        <div className="text-xs text-[var(--color-text-secondary)]">最近 {debugEvents.length} 条</div>
       </div>
       <div className="space-y-2">
         {debugEvents.length > 0 ? (
@@ -592,12 +611,12 @@ function ActionDebugPanel({ debugEvents }: { debugEvents: RuntimeDebugEvent[] })
               className={[
                 "rounded-xl border px-3 py-2",
                 event.status === "success"
-                  ? "border-[#d6f0e1] bg-[#f5fcf8]"
-                  : "border-[#f5d4da] bg-[#fff7f8]",
+                  ? "border-[var(--color-success)] bg-[var(--color-success-soft)]"
+                  : "border-[var(--color-danger)] bg-[var(--color-danger-soft)]",
               ].join(" ")}
             >
               <div className="flex items-center justify-between gap-3">
-                <div className="truncate text-xs font-medium text-[#20314c]">
+                <div className="truncate text-xs font-medium text-[var(--color-text-primary)]">
                   {event.eventName}
                   {event.fieldId ? ` / ${event.fieldId}` : ""}
                 </div>
@@ -605,23 +624,23 @@ function ActionDebugPanel({ debugEvents }: { debugEvents: RuntimeDebugEvent[] })
                   className={[
                     "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
                     event.status === "success"
-                      ? "bg-[#dff3e8] text-[#18794e]"
-                      : "bg-[#fde2e7] text-[#c24152]",
+                      ? "bg-[var(--color-success-soft)] text-[var(--color-success)]"
+                      : "bg-[var(--color-danger-soft)] text-[var(--color-danger)]",
                   ].join(" ")}
                 >
                   {event.status === "success" ? "成功" : "失败"}
                 </div>
               </div>
-              <div className="mt-1 text-xs leading-5 text-[#60718a]">{event.message}</div>
+              <div className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">{event.message}</div>
               {event.result ? (
-                <pre className="mt-2 max-h-28 overflow-auto rounded-lg bg-[#0f1726] px-3 py-2 text-[11px] text-[#d8e6ff]">
+                <pre className="mt-2 max-h-28 overflow-auto rounded-lg bg-[var(--color-code-bg)] px-3 py-2 text-[11px] text-[var(--color-code-text)]">
                   {event.result}
                 </pre>
               ) : null}
             </div>
           ))
         ) : (
-          <div className="rounded-xl border border-dashed border-[#d6e1f4] bg-[#f7fbff] px-3 py-5 text-center text-xs text-[#7d8da8]">
+          <div className="rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-5 text-center text-xs text-[var(--color-text-secondary)]">
             打开预览并触发动作后，这里会显示执行日志
           </div>
         )}
@@ -803,7 +822,7 @@ function handleMonacoBeforeMount(monaco: Monaco) {
 
 function SchemaPanel({ schema }: { schema: FormDesignerSchema }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-[#e1eaf6] bg-[#0f1726]">
+    <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-code-bg)]">
       <MonacoEditor
         height="calc(100vh - 320px)"
         value={JSON.stringify(schema, null, 2)}
@@ -827,7 +846,7 @@ function SchemaPanel({ schema }: { schema: FormDesignerSchema }) {
 
 function PlaceholderPanel({ title }: { title: string }) {
   return (
-    <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-[#d6e1f4] bg-[#f7fbff] text-sm text-[#7d8da8]">
+    <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-sm text-[var(--color-text-secondary)]">
       {title}待实现
     </div>
   );

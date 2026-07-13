@@ -18,17 +18,17 @@ export const statusMeta: Record<
 > = {
   enabled: {
     label: "已启用",
-    className: "bg-[var(--success-soft)] text-[var(--success-strong)]",
-    dotClassName: "bg-[var(--success-dot)]",
+    className: "bg-[var(--color-success-soft)] text-[var(--color-success)]",
+    dotClassName: "bg-[var(--color-success)]",
   },
   paused: {
     label: "已停用",
-    className: "bg-[var(--neutral-soft)] text-[var(--neutral-strong)]",
-    dotClassName: "bg-[var(--neutral-dot)]",
+    className: "bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]",
+    dotClassName: "bg-[var(--color-text-disabled)]",
   },
   draft: {
     label: "草稿",
-    className: "bg-[var(--warning-soft)] text-[var(--warning-strong)]",
-    dotClassName: "bg-[var(--warning-dot)]",
+    className: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
+    dotClassName: "bg-[var(--color-warning)]",
   },
 };

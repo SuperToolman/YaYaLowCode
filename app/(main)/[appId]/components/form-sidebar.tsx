@@ -1,6 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  pointerWithin,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -66,6 +79,17 @@ type ApiEnvelope<T> = {
   time: string;
 };
 
+type NavigationDragData = {
+  kind: "navigation-item";
+  itemId: string;
+};
+
+type NavigationDropData = {
+  kind: "navigation-drop";
+  targetId: string;
+  placement: "before" | "after" | "inside";
+};
+
 const ROOT_PARENT_VALUE = "__root__";
 
 export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
@@ -85,12 +109,11 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
     targetId?: string;
     placement?: "before" | "after" | "inside";
   } | null>(null);
-  const draggingItemIdRef = useRef<string | null>(null);
-  const dragTargetRef = useRef<{
-    itemId: string;
-    targetId?: string;
-    placement?: "before" | "after" | "inside";
-  } | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+  );
 
   const tree = useMemo(() => buildNavigationTree(routeAppId, items), [routeAppId, items]);
   const groupOptions = useMemo(() => flattenGroups(tree), [tree]);
@@ -197,66 +220,45 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
     }));
   }
 
-  function handleDragStart(itemId: string) {
-    const nextState = {
-      itemId,
-    };
-
-    draggingItemIdRef.current = itemId;
-    dragTargetRef.current = nextState;
-    setDragState(nextState);
+  function handleDragStart(event: DragStartEvent) {
+    const data = event.active.data.current as NavigationDragData | undefined;
+    if (data?.kind === "navigation-item") {
+      setDragState({ itemId: data.itemId });
+    }
   }
 
-  function handleDragOver(
-    event: React.DragEvent<HTMLDivElement>,
-    item: SidebarNode,
-  ) {
-    const draggingItemId = draggingItemIdRef.current;
+  function handleDragOver(event: DragOverEvent) {
+    const dragData = event.active.data.current as NavigationDragData | undefined;
+    const dropData = event.over?.data.current as NavigationDropData | undefined;
 
     if (
-      !draggingItemId ||
-      draggingItemId === item.id ||
-      item.itemType === "system" ||
-      isNavigationDescendant(items, item.id, draggingItemId)
+      dragData?.kind !== "navigation-item" ||
+      dropData?.kind !== "navigation-drop" ||
+      !canDropNavigationItem(items, dragData.itemId, dropData.targetId)
     ) {
+      if (dragData?.kind === "navigation-item") {
+        setDragState({ itemId: dragData.itemId });
+      }
       return;
     }
 
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    const rect = event.currentTarget.getBoundingClientRect();
-    const ratio = (event.clientY - rect.top) / Math.max(rect.height, 1);
-    const placement =
-      item.itemType === "group" && ratio > 0.25 && ratio < 0.75
-        ? "inside"
-        : ratio < 0.5
-          ? "before"
-          : "after";
-
-    const current = dragTargetRef.current;
-    if (
-      current?.itemId === draggingItemId &&
-      current.targetId === item.id &&
-      current.placement === placement
-    ) {
-      return;
-    }
-
-    const nextState: NonNullable<typeof dragState> = {
-      itemId: draggingItemId,
-      targetId: item.id,
-      placement,
-    };
-
-    dragTargetRef.current = nextState;
-    setDragState(nextState);
+    setDragState({
+      itemId: dragData.itemId,
+      targetId: dropData.targetId,
+      placement: dropData.placement,
+    });
   }
 
-  function handleDrop() {
-    const nextDragState = dragTargetRef.current;
+  function handleDragEnd(event: DragEndEvent) {
+    const dragData = event.active.data.current as NavigationDragData | undefined;
+    const dropData = event.over?.data.current as NavigationDropData | undefined;
+    clearDragState();
 
-    if (!nextDragState?.targetId || !nextDragState.placement) {
-      clearDragState();
+    if (
+      dragData?.kind !== "navigation-item" ||
+      dropData?.kind !== "navigation-drop" ||
+      !canDropNavigationItem(items, dragData.itemId, dropData.targetId)
+    ) {
       return;
     }
 
@@ -268,9 +270,9 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
             "content-type": "application/json",
           },
           body: JSON.stringify({
-            item_id: nextDragState.itemId,
-            target_item_id: nextDragState.targetId,
-            placement: nextDragState.placement,
+            item_id: dragData.itemId,
+            target_item_id: dropData.targetId,
+            placement: dropData.placement,
           }),
         });
         const payload = (await response.json()) as ApiEnvelope<NavigationItem[]>;
@@ -290,74 +292,20 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
     });
   }
 
-  function handleDropInsideGroup(groupId: string) {
-    const draggingItemId = draggingItemIdRef.current;
-
-    if (
-      !draggingItemId ||
-      draggingItemId === groupId ||
-      isNavigationDescendant(items, groupId, draggingItemId)
-    ) {
-      clearDragState();
-      return;
-    }
-
-    const nextDragState: NonNullable<typeof dragState> = {
-      itemId: draggingItemId,
-      targetId: groupId,
-      placement: "inside",
-    };
-
-    dragTargetRef.current = nextDragState;
-    setDragState(nextDragState);
-    handleDrop();
-  }
-
-  function handleDragOverInsideGroup(
-    event: React.DragEvent<HTMLDivElement>,
-    groupId: string,
-  ) {
-    const draggingItemId = draggingItemIdRef.current;
-
-    if (
-      !draggingItemId ||
-      draggingItemId === groupId ||
-      isNavigationDescendant(items, groupId, draggingItemId)
-    ) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-    event.dataTransfer.dropEffect = "move";
-
-    const current = dragTargetRef.current;
-    if (
-      current?.itemId === draggingItemId &&
-      current.targetId === groupId &&
-      current.placement === "inside"
-    ) {
-      return;
-    }
-
-    const nextState: NonNullable<typeof dragState> = {
-      itemId: draggingItemId,
-      targetId: groupId,
-      placement: "inside",
-    };
-
-    dragTargetRef.current = nextState;
-    setDragState(nextState);
-  }
-
   function clearDragState() {
-    draggingItemIdRef.current = null;
-    dragTargetRef.current = null;
     setDragState(null);
   }
 
   return (
-    <Card className="flex h-full w-full flex-col items-stretch justify-start self-start overflow-hidden rounded-xl border-0 bg-transparent p-3 text-left text-[var(--text-primary)] shadow-none">
+    <DndContext
+      collisionDetection={pointerWithin}
+      sensors={sensors}
+      onDragCancel={clearDragState}
+      onDragEnd={handleDragEnd}
+      onDragOver={handleDragOver}
+      onDragStart={handleDragStart}
+    >
+      <Card className="flex h-full w-full flex-col items-stretch justify-start self-start overflow-hidden rounded-xl border-0 bg-transparent p-3 text-left text-[var(--color-text-primary)] shadow-none">
       <div className="mb-3 flex shrink-0 items-center gap-2">
         <SearchField aria-label="搜索表单" name="search" className="min-w-0 flex-1">
           <SearchField.Group>
@@ -367,16 +315,14 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
           </SearchField.Group>
         </SearchField>
         <Dropdown>
-          <Dropdown.Trigger>
-            <span
-              aria-label="新增导航项"
-              className={[
-                "inline-flex h-10 w-10 min-w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--panel-border)] bg-[var(--panel-background)] text-[var(--accent-strong)] transition-colors",
-                isPending ? "opacity-60" : "hover:bg-[var(--surface-soft)]",
-              ].join(" ")}
-            >
-              <AddIcon />
-            </span>
+          <Dropdown.Trigger
+            aria-label="新增导航项"
+            className={[
+              "inline-flex h-10 w-10 min-w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-panel)] text-[var(--color-primary)] transition-colors",
+              isPending ? "opacity-60" : "hover:bg-[var(--color-bg-subtle)]",
+            ].join(" ")}
+          >
+            <AddIcon />
           </Dropdown.Trigger>
           <Dropdown.Popover>
             <Dropdown.Menu
@@ -414,12 +360,6 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
             level={0}
             node={node}
             pathname={pathname}
-            onDragOver={handleDragOver}
-            onDragStart={handleDragStart}
-            onDrop={handleDrop}
-            onDragOverInsideGroup={handleDragOverInsideGroup}
-            onDropInsideGroup={handleDropInsideGroup}
-            onDragEnd={clearDragState}
             onToggleGroup={toggleGroup}
             resolveExpanded={(groupId) => expandedGroups[groupId] ?? true}
           />
@@ -434,11 +374,11 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
           }
         }}
       >
-        <Modal.Backdrop className="bg-black/30" isDismissable>
+        <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
           <Modal.Container placement="center" size="md">
-            <Modal.Dialog className="theme-menu-surface rounded-2xl shadow-[0_30px_90px_rgba(20,33,61,0.24)]">
-              <Modal.Header className="border-b border-[var(--panel-border)] px-5 py-4">
-                <Modal.Heading className="text-lg font-semibold text-[var(--text-primary)]">
+            <Modal.Dialog className="theme-menu-surface rounded-2xl shadow-[var(--shadow-dialog)]">
+              <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
+                <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
                   创建分组
                 </Modal.Heading>
               </Modal.Header>
@@ -450,6 +390,7 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
                   onChange={(event) => setGroupName(event.currentTarget.value)}
                 />
                 <Select
+                  aria-label="上级分组"
                   selectedKey={groupParentId}
                   onSelectionChange={(key) => setGroupParentId(String(key ?? ROOT_PARENT_VALUE))}
                 >
@@ -476,18 +417,18 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
                   </Select.Popover>
                 </Select>
               </Modal.Body>
-              <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--panel-border)] px-5 py-3">
+              <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
                 <Button
                   variant="ghost"
                   onClick={() => setCreateGroupOpen(false)}
-                  className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
+                  className="h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-4 text-[var(--color-text-primary)]"
                 >
                   取消
                 </Button>
                 <Button
                   onClick={handleCreateGroup}
                   isDisabled={isPending || !groupName.trim()}
-                  className="h-10 rounded-lg bg-[var(--accent-strong)] px-4 text-white"
+                  className="h-10 rounded-lg bg-[var(--color-primary)] px-4 text-[var(--color-text-on-primary)]"
                 >
                   创建
                 </Button>
@@ -496,7 +437,15 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
           </Modal.Container>
         </Modal.Backdrop>
       </Modal>
-    </Card>
+      </Card>
+      <DragOverlay dropAnimation={null}>
+        {dragState ? (
+          <div className="pointer-events-none max-w-52 truncate rounded-lg border border-[var(--color-primary)] bg-[var(--color-bg-surface)] px-3 py-2 text-xs font-medium text-[var(--color-text-primary)] shadow-[var(--shadow-floating)]">
+            {items.find((item) => item.id === dragState.itemId)?.title ?? "导航项"}
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   );
 }
 
@@ -506,12 +455,6 @@ function SidebarTreeItem({
   level,
   node,
   pathname,
-  onDragOver,
-  onDragStart,
-  onDrop,
-  onDragOverInsideGroup,
-  onDropInsideGroup,
-  onDragEnd,
   onToggleGroup,
   resolveExpanded,
 }: {
@@ -524,12 +467,6 @@ function SidebarTreeItem({
   level: number;
   node: SidebarNode;
   pathname: string;
-  onDragOver: (event: React.DragEvent<HTMLDivElement>, item: SidebarNode) => void;
-  onDragStart: (itemId: string) => void;
-  onDrop: () => void;
-  onDragOverInsideGroup: (event: React.DragEvent<HTMLDivElement>, groupId: string) => void;
-  onDropInsideGroup: (groupId: string) => void;
-  onDragEnd: () => void;
   onToggleGroup: (groupId: string) => void;
   resolveExpanded: (groupId: string) => boolean;
 }) {
@@ -539,37 +476,37 @@ function SidebarTreeItem({
   const paddingLeft = 10 + level * 14;
   const nodeIcon = getSidebarNodeIcon(node.itemType, isExpanded);
   const nodeIconColor = getSidebarNodeIconColor(node.itemType);
+  const isDraggable = node.itemType !== "system";
+  const { attributes, isDragging, listeners, setNodeRef } = useDraggable({
+    id: `navigation-item:${node.id}`,
+    data: { kind: "navigation-item", itemId: node.id } satisfies NavigationDragData,
+    disabled: !isDraggable,
+  });
 
   return (
     <div>
       <div
-        draggable={node.itemType !== "system"}
-        onDragStart={(event) => {
-          event.dataTransfer.effectAllowed = "move";
-          onDragStart(node.id);
-        }}
-        onDragOver={(event) => onDragOver(event, node)}
-        onDrop={(event) => {
-          event.preventDefault();
-          onDrop();
-        }}
-        onDragEnd={onDragEnd}
+        ref={setNodeRef}
         className={[
-          "mb-0.5 rounded-lg border transition-colors",
+          "relative mb-0.5 rounded-lg border transition-colors",
+          isDragging ? "opacity-35" : "",
           isActive
-            ? "border-[var(--panel-border)] bg-[var(--surface-soft)] text-[var(--text-primary)]"
-            : "border-transparent text-[var(--text-secondary)] hover:bg-[var(--panel-background-soft)]",
+            ? "border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[var(--color-text-primary)]"
+            : "border-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-panel-soft)]",
           isDropTarget && dragState?.placement === "inside"
-            ? "border-dashed border-[var(--accent-strong)]"
+            ? "border-dashed border-[var(--color-primary)]"
             : "",
           isDropTarget && dragState?.placement === "before"
-            ? "shadow-[inset_0_3px_0_0_var(--accent-strong)]"
+            ? "shadow-[inset_0_3px_0_0_var(--color-primary)]"
             : "",
           isDropTarget && dragState?.placement === "after"
-            ? "shadow-[inset_0_-3px_0_0_var(--accent-strong)]"
+            ? "shadow-[inset_0_-3px_0_0_var(--color-primary)]"
             : "",
         ].join(" ")}
       >
+        {dragState && dragState.itemId !== node.id && node.itemType !== "system" ? (
+          <NavigationItemDropZones node={node} />
+        ) : null}
         {node.itemType === "group" ? (
           <button
             type="button"
@@ -585,7 +522,7 @@ function SidebarTreeItem({
         ) : (
           <Link
             href={node.href ?? "#"}
-            className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left"
+            className="flex w-[calc(100%-30px)] items-center gap-2.5 px-2.5 py-2 pr-1 text-left"
             style={{ paddingLeft }}
           >
             <span className={`inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center ${nodeIconColor}`}>
@@ -594,20 +531,27 @@ function SidebarTreeItem({
             <span className="truncate text-xs font-medium">{node.name}</span>
           </Link>
         )}
+        {isDraggable ? (
+          <button
+            type="button"
+            aria-label={`拖拽 ${node.name}`}
+            {...attributes}
+            {...listeners}
+            className="absolute right-1 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 cursor-grab items-center justify-center rounded-md text-[10px] tracking-[-2px] text-[var(--color-text-disabled)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-text-secondary)] active:cursor-grabbing"
+            style={{ touchAction: "none" }}
+          >
+            ⋮⋮
+          </button>
+        ) : null}
       </div>
       {node.itemType === "group" && showChildren ? (
         <div
           className={[
             "mb-1 rounded-lg",
             dragState?.targetId === node.id && dragState.placement === "inside"
-              ? "bg-[var(--accent-soft)]"
+              ? "bg-[var(--color-primary-soft)]"
               : "",
           ].join(" ")}
-          onDragOver={(event) => onDragOverInsideGroup(event, node.id)}
-          onDrop={(event) => {
-            event.preventDefault();
-            handleGroupContentDrop(event, node.id, onDropInsideGroup);
-          }}
         >
           {node.children.length > 0 ? (
             node.children.map((child) => (
@@ -618,23 +562,12 @@ function SidebarTreeItem({
                 level={level + 1}
                 node={child}
                 pathname={pathname}
-                onDragOver={onDragOver}
-                onDragStart={onDragStart}
-                onDrop={onDrop}
-                onDragOverInsideGroup={onDragOverInsideGroup}
-                onDropInsideGroup={onDropInsideGroup}
-                onDragEnd={onDragEnd}
                 onToggleGroup={onToggleGroup}
                 resolveExpanded={resolveExpanded}
               />
             ))
-          ) : dragState ? (
-            <div
-              className="mb-2 ml-12 flex h-8 items-center rounded-lg border border-dashed border-[var(--panel-border)] px-3 text-xs text-[var(--text-muted)]"
-              style={{ marginRight: 4 }}
-            >
-              拖拽到这里放入分组
-            </div>
+          ) : dragState && dragState.itemId !== node.id ? (
+            <EmptyGroupDropZone groupId={node.id} />
           ) : null}
         </div>
       ) : null}
@@ -647,12 +580,6 @@ function SidebarTreeItem({
               level={level + 1}
               node={child}
               pathname={pathname}
-              onDragOver={onDragOver}
-              onDragStart={onDragStart}
-              onDrop={onDrop}
-              onDragOverInsideGroup={onDragOverInsideGroup}
-              onDropInsideGroup={onDropInsideGroup}
-              onDragEnd={onDragEnd}
               onToggleGroup={onToggleGroup}
               resolveExpanded={resolveExpanded}
             />
@@ -662,13 +589,95 @@ function SidebarTreeItem({
   );
 }
 
-function handleGroupContentDrop(
-  event: React.DragEvent<HTMLDivElement>,
-  groupId: string,
-  onDropInsideGroup: (groupId: string) => void,
+function NavigationItemDropZones({ node }: { node: SidebarNode }) {
+  return (
+    <>
+      <NavigationDropZone
+        id={`navigation-drop:${node.id}:before`}
+        targetId={node.id}
+        placement="before"
+        className={node.itemType === "group" ? "top-0 h-1/4" : "top-0 h-1/2"}
+      />
+      {node.itemType === "group" ? (
+        <NavigationDropZone
+          id={`navigation-drop:${node.id}:inside`}
+          targetId={node.id}
+          placement="inside"
+          className="top-1/4 h-1/2"
+        />
+      ) : null}
+      <NavigationDropZone
+        id={`navigation-drop:${node.id}:after`}
+        targetId={node.id}
+        placement="after"
+        className={node.itemType === "group" ? "bottom-0 h-1/4" : "bottom-0 h-1/2"}
+      />
+    </>
+  );
+}
+
+function NavigationDropZone({
+  className,
+  id,
+  placement,
+  targetId,
+}: {
+  className: string;
+  id: string;
+  placement: NavigationDropData["placement"];
+  targetId: string;
+}) {
+  const { isOver, setNodeRef } = useDroppable({
+    id,
+    data: { kind: "navigation-drop", targetId, placement } satisfies NavigationDropData,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`absolute inset-x-0 z-20 ${className} ${
+        isOver ? "bg-[var(--color-primary)]/10" : ""
+      }`}
+    />
+  );
+}
+
+function EmptyGroupDropZone({ groupId }: { groupId: string }) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: `navigation-drop:${groupId}:empty-inside`,
+    data: {
+      kind: "navigation-drop",
+      targetId: groupId,
+      placement: "inside",
+    } satisfies NavigationDropData,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`mb-2 ml-12 mr-1 flex h-8 items-center rounded-lg border border-dashed px-3 text-xs ${
+        isOver
+          ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]"
+          : "border-[var(--color-border)] text-[var(--color-text-secondary)]"
+      }`}
+    >
+      拖拽到这里放入分组
+    </div>
+  );
+}
+
+function canDropNavigationItem(
+  items: NavigationItem[],
+  itemId: string,
+  targetId: string,
 ) {
-  event.stopPropagation();
-  onDropInsideGroup(groupId);
+  const target = items.find((item) => item.id === targetId);
+  return Boolean(
+    target &&
+      target.itemType !== "system" &&
+      itemId !== targetId &&
+      !isNavigationDescendant(items, targetId, itemId),
+  );
 }
 
 function isNavigationDescendant(
@@ -761,7 +770,7 @@ function getSidebarNodeIconColor(itemType: NavigationItem["itemType"]) {
       return "text-[var(--nav-link-icon)]";
     case "system":
     default:
-      return "text-[var(--text-muted)]";
+      return "text-[var(--color-text-secondary)]";
   }
 }
 

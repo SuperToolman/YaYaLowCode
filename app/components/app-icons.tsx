@@ -151,12 +151,68 @@ export function ArrowLeftIcon() {
   );
 }
 
+export function ArrowUpIcon() {
+  return (
+    <IconBase className="h-4 w-4">
+      <path d="m6 15 6-6 6 6" />
+    </IconBase>
+  );
+}
+
+export function ArrowDownIcon() {
+  return (
+    <IconBase className="h-4 w-4">
+      <path d="m6 9 6 6 6-6" />
+    </IconBase>
+  );
+}
+
+export function TrashIcon() {
+  return (
+    <IconBase className="h-4 w-4">
+      <path d="M4 7h16" />
+      <path d="M9 7V4h6v3" />
+      <path d="m7 7 1 13h8l1-13" />
+      <path d="M10 11v5" />
+      <path d="M14 11v5" />
+    </IconBase>
+  );
+}
+
 export function RestoreIcon() {
   return (
     <IconBase className="h-4 w-4">
       <path d="M4 12a8 8 0 1 0 2.3-5.7" />
       <path d="M4 4v4h4" />
       <path d="M12 8v4l3 2" />
+    </IconBase>
+  );
+}
+
+export function PreviewIcon() {
+  return (
+    <IconBase className="h-4 w-4">
+      <path d="M2.8 12s3.2-5 9.2-5 9.2 5 9.2 5-3.2 5-9.2 5-9.2-5-9.2-5Z" />
+      <circle cx="12" cy="12" r="2.5" />
+    </IconBase>
+  );
+}
+
+export function PublishIcon() {
+  return (
+    <IconBase className="h-4 w-4">
+      <path d="m12 3 7 4v5c0 4.2-2.8 7.3-7 9-4.2-1.7-7-4.8-7-9V7l7-4Z" />
+      <path d="m8.5 12 2.2 2.2 4.8-5" />
+    </IconBase>
+  );
+}
+
+export function SaveIcon() {
+  return (
+    <IconBase className="h-4 w-4">
+      <path d="M5 4h12l2 2v14H5V4Z" />
+      <path d="M8 4v6h8V4" />
+      <path d="M8 20v-6h8v6" />
     </IconBase>
   );
 }

@@ -36,6 +36,7 @@ async fn main() -> Result<(), AppError> {
     infrastructure::migrator::Migrator::up(&db, None).await?;
     infrastructure::legacy_bootstrap::ensure_form_tables(&db).await?;
     infrastructure::legacy_bootstrap::ensure_automation_tables(&db).await?;
+    infrastructure::legacy_bootstrap::ensure_agent_tables(&db).await?;
     navigation::ensure_system_navigation_items(&db).await?;
 
     let (shutdown, mut shutdown_signal) = tokio::sync::watch::channel(false);

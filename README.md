@@ -1,6 +1,8 @@
 # 丫丫低代码平台
 
-一个面向表单设计、数据录入与集成自动化场景的低代码平台原型项目。当前仓库已经包含应用管理、表单设计器、表单运行时、自动化工作流编辑器，以及基于 Rust + PostgreSQL 的后端服务。
+一个面向表单设计、数据录入、集成自动化与智能辅助场景的低代码平台原型项目。当前仓库已经包含应用管理、表单设计器、表单运行时、自动化工作流编辑器、只读 Agent MVP，以及基于 Rust + PostgreSQL 的后端服务。
+
+当前版本：**0.2a**（内部语义化版本：`0.2.0-alpha.0`）
 
 ## 当前状态
 
@@ -13,6 +15,8 @@
 - 在运行时页面新增、编辑、删除并查看表单记录
 - 基于表单事件触发集成自动化
 - 查看自动化运行日志并执行失败重试
+- 配置 OpenAI Compatible 模型并使用只读 Agent 分析应用、表单和自动化
+- 通过独立子路由管理数据库、Agent、知识库和 Skills 设置
 
 ## 技术栈
 
@@ -32,6 +36,7 @@
 - SeaORM `2.0.0-rc.41`
 - PostgreSQL
 - Reqwest
+- Rig
 
 ## 已实现能力
 
@@ -43,7 +48,7 @@
 - 应用启用 / 关闭
 - 编辑应用名称
 - 删除应用
-- 应用设置入口预留
+- 应用设置页面（当前大部分配置为前端占位）
 
 ### 2. 应用导航
 
@@ -62,6 +67,7 @@
 - 页面源码查看
 - 分组容器组件
 - 组件属性编辑
+- 字段默认值与公式编辑
 - 页面属性配置
 - 预览
 - 保存草稿
@@ -111,7 +117,28 @@
 - 整条流程重头触发
 - 错误节点断点重试
 
-### 7. 后端接口与存储
+### 7. Agent MVP
+
+- OpenAI Compatible 模型配置
+- Agent 启用状态、模型、Temperature 和最大执行步骤设置
+- 全局 Agent 助手入口
+- Agent 会话与历史消息
+- SSE 流式响应
+- 表单列表与表单草稿 Schema 只读工具
+- 自动化列表与流程图只读工具
+- 会话、消息、运行和步骤审计记录
+- 当前 Agent 不执行任何写入、发布或删除操作
+
+### 8. 平台与应用设置
+
+- 平台数据库连接设置
+- Agent 模型设置
+- 知识库和 Skills 规划入口
+- 设置页面独立子路由与左侧导航
+- 设置导航和内容区域独立滚动
+- 应用基础设置、表单设置、管理员、权限与数据工厂页面（当前大部分配置为前端占位）
+
+### 9. 后端接口与存储
 
 - 应用增删改查
 - 表单创建与删除
@@ -123,6 +150,8 @@
 - 自动化增删改查
 - 自动化版本查询与恢复
 - 自动化运行日志与重试接口
+- Agent 设置接口
+- Agent 会话、消息和流式运行接口
 
 ## 自动化存储结构
 
@@ -134,6 +163,13 @@
 - `automation_edges`
 - `automation_flow_runs`
 - `automation_flow_run_nodes`
+
+Agent MVP 使用以下结构保存会话与审计信息：
+
+- `agent_sessions`
+- `agent_messages`
+- `agent_runs`
+- `agent_run_steps`
 
 ## 本地启动
 
@@ -150,11 +186,11 @@ pnpm dev
 pnpm codegen:api
 ```
 
-用于根据 [openapi/openapi.json](/C:/Users/SuperToolman/Desktop/myProjects/yaya-low-code/openapi/openapi.json) 自动更新前端 API Client。
+用于根据 [`openapi/openapi.json`](openapi/openapi.json) 自动更新前端 API Client。
 
 ### 后端启动
 
-进入 [backend](/C:/Users/SuperToolman/Desktop/myProjects/yaya-low-code/backend) 目录后执行：
+进入 [`backend`](backend) 目录后执行：
 
 ```bash
 cargo run
@@ -164,15 +200,26 @@ cargo run
 
 ## 数据库配置
 
-当前项目默认使用 PostgreSQL，连接信息如下：
+当前项目默认使用 PostgreSQL。推荐通过以下任一方式配置连接：
 
-- 地址：`localhost`
-- 端口：`5432`
-- 用户名：`postgres`
-- 密码：`5201314qq`
-- 数据库名：`yaya_low_code`
+- 在 `/settings/database` 页面填写并验证数据库连接。
+- 设置 `DATABASE_URL` 环境变量，例如：
+
+```bash
+DATABASE_URL=postgres://postgres:your_password@localhost:5432/yaya_low_code
+```
+
+未提供本地设置文件和 `DATABASE_URL` 时，后端会尝试连接无密码的本地地址 `postgres://postgres@localhost:5432/yaya_low_code`。
+
+数据库配置保存在 `.yaya-lowcode-settings.json`，该文件可能包含密码，已被 Git 忽略，不应上传到仓库。
 
 请提前确认本地 PostgreSQL 已启动，并且已创建对应数据库。
+
+## Agent 配置
+
+在 `/settings/agent` 页面配置模型供应商、API Base URL、API Key 和模型参数。当前支持 OpenAI Compatible 接口。
+
+Agent 配置保存在 `.yaya-agent-settings.json`，该文件可能包含 API Key，已被 Git 忽略。Agent 启用后可通过全局侧边栏入口创建会话，当前只允许读取应用、表单和自动化信息。
 
 ## 目录结构
 
@@ -206,7 +253,9 @@ pnpm build
 cd backend && cargo check
 ```
 
-本轮自动化基础能力开发完成后，上述核心检查已通过。
+`0.2a` 发布前，上述前后端核心检查均应通过。
+
+发布前还应确认本地设置文件未被 Git 跟踪，并避免在文档、日志或提交内容中写入数据库密码和模型 API Key。
 
 ## 下一步建议
 
@@ -222,3 +271,6 @@ cd backend && cargo check
 - 自定义视图能力
 - 动作脚本调试增强
 - 更多字段类型与运行时校验能力
+- Agent 写操作的人工确认与权限审计
+- 知识库文档处理、Embedding 与 pgvector 检索
+- Skills 加载器、工具白名单和知识范围配置

@@ -54,7 +54,7 @@ export const FormulaEditor = forwardRef<HTMLTextAreaElement, FormulaEditorProps>
       <textarea
         ref={textareaRef}
         aria-label="公式编辑器"
-        className="h-full min-h-[220px] w-full resize-none rounded-lg border border-[#d7dee9] bg-white px-3 py-3 font-mono text-[15px] leading-6 text-[#202f45] outline-none transition placeholder:text-[#9aa6b6] focus:border-[#2f6bff] focus:ring-2 focus:ring-[#2f6bff]/10 disabled:cursor-not-allowed disabled:bg-[#f6f8fb] disabled:text-[#9aa6b6]"
+        className="h-full min-h-[220px] w-full resize-none rounded-lg border border-[var(--designer-border)] bg-[var(--color-bg-input)] px-3 py-3 font-mono text-[15px] leading-6 text-[var(--color-text-primary)] outline-none transition placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-soft)] disabled:cursor-not-allowed disabled:bg-[var(--color-bg-subtle)] disabled:text-[var(--color-text-secondary)]"
         disabled={isDisabled}
         placeholder="请输入公式，例如：@SUM($number_1, 100)"
         spellCheck={false}

@@ -2,14 +2,24 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import {
+  createContext,
+  memo,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
 import {
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
   Background,
   BaseEdge,
-  Controls,
   EdgeLabelRenderer,
   getBezierPath,
   Handle,
@@ -28,7 +38,8 @@ import {
   type OnConnect,
   type OnConnectEnd,
 } from "@xyflow/react";
-import { Button, Input, ListBox, Select, toast } from "@heroui/react";
+import { Button, Dropdown, Input, ListBox, Select, toast } from "@heroui/react";
+import { Card } from "@heroui/react/card";
 import { Modal } from "@heroui/react/modal";
 import {
   getAutomationFlow,
@@ -39,7 +50,14 @@ import {
   type AutomationFlowVersionSummary,
   type FormSummary,
 } from "../../../../lib/api-client";
-import { AddIcon, ArrowLeftIcon, FormIcon } from "../../../../components/app-icons";
+import {
+  AddIcon,
+  ArrowDownIcon,
+  ArrowLeftIcon,
+  ArrowUpIcon,
+  FormIcon,
+  TrashIcon,
+} from "../../../../components/app-icons";
 import {
   triggerEvents,
   type AutomationStatus,
@@ -96,12 +114,18 @@ type TriggerConfig = {
   changedFieldsText?: string;
 };
 
+type ConditionBranch = {
+  id: string;
+  name: string;
+  mode: "all" | "rules" | "expression";
+  priority: number;
+  rules: BranchRule[];
+  expression: string;
+  hitLabel: string;
+};
+
 type ConditionConfig = {
-  mode?: "all" | "rules" | "expression";
-  priority?: number;
-  rules?: BranchRule[];
-  expression?: string;
-  hitLabel?: string;
+  branches?: ConditionBranch[];
 };
 
 type BranchRule = {
@@ -110,6 +134,8 @@ type BranchRule = {
   fieldKey?: string;
   operator?: BranchRuleOperator;
   rawValue?: string;
+  valueType?: "value" | "field";
+  sourceFieldKey?: string;
 };
 
 type BranchRuleOperator =
@@ -198,18 +224,29 @@ type FlowState = {
 
 type InsertContext = {
   sourceId: string;
+  sourceHandle?: string | null;
   targetId?: string;
   edgeId?: string;
   position?: { x: number; y: number };
 };
 
 const edgeTypes = {
-  insertable: InsertableEdge,
+  insertable: memo(InsertableEdge),
 };
 
 const nodeTypes = {
-  workflow: WorkflowCardNode,
+  workflow: memo(WorkflowCardNode),
 };
+
+type WorkflowNodeActions = {
+  addConditionBranch: (nodeId: string) => void;
+  removeConditionBranch: (nodeId: string, branchId: string) => void;
+};
+
+const WorkflowNodeActionsContext = createContext<WorkflowNodeActions>({
+  addConditionBranch: () => undefined,
+  removeConditionBranch: () => undefined,
+});
 
 const dataNodeMenu: Array<{ group: string; items: NodeMenuItem[] }> = [
   {
@@ -253,14 +290,14 @@ const branchOperators: Array<{ id: BranchRuleOperator; label: string }> = [
 ];
 
 const nodeTone: Record<WorkflowNodeKind, string> = {
-  trigger: "border-[#4f8dff] bg-[#12284f] text-[#9fc0ff]",
-  condition: "border-[#ffbf63] bg-[#3a2808] text-[#ffd79a]",
-  "add-data": "border-[#43c287] bg-[#0f2f24] text-[#98edc5]",
-  "update-data": "border-[#69a8ff] bg-[#13294a] text-[#a7c8ff]",
-  "get-one": "border-[#7d92ff] bg-[#1a214d] text-[#c0c9ff]",
-  "get-many": "border-[#7d92ff] bg-[#1a214d] text-[#c0c9ff]",
-  "delete-data": "border-[#f08ea0] bg-[#441926] text-[#ffc3cf]",
-  "http-request": "border-[#9f98ff] bg-[#241d4a] text-[#cbc6ff]",
+  trigger: "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]",
+  condition: "border-[var(--color-warning)] bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
+  "add-data": "border-[var(--color-success)] bg-[var(--color-success-soft)] text-[var(--color-success)]",
+  "update-data": "border-[var(--color-info)] bg-[var(--color-info-soft)] text-[var(--color-info)]",
+  "get-one": "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]",
+  "get-many": "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]",
+  "delete-data": "border-[var(--color-danger)] bg-[var(--color-danger-soft)] text-[var(--color-danger)]",
+  "http-request": "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]",
 };
 
 export function AutomationEditorPageClient({
@@ -304,6 +341,73 @@ function AutomationEditorSurface({
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, startTransition] = useTransition();
   const [errorMessage, setErrorMessage] = useState("");
+
+  const handleInsertRequest = useCallback(
+    (sourceId: string, targetId: string, edgeId: string) => {
+      setInsertContext({ sourceId, targetId, edgeId });
+    },
+    [],
+  );
+
+  const handleAddConditionBranch = useCallback((nodeId: string) => {
+    setNodes((current) =>
+      current.map((node) => {
+        if (node.id !== nodeId || node.data.kind !== "condition") {
+          return node;
+        }
+
+        const config = normalizeConditionConfig(node.data.config);
+        const branches = config.branches ?? [];
+        const nextPriority = Math.max(0, ...branches.map((branch) => branch.priority)) + 1;
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            config: {
+              branches: [...branches, createConditionBranch(nextPriority)],
+            },
+          },
+        };
+      }),
+    );
+    setSelectedNodeId(nodeId);
+  }, []);
+
+  const handleRemoveConditionBranch = useCallback((nodeId: string, branchId: string) => {
+    setNodes((current) =>
+      current.map((node) => {
+        if (node.id !== nodeId || node.data.kind !== "condition") {
+          return node;
+        }
+        const config = normalizeConditionConfig(node.data.config);
+        if ((config.branches?.length ?? 0) <= 1) {
+          return node;
+        }
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            config: {
+              branches: config.branches?.filter((branch) => branch.id !== branchId),
+            },
+          },
+        };
+      }),
+    );
+    setEdges((current) =>
+      current.filter(
+        (edge) => !(edge.source === nodeId && edge.sourceHandle === conditionBranchHandleId(branchId)),
+      ),
+    );
+  }, []);
+
+  const workflowNodeActions = useMemo<WorkflowNodeActions>(
+    () => ({
+      addConditionBranch: handleAddConditionBranch,
+      removeConditionBranch: handleRemoveConditionBranch,
+    }),
+    [handleAddConditionBranch, handleRemoveConditionBranch],
+  );
 
   const ensureFormSchema = useCallback(async (formUuid: string) => {
     if (!formUuid) {
@@ -382,7 +486,12 @@ function AutomationEditorSurface({
       setFlowState(nextFlowState);
       setForms(formsResult.data.data);
       setNodes(nextNodes);
-      setEdges(decorateEdges(normalizeWorkflowEdges(detail.edges), handleInsertRequest));
+      setEdges(
+        decorateEdges(
+          migrateConditionEdgeHandles(normalizeWorkflowEdges(detail.edges), nextNodes),
+          handleInsertRequest,
+        ),
+      );
       setSelectedNodeId(nextNodes[0]?.id ?? null);
 
       const schemaTargets = collectSchemaTargets(nextFlowState, nextNodes);
@@ -394,7 +503,7 @@ function AutomationEditorSurface({
     } finally {
       setIsLoading(false);
     }
-  }, [appId, automationId, ensureFormSchema]);
+  }, [appId, automationId, ensureFormSchema, handleInsertRequest]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -459,7 +568,15 @@ function AutomationEditorSurface({
 
     setEdges((current) =>
       decorateEdges(
-        addEdge(createEditorEdge(connection.source, connection.target), current),
+        addEdge(
+          createEditorEdge(
+            connection.source,
+            connection.target,
+            connection.sourceHandle,
+            connection.targetHandle,
+          ),
+          current,
+        ),
         handleInsertRequest,
       ),
     );
@@ -479,16 +596,13 @@ function AutomationEditorSurface({
 
     setInsertContext({
       sourceId: connectionState.fromNode.id,
+      sourceHandle: connectionState.fromHandle.id,
       position: {
         x: clientPoint.clientX,
         y: clientPoint.clientY,
       },
     });
   };
-
-  function handleInsertRequest(sourceId: string, targetId: string, edgeId: string) {
-    setInsertContext({ sourceId, targetId, edgeId });
-  }
 
   function handleFlowFieldChange<K extends keyof FlowState>(key: K, value: FlowState[K]) {
     setFlowState((current) => {
@@ -722,52 +836,85 @@ function AutomationEditorSurface({
     });
   }
 
-  function handleConditionModeChange(value: "all" | "rules" | "expression") {
+  function updateSelectedConditionBranch(
+    branchId: string,
+    updater: (branch: ConditionBranch) => ConditionBranch,
+  ) {
     updateSelectedNodeConfig((config) => {
       const nextConfig = normalizeConditionConfig(config);
-      nextConfig.mode = value;
-      if (value === "rules" && (nextConfig.rules?.length ?? 0) === 0) {
-        nextConfig.rules = [createBranchRule()];
+      nextConfig.branches = nextConfig.branches?.map((branch) =>
+        branch.id === branchId ? updater(branch) : branch,
+      );
+      return nextConfig;
+    });
+  }
+
+  function handleConditionBranchChange(
+    branchId: string,
+    key: "name" | "hitLabel" | "expression",
+    value: string,
+  ) {
+    updateSelectedConditionBranch(branchId, (branch) => ({
+      ...branch,
+      [key]: value,
+    }));
+  }
+
+  function handleConditionModeChange(
+    branchId: string,
+    value: "all" | "rules" | "expression",
+  ) {
+    updateSelectedConditionBranch(branchId, (branch) => {
+      const rules = value === "rules" && branch.rules.length === 0
+        ? [createBranchRule()]
+        : branch.rules;
+      return { ...branch, mode: value, rules };
+    });
+  }
+
+  function handleMoveConditionBranch(branchId: string, direction: "up" | "down") {
+    updateSelectedNodeConfig((config) => {
+      const nextConfig = normalizeConditionConfig(config);
+      const branches = [...(nextConfig.branches ?? [])];
+      const currentIndex = branches.findIndex((branch) => branch.id === branchId);
+      const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+      if (currentIndex < 0 || targetIndex < 0 || targetIndex >= branches.length) {
+        return nextConfig;
       }
+      [branches[currentIndex], branches[targetIndex]] = [
+        branches[targetIndex],
+        branches[currentIndex],
+      ];
+      nextConfig.branches = branches.map((branch, index) => ({
+        ...branch,
+        priority: index + 1,
+      }));
       return nextConfig;
     });
   }
 
-  function handleConditionPriorityChange(value: number) {
-    updateSelectedNodeConfig((config) => {
-      const nextConfig = normalizeConditionConfig(config);
-      nextConfig.priority = Math.max(1, value || 1);
-      return nextConfig;
-    });
-  }
-
-  function handleAddConditionRule(parentId?: string, siblingOfId?: string) {
-    updateSelectedNodeConfig((config) => {
-      const nextConfig = normalizeConditionConfig(config);
+  function handleAddConditionRule(branchId: string, parentId?: string, siblingOfId?: string) {
+    updateSelectedConditionBranch(branchId, (branch) => {
       const nextRule = createBranchRule(parentId);
-      const rules = [...(nextConfig.rules ?? [])];
+      const rules = [...branch.rules];
 
       if (!siblingOfId) {
-        nextConfig.rules = [...rules, nextRule];
-        return nextConfig;
+        return { ...branch, rules: [...rules, nextRule] };
       }
 
       const index = rules.findIndex((item) => item.id === siblingOfId);
       if (index === -1) {
-        nextConfig.rules = [...rules, nextRule];
-        return nextConfig;
+        return { ...branch, rules: [...rules, nextRule] };
       }
 
       rules.splice(index + 1, 0, nextRule);
-      nextConfig.rules = rules;
-      return nextConfig;
+      return { ...branch, rules };
     });
   }
 
-  function handleRemoveConditionRule(ruleId: string) {
-    updateSelectedNodeConfig((config) => {
-      const nextConfig = normalizeConditionConfig(config);
-      const rules = nextConfig.rules ?? [];
+  function handleRemoveConditionRule(branchId: string, ruleId: string) {
+    updateSelectedConditionBranch(branchId, (branch) => {
+      const rules = branch.rules;
       const removeIds = new Set<string>([ruleId]);
 
       let changed = true;
@@ -781,19 +928,21 @@ function AutomationEditorSurface({
         }
       }
 
-      nextConfig.rules = rules.filter((item) => !removeIds.has(item.id));
-      return nextConfig;
+      return {
+        ...branch,
+        rules: rules.filter((item) => !removeIds.has(item.id)),
+      };
     });
   }
 
   function handleConditionRuleChange(
+    branchId: string,
     ruleId: string,
     key: keyof BranchRule,
     value: string,
   ) {
-    updateSelectedNodeConfig((config) => {
-      const nextConfig = normalizeConditionConfig(config);
-      nextConfig.rules = (nextConfig.rules ?? []).map((rule) => {
+    updateSelectedConditionBranch(branchId, (branch) => {
+      const rules = branch.rules.map((rule) => {
         if (rule.id !== ruleId) {
           return rule;
         }
@@ -802,12 +951,16 @@ function AutomationEditorSurface({
         if (key === "fieldKey") {
           nextRule.rawValue = "";
         }
+        if (key === "valueType") {
+          nextRule.rawValue = "";
+          nextRule.sourceFieldKey = "";
+        }
         if (key === "operator" && (value === "hasValue" || value === "noValue")) {
           nextRule.rawValue = "";
         }
         return nextRule;
       });
-      return nextConfig;
+      return { ...branch, rules };
     });
   }
 
@@ -953,16 +1106,32 @@ function AutomationEditorSurface({
         position,
       },
     ]);
-    setEdges((current) =>
-      decorateEdges(
+    setEdges((current) => {
+      const replacedEdge = insertContext.edgeId
+        ? current.find((edge) => edge.id === insertContext.edgeId)
+        : undefined;
+      return decorateEdges(
         [
           ...current.filter((edge) => edge.id !== insertContext.edgeId),
-          createEditorEdge(insertContext.sourceId, nextNode.id),
-          ...(insertContext.targetId ? [createEditorEdge(nextNode.id, insertContext.targetId)] : []),
+          createEditorEdge(
+            insertContext.sourceId,
+            nextNode.id,
+            insertContext.sourceHandle ?? replacedEdge?.sourceHandle,
+          ),
+          ...(insertContext.targetId
+            ? [
+                createEditorEdge(
+                  nextNode.id,
+                  insertContext.targetId,
+                  defaultSourceHandleForNode(nextNode),
+                  replacedEdge?.targetHandle,
+                ),
+              ]
+            : []),
         ],
         handleInsertRequest,
-      ),
-    );
+      );
+    });
     setSelectedNodeId(nextNode.id);
     setInsertContext(null);
   }
@@ -994,7 +1163,9 @@ function AutomationEditorSurface({
         const { data, error } = await updateAutomationFlow({
           path: { automationId },
           body: {
-            name: flowState.name.trim() || "未命名自动化",
+            name:
+              flowState.name.trim() ||
+              buildAutomationName(forms, flowState.triggerFormUuid, flowState.triggerEvent),
             description: flowState.description.trim() || undefined,
             status: flowState.status,
             triggerFormUuid: flowState.triggerFormUuid || undefined,
@@ -1020,7 +1191,7 @@ function AutomationEditorSurface({
 
   if (isLoading) {
     return (
-      <div className="flex min-h-[calc(100vh-120px)] items-center justify-center px-6 py-10 text-sm text-[#60718a]">
+      <div className="flex h-full min-h-0 items-center justify-center px-6 py-10 text-sm text-[var(--color-text-secondary)]">
         正在加载自动化编排...
       </div>
     );
@@ -1029,22 +1200,22 @@ function AutomationEditorSurface({
   const displayStatus = flowState.status === "enabled" ? "enabled" : "paused";
 
   return (
-    <div className="flex h-[calc(100vh-92px)] flex-col overflow-hidden bg-[linear-gradient(180deg,#0a1220_0%,#0f172a_100%)]">
+    <Card className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-0 text-[var(--color-text-primary)] shadow-[var(--shadow-designer)]">
       <header
-        className="shrink-0 border-b border-white/10 bg-[#08111f]/88 px-5 py-4 backdrop-blur lg:px-6"
+        className="shrink-0 border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] px-5 py-2 backdrop-blur lg:px-6"
         onPointerDown={() => setSelectedNodeId(null)}
       >
-        <div className="mx-auto flex w-full max-w-[1840px] items-center justify-between gap-4">
-          <div className="min-w-0 flex-1">
+        <div className="mx-auto flex w-full items-center justify-between gap-4">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             <Link
               href={`/${appId}/automations`}
-              className="inline-flex items-center gap-2 text-sm text-[#8da3c2] transition-colors hover:text-white"
+              className="inline-flex shrink-0 items-center gap-2 text-sm text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text-primary)]"
             >
               <ArrowLeftIcon />
               返回自动化列表
             </Link>
             <div
-              className="mt-2 max-w-[720px] rounded-xl border border-transparent px-1 py-1 transition hover:border-white/6"
+              className="min-w-0 max-w-[720px] flex-1 rounded-xl border border-transparent px-1 py-1 transition hover:border-[var(--color-border)]"
               onDoubleClick={(event) => {
                 event.stopPropagation();
                 setIsHeaderEditing(true);
@@ -1065,7 +1236,7 @@ function AutomationEditorSurface({
                   />
                   <textarea
                     ref={headerDescriptionRef}
-                    className="min-h-[88px] w-full rounded-lg border border-white/10 bg-white/6 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-[#2f6bff]"
+                    className="min-h-[88px] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition-colors focus:border-[var(--color-primary)]"
                     placeholder="工作流说明"
                     value={flowState.description}
                     onChange={(event) =>
@@ -1074,7 +1245,7 @@ function AutomationEditorSurface({
                   />
                   <div className="flex justify-end">
                     <Button
-                      className="h-9 rounded-md bg-[#2f6bff] px-4 text-white"
+                      className="h-9 rounded-md bg-[var(--color-primary)] px-4 text-[var(--color-text-on-primary)]"
                       onClick={handleHeaderEditFinish}
                     >
                       完成
@@ -1083,10 +1254,10 @@ function AutomationEditorSurface({
                 </div>
               ) : (
                 <>
-                  <h1 className="truncate text-xl font-semibold text-white">
+                  <h1 className="truncate text-lg font-semibold text-[var(--color-text-primary)]">
                     {flowState.name || "未命名工作流"}
                   </h1>
-                  <p className="mt-1 truncate text-sm text-[#8da3c2]">
+                  <p className="truncate text-xs text-[var(--color-text-secondary)]">
                     {flowState.description || "双击编辑工作流名称和说明"}
                   </p>
                 </>
@@ -1096,7 +1267,7 @@ function AutomationEditorSurface({
 
           <div className="flex items-center gap-2">
             <div
-              className="inline-flex rounded-lg border border-white/10 bg-white/6 p-1"
+              className="inline-flex rounded-lg border border-[var(--color-border)] bg-[var(--color-control-soft)] p-1"
               onPointerDown={(event) => event.stopPropagation()}
             >
               <Button
@@ -1104,8 +1275,8 @@ function AutomationEditorSurface({
                 className={[
                   "h-9 rounded-md px-4 text-sm",
                   displayStatus === "enabled"
-                    ? "bg-[#2f6bff] text-white"
-                    : "bg-transparent text-[#b8c8de]",
+                    ? "bg-[var(--color-primary)] text-[var(--color-text-on-primary)]"
+                    : "bg-transparent text-[var(--color-text-secondary)]",
                 ].join(" ")}
                 onClick={() => handleStatusToggle("enabled")}
               >
@@ -1116,8 +1287,8 @@ function AutomationEditorSurface({
                 className={[
                   "h-9 rounded-md px-4 text-sm",
                   displayStatus === "paused"
-                    ? "bg-white/10 text-white"
-                    : "bg-transparent text-[#b8c8de]",
+                    ? "bg-[var(--color-control-selected)] text-[var(--color-text-primary)]"
+                    : "bg-transparent text-[var(--color-text-secondary)]",
                 ].join(" ")}
                 onClick={() => handleStatusToggle("paused")}
               >
@@ -1126,7 +1297,7 @@ function AutomationEditorSurface({
             </div>
             <Button
               variant="ghost"
-              className="h-10 rounded-lg border border-white/12 bg-white/6 px-4 text-[#d7e3f4]"
+              className="h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 text-[var(--color-text-primary)]"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={() => void openVersionModal()}
             >
@@ -1134,13 +1305,13 @@ function AutomationEditorSurface({
             </Button>
             <Button
               variant="ghost"
-              className="h-10 rounded-lg border border-white/12 bg-white/6 px-4 text-[#d7e3f4]"
+              className="h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 text-[var(--color-text-primary)]"
               onClick={() => router.push(`/${appId}/automations`)}
             >
               返回
             </Button>
             <Button
-              className="h-10 rounded-lg bg-[#2f6bff] px-4 text-white shadow-[0_10px_24px_rgba(47,107,255,0.35)]"
+              className="h-10 rounded-lg bg-[var(--color-primary)] px-4 text-[var(--color-text-on-primary)] shadow-[var(--shadow-primary)]"
               onClick={handleSaveFlow}
               isDisabled={isSaving}
             >
@@ -1150,78 +1321,80 @@ function AutomationEditorSurface({
         </div>
       </header>
 
-      <div className="mx-auto min-h-0 w-full max-w-[1840px] flex-1 px-5 py-5 lg:px-6">
-        <section className="relative h-full min-h-0 overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_top,#15233d_0%,#0e1729_42%,#09111f_100%)] shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
+      <div className="min-h-0 w-full flex-1">
+        <section className="relative h-full min-h-0 overflow-hidden bg-[radial-gradient(circle_at_top,var(--color-bg-subtle)_0%,var(--color-bg-surface)_42%,var(--color-bg-canvas)_100%)]">
           {errorMessage ? (
-            <div className="absolute left-5 right-5 top-5 z-30 rounded-xl border border-[#7a243c] bg-[#35131d] px-4 py-3 text-sm text-[#ffb5c6] shadow-[0_18px_36px_rgba(0,0,0,0.24)]">
+            <div className="absolute left-5 right-5 top-5 z-30 rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)] shadow-[var(--shadow-floating)]">
               {errorMessage}
             </div>
           ) : null}
-          <ReactFlow<WorkflowNode, WorkflowEdge>
-            fitView
-            nodes={nodes}
-            edges={edges}
-            edgeTypes={edgeTypes}
-            nodeTypes={nodeTypes}
-            onConnect={onConnect}
-            onConnectEnd={handleConnectEnd}
-            onEdgesChange={onEdgesChange}
-            onNodesChange={onNodesChange}
-            onNodeClick={(_event, node) => setSelectedNodeId(node.id)}
-            onPaneClick={() => setSelectedNodeId(null)}
-            defaultEdgeOptions={{
-              type: "insertable",
-              markerEnd: {
-                type: MarkerType.ArrowClosed,
-              },
-              style: {
-                stroke: "#2f6bff",
-                strokeWidth: 1.4,
-              },
-            }}
-            proOptions={{ hideAttribution: true }}
-            className="h-full w-full"
-          >
-            <MiniMap
-              pannable
-              zoomable
-              nodeBorderRadius={8}
-              maskColor="rgba(8,17,31,0.58)"
-            />
-            <Controls />
-            <Background gap={18} size={1} color="rgba(173,192,220,0.22)" />
-          </ReactFlow>
+          <WorkflowNodeActionsContext.Provider value={workflowNodeActions}>
+            <ReactFlow<WorkflowNode, WorkflowEdge>
+              fitView
+              nodes={nodes}
+              edges={edges}
+              edgeTypes={edgeTypes}
+              nodeTypes={nodeTypes}
+              onConnect={onConnect}
+              onConnectEnd={handleConnectEnd}
+              onEdgesChange={onEdgesChange}
+              onNodesChange={onNodesChange}
+              onNodeClick={(_event, node) => setSelectedNodeId(node.id)}
+              onPaneClick={() => setSelectedNodeId(null)}
+              defaultEdgeOptions={{
+                type: "insertable",
+                markerEnd: {
+                  type: MarkerType.ArrowClosed,
+                },
+                style: {
+                  stroke: "var(--color-primary)",
+                  strokeWidth: 1.4,
+                },
+              }}
+              proOptions={{ hideAttribution: true }}
+              className="h-full w-full"
+            >
+              <MiniMap
+                pannable
+                zoomable
+                position="bottom-left"
+                nodeBorderRadius={8}
+                maskColor="var(--color-flow-mask)"
+              />
+              <Background gap={18} size={1} color="var(--color-flow-grid)" />
+            </ReactFlow>
+          </WorkflowNodeActionsContext.Provider>
           {selectedNode ? (
             <aside
               ref={propertyPanelRef}
-              className="absolute inset-y-5 right-5 z-20 flex w-full max-w-[500px] flex-col overflow-hidden rounded-[22px] border border-white/10 bg-[#0e1828]/94 shadow-[0_30px_90px_rgba(0,0,0,0.42)] backdrop-blur"
+              className="absolute inset-y-5 right-5 z-20 flex w-full max-w-[500px] flex-col overflow-hidden rounded-[22px] border border-[var(--color-border)] bg-[var(--color-bg-surface)] shadow-[var(--shadow-dialog)] backdrop-blur"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="border-b border-white/8 bg-white/4 px-5 py-4">
+              <div className="border-b border-[var(--color-border)] bg-[var(--color-control-soft)] px-5 py-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-sm font-semibold text-white">
+                    <div className="text-sm font-semibold text-[var(--color-text-primary)]">
                       {selectedNode.data.label}
                     </div>
-                    <p className="mt-1 text-xs leading-5 text-[#95a8c4]">
+                    <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">
                       {nodeKindLabel(selectedNode.data.kind)}节点参数
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
                     {selectedNode.data.kind !== "trigger" ? (
-                      <Button
-                        variant="ghost"
-                        className="h-8 shrink-0 rounded-md border border-[#7a243c] bg-[#35131d] px-3 text-[#ffb5c6]"
+                      <IconActionButton
+                        ariaLabel="删除节点"
+                        danger
                         onClick={handleDeleteSelectedNode}
                       >
-                        删除
-                      </Button>
+                        <TrashIcon />
+                      </IconActionButton>
                     ) : null}
                     <Button
                       variant="ghost"
                       aria-label="关闭属性配置"
-                      className="h-8 min-w-8 rounded-md border border-white/10 bg-white/6 px-2 text-[#b8c8de]"
+                      className="h-8 min-w-8 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2 text-[var(--color-text-secondary)]"
                       onClick={() => setSelectedNodeId(null)}
                     >
                       ×
@@ -1235,6 +1408,7 @@ function AutomationEditorSurface({
                   <PropertyPanelSection title="触发配置" description="工作流名称和说明在左上角双击编辑。">
                     <PropertyField label="触发表单">
                       <Select
+                        aria-label="触发表单"
                         selectedKey={flowState.triggerFormUuid || "none"}
                         onSelectionChange={(key) =>
                           handleFlowFieldChange(
@@ -1266,6 +1440,7 @@ function AutomationEditorSurface({
                     </PropertyField>
                     <PropertyField label="触发事件">
                       <Select
+                        aria-label="触发事件"
                         selectedKey={flowState.triggerEvent}
                         onSelectionChange={(key) =>
                           handleFlowFieldChange(
@@ -1309,7 +1484,7 @@ function AutomationEditorSurface({
                     </PropertyField>
                     <PropertyField label="节点说明" alignStart>
                       <textarea
-                        className="min-h-[82px] w-full rounded-lg border border-[#d7e2f1] px-3 py-2 text-sm text-[#14213d] outline-none transition-colors focus:border-[#2f6bff]"
+                        className="min-h-[82px] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition-colors focus:border-[var(--color-primary)]"
                         placeholder="节点说明"
                         value={selectedNode.data.description}
                         onChange={(event) =>
@@ -1333,8 +1508,13 @@ function AutomationEditorSurface({
                   onAddDataConfigChange={handleAddDataConfigChange}
                   onAddMappingRow={handleAddMappingRow}
                   onBasicChange={handleBasicNodeConfigChange}
+                  onConditionBranchChange={handleConditionBranchChange}
                   onConditionModeChange={handleConditionModeChange}
-                  onConditionPriorityChange={handleConditionPriorityChange}
+                  onMoveConditionBranch={handleMoveConditionBranch}
+                  onAddConditionBranch={() => handleAddConditionBranch(selectedNode.id)}
+                  onRemoveConditionBranch={(branchId) =>
+                    handleRemoveConditionBranch(selectedNode.id, branchId)
+                  }
                   onAddConditionRule={handleAddConditionRule}
                   onRemoveConditionRule={handleRemoveConditionRule}
                   onConditionRuleChange={handleConditionRuleChange}
@@ -1351,25 +1531,25 @@ function AutomationEditorSurface({
       </div>
 
       <Modal isOpen={insertContext !== null} onOpenChange={(isOpen) => !isOpen && setInsertContext(null)}>
-        <Modal.Backdrop className="bg-[#05060a]/35" isDismissable>
+        <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
           <Modal.Container placement="center" size="cover">
-            <Modal.Dialog data-node-insert-modal="true" className="w-[min(720px,92vw)] rounded-2xl bg-[#05060a] text-white shadow-[0_30px_90px_rgba(2,6,23,0.48)]">
-              <Modal.Header className="border-b border-white/10 px-5 py-4">
-                <Modal.Heading className="text-lg font-semibold text-white">
+            <Modal.Dialog data-node-insert-modal="true" className="w-[min(720px,92vw)] rounded-2xl bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]">
+              <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
+                <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
                   选择要插入的节点
                 </Modal.Heading>
               </Modal.Header>
               <Modal.Body className="max-h-[72vh] space-y-5 overflow-auto px-5 py-5">
                 {dataNodeMenu.map((group) => (
                   <section key={group.group}>
-                    <div className="mb-3 text-sm font-medium text-white/72">{group.group}</div>
+                    <div className="mb-3 text-sm font-medium text-[var(--color-text-secondary)]">{group.group}</div>
                     <div className="grid gap-3 sm:grid-cols-2">
                       {group.items.map((item) => (
                         <button
                           key={item.kind}
                           type="button"
                           onClick={() => handleInsertNode(item.kind)}
-                          className="flex min-h-[72px] items-start gap-3 rounded-xl border border-white/12 bg-white/2 px-4 py-3 text-left transition hover:border-white/24 hover:bg-white/6"
+                          className="flex min-h-[72px] items-start gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-control-soft)] px-4 py-3 text-left transition hover:border-[var(--color-primary)] hover:bg-[var(--color-control-soft-hover)]"
                         >
                           <span
                             className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${nodeTone[item.kind]}`}
@@ -1377,10 +1557,10 @@ function AutomationEditorSurface({
                             <AddIcon />
                           </span>
                           <span className="min-w-0">
-                            <span className="block text-sm font-semibold text-white">
+                            <span className="block text-sm font-semibold text-[var(--color-text-primary)]">
                               {item.label}
                             </span>
-                            <span className="mt-1 block text-xs leading-5 text-white/60">
+                            <span className="mt-1 block text-xs leading-5 text-[var(--color-text-secondary)]">
                               {item.description}
                             </span>
                           </span>
@@ -1392,12 +1572,12 @@ function AutomationEditorSurface({
 
                 {placeholderNodeGroups.map((group) => (
                   <section key={group.group}>
-                    <div className="mb-3 text-sm font-medium text-white/72">{group.group}</div>
+                    <div className="mb-3 text-sm font-medium text-[var(--color-text-secondary)]">{group.group}</div>
                     <div className="grid gap-3 sm:grid-cols-2">
                       {group.items.map((item) => (
                         <div
                           key={item}
-                          className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white/45"
+                          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-control-soft)] px-4 py-3 text-sm text-[var(--color-text-disabled)]"
                         >
                           {item}
                         </div>
@@ -1412,51 +1592,51 @@ function AutomationEditorSurface({
       </Modal>
 
       <Modal isOpen={isVersionModalOpen} onOpenChange={setIsVersionModalOpen}>
-        <Modal.Backdrop className="bg-[#05060a]/45" isDismissable>
+        <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
           <Modal.Container placement="center" size="cover">
-            <Modal.Dialog className="w-[min(640px,92vw)] rounded-2xl border border-white/10 bg-[#0b1422] text-white shadow-[0_30px_90px_rgba(2,6,23,0.48)]">
-              <Modal.Header className="border-b border-white/10 px-5 py-4">
-                <Modal.Heading className="text-lg font-semibold text-white">
+            <Modal.Dialog className="w-[min(640px,92vw)] rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]">
+              <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
+                <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
                   版本管理
                 </Modal.Heading>
               </Modal.Header>
               <Modal.Body className="space-y-4 px-5 py-5">
-                <div className="rounded-xl border border-white/10 bg-white/4 p-4">
-                  <div className="text-sm font-semibold text-white">当前版本</div>
-                  <div className="mt-2 text-sm text-[#d7e3f4]">
+                <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-control-soft)] p-4">
+                  <div className="text-sm font-semibold text-[var(--color-text-primary)]">当前版本</div>
+                  <div className="mt-2 text-sm text-[var(--color-text-primary)]">
                     v{flowState.currentVersion ?? 1}
                   </div>
-                  <div className="mt-1 text-sm text-[#a7b9d1]">
+                  <div className="mt-1 text-sm text-[var(--color-text-secondary)]">
                     当前状态：{displayStatus === "enabled" ? "启动" : "关闭"}
                   </div>
-                  <div className="mt-1 text-sm text-[#a7b9d1]">
+                  <div className="mt-1 text-sm text-[var(--color-text-secondary)]">
                     最新保存时间：{formatDateLabel(flowState.updatedAt)}
                   </div>
-                  <div className="mt-1 text-sm text-[#a7b9d1]">
+                  <div className="mt-1 text-sm text-[var(--color-text-secondary)]">
                     创建时间：{formatDateLabel(flowState.createdAt)}
                   </div>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-white/4 p-4">
-                  <div className="text-sm font-semibold text-white">历史版本</div>
+                <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-control-soft)] p-4">
+                  <div className="text-sm font-semibold text-[var(--color-text-primary)]">历史版本</div>
                   {isVersionsLoading ? (
-                    <div className="mt-3 text-sm text-[#a7b9d1]">正在加载版本...</div>
+                    <div className="mt-3 text-sm text-[var(--color-text-secondary)]">正在加载版本...</div>
                   ) : versionItems.length > 0 ? (
                     <div className="mt-3 space-y-3">
                       {versionItems.map((item) => (
                         <div
                           key={item.version}
-                          className="rounded-lg border border-white/8 bg-black/10 px-3 py-3"
+                          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-canvas)] px-3 py-3"
                         >
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
-                              <div className="text-sm font-medium text-white">
+                              <div className="text-sm font-medium text-[var(--color-text-primary)]">
                                 {`v${item.version} · ${item.name}`}
                               </div>
-                              <div className="mt-1 text-xs text-[#8da3c2]">{item.status}</div>
+                              <div className="mt-1 text-xs text-[var(--color-text-secondary)]">{item.status}</div>
                             </div>
                             <Button
                               variant="ghost"
-                              className="h-8 rounded-md border border-white/10 bg-white/6 px-3 text-[#d7e3f4] disabled:opacity-50"
+                              className="h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 text-[var(--color-text-primary)] disabled:opacity-50"
                               isDisabled={
                                 restoringVersion === item.version ||
                                 item.version === (flowState.currentVersion ?? 1)
@@ -1470,11 +1650,11 @@ function AutomationEditorSurface({
                                   : "恢复"}
                             </Button>
                           </div>
-                          <div className="mt-1 text-xs text-[#8da3c2]">
+                          <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
                             {`${item.createdBy} · ${formatDateLabel(item.createdAt)}`}
                           </div>
                           {item.changeSummary ? (
-                            <div className="mt-2 text-sm text-[#d7e3f4]">
+                            <div className="mt-2 text-sm text-[var(--color-text-primary)]">
                               {item.changeSummary}
                             </div>
                           ) : null}
@@ -1482,7 +1662,7 @@ function AutomationEditorSurface({
                       ))}
                     </div>
                   ) : (
-                    <div className="mt-3 text-sm text-[#a7b9d1]">暂无版本记录</div>
+                    <div className="mt-3 text-sm text-[var(--color-text-secondary)]">暂无版本记录</div>
                   )}
                 </div>
               </Modal.Body>
@@ -1490,50 +1670,114 @@ function AutomationEditorSurface({
           </Modal.Container>
         </Modal.Backdrop>
       </Modal>
-    </div>
+    </Card>
   );
 }
 
-function WorkflowCardNode({ data, selected }: NodeProps<WorkflowNode>) {
+function WorkflowCardNode({ id, data, selected }: NodeProps<WorkflowNode>) {
   const canAcceptInput = data.kind !== "trigger";
+  const { addConditionBranch, removeConditionBranch } = useContext(WorkflowNodeActionsContext);
+  const conditionBranches = data.kind === "condition"
+    ? normalizeConditionConfig(data.config).branches ?? []
+    : [];
 
   return (
     <div
       data-workflow-node-card="true"
       className={[
-        "min-w-[220px] max-w-[280px] rounded-xl border border-white/10 bg-[#0f1a2c] px-4 py-3 shadow-[0_18px_44px_rgba(0,0,0,0.34)]",
-        selected ? "ring-2 ring-[#68a4ff]/35" : "",
+        data.kind === "condition" ? "w-[310px]" : "min-w-[220px] max-w-[280px]",
+        "rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-4 py-3 text-[var(--color-text-primary)] shadow-[var(--shadow-floating)]",
+        selected ? "ring-2 ring-[var(--color-primary)]" : "",
       ].join(" ")}
     >
       {canAcceptInput ? (
         <Handle
           type="target"
           position={Position.Left}
-          className="!h-3 !w-3 !border-2 !border-[#0f1a2c] !bg-[#68a4ff]"
+          className="!h-3 !w-3 !border-2 !border-[var(--color-bg-surface)] !bg-[var(--color-primary)]"
         />
       ) : null}
-      <div
-        className={`inline-flex rounded-md border px-2 py-1 text-[11px] font-semibold ${nodeTone[data.kind]}`}
-      >
-        {nodeKindLabel(data.kind)}
-      </div>
-      <div className="mt-3 flex items-start gap-2">
-        <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#162845] text-[#8eb8ff]">
+      <div className="flex items-start gap-2">
+        <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
           <FormIcon />
         </span>
-        <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-white">{data.label}</div>
-          <div className="mt-1 text-xs leading-5 text-[#92a6c3]">{data.description}</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-text-primary)]">{data.label}</div>
+            <div
+              className={`inline-flex shrink-0 rounded-md border px-2 py-0.5 text-[10px] font-semibold ${nodeTone[data.kind]}`}
+            >
+              {nodeKindLabel(data.kind)}
+            </div>
+          </div>
+          <div className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">{data.description}</div>
         </div>
       </div>
-      <div className="mt-3 rounded-lg bg-white/5 px-3 py-2 text-[11px] leading-5 text-[#9eb0c8] whitespace-pre-wrap">
-        {nodeSummary(data)}
-      </div>
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!h-3 !w-3 !border-2 !border-[#0f1a2c] !bg-[#68a4ff]"
-      />
+      {data.kind === "condition" ? (
+        <div className="mt-3 space-y-2">
+          {conditionBranches.map((branch, index) => (
+            <div
+              key={branch.id}
+              className="relative rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2.5 pr-8"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-xs font-semibold text-[var(--color-text-primary)]">
+                  {branch.name || `条件分支 ${index + 1}`}
+                </span>
+                <span className="shrink-0 rounded bg-[var(--color-warning-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-warning)]">
+                  P{branch.priority}
+                </span>
+              </div>
+              <div className="mt-1 truncate text-[11px] text-[var(--color-text-secondary)]">
+                {conditionBranchSummary(branch)}
+              </div>
+              {conditionBranches.length > 1 ? (
+                <button
+                  type="button"
+                  aria-label={`删除条件分支 ${index + 1}`}
+                  className="nodrag nopan absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-danger-soft)] hover:text-[var(--color-danger)]"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    removeConditionBranch(id, branch.id);
+                  }}
+                >
+                  <TrashIcon />
+                </button>
+              ) : null}
+              <Handle
+                id={conditionBranchHandleId(branch.id)}
+                type="source"
+                position={Position.Right}
+                className="!right-[-22px] !h-3 !w-3 !border-2 !border-[var(--color-bg-surface)] !bg-[var(--color-warning)]"
+              />
+            </div>
+          ))}
+          <button
+            type="button"
+            className="nodrag nopan flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-2 text-xs font-semibold text-[var(--color-warning)] transition-colors hover:bg-[var(--color-control-soft-hover)]"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              addConditionBranch(id);
+            }}
+          >
+            <AddIcon />
+            添加分支
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="mt-3 rounded-lg bg-[var(--color-bg-subtle)] px-3 py-2 text-[11px] leading-5 text-[var(--color-text-secondary)] whitespace-pre-wrap">
+            {nodeSummary(data)}
+          </div>
+          <Handle
+            type="source"
+            position={Position.Right}
+            className="!h-3 !w-3 !border-2 !border-[var(--color-bg-surface)] !bg-[var(--color-primary)]"
+          />
+        </>
+      )}
     </div>
   );
 }
@@ -1567,10 +1811,14 @@ function InsertableEdge({
       <EdgeLabelRenderer>
         <button
           type="button"
-          className="nodrag nopan absolute flex h-7 w-7 items-center justify-center rounded-full border border-[#8fb3f0]/35 bg-[#0f1a2c] text-[#8eb8ff] shadow-[0_10px_24px_rgba(0,0,0,0.34)] transition hover:bg-[#162845]"
+          aria-label="在连线上添加节点"
+          className="nodrag nopan absolute flex h-7 w-7 items-center justify-center rounded-full border border-[var(--color-primary)] bg-[var(--color-bg-surface)] text-[var(--color-primary)] shadow-[var(--shadow-floating)] transition-colors hover:bg-[var(--color-primary-soft)]"
           style={{
-            transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+            transform: `translate3d(${labelX}px, ${labelY}px, 0) translate(-50%, -50%)`,
             pointerEvents: "all",
+            willChange: "transform",
+            backfaceVisibility: "hidden",
+            contain: "layout paint",
           }}
           onClick={() => data?.onInsert?.(source, target, id)}
         >
@@ -1578,6 +1826,38 @@ function InsertableEdge({
         </button>
       </EdgeLabelRenderer>
     </>
+  );
+}
+
+function IconActionButton({
+  ariaLabel,
+  children,
+  danger = false,
+  isDisabled = false,
+  onClick,
+}: {
+  ariaLabel: string;
+  children: ReactNode;
+  danger?: boolean;
+  isDisabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      isIconOnly
+      aria-label={ariaLabel}
+      variant="ghost"
+      isDisabled={isDisabled}
+      className={[
+        "h-7 min-h-7 w-7 min-w-7 rounded-md border p-0 disabled:opacity-35",
+        danger
+          ? "border-transparent text-[var(--color-danger)] hover:border-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
+          : "border-transparent text-[var(--color-text-secondary)] hover:border-[var(--color-border)] hover:bg-[var(--color-control-soft-hover)] hover:text-[var(--color-text-primary)]",
+      ].join(" ")}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
   );
 }
 
@@ -1591,11 +1871,11 @@ function PropertyPanelSection({
   title: string;
 }) {
   return (
-    <section className="rounded-lg border border-white/8 bg-white/[0.03]">
-      <div className="border-b border-white/8 bg-white/4 px-4 py-3">
-        <div className="text-sm font-semibold text-white">{title}</div>
+    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-control-soft)]">
+      <div className="border-b border-[var(--color-border)] bg-[var(--color-control-soft)] px-4 py-3">
+        <div className="text-sm font-semibold text-[var(--color-text-primary)]">{title}</div>
         {description ? (
-          <div className="mt-1 text-xs leading-5 text-[#95a8c4]">{description}</div>
+          <div className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">{description}</div>
         ) : null}
       </div>
       <div className="space-y-3 px-4 py-4">{children}</div>
@@ -1619,7 +1899,7 @@ function PropertyField({
         alignStart ? "md:items-start" : "md:items-center",
       ].join(" ")}
     >
-      <div className="text-sm font-medium text-[#b5c6de] md:pt-0.5">{label}</div>
+      <div className="text-sm font-medium text-[var(--color-text-primary)] md:pt-0.5">{label}</div>
       <div className="min-w-0">{children}</div>
     </div>
   );
@@ -1638,8 +1918,11 @@ function NodeConfigFields({
   onAddDataConfigChange,
   onAddMappingRow,
   onBasicChange,
+  onConditionBranchChange,
   onConditionModeChange,
-  onConditionPriorityChange,
+  onMoveConditionBranch,
+  onAddConditionBranch,
+  onRemoveConditionBranch,
   onAddConditionRule,
   onRemoveConditionRule,
   onConditionRuleChange,
@@ -1661,17 +1944,34 @@ function NodeConfigFields({
   onAddDataConfigChange: <K extends keyof AddDataConfig>(key: K, value: AddDataConfig[K]) => void;
   onAddMappingRow: () => void;
   onBasicChange: (key: string, value: string) => void;
-  onConditionModeChange: (value: "all" | "rules" | "expression") => void;
-  onConditionPriorityChange: (value: number) => void;
-  onAddConditionRule: (parentId?: string, siblingOfId?: string) => void;
-  onRemoveConditionRule: (ruleId: string) => void;
-  onConditionRuleChange: (ruleId: string, key: keyof BranchRule, value: string) => void;
+  onConditionBranchChange: (
+    branchId: string,
+    key: "name" | "hitLabel" | "expression",
+    value: string,
+  ) => void;
+  onConditionModeChange: (
+    branchId: string,
+    value: "all" | "rules" | "expression",
+  ) => void;
+  onMoveConditionBranch: (branchId: string, direction: "up" | "down") => void;
+  onAddConditionBranch: () => void;
+  onRemoveConditionBranch: (branchId: string) => void;
+  onAddConditionRule: (branchId: string, parentId?: string, siblingOfId?: string) => void;
+  onRemoveConditionRule: (branchId: string, ruleId: string) => void;
+  onConditionRuleChange: (
+    branchId: string,
+    ruleId: string,
+    key: keyof BranchRule,
+    value: string,
+  ) => void;
   onGetNodeFormChange: (formUuid: string) => void;
   onGetNodeSourceModeChange: (value: DataSourceMode) => void;
   onGetNodeSourceNodeChange: (nodeId: string) => void;
   onRemoveMappingRow: (rowId: string) => void;
   onRowChange: (rowId: string, key: keyof FieldMappingRow, value: string) => void;
 }) {
+  const [editingConditionBranchId, setEditingConditionBranchId] = useState<string | null>(null);
+
   if (node.data.kind === "trigger") {
     const config = normalizeTriggerConfig(node.data.config);
     return (
@@ -1679,6 +1979,7 @@ function NodeConfigFields({
         <PropertyPanelSection title="触发字段" description="仅编辑事件支持按单字段触发。">
           <PropertyField label="变化字段">
             <Select
+              aria-label="变化字段"
               selectedKey={config.changedFieldsText || "none"}
               onSelectionChange={(key) =>
                 onBasicChange("changedFieldsText", String(key === "none" ? "" : key ?? ""))
@@ -1712,86 +2013,151 @@ function NodeConfigFields({
 
   if (node.data.kind === "condition") {
     const config = normalizeConditionConfig(node.data.config);
+    const branches = config.branches ?? [];
     return (
       <div className="space-y-4">
-        <PropertyPanelSection title="分支设置" description="条件分支默认放行全部数据，可按规则或表达式筛选。">
-          <PropertyField label="优先级">
-            <Input
-              aria-label="优先级"
-              min={1}
-              type="number"
-              value={String(config.priority ?? 1)}
-              onChange={(event) =>
-                onConditionPriorityChange(Number(event.currentTarget.value) || 1)
-              }
-            />
-          </PropertyField>
-          <PropertyField label="进入方式">
-            <Select
-              selectedKey={config.mode ?? "all"}
-              onSelectionChange={(key) =>
-                onConditionModeChange(
-                  String(key ?? "all") as "all" | "rules" | "expression",
-                )
-              }
-            >
-              <Select.Trigger>
-                <Select.Value>{branchModeLabel(config.mode ?? "all")}</Select.Value>
-                <Select.Indicator />
-              </Select.Trigger>
-              <Select.Popover>
-                <ListBox>
-                  <ListBox.Item id="all" textValue="所有数据均可通过">
-                    所有数据均可通过
-                  </ListBox.Item>
-                  <ListBox.Item id="rules" textValue="按条件规则进入">
-                    按条件规则进入
-                  </ListBox.Item>
-                  <ListBox.Item id="expression" textValue="按表达式进入">
-                    按表达式进入
-                  </ListBox.Item>
-                </ListBox>
-              </Select.Popover>
-            </Select>
-          </PropertyField>
-          <PropertyField label="命中说明">
-            <Input
-              aria-label="命中说明"
-              placeholder="例如：满足审批条件"
-              value={config.hitLabel ?? ""}
-              onChange={(event) => onBasicChange("hitLabel", event.currentTarget.value)}
-            />
-          </PropertyField>
-        </PropertyPanelSection>
-
-        {config.mode === "all" ? (
-          <PropertyPanelSection title="分支结果">
-            <div className="rounded-xl border border-[#214777] bg-[#0d223d] px-4 py-3 text-sm leading-6 text-[#c8dcff]">
-              当前分支为默认放行，所有流转到此节点的数据都会进入该分支。
+        {branches.map((branch, index) => (
+          <div
+            key={branch.id}
+            className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)]"
+          >
+            <div className="flex min-h-11 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-control-soft)] px-3 py-2">
+              <div className="min-w-0 flex-1">
+                {editingConditionBranchId === branch.id ? (
+                  <input
+                    autoFocus
+                    aria-label={`条件分支 ${index + 1} 名称`}
+                    className="h-8 w-full rounded-md border border-[var(--color-primary)] bg-[var(--color-bg-surface)] px-2 text-sm font-semibold text-[var(--color-text-primary)] outline-none"
+                    value={branch.name}
+                    onBlur={() => setEditingConditionBranchId(null)}
+                    onChange={(event) =>
+                      onConditionBranchChange(branch.id, "name", event.currentTarget.value)
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === "Escape") {
+                        setEditingConditionBranchId(null);
+                      }
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="max-w-full truncate rounded px-1 py-1 text-left text-sm font-semibold text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-control-soft-hover)]"
+                    onClick={() => setEditingConditionBranchId(branch.id)}
+                  >
+                    {branch.name || `条件分支 ${index + 1}`}
+                  </button>
+                )}
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <IconActionButton
+                  ariaLabel="上移条件分支"
+                  isDisabled={index === 0}
+                  onClick={() => onMoveConditionBranch(branch.id, "up")}
+                >
+                  <ArrowUpIcon />
+                </IconActionButton>
+                <IconActionButton
+                  ariaLabel="下移条件分支"
+                  isDisabled={index === branches.length - 1}
+                  onClick={() => onMoveConditionBranch(branch.id, "down")}
+                >
+                  <ArrowDownIcon />
+                </IconActionButton>
+                <IconActionButton
+                  ariaLabel="删除条件分支"
+                  danger
+                  isDisabled={branches.length <= 1}
+                  onClick={() => onRemoveConditionBranch(branch.id)}
+                >
+                  <TrashIcon />
+                </IconActionButton>
+              </div>
             </div>
-          </PropertyPanelSection>
-        ) : null}
 
-        {config.mode === "rules" ? (
-          <BranchRulesEditor
-            rules={config.rules ?? []}
-            sourceFieldChoices={sourceFieldChoices}
-            onAddConditionRule={onAddConditionRule}
-            onConditionRuleChange={onConditionRuleChange}
-            onRemoveConditionRule={onRemoveConditionRule}
-          />
-        ) : null}
+            <div className="space-y-3 p-3">
+              <PropertyField label="进入方式">
+                <Select
+                  aria-label={`条件分支 ${index + 1} 进入方式`}
+                  selectedKey={branch.mode}
+                  onSelectionChange={(key) =>
+                    onConditionModeChange(
+                      branch.id,
+                      String(key ?? "all") as "all" | "rules" | "expression",
+                    )
+                  }
+                >
+                  <Select.Trigger>
+                    <Select.Value>{branchModeLabel(branch.mode)}</Select.Value>
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox>
+                      <ListBox.Item id="all" textValue="所有数据均可通过">所有数据均可通过</ListBox.Item>
+                      <ListBox.Item id="rules" textValue="按条件规则进入">按条件规则进入</ListBox.Item>
+                      <ListBox.Item id="expression" textValue="按表达式进入">按表达式进入</ListBox.Item>
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+              </PropertyField>
+              <PropertyField label="命中说明">
+                <Input
+                  aria-label={`条件分支 ${index + 1} 命中说明`}
+                  placeholder={`例如：分支 ${index + 1} 满足审批条件`}
+                  value={branch.hitLabel}
+                  onChange={(event) =>
+                    onConditionBranchChange(branch.id, "hitLabel", event.currentTarget.value)
+                  }
+                />
+              </PropertyField>
 
-        {config.mode === "expression" ? (
-          <PropertyPanelSection title="表达式" description="用于补充复杂判断，字段以“节点名.字段名”为上下文来源。">
-            <TextAreaInput
-              ariaLabel="分支表达式"
-              placeholder="输入表达式，例如 前置节点.状态 == '已完成'"
-              value={config.expression ?? ""}
-              onChange={(value) => onBasicChange("expression", value)}
-            />
-          </PropertyPanelSection>
-        ) : null}
+              {branch.mode === "all" ? (
+                <div className="rounded-lg bg-[var(--color-info-soft)] px-3 py-2 text-xs leading-5 text-[var(--color-info)]">
+                当前分支默认放行所有流转到该条件节点的数据。
+                </div>
+              ) : null}
+
+              {branch.mode === "rules" ? (
+                <BranchRulesEditor
+                  rules={branch.rules}
+                  sourceFieldChoices={sourceFieldChoices}
+                  onAddConditionRule={(parentId, siblingOfId) =>
+                    onAddConditionRule(branch.id, parentId, siblingOfId)
+                  }
+                  onConditionRuleChange={(ruleId, key, value) =>
+                    onConditionRuleChange(branch.id, ruleId, key, value)
+                  }
+                  onRemoveConditionRule={(ruleId) =>
+                    onRemoveConditionRule(branch.id, ruleId)
+                  }
+                />
+              ) : null}
+
+              {branch.mode === "expression" ? (
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-[var(--color-text-primary)]">表达式</div>
+                <TextAreaInput
+                  ariaLabel={`条件分支 ${index + 1} 表达式`}
+                  placeholder="输入表达式，例如 前置节点.状态 == '已完成'"
+                  value={branch.expression}
+                  onChange={(value) =>
+                    onConditionBranchChange(branch.id, "expression", value)
+                  }
+                />
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ))}
+
+        <Button
+          variant="ghost"
+          className="h-10 w-full rounded-lg border border-dashed border-[var(--color-warning)] bg-[var(--color-warning-soft)] text-[var(--color-warning)]"
+          onClick={onAddConditionBranch}
+        >
+          <AddIcon />
+          添加分支
+        </Button>
       </div>
     );
   }
@@ -1805,6 +2171,7 @@ function NodeConfigFields({
     return (
       <PropertyPanelSection title="数据来源配置">
         <Select
+          aria-label="数据来源"
           selectedKey={config.sourceMode ?? "form"}
           onSelectionChange={(key) =>
             onGetNodeSourceModeChange(String(key ?? "form") as DataSourceMode)
@@ -1838,6 +2205,7 @@ function NodeConfigFields({
         ) : null}
         {config.sourceMode === "data-node" ? (
           <Select
+            aria-label="数据节点"
             selectedKey={config.dataNodeId || "none"}
             onSelectionChange={(key) =>
               onGetNodeSourceNodeChange(String(key === "none" ? "" : key ?? ""))
@@ -1900,6 +2268,7 @@ function NodeConfigFields({
         <PropertyPanelSection title="新增方式">
           <PropertyField label="新增位置">
             <Select
+              aria-label="新增位置"
               selectedKey={config.targetMode ?? "form"}
               onSelectionChange={(key) =>
                 onAddDataConfigChange(
@@ -1936,6 +2305,7 @@ function NodeConfigFields({
           </PropertyField>
           <PropertyField label="新增数据">
             <Select
+              aria-label="新增数据方式"
               selectedKey={config.recordMode ?? "single"}
               onSelectionChange={(key) =>
                 onAddDataConfigChange("recordMode", String(key ?? "single") as AddRecordMode)
@@ -1962,6 +2332,7 @@ function NodeConfigFields({
           {config.recordMode === "multiple" ? (
             <PropertyField label="数据来源">
               <Select
+                aria-label="多条数据来源"
                 selectedKey={config.multipleSourceNodeId || "none"}
                 onSelectionChange={(key) =>
                   onAddDataConfigChange(
@@ -1984,15 +2355,15 @@ function NodeConfigFields({
                     </ListBox.Item>
                     {getManySourceOptions.map((item) => (
                       <ListBox.Item key={item.id} id={item.id} textValue={item.label}>
-                        <div className="text-sm text-[#14213d]">{item.label}</div>
-                        <div className="text-xs text-[#7587a3]">{item.description}</div>
+                        <div className="text-sm text-[var(--color-text-primary)]">{item.label}</div>
+                        <div className="text-xs text-[var(--color-text-secondary)]">{item.description}</div>
                       </ListBox.Item>
                     ))}
                   </ListBox>
                 </Select.Popover>
               </Select>
               {getManySourceOptions.length === 0 ? (
-                <div className="mt-2 rounded-md border border-[#ffe0a3] bg-[#fff8e8] px-3 py-2 text-xs leading-5 text-[#8a5a00]">
+                <div className="mt-2 rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-2 text-xs leading-5 text-[var(--color-warning)]">
                   请先在当前节点前添加“获取多条数据”节点，再作为多条新增的数据源。
                 </div>
               ) : null}
@@ -2117,11 +2488,11 @@ function MappingRowsEditor({
       description="必填字段会自动带出并禁止删除，新增字段按目标表单字段选择。"
     >
       <div className="flex items-center justify-between gap-3">
-        <div className="text-xs leading-5 text-[#7587a3]">
+        <div className="text-xs leading-5 text-[var(--color-text-secondary)]">
           根据目标表单字段配置写入值。
         </div>
         <Button
-          className="h-8 rounded-md bg-[#2f6bff] px-3 text-white"
+          className="h-8 rounded-md bg-[var(--color-primary)] px-3 text-[var(--color-text-on-primary)]"
           onClick={onAddMappingRow}
           isDisabled={targetFields.length === 0 || rows.length >= targetFields.length}
         >
@@ -2132,7 +2503,7 @@ function MappingRowsEditor({
 
       {rows.length > 0 ? (
         <div className="space-y-3">
-          <div className="hidden grid-cols-[1.1fr_0.7fr_minmax(0,1.3fr)_72px] gap-3 px-2 text-xs font-medium text-[#7587a3] md:grid">
+          <div className="hidden grid-cols-[1.1fr_0.7fr_minmax(0,1.3fr)_72px] gap-3 px-2 text-xs font-medium text-[var(--color-text-secondary)] md:grid">
             <div>目标字段</div>
             <div>字段类型</div>
             <div>字段值</div>
@@ -2146,7 +2517,7 @@ function MappingRowsEditor({
             return (
               <div
                 key={row.id}
-                className="grid gap-3 rounded-lg border border-[#dfe8f5] bg-[#fbfdff] p-3 md:grid-cols-[1.1fr_0.7fr_minmax(0,1.3fr)_72px] md:items-start"
+                className="grid gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-3 md:grid-cols-[1.1fr_0.7fr_minmax(0,1.3fr)_72px] md:items-start"
               >
                 <FieldSelect
                   fields={targetFields}
@@ -2154,6 +2525,7 @@ function MappingRowsEditor({
                   onChange={(value) => onRowChange(row.id, "fieldId", value)}
                 />
                 <Select
+                  aria-label="字段值类型"
                   selectedKey={row.valueType}
                   onSelectionChange={(key) =>
                     onRowChange(row.id, "valueType", String(key ?? "value"))
@@ -2200,19 +2572,21 @@ function MappingRowsEditor({
                   ) : null}
                 </div>
                 <Button
+                  isIconOnly
+                  aria-label={lockRequiredRows && targetField?.isRequired ? "必填字段不可删除" : "删除字段映射"}
                   variant="ghost"
-                  className="h-9 rounded-md border border-[#d7e2f1] bg-white px-2 text-[#60718a] disabled:border-[#eef2f7] disabled:text-[#a3afbf]"
+                  className="h-8 min-h-8 w-8 min-w-8 justify-self-center rounded-md border border-transparent p-0 text-[var(--color-danger)] hover:border-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:text-[var(--color-text-disabled)]"
                   onClick={() => onRemoveMappingRow(row.id)}
                   isDisabled={lockRequiredRows && Boolean(targetField?.isRequired)}
                 >
-                  {lockRequiredRows && targetField?.isRequired ? "必填" : "删除"}
+                  <TrashIcon />
                 </Button>
               </div>
             );
           })}
         </div>
       ) : (
-        <div className="rounded-lg border border-dashed border-[#d7e2f1] bg-[#fbfdff] px-3 py-5 text-sm text-[#7587a3]">
+        <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-5 text-sm text-[var(--color-text-secondary)]">
           选择目标表单后会自动带出必填字段，也可以继续添加更多字段映射。
         </div>
       )}
@@ -2236,8 +2610,17 @@ function BranchRulesEditor({
   const rootRules = rules.filter((rule) => !rule.parentId);
 
   return (
-    <PropertyPanelSection title="条件规则" description="字段来源为当前节点所有上游节点，支持同级条件和子条件。">
-      <div className="space-y-3">
+    <div className="space-y-2 border-t border-[var(--color-border)] pt-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold text-[var(--color-text-primary)]">条件规则</div>
+          <div className="mt-0.5 text-[11px] text-[var(--color-text-secondary)]">支持同级条件和子条件。</div>
+        </div>
+        <IconActionButton ariaLabel="添加条件" onClick={() => onAddConditionRule()}>
+          <AddIcon />
+        </IconActionButton>
+      </div>
+      <div className="space-y-2 overflow-x-auto pb-1">
         {rootRules.length > 0 ? (
           rootRules.map((rule) => (
             <BranchRuleItem
@@ -2252,21 +2635,16 @@ function BranchRulesEditor({
             />
           ))
         ) : (
-          <div className="rounded-lg border border-dashed border-white/12 bg-white/[0.02] px-4 py-5 text-sm text-[#95a8c4]">
-            暂无条件，先添加一个同级条件。
-          </div>
+          <button
+            type="button"
+            className="w-full rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-3 text-xs text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+            onClick={() => onAddConditionRule()}
+          >
+            添加第一条条件
+          </button>
         )}
       </div>
-      <div className="pt-1">
-        <Button
-          className="h-9 rounded-md bg-[#2f6bff] px-4 text-white"
-          onClick={() => onAddConditionRule()}
-        >
-          <AddIcon />
-          添加条件
-        </Button>
-      </div>
-    </PropertyPanelSection>
+    </div>
   );
 }
 
@@ -2291,21 +2669,25 @@ function BranchRuleItem({
   const childRules = rules.filter((item) => item.parentId === rule.id);
   const operator = rule.operator ?? "eq";
   const hideValue = operator === "hasValue" || operator === "noValue";
+  const valueType = rule.valueType ?? "value";
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <div
-        className="rounded-xl border border-white/10 bg-[#111c2d] p-3"
-        style={{ marginLeft: `${Math.min(depth, 4) * 20}px` }}
+        className="relative min-w-[620px]"
+        style={{ marginLeft: `${Math.min(depth, 4) * 18}px` }}
       >
-        <div className="grid gap-3">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1.25fr)_132px_minmax(0,1fr)]">
+        {depth > 0 ? (
+          <span className="absolute -left-3 top-1/2 h-px w-3 bg-[var(--color-border)]" />
+        ) : null}
+        <div className="grid grid-cols-[minmax(130px,1.2fr)_92px_86px_minmax(130px,1fr)_28px_28px] items-center gap-2">
             <SourceFieldSelect
               options={sourceFieldChoices}
               value={rule.fieldKey ?? ""}
               onChange={(value) => onConditionRuleChange(rule.id, "fieldKey", value)}
             />
             <Select
+              aria-label="条件运算符"
               selectedKey={operator}
               onSelectionChange={(key) =>
                 onConditionRuleChange(
@@ -2330,46 +2712,83 @@ function BranchRuleItem({
               </Select.Popover>
             </Select>
             {hideValue ? (
-              <div className="flex items-center rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-[#8da3c2]">
-                当前规则不需要匹配值
-              </div>
+              <>
+                <div className="flex h-9 items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2 text-xs text-[var(--color-text-secondary)]">无需值</div>
+                <div className="flex h-9 items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2 text-xs text-[var(--color-text-secondary)]">—</div>
+              </>
             ) : (
-              <BranchRuleValueInput
-                field={selectedField}
-                operator={operator}
-                value={rule.rawValue ?? ""}
-                onChange={(value) => onConditionRuleChange(rule.id, "rawValue", value)}
-              />
+              <>
+                <Select
+                  aria-label="条件值类型"
+                  selectedKey={valueType}
+                  onSelectionChange={(key) =>
+                    onConditionRuleChange(rule.id, "valueType", String(key ?? "value"))
+                  }
+                >
+                  <Select.Trigger>
+                    <Select.Value>{valueType === "field" ? "字段" : "值"}</Select.Value>
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox>
+                      <ListBox.Item id="value" textValue="值">值</ListBox.Item>
+                      <ListBox.Item id="field" textValue="字段">字段</ListBox.Item>
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+                {valueType === "field" ? (
+                  <SourceFieldSelect
+                    options={sourceFieldChoices}
+                    value={rule.sourceFieldKey ?? ""}
+                    onChange={(value) =>
+                      onConditionRuleChange(rule.id, "sourceFieldKey", value)
+                    }
+                  />
+                ) : (
+                  <BranchRuleValueInput
+                    field={selectedField}
+                    operator={operator}
+                    value={rule.rawValue ?? ""}
+                    onChange={(value) => onConditionRuleChange(rule.id, "rawValue", value)}
+                  />
+                )}
+              </>
             )}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="ghost"
-              className="h-8 rounded-md border border-white/10 bg-white/6 px-3 text-[#d7e3f4]"
-              onClick={() => onAddConditionRule(undefined, rule.id)}
-            >
-              添加同级条件
-            </Button>
-            <Button
-              variant="ghost"
-              className="h-8 rounded-md border border-white/10 bg-white/6 px-3 text-[#d7e3f4]"
-              onClick={() => onAddConditionRule(rule.id)}
-            >
-              添加子条件
-            </Button>
-            <Button
-              variant="ghost"
-              className="h-8 rounded-md border border-[#7a243c] bg-[#35131d] px-3 text-[#ffb5c6]"
+            <IconActionButton
+              ariaLabel="删除条件规则"
+              danger
               onClick={() => onRemoveConditionRule(rule.id)}
             >
-              删除
-            </Button>
-          </div>
+              <TrashIcon />
+            </IconActionButton>
+            <Dropdown>
+              <Dropdown.Trigger
+                aria-label="添加条件规则"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-control-soft-hover)] hover:text-[var(--color-primary)]"
+              >
+                <AddIcon />
+              </Dropdown.Trigger>
+              <Dropdown.Popover>
+                <Dropdown.Menu
+                  aria-label="添加条件规则方式"
+                  onAction={(key) => {
+                    if (key === "child") {
+                      onAddConditionRule(rule.id);
+                    } else {
+                      onAddConditionRule(undefined, rule.id);
+                    }
+                  }}
+                >
+                  <Dropdown.Item id="sibling">同层级条件</Dropdown.Item>
+                  <Dropdown.Item id="child">子级条件</Dropdown.Item>
+                </Dropdown.Menu>
+              </Dropdown.Popover>
+            </Dropdown>
         </div>
       </div>
 
       {childRules.length > 0 ? (
-        <div className="space-y-3">
+        <div className="space-y-2 border-l border-[var(--color-border)] pl-1">
           {childRules.map((child) => (
             <BranchRuleItem
               key={child.id}
@@ -2413,6 +2832,7 @@ function BranchRuleValueInput({
 
     return (
       <Select
+        aria-label="匹配值"
         selectedKey={value || "none"}
         onSelectionChange={(key) => onChange(String(key === "none" ? "" : key ?? ""))}
       >
@@ -2441,7 +2861,7 @@ function BranchRuleValueInput({
   if (field?.fieldType === "multiLineText" || field?.fieldType === "description") {
     return (
       <textarea
-        className="min-h-[84px] w-full rounded-lg border border-[#d7e2f1] bg-white px-3 py-2 text-sm text-[#14213d] outline-none transition-colors focus:border-[#2f6bff]"
+        className="min-h-[84px] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition-colors focus:border-[var(--color-primary)]"
         placeholder={operator === "inAny" || operator === "notInAny" ? "多个值用逗号分隔" : "输入匹配值"}
         value={value}
         onChange={(event) => onChange(event.currentTarget.value)}
@@ -2469,7 +2889,7 @@ function MappingFormulaInput({
   return (
     <textarea
       aria-label="公式值"
-      className="min-h-[88px] w-full resize-y rounded-lg border border-[#d7e2f1] bg-white px-3 py-2 font-mono text-sm leading-6 text-[#14213d] outline-none transition-colors focus:border-[#2f6bff] focus:ring-2 focus:ring-[#2f6bff]/10"
+      className="min-h-[88px] w-full resize-y rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-2 font-mono text-sm leading-6 text-[var(--color-text-primary)] outline-none transition-colors focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/10"
       placeholder="请输入公式，例如 @SUM($amount, 100)"
       spellCheck={false}
       value={value}
@@ -2492,7 +2912,7 @@ function TextAreaInput({
   return (
     <textarea
       aria-label={ariaLabel}
-      className="min-h-[88px] w-full rounded-lg border border-[#d7e2f1] bg-white px-3 py-2 text-sm text-[#14213d] outline-none transition-colors focus:border-[#2f6bff]"
+      className="min-h-[88px] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition-colors focus:border-[var(--color-primary)]"
       placeholder={placeholder}
       value={value}
       onChange={(event) => onChange(event.currentTarget.value)}
@@ -2537,31 +2957,31 @@ function ExpressionEditor({
     <div className="space-y-3">
       <textarea
         aria-label={ariaLabel}
-        className="min-h-[96px] w-full rounded-lg border border-[#d7e2f1] bg-white px-3 py-2 font-mono text-sm leading-6 text-[#14213d] outline-none transition-colors focus:border-[#2f6bff]"
+        className="min-h-[96px] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-2 font-mono text-sm leading-6 text-[var(--color-text-primary)] outline-none transition-colors focus:border-[var(--color-primary)]"
         placeholder={placeholder}
         spellCheck={false}
         value={value}
         onChange={(event) => onChange(event.currentTarget.value)}
       />
       {helperText ? (
-        <div className="text-xs leading-5 text-[#8da3c2]">{helperText}</div>
+        <div className="text-xs leading-5 text-[var(--color-text-secondary)]">{helperText}</div>
       ) : null}
-      <div className="rounded-lg border border-white/8 bg-white/[0.03] p-3">
-        <div className="text-xs font-medium text-[#b5c6de]">表达式检查</div>
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-control-soft)] p-3">
+        <div className="text-xs font-medium text-[var(--color-text-primary)]">表达式检查</div>
         {value.trim().length === 0 ? (
-          <div className="mt-2 text-xs leading-5 text-[#8da3c2]">
+          <div className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">
             直接输入表达式，字段引用格式为 <code>{`{{nodeId:fieldId}}`}</code>。
           </div>
         ) : (
           <div className="mt-2 space-y-2">
             {validTokens.length > 0 ? (
               <div>
-                <div className="text-xs text-[#8da3c2]">已引用字段</div>
+                <div className="text-xs text-[var(--color-text-secondary)]">已引用字段</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {validTokens.map((item) => (
                     <span
                       key={item.token}
-                      className="rounded-md border border-[#2f6bff]/30 bg-[#2f6bff]/12 px-2.5 py-1 text-xs text-[#c9dcff]"
+                      className="rounded-md border border-[var(--color-primary)] bg-[var(--color-primary-soft)] px-2.5 py-1 text-xs text-[var(--color-primary)]"
                     >
                       {item.option.label}
                     </span>
@@ -2569,10 +2989,10 @@ function ExpressionEditor({
                 </div>
               </div>
             ) : (
-              <div className="text-xs text-[#8da3c2]">当前表达式未引用字段。</div>
+              <div className="text-xs text-[var(--color-text-secondary)]">当前表达式未引用字段。</div>
             )}
             {invalidTokens.length > 0 ? (
-              <div className="rounded-md border border-[#7a243c] bg-[#35131d] px-3 py-2 text-xs leading-5 text-[#ffb5c6]">
+              <div className="rounded-md border border-[var(--color-danger)] bg-[var(--color-danger-soft)] px-3 py-2 text-xs leading-5 text-[var(--color-danger)]">
                 无效字段引用：{invalidTokens.map((item) => `{{${item.token}}}`).join("、")}
               </div>
             ) : null}
@@ -2580,14 +3000,14 @@ function ExpressionEditor({
         )}
       </div>
       {options.length > 0 ? (
-        <div className="rounded-lg border border-white/8 bg-white/[0.03] p-3">
-          <div className="text-xs font-medium text-[#b5c6de]">插入字段引用</div>
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-control-soft)] p-3">
+          <div className="text-xs font-medium text-[var(--color-text-primary)]">插入字段引用</div>
           <div className="mt-2 flex flex-wrap gap-2">
             {options.map((option) => (
               <button
                 key={option.key}
                 type="button"
-                className="rounded-md border border-white/10 bg-white/6 px-2.5 py-1 text-xs text-[#d7e3f4] transition hover:bg-white/10"
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2.5 py-1 text-xs text-[var(--color-text-primary)] transition hover:bg-[var(--color-primary-soft)]"
                 onClick={() => insertToken(`{{${option.key}}}`)}
               >
                 {option.label}
@@ -2613,6 +3033,7 @@ function FormSelect({
 }) {
   return (
     <Select
+      aria-label={placeholder}
       selectedKey={value || "none"}
       onSelectionChange={(key) => onChange(String(key === "none" ? "" : key ?? ""))}
     >
@@ -2649,6 +3070,7 @@ function FieldSelect({
 }) {
   return (
     <Select
+      aria-label="字段名"
       selectedKey={value || "none"}
       onSelectionChange={(key) => onChange(String(key === "none" ? "" : key ?? ""))}
     >
@@ -2685,6 +3107,7 @@ function SourceFieldSelect({
 }) {
   return (
     <Select
+      aria-label="来源字段"
       selectedKey={value || "none"}
       onSelectionChange={(key) => onChange(String(key === "none" ? "" : key ?? ""))}
     >
@@ -2722,6 +3145,7 @@ function FieldValueInput({
   if (field?.type === "select" || field?.type === "radio") {
     return (
       <Select
+        aria-label={field ? `${field.label}字段值` : "字段值"}
         selectedKey={value || "none"}
         onSelectionChange={(key) => onChange(String(key === "none" ? "" : key ?? ""))}
       >
@@ -2761,7 +3185,7 @@ function FieldValueInput({
   if (field?.type === "multiLineText" || field?.type === "description") {
     return (
       <textarea
-        className="min-h-[88px] w-full rounded-lg border border-[#d7e2f1] px-3 py-2 text-sm text-[#14213d] outline-none transition-colors focus:border-[#2f6bff]"
+        className="min-h-[88px] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition-colors focus:border-[var(--color-primary)]"
         placeholder="字段值"
         value={value}
         onChange={(event) => onChange(event.currentTarget.value)}
@@ -2805,11 +3229,7 @@ function defaultNodeTemplate(kind: WorkflowNodeKind): WorkflowNodeData {
         label: "条件分支",
         description: "按优先级和条件规则控制后续走向",
         config: {
-          mode: "all",
-          priority: 1,
-          rules: [],
-          expression: "",
-          hitLabel: "",
+          branches: [createConditionBranch(1)],
         } satisfies ConditionConfig,
       };
     case "add-data":
@@ -2892,17 +3312,24 @@ function defaultNodeTemplate(kind: WorkflowNodeKind): WorkflowNodeData {
   }
 }
 
-function createEditorEdge(source: string, target: string): WorkflowEdge {
+function createEditorEdge(
+  source: string,
+  target: string,
+  sourceHandle?: string | null,
+  targetHandle?: string | null,
+): WorkflowEdge {
   return {
-    id: `edge-${source}-${target}-${Date.now()}`,
+    id: `edge-${source}-${sourceHandle ?? "default"}-${target}-${Date.now()}`,
     source,
     target,
+    sourceHandle,
+    targetHandle,
     type: "insertable",
     markerEnd: {
       type: MarkerType.ArrowClosed,
     },
     style: {
-      stroke: "#2f6bff",
+      stroke: "var(--color-primary)",
       strokeWidth: 1.4,
     },
   };
@@ -2912,13 +3339,19 @@ function decorateEdges(
   edges: WorkflowEdge[],
   onInsert: (sourceId: string, targetId: string, edgeId: string) => void,
 ) {
-  return edges.map((edge) => ({
-    ...edge,
-    type: "insertable",
-    data: {
-      onInsert,
-    },
-  }));
+  return edges.map((edge) => {
+    if (edge.type === "insertable" && edge.data?.onInsert === onInsert) {
+      return edge;
+    }
+    return {
+      ...edge,
+      type: "insertable",
+      data: {
+        ...edge.data,
+        onInsert,
+      },
+    };
+  });
 }
 
 function normalizeWorkflowNodes(rawNodes: Array<{ [key: string]: unknown }>): WorkflowNode[] {
@@ -2974,12 +3407,32 @@ function normalizeWorkflowEdges(rawEdges: Array<{ [key: string]: unknown }>): Wo
           type: MarkerType.ArrowClosed,
         },
         style: {
-          stroke: "#2f6bff",
+          stroke: "var(--color-primary)",
           strokeWidth: 1.4,
         },
       },
     ];
   });
+}
+
+function migrateConditionEdgeHandles(edges: WorkflowEdge[], nodes: WorkflowNode[]) {
+  const nodeLookup = new Map(nodes.map((node) => [node.id, node]));
+  return edges.map((edge) => {
+    if (edge.sourceHandle) {
+      return edge;
+    }
+    const sourceNode = nodeLookup.get(edge.source);
+    const sourceHandle = sourceNode ? defaultSourceHandleForNode(sourceNode) : null;
+    return sourceHandle ? { ...edge, sourceHandle } : edge;
+  });
+}
+
+function defaultSourceHandleForNode(node: WorkflowNode) {
+  if (node.data.kind !== "condition") {
+    return null;
+  }
+  const firstBranch = normalizeConditionConfig(node.data.config).branches?.[0];
+  return firstBranch ? conditionBranchHandleId(firstBranch.id) : null;
 }
 
 function ensureTriggerNode(
@@ -3028,6 +3481,18 @@ function buildTriggerNodeData(flowState: FlowState, forms: FormSummary[]): Workf
       changedFieldsText: flowState.triggerConfig.changedFieldsText ?? "",
     },
   };
+}
+
+function buildAutomationName(
+  forms: FormSummary[],
+  formUuid: string,
+  triggerEvent: TriggerEvent,
+) {
+  const formName = forms.find((form) => form.id === formUuid)?.name ?? "表单";
+  const eventLabel =
+    triggerEvents.find((item) => item.id === triggerEvent)?.label ?? "创建成功后";
+
+  return `${formName}${eventLabel}`;
 }
 
 function serializeWorkflow(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
@@ -3255,7 +3720,25 @@ function createBranchRule(parentId?: string): BranchRule {
     fieldKey: "",
     operator: "eq",
     rawValue: "",
+    valueType: "value",
+    sourceFieldKey: "",
   };
+}
+
+function createConditionBranch(priority: number): ConditionBranch {
+  return {
+    id: `branch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: `条件分支 ${priority}`,
+    mode: "all",
+    priority,
+    rules: [],
+    expression: "",
+    hitLabel: "",
+  };
+}
+
+function conditionBranchHandleId(branchId: string) {
+  return `condition-branch:${branchId}`;
 }
 
 function syncRequiredRows(rows: FieldMappingRow[], fields: FormFieldDescriptor[]) {
@@ -3322,16 +3805,46 @@ function normalizeTriggerConfig(value: unknown): TriggerConfig {
 
 function normalizeConditionConfig(value: unknown): ConditionConfig {
   const current = isRecord(value) ? value : {};
+  const rawBranches = Array.isArray(current.branches) ? current.branches : [];
+
+  if (rawBranches.length > 0) {
+    return {
+      branches: rawBranches.map((item, index) => normalizeConditionBranch(item, index)),
+    };
+  }
+
+  const legacyBranch = normalizeConditionBranch(
+    {
+      id: "branch-legacy-1",
+      name: current.name,
+      mode: current.mode,
+      priority: current.priority,
+      rules: current.rules,
+      expression: current.expression,
+      hitLabel: current.hitLabel,
+    },
+    0,
+  );
+
+  return {
+    branches: [legacyBranch],
+  };
+}
+
+function normalizeConditionBranch(value: unknown, index: number): ConditionBranch {
+  const current = isRecord(value) ? value : {};
   const rawRules = Array.isArray(current.rules) ? current.rules : [];
   return {
+    id: readStringValue(current.id) || `branch-${index + 1}`,
+    name: readStringValue(current.name) || `条件分支 ${index + 1}`,
     mode:
       current.mode === "rules" || current.mode === "expression" || current.mode === "all"
         ? current.mode
         : "all",
     priority:
       typeof current.priority === "number" && Number.isFinite(current.priority)
-        ? current.priority
-        : 1,
+        ? Math.max(1, current.priority)
+        : index + 1,
     rules: rawRules
       .map((item) => normalizeBranchRule(item))
       .filter((item): item is BranchRule => item !== null),
@@ -3353,6 +3866,8 @@ function normalizeBranchRule(value: unknown): BranchRule | null {
     fieldKey: readStringValue(value.fieldKey),
     operator,
     rawValue: readStringValue(value.rawValue),
+    valueType: value.valueType === "field" ? "field" : "value",
+    sourceFieldKey: readStringValue(value.sourceFieldKey),
   };
 }
 
@@ -3510,13 +4025,7 @@ function nodeSummary(data: WorkflowNodeData) {
   }
   if (data.kind === "condition") {
     const config = normalizeConditionConfig(data.config);
-    if (config.mode === "all") {
-      return `优先级 ${config.priority ?? 1} · 全部通过`;
-    }
-    if (config.mode === "rules") {
-      return `优先级 ${config.priority ?? 1} · ${config.rules?.length ?? 0} 条规则`;
-    }
-    return config.expression || "未配置分支表达式";
+    return `${config.branches?.length ?? 1} 个条件分支`;
   }
   if (data.kind === "get-one" || data.kind === "get-many") {
     const config = normalizeGetDataConfig(data.config);
@@ -3532,6 +4041,16 @@ function nodeSummary(data: WorkflowNodeData) {
   }
   const config = normalizeActionConfig(data.config);
   return config.targetFormUuid || "未配置目标表单";
+}
+
+function conditionBranchSummary(branch: ConditionBranch) {
+  if (branch.mode === "all") {
+    return "全部通过";
+  }
+  if (branch.mode === "rules") {
+    return `${branch.rules.length} 条规则`;
+  }
+  return branch.expression || "未配置分支表达式";
 }
 
 function getSourceModeLabel(mode: DataSourceMode) {

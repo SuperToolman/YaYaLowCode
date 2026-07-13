@@ -483,56 +483,14 @@ pub(crate) async fn publish_form_schema(
 pub(crate) async fn restore_form_version(
     State(state): State<AppState>,
     Path((form_uuid, version)): Path<(String, i32)>,
-    payload: Option<Json<RestoreVersionRequest>>,
+    _payload: Option<Json<RestoreVersionRequest>>,
 ) -> Result<Json<ApiResponse<ApiSchemaPayload>>, AppError> {
     let definition = find_form_definition(&state.db, &form_uuid).await?;
     let source_schema = load_schema_version(&state.db, &form_uuid, version).await?;
-    let now = Utc::now();
-    let next_version = definition.latest_schema_version + 1;
-    let next_name = source_schema
-        .schema_json
-        .get("formName")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("未命名表单")
-        .to_string();
-    let change_log = payload
-        .and_then(|Json(value)| value.change_log)
-        .unwrap_or_else(|| format!("restored from v{version}"));
-
-    let restored_schema = form_schema_entity::ActiveModel {
-        id: Set(Uuid::new_v4()),
-        form_uuid: Set(form_uuid.clone()),
-        version: Set(next_version),
-        schema_json: Set(source_schema.schema_json.clone()),
-        change_log: Set(Some(change_log)),
-        published: Set(false),
-        created_at: Set(now.into()),
-        updated_at: Set(now.into()),
-    }
-    .insert(&state.db)
-    .await?;
-
-    let mut definition_active: form_definition_entity::ActiveModel = definition.into();
-    definition_active.name = Set(next_name);
-    definition_active.draft_schema_version = Set(next_version);
-    definition_active.latest_schema_version = Set(next_version);
-    definition_active.updated_at = Set(now.into());
-    let updated_definition = definition_active.update(&state.db).await?;
-
-    sync_navigation_title(
-        &state.db,
-        &form_uuid,
-        &updated_definition.name,
-        &updated_definition.slug,
-        now,
-    )
-    .await?;
 
     Ok(Json(success_response(
-        "恢复表单版本成功",
-        build_schema_payload(&updated_definition, restored_schema),
+        "读取历史版本 Schema 成功",
+        build_schema_payload(&definition, source_schema),
     )))
 }
 

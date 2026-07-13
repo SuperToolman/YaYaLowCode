@@ -24,6 +24,23 @@ export type ActiveCell = {
   column: number;
 };
 
+export type DesignerDragData =
+  | {
+      kind: "component";
+      componentType: DesignerComponentType;
+    }
+  | {
+      kind: "field";
+      fieldId: string;
+    };
+
+export type DesignerDropData = {
+  kind: "cell";
+  row: number;
+  column: number;
+  parentGroupId: string | null;
+};
+
 export type ResizeDirection = "columns" | "rows" | "both";
 
 export type ResizeState = {

@@ -7,7 +7,7 @@ import type { FunctionGroup } from "shuttle-formula/render";
 export const FORMULA_FUNCTION_GROUPS: FunctionGroup[] = [
   {
     id: "text",
-    label: "文本",
+    label: "文本函数",
     functions: {
       CONCATENATE: {
         label: "拼接文本",
@@ -60,6 +60,18 @@ export const FORMULA_FUNCTION_GROUPS: FunctionGroup[] = [
         params: [{ define: { type: "string" } }, { define: { type: "number" } }],
         return: { type: "string" },
       },
+      MID: {
+        label: "中间截取",
+        description: "从指定位置截取文本",
+        params: [{ define: { type: "string" } }, { define: { type: "number" } }, { define: { type: "number" } }],
+        return: { type: "string" },
+      },
+      REPLACE: {
+        label: "替换文本",
+        description: "替换文本中的指定内容",
+        params: [{ define: { type: "string" } }, { define: { type: "string" } }, { define: { type: "string" } }],
+        return: { type: "string" },
+      },
       TEXT: {
         label: "转文本",
         description: "将值转换为文本",
@@ -76,7 +88,7 @@ export const FORMULA_FUNCTION_GROUPS: FunctionGroup[] = [
   },
   {
     id: "number",
-    label: "数值",
+    label: "数学函数",
     functions: {
       SUM: {
         label: "求和",
@@ -130,6 +142,24 @@ export const FORMULA_FUNCTION_GROUPS: FunctionGroup[] = [
         params: [{ define: { type: "number" } }],
         return: { type: "number" },
       },
+      POWER: {
+        label: "乘方",
+        description: "返回指定数字的乘方结果",
+        params: [{ define: { type: "number" } }, { define: { type: "number" } }],
+        return: { type: "number" },
+      },
+      MOD: {
+        label: "取余",
+        description: "返回两个数字相除的余数",
+        params: [{ define: { type: "number" } }, { define: { type: "number" } }],
+        return: { type: "number" },
+      },
+      SQRT: {
+        label: "平方根",
+        description: "返回数字的平方根",
+        params: [{ define: { type: "number" } }],
+        return: { type: "number" },
+      },
       RANDOM: {
         label: "随机数",
         description: "返回 0 到 1 之间的随机数",
@@ -140,7 +170,7 @@ export const FORMULA_FUNCTION_GROUPS: FunctionGroup[] = [
   },
   {
     id: "date",
-    label: "日期",
+    label: "时间函数",
     functions: {
       DATE: {
         label: "创建日期",
@@ -174,11 +204,29 @@ export const FORMULA_FUNCTION_GROUPS: FunctionGroup[] = [
         ],
         return: { type: "number" },
       },
+      YEAR: {
+        label: "年份",
+        description: "返回日期中的年份",
+        params: [{ define: { type: "string" } }],
+        return: { type: "number" },
+      },
+      MONTH: {
+        label: "月份",
+        description: "返回日期中的月份",
+        params: [{ define: { type: "string" } }],
+        return: { type: "number" },
+      },
+      DAY: {
+        label: "日期",
+        description: "返回日期中的日",
+        params: [{ define: { type: "string" } }],
+        return: { type: "number" },
+      },
     },
   },
   {
     id: "logic",
-    label: "逻辑",
+    label: "逻辑函数",
     functions: {
       IF: {
         label: "条件判断",
@@ -216,16 +264,29 @@ export const FORMULA_FUNCTION_GROUPS: FunctionGroup[] = [
         params: [{ forwardInput: true }],
         return: { type: "boolean" },
       },
+      ISEMPTY: {
+        label: "是否无值",
+        description: "判断值是否为 null、undefined 或空文本",
+        params: [{ forwardInput: true }],
+        return: { type: "boolean" },
+      },
     },
   },
   {
     id: "advanced",
-    label: "高级",
+    label: "其他函数",
     functions: {
       MAPX: {
         label: "跨表取数",
         description: "跨表或集合取数",
         params: [{ forwardInput: true }],
+        return: { scope: "forwardParams", paramsIndex: 0 },
+      },
+      COALESCE: {
+        label: "首个非空值",
+        description: "返回参数中第一个非空值",
+        params: [{ forwardInput: true }],
+        loopAfterParams: 1,
         return: { scope: "forwardParams", paramsIndex: 0 },
       },
     },

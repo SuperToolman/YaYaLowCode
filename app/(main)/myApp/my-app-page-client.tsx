@@ -19,7 +19,14 @@ import {
 } from "@gravity-ui/icons";
 import { createApp, listApps, type App as ApiApp } from "../../lib/api-client";
 import { AppIcon } from "../../components/app-icons";
-import { appStatusLabel, appStatusTone, type AppItem, type AppStatus } from "../../lib/apps";
+import {
+  appColorToneClass,
+  appStatusLabel,
+  appStatusTone,
+  normalizeAppColorTone,
+  type AppItem,
+  type AppStatus,
+} from "../../lib/apps";
 // import { PlatformHeader } from "../components/platform-header";
 
 const statusOrder: AppStatus[] = ["enabled", "paused", "draft"];
@@ -206,10 +213,10 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
             <div className="flex flex-col gap-5">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                 <div className="min-w-0">
-                  <h1 className="mt-4 text-3xl font-semibold leading-tight text-[var(--text-primary)] sm:text-4xl">
+                  <h1 className="mt-4 text-3xl font-semibold leading-tight text-[var(--color-text-primary)] sm:text-4xl">
                     应用中心
                   </h1>
-                  <p className="mt-3 max-w-3xl text-sm leading-6 text-[var(--text-secondary)]">
+                  <p className="mt-3 max-w-3xl text-sm leading-6 text-[var(--color-text-secondary)]">
                     管理企业低代码应用、表单入口、运行状态和数据规模，集中维护你创建和参与的业务系统。
                   </p>
                 </div>
@@ -218,14 +225,14 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                   <Button
                     onClick={handleCreateApp}
                     isDisabled={isPending}
-                    className="h-10 gap-2 rounded-lg bg-[var(--accent-strong)] px-4 text-sm font-medium text-white"
+                    className="h-10 gap-2 rounded-lg bg-[var(--color-primary)] px-4 text-sm font-medium text-[var(--color-text-on-primary)]"
                   >
                     <Plus className="h-4 w-4" />
                     {isPending ? "创建中..." : "创建应用"}
                   </Button>
                   <Button
                     variant="ghost"
-                    className="theme-panel h-10 gap-2 rounded-lg px-4 text-sm font-medium text-[var(--text-primary)]"
+                    className="theme-panel h-10 gap-2 rounded-lg px-4 text-sm font-medium text-[var(--color-text-primary)]"
                   >
                     <Rocket className="h-4 w-4" />
                     导入应用
@@ -237,9 +244,9 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                 <section className="theme-panel-soft rounded-[18px] p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <h2 className="text-sm font-semibold text-[var(--text-primary)]">应用分组</h2>
+                      <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">应用分组</h2>
                     </div>
-                    <Funnel className="h-4 w-4 text-[var(--text-muted)]" />
+                    <Funnel className="h-4 w-4 text-[var(--color-text-secondary)]" />
                   </div>
                   <div className="mt-1 flex flex-wrap gap-2">
                     {appGroups.map((group) => (
@@ -249,12 +256,12 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                         className={[
                           "inline-flex h-10 items-center gap-2 rounded-full border px-4 text-sm transition-colors",
                           group.active
-                            ? "border-[var(--panel-border)] bg-[var(--accent-soft)] font-medium text-[var(--accent-strong)]"
-                            : "border-[var(--panel-border)] bg-[var(--panel-background-strong)] text-[var(--text-secondary)] hover:border-[var(--panel-border)] hover:bg-[var(--panel-background)] hover:text-[var(--text-primary)]",
+                            ? "border-[var(--color-border)] bg-[var(--color-primary-soft)] font-medium text-[var(--color-primary)]"
+                            : "border-[var(--color-border)] bg-[var(--color-bg-panel-strong)] text-[var(--color-text-secondary)] hover:border-[var(--color-border)] hover:bg-[var(--color-bg-panel)] hover:text-[var(--color-text-primary)]",
                         ].join(" ")}
                       >
                         <span>{group.label}</span>
-                        <span className="rounded-full bg-[var(--neutral-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--neutral-strong)]">
+                        <span className="rounded-full bg-[var(--color-bg-subtle)] px-2 py-0.5 text-xs font-semibold text-[var(--color-text-secondary)]">
                           {group.count}
                         </span>
                       </button>
@@ -264,9 +271,9 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
 
                   <div className="flex justify-between mt-4">
                     <div className="min-w-0">
-                      <div className="text-sm font-semibold text-[var(--text-primary)]">
+                      <div className="text-sm font-semibold text-[var(--color-text-primary)]">
                         全部应用
-                        <span className="ml-2 text-xs font-medium text-[var(--text-muted)]">
+                        <span className="ml-2 text-xs font-medium text-[var(--color-text-secondary)]">
                           共 {apps.length} 个
                         </span>
                       </div>
@@ -278,8 +285,8 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                             className={[
                               "h-9 rounded-lg px-3 text-sm font-medium transition-colors",
                               index === 0
-                                ? "bg-[var(--accent-soft)] text-[var(--accent-strong)]"
-                                : "text-[var(--text-secondary)] hover:bg-[var(--panel-background-soft)] hover:text-[var(--text-primary)]",
+                                ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]"
+                                : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-panel-soft)] hover:text-[var(--color-text-primary)]",
                             ].join(" ")}
                           >
                             {tab.label}
@@ -290,7 +297,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                     </div>
 
                     <div className="theme-search-surface flex h-10 w-[280px] items-center gap-2 rounded-xl px-3">
-                      <Magnifier className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
+                      <Magnifier className="h-4 w-4 shrink-0 text-[var(--color-text-secondary)]" />
                       <Input
                         aria-label="搜索应用"
                         className="flex-1"
@@ -303,7 +310,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                 <section className="theme-panel-soft rounded-[18px] p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <h2 className="text-sm font-semibold text-[var(--text-primary)]">状态统计</h2>
+                      <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">状态统计</h2>
                     </div>
                   </div>
                   <div className="mt-4 grid gap-3 sm:grid-cols-4">
@@ -344,11 +351,11 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
             {sortApps(apps).map((app) => (
               <article
                 key={app.id}
-                className="group theme-panel-strong flex min-w-0 flex-col rounded-xl border border-[var(--panel-border)] p-3.5 shadow-[0_4px_14px_rgba(20,33,61,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--accent-strong)] hover:shadow-[0_12px_24px_rgba(20,33,61,0.09)]"
+                className="group theme-panel-strong flex min-w-0 flex-col rounded-xl border border-[var(--color-border)] p-3.5 shadow-[var(--shadow-xs)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-card-hover)]"
               >
                 <div className="flex min-w-0 items-start gap-3">
                   <span
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${app.color}`}
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${appColorToneClass[app.color]}`}
                   >
                     <AppIcon type={app.icon} />
                   </span>
@@ -356,27 +363,25 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                     <div className="flex min-w-0 items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex min-w-0 items-center gap-1.5">
-                          <h2 className="truncate text-sm font-semibold text-[var(--text-primary)]">
+                          <h2 className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
                             {app.name}
                           </h2>
                           {app.badge ? (
-                            <span className="shrink-0 rounded bg-[#fff0f3] px-1.5 py-0.5 text-[10px] font-semibold text-[#c73655]">
+                            <span className="shrink-0 rounded bg-[var(--color-danger-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-danger)]">
                               {app.badge}
                             </span>
                           ) : null}
                         </div>
-                        <p className="mt-1 line-clamp-2 min-h-9 text-xs leading-[18px] text-[var(--text-secondary)]">
+                        <p className="mt-1 line-clamp-2 min-h-9 text-xs leading-[18px] text-[var(--color-text-secondary)]">
                           {app.desc}
                         </p>
                       </div>
                       <Dropdown>
-                        <Dropdown.Trigger>
-                          <span
-                            aria-label={`${app.name} 更多操作`}
-                            className="inline-flex h-7 w-7 min-w-7 shrink-0 items-center justify-center rounded-md p-0 text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--panel-background-soft)] group-hover:opacity-100 focus:opacity-100"
-                          >
-                            <Ellipsis className="h-4 w-4" />
-                          </span>
+                        <Dropdown.Trigger
+                          aria-label={`${app.name} 更多操作`}
+                          className="inline-flex h-7 w-7 min-w-7 shrink-0 items-center justify-center rounded-md p-0 text-[var(--color-text-secondary)] opacity-0 transition-opacity hover:bg-[var(--color-bg-panel-soft)] group-hover:opacity-100 focus:opacity-100"
+                        >
+                          <Ellipsis className="h-4 w-4" />
                         </Dropdown.Trigger>
                         <Dropdown.Popover>
                           <Dropdown.Menu
@@ -406,7 +411,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                             <Dropdown.Item
                               id="delete"
                               isDisabled={busyAppId === app.id}
-                              className="text-[#c73655]"
+                              className="text-[var(--color-danger)]"
                               onAction={() => setDeleteApp(app)}
                             >
                               删除应用
@@ -428,9 +433,9 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                   <InfoPill icon={<Calendar />} text={app.createdAt} />
                 </div>
 
-                <div className="mt-3 flex items-center justify-between border-t border-[var(--panel-border)] pt-3">
-                  <div className="flex min-w-0 items-center gap-2 text-xs text-[var(--text-secondary)]">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--text-primary)] text-[10px] font-semibold text-[var(--panel-background)]">
+                <div className="mt-3 flex items-center justify-between border-t border-[var(--color-border)] pt-3">
+                  <div className="flex min-w-0 items-center gap-2 text-xs text-[var(--color-text-secondary)]">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-text-primary)] text-[10px] font-semibold text-[var(--color-bg-panel)]">
                       {app.owner.slice(0, 1)}
                     </span>
                     <span className="truncate">{app.owner}</span>
@@ -438,7 +443,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                   <Link
                     href={`/${app.id}`}
                     aria-label={`访问 ${app.name}`}
-                    className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-[var(--accent-strong)] px-2 text-xs font-medium text-white transition-colors hover:brightness-95"
+                    className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-[var(--color-primary)] px-2 text-xs font-medium text-[var(--color-text-on-primary)] transition-colors hover:bg-[var(--color-primary-hover)] active:bg-[var(--color-primary-active)]"
                   >
                     打开
                     <ArrowRight className="h-3.5 w-3.5" />
@@ -451,11 +456,11 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
       </main>
 
       <Modal isOpen={renameApp !== null} onOpenChange={(isOpen) => !isOpen && setRenameApp(null)}>
-        <Modal.Backdrop className="bg-[#14213d]/20" isDismissable>
+        <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
           <Modal.Container placement="center" size="md">
-            <Modal.Dialog className="rounded-2xl bg-white text-[#202f45] shadow-[0_30px_90px_rgba(20,33,61,0.24)]">
-              <Modal.Header className="border-b border-[#eef2f7] px-5 py-4">
-                <Modal.Heading className="text-lg font-semibold text-[#14213d]">
+            <Modal.Dialog className="rounded-2xl bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]">
+              <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
+                <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
                   编辑应用名称
                 </Modal.Heading>
               </Modal.Header>
@@ -467,7 +472,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                   placeholder="请输入应用名称"
                 />
               </Modal.Body>
-              <Modal.Footer className="flex justify-end gap-3 border-t border-[#eef2f7] px-5 py-3">
+              <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
                 <Button variant="ghost" onPress={() => setRenameApp(null)}>
                   取消
                 </Button>
@@ -484,33 +489,34 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
       </Modal>
 
       <AlertDialog isOpen={deleteApp !== null} onOpenChange={(isOpen) => !isOpen && setDeleteApp(null)}>
-        <AlertDialog.Backdrop className="bg-[#14213d]/20" />
-        <AlertDialog.Container placement="center" size="md">
-          <AlertDialog.Dialog className="rounded-2xl bg-white text-[#202f45] shadow-[0_30px_90px_rgba(20,33,61,0.24)]">
-            <AlertDialog.Header className="border-b border-[#eef2f7] px-5 py-4">
-              <AlertDialog.Heading className="text-lg font-semibold text-[#14213d]">
-                删除应用
-              </AlertDialog.Heading>
-            </AlertDialog.Header>
-            <AlertDialog.Body className="px-5 py-4 text-sm leading-6 text-[#5f718e]">
-              {deleteApp
-                ? `确认删除应用“${deleteApp.name}”吗？这会同时删除该应用下的表单、版本和导航数据。`
-                : ""}
-            </AlertDialog.Body>
-            <AlertDialog.Footer className="flex justify-end gap-3 border-t border-[#eef2f7] px-5 py-3">
-              <Button variant="ghost" onPress={() => setDeleteApp(null)}>
-                取消
-              </Button>
-              <Button
-                className="bg-[#c73655] text-white"
-                isDisabled={!deleteApp || busyAppId === deleteApp.id}
-                onPress={() => deleteApp && void handleDeleteApp(deleteApp)}
-              >
-                删除
-              </Button>
-            </AlertDialog.Footer>
-          </AlertDialog.Dialog>
-        </AlertDialog.Container>
+        <AlertDialog.Backdrop className="theme-modal-backdrop">
+          <AlertDialog.Container placement="center" size="md">
+            <AlertDialog.Dialog className="rounded-2xl bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]">
+              <AlertDialog.Header className="border-b border-[var(--color-border)] px-5 py-4">
+                <AlertDialog.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
+                  删除应用
+                </AlertDialog.Heading>
+              </AlertDialog.Header>
+              <AlertDialog.Body className="px-5 py-4 text-sm leading-6 text-[var(--color-text-secondary)]">
+                {deleteApp
+                  ? `确认删除应用“${deleteApp.name}”吗？这会同时删除该应用下的表单、版本和导航数据。`
+                  : ""}
+              </AlertDialog.Body>
+              <AlertDialog.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
+                <Button variant="ghost" onPress={() => setDeleteApp(null)}>
+                  取消
+                </Button>
+                <Button
+                  className="bg-[var(--color-danger)] text-[var(--color-text-on-danger)]"
+                  isDisabled={!deleteApp || busyAppId === deleteApp.id}
+                  onPress={() => deleteApp && void handleDeleteApp(deleteApp)}
+                >
+                  删除
+                </Button>
+              </AlertDialog.Footer>
+            </AlertDialog.Dialog>
+          </AlertDialog.Container>
+        </AlertDialog.Backdrop>
       </AlertDialog>
     </div>
   );
@@ -533,6 +539,7 @@ function toAppItem(app: ApiApp): AppItem {
   return {
     ...app,
     badge: app.badge ?? undefined,
+    color: normalizeAppColorTone(app.color),
   };
 }
 
@@ -559,18 +566,18 @@ function MetricCard({
   value: string;
 }) {
   const toneClassName = {
-    blue: "bg-[#edf4ff] text-[#2f6bff]",
-    green: "bg-[#eefbf3] text-[#17a25b]",
-    amber: "bg-[#fff6e8] text-[#c47a1f]",
-    slate: "bg-[#f4f7fb] text-[#60718a]",
+    blue: "bg-[var(--color-primary-soft)] text-[var(--color-primary)]",
+    green: "bg-[var(--color-secondary-soft)] text-[var(--color-secondary)]",
+    amber: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
+    slate: "bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]",
   }[tone];
 
   return (
-    <article className="rounded-2xl border border-[#e3ebf6] bg-[#fbfdff] p-4">
+    <article className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-[#6b7f99] text-sm">{label}</p>
-          <div className="mt-2 text-3xl font-semibold leading-none text-[#14213d]">
+          <p className="text-sm font-medium text-[var(--color-text-secondary)]">{label}</p>
+          <div className="mt-2 text-3xl font-semibold leading-none text-[var(--color-text-primary)]">
             {value}
           </div>
         </div>
@@ -584,7 +591,7 @@ function MetricCard({
 
 function InfoPill({ icon, text }: { icon: ReactNode; text: string }) {
   return (
-    <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-[var(--panel-background-soft)] px-1.5 py-1 text-[11px] text-[var(--text-secondary)]">
+    <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-[var(--color-bg-panel-soft)] px-1.5 py-1 text-[11px] text-[var(--color-text-secondary)]">
       <span className="flex h-3 w-3 shrink-0 items-center justify-center [&>svg]:h-3 [&>svg]:w-3">
         {icon}
       </span>

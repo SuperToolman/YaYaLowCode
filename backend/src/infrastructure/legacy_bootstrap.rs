@@ -235,3 +235,70 @@ pub(crate) async fn ensure_automation_tables(db: &DatabaseConnection) -> Result<
 
     Ok(())
 }
+
+pub(crate) async fn ensure_agent_tables(db: &DatabaseConnection) -> Result<(), AppError> {
+    db.execute_unprepared(
+        r#"
+        CREATE TABLE IF NOT EXISTS agent_sessions (
+            id UUID PRIMARY KEY,
+            session_uuid VARCHAR(64) NOT NULL UNIQUE,
+            title VARCHAR(160) NOT NULL,
+            app_route_app_id VARCHAR(32),
+            context_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            status VARCHAR(24) NOT NULL DEFAULT 'active',
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_sessions_updated_at
+            ON agent_sessions (updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_agent_sessions_app_id
+            ON agent_sessions (app_route_app_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS agent_messages (
+            id UUID PRIMARY KEY,
+            message_uuid VARCHAR(64) NOT NULL UNIQUE,
+            session_id UUID NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+            role VARCHAR(24) NOT NULL,
+            content TEXT NOT NULL,
+            metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_messages_session_created
+            ON agent_messages (session_id, created_at ASC);
+
+        CREATE TABLE IF NOT EXISTS agent_runs (
+            id UUID PRIMARY KEY,
+            run_uuid VARCHAR(64) NOT NULL UNIQUE,
+            session_id UUID NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+            status VARCHAR(24) NOT NULL,
+            model VARCHAR(160) NOT NULL,
+            prompt_tokens BIGINT NOT NULL DEFAULT 0,
+            completion_tokens BIGINT NOT NULL DEFAULT 0,
+            error_message TEXT,
+            started_at TIMESTAMPTZ NOT NULL,
+            completed_at TIMESTAMPTZ
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_runs_session_started
+            ON agent_runs (session_id, started_at DESC);
+
+        CREATE TABLE IF NOT EXISTS agent_run_steps (
+            id UUID PRIMARY KEY,
+            run_id UUID NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+            step_index INTEGER NOT NULL,
+            step_type VARCHAR(32) NOT NULL,
+            name VARCHAR(160) NOT NULL,
+            input_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            output_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            status VARCHAR(24) NOT NULL,
+            error_message TEXT,
+            started_at TIMESTAMPTZ NOT NULL,
+            completed_at TIMESTAMPTZ
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_run_steps_run_index
+            ON agent_run_steps (run_id, step_index ASC);
+        "#,
+    )
+    .await?;
+
+    Ok(())
+}

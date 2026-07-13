@@ -77,8 +77,6 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
   const [busyAutomationId, setBusyAutomationId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AutomationFlow | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [createName, setCreateName] = useState("");
-  const [createDescription, setCreateDescription] = useState("");
   const [createFormUuid, setCreateFormUuid] = useState("");
   const [createTriggerEvent, setCreateTriggerEvent] =
     useState<TriggerEvent>("after_create");
@@ -172,8 +170,6 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
   }, [automationList.items, formNameByUuid, keyword]);
 
   function openCreateModal() {
-    setCreateName("");
-    setCreateDescription("");
     setCreateFormUuid(forms[0]?.id ?? "");
     setCreateTriggerEvent("after_create");
     setCreateOpen(true);
@@ -192,8 +188,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
         const { data, error } = await createAutomationFlow({
           path: { appId },
           body: {
-            name: createName.trim() || undefined,
-            description: createDescription.trim() || undefined,
+            name: buildDefaultAutomationName(forms, createFormUuid, createTriggerEvent),
             triggerFormUuid: createFormUuid,
             triggerEvent: createTriggerEvent,
           },
@@ -386,17 +381,17 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-4 px-3 py-4 text-[var(--text-primary)] sm:px-5 lg:px-6">
-      <section className="flex flex-col gap-4 border-b border-[var(--panel-border)] pb-5 lg:flex-row lg:items-end lg:justify-between">
+    <div className="mx-auto flex w-full flex-col gap-4 text-[var(--color-text-primary)]">
+      <section className="flex flex-col gap-4 border-b border-[var(--color-border)] pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
-          <div className="inline-flex items-center gap-2 rounded-lg bg-[var(--accent-soft)] px-3 py-1 text-xs font-medium text-[var(--accent-strong)]">
+          <div className="inline-flex items-center gap-2 rounded-lg bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-medium text-[var(--color-primary)]">
             <ListIcon />
             集成自动化
           </div>
-          <h1 className="mt-3 text-2xl font-semibold tracking-normal text-[var(--text-primary)]">
+          <h1 className="mt-3 text-2xl font-semibold tracking-normal text-[var(--color-text-primary)]">
             自动化流程
           </h1>
-          <p className="mt-2 max-w-[760px] text-sm leading-6 text-[var(--text-secondary)]">
+          <p className="mt-2 max-w-[760px] text-sm leading-6 text-[var(--color-text-secondary)]">
             基于表单记录创建、编辑、删除事件触发后端业务处理，后续将在这里进入触发器和节点编排。
           </p>
         </div>
@@ -404,14 +399,14 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
         <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="ghost"
-            className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
+            className="h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-4 text-[var(--color-text-primary)]"
             onClick={() => void loadData()}
             isDisabled={isPending}
           >
             刷新
           </Button>
           <Button
-            className="h-10 rounded-lg bg-[var(--accent-strong)] px-4 text-white"
+            className="h-10 rounded-lg bg-[var(--color-primary)] px-4 text-[var(--color-text-on-primary)]"
             onClick={openCreateModal}
             isDisabled={forms.length === 0}
           >
@@ -429,22 +424,22 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
       </section>
 
       {errorMessage ? (
-        <div className="rounded-lg border border-[var(--danger-strong)]/30 bg-[var(--danger-soft)] px-4 py-3 text-sm text-[var(--danger-strong)]">
+        <div className="rounded-lg border border-[var(--color-danger)]/30 bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
           {errorMessage}
         </div>
       ) : null}
 
       {forms.length === 0 ? (
-        <div className="theme-panel rounded-lg px-5 py-4 text-sm leading-6 text-[var(--text-secondary)]">
+        <div className="theme-panel rounded-lg px-5 py-4 text-sm leading-6 text-[var(--color-text-secondary)]">
           当前应用还没有可作为触发目标的表单。请先创建并设计表单，再创建集成自动化。
         </div>
       ) : null}
 
       <section className="theme-panel-strong min-w-0 overflow-hidden rounded-xl">
-        <div className="flex flex-col gap-3 border-b border-[var(--panel-border)] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-3 border-b border-[var(--color-border)] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-base font-semibold text-[var(--text-primary)]">规则列表</h2>
-            <p className="mt-1 text-xs text-[var(--text-muted)]">
+            <h2 className="text-base font-semibold text-[var(--color-text-primary)]">规则列表</h2>
+            <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
               当前只管理自动化定义，执行器和日志会在下一阶段接入。
             </p>
           </div>
@@ -460,7 +455,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
         {filteredAutomations.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] border-collapse text-left text-sm">
-              <thead className="bg-[var(--panel-background-soft)] text-xs font-medium text-[var(--text-secondary)]">
+              <thead className="bg-[var(--color-bg-panel-soft)] text-xs font-medium text-[var(--color-text-secondary)]">
                 <tr>
                   <th className="px-4 py-3">自动化名称</th>
                   <th className="px-4 py-3">状态</th>
@@ -495,29 +490,18 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
 
       {createOpen ? (
         <Modal isOpen={createOpen} onOpenChange={setCreateOpen}>
-          <Modal.Backdrop className="bg-black/30" isDismissable>
+          <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
             <Modal.Container placement="center" size="lg">
-              <Modal.Dialog className="theme-menu-surface rounded-xl shadow-[0_30px_90px_rgba(20,33,61,0.24)]">
-                <Modal.Header className="border-b border-[var(--panel-border)] px-5 py-4">
-                  <Modal.Heading className="text-lg font-semibold text-[var(--text-primary)]">
+              <Modal.Dialog className="theme-menu-surface rounded-xl shadow-[var(--shadow-dialog)]">
+                <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
+                  <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
                     新建集成自动化
                   </Modal.Heading>
                 </Modal.Header>
                 <Modal.Body className="space-y-4 px-5 py-4">
-                  <Input
-                    aria-label="自动化名称"
-                    placeholder="自动化名称"
-                    value={createName}
-                    onChange={(event) => setCreateName(event.currentTarget.value)}
-                  />
-                  <Input
-                    aria-label="自动化说明"
-                    placeholder="说明，可选"
-                    value={createDescription}
-                    onChange={(event) => setCreateDescription(event.currentTarget.value)}
-                  />
                   <div className="grid gap-3 md:grid-cols-2">
                     <Select
+                      aria-label="触发表单"
                       selectedKey={createFormUuid}
                       onSelectionChange={(key) => setCreateFormUuid(String(key ?? ""))}
                     >
@@ -540,6 +524,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                     </Select>
 
                     <Select
+                      aria-label="触发事件"
                       selectedKey={createTriggerEvent}
                       onSelectionChange={(key) =>
                         setCreateTriggerEvent(String(key ?? "after_create") as TriggerEvent)
@@ -564,16 +549,16 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                     </Select>
                   </div>
                 </Modal.Body>
-                <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--panel-border)] px-5 py-3">
+                <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
                   <Button
                     variant="ghost"
-                    className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
+                    className="h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-4 text-[var(--color-text-primary)]"
                     onClick={() => setCreateOpen(false)}
                   >
                     取消
                   </Button>
                   <Button
-                    className="h-10 rounded-lg bg-[var(--accent-strong)] px-4 text-white"
+                    className="h-10 rounded-lg bg-[var(--color-primary)] px-4 text-[var(--color-text-on-primary)]"
                     onClick={() => void handleCreateAutomation()}
                     isDisabled={isPending || !createFormUuid}
                   >
@@ -590,50 +575,51 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
         isOpen={deleteTarget !== null}
         onOpenChange={(isOpen) => !isOpen && setDeleteTarget(null)}
       >
-        <AlertDialog.Backdrop className="bg-black/40" />
-        <AlertDialog.Container placement="center" size="md">
-          <AlertDialog.Dialog className="theme-menu-surface rounded-xl shadow-[0_30px_90px_rgba(20,33,61,0.24)]">
-            <AlertDialog.Header className="border-b border-[var(--panel-border)] px-5 py-4">
-              <AlertDialog.Heading className="text-lg font-semibold text-[var(--text-primary)]">
-                删除集成自动化
-              </AlertDialog.Heading>
-            </AlertDialog.Header>
-            <AlertDialog.Body className="px-5 py-4 text-sm leading-6 text-[var(--text-secondary)]">
-              删除后，该自动化定义将不再出现在规则列表中。当前版本尚未接入执行日志，所以没有运行记录需要保留。
-            </AlertDialog.Body>
-            <AlertDialog.Footer className="flex justify-end gap-3 border-t border-[var(--panel-border)] px-5 py-3">
-              <Button
-                variant="ghost"
-                onClick={() => setDeleteTarget(null)}
-                className="h-10 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
-              >
-                取消
-              </Button>
-              <Button
-                onClick={() => void handleDeleteAutomation()}
-                isDisabled={busyAutomationId === deleteTarget?.id}
-                className="h-10 rounded-lg bg-[var(--danger-strong)] px-4 text-white"
-              >
-                删除
-              </Button>
-            </AlertDialog.Footer>
-          </AlertDialog.Dialog>
-        </AlertDialog.Container>
+        <AlertDialog.Backdrop className="theme-modal-backdrop">
+          <AlertDialog.Container placement="center" size="md">
+            <AlertDialog.Dialog className="theme-menu-surface rounded-xl shadow-[var(--shadow-dialog)]">
+              <AlertDialog.Header className="border-b border-[var(--color-border)] px-5 py-4">
+                <AlertDialog.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
+                  删除集成自动化
+                </AlertDialog.Heading>
+              </AlertDialog.Header>
+              <AlertDialog.Body className="px-5 py-4 text-sm leading-6 text-[var(--color-text-secondary)]">
+                删除后，该自动化定义将不再出现在规则列表中。当前版本尚未接入执行日志，所以没有运行记录需要保留。
+              </AlertDialog.Body>
+              <AlertDialog.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
+                <Button
+                  variant="ghost"
+                  onClick={() => setDeleteTarget(null)}
+                  className="h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-4 text-[var(--color-text-primary)]"
+                >
+                  取消
+                </Button>
+                <Button
+                  onClick={() => void handleDeleteAutomation()}
+                  isDisabled={busyAutomationId === deleteTarget?.id}
+                  className="h-10 rounded-lg bg-[var(--color-danger)] px-4 text-[var(--color-text-on-primary)]"
+                >
+                  删除
+                </Button>
+              </AlertDialog.Footer>
+            </AlertDialog.Dialog>
+          </AlertDialog.Container>
+        </AlertDialog.Backdrop>
       </AlertDialog>
 
       {logsTarget ? (
         <Modal isOpen={logsTarget !== null} onOpenChange={(open) => !open && setLogsTarget(null)}>
-          <Modal.Backdrop className="bg-black/30" isDismissable>
+          <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
             <Modal.Container placement="center" size="cover">
-              <Modal.Dialog className="theme-menu-surface w-[min(980px,94vw)] rounded-xl shadow-[0_30px_90px_rgba(20,33,61,0.24)]">
-                <Modal.Header className="border-b border-[var(--panel-border)] px-5 py-4">
-                  <Modal.Heading className="text-lg font-semibold text-[var(--text-primary)]">
+              <Modal.Dialog className="theme-menu-surface w-[min(980px,94vw)] rounded-xl shadow-[var(--shadow-dialog)]">
+                <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
+                  <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
                     运行日志
                   </Modal.Heading>
                 </Modal.Header>
                 <Modal.Body className="max-h-[72vh] space-y-4 overflow-auto px-5 py-5">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="text-sm text-[var(--text-secondary)]">
+                    <div className="text-sm text-[var(--color-text-secondary)]">
                       {logsTarget.name} · 最近执行记录
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -660,19 +646,19 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                     </div>
                   </div>
                   {logsLoading ? (
-                    <div className="rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background-soft)] px-4 py-8 text-sm text-[var(--text-secondary)]">
+                    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel-soft)] px-4 py-8 text-sm text-[var(--color-text-secondary)]">
                       正在加载运行日志...
                     </div>
                   ) : filteredRunLogs.length > 0 ? (
                     <div className="space-y-4">
                       {visibleRunLogs.map((run) => (
-                        <div key={run.id} className="rounded-lg border border-[var(--panel-border)] bg-[var(--panel-background-soft)]">
-                          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--panel-border)] px-4 py-3">
+                        <div key={run.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel-soft)]">
+                          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
                             <div>
-                              <div className="text-sm font-semibold text-[var(--text-primary)]">
+                              <div className="text-sm font-semibold text-[var(--color-text-primary)]">
                                 运行 #{run.id}
                               </div>
-                              <div className="mt-1 text-xs text-[var(--text-muted)]">
+                              <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
                                 v{run.flowVersion} · {run.triggerEvent} · {formatDateTime(run.startedAt)}
                                 {run.durationMs != null ? ` · ${formatDuration(run.durationMs)}` : ""}
                               </div>
@@ -682,12 +668,12 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                                     <RetrySourceBadge source={run.retrySource} />
                                   ) : null}
                                   {run.retryRunUuid ? (
-                                    <span className="rounded-md bg-[var(--neutral-soft)] px-2 py-1 text-[11px] text-[var(--neutral-strong)]">
+                                    <span className="rounded-md bg-[var(--color-bg-subtle)] px-2 py-1 text-[11px] text-[var(--color-text-secondary)]">
                                       来源运行 #{run.retryRunUuid}
                                     </span>
                                   ) : null}
                                   {run.retryNodeKey ? (
-                                    <span className="rounded-md bg-[var(--warning-soft)] px-2 py-1 text-[11px] text-[var(--warning-strong)]">
+                                    <span className="rounded-md bg-[var(--color-warning-soft)] px-2 py-1 text-[11px] text-[var(--color-warning)]">
                                       断点节点 {run.retryNodeKey}
                                     </span>
                                   ) : null}
@@ -698,7 +684,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                               <RunStatusBadge status={run.status} />
                               <Button
                                 variant="ghost"
-                                className="h-8 rounded-md border border-[var(--panel-border)] bg-[var(--panel-background)] px-3 text-[var(--text-primary)]"
+                                className="h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-[var(--color-text-primary)]"
                                 isDisabled={retryingKey === `run:${run.id}`}
                                 onClick={() => void handleRetryRun(logsTarget.id, run.id)}
                               >
@@ -707,7 +693,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                             </div>
                           </div>
                           {run.errorMessage ? (
-                            <div className="border-b border-[var(--panel-border)] bg-[var(--danger-soft)] px-4 py-3 text-xs text-[var(--danger-strong)]">
+                            <div className="border-b border-[var(--color-border)] bg-[var(--color-danger-soft)] px-4 py-3 text-xs text-[var(--color-danger)]">
                               {run.errorMessage}
                             </div>
                           ) : null}
@@ -722,18 +708,18 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                               <div
                                 key={node.id}
                                 className={[
-                                  "rounded-md border bg-[var(--panel-background)] px-3 py-3",
+                                  "rounded-md border bg-[var(--color-bg-panel)] px-3 py-3",
                                   node.status === "failed"
-                                    ? "border-[var(--danger-strong)]/30 bg-[var(--danger-soft)]"
-                                    : "border-[var(--panel-border)]",
+                                    ? "border-[var(--color-danger)]/30 bg-[var(--color-danger-soft)]"
+                                    : "border-[var(--color-border)]",
                                 ].join(" ")}
                               >
                                 <div className="flex flex-wrap items-center justify-between gap-3">
                                   <div>
-                                    <div className="text-sm font-medium text-[var(--text-primary)]">
+                                    <div className="text-sm font-medium text-[var(--color-text-primary)]">
                                       {node.nodeLabel}
                                     </div>
-                                    <div className="mt-1 text-xs text-[var(--text-muted)]">
+                                    <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
                                       {node.nodeKind} · {formatDateTime(node.startedAt)}
                                       {node.durationMs != null ? ` · ${formatDuration(node.durationMs)}` : ""}
                                     </div>
@@ -743,7 +729,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                                     {node.status === "failed" ? (
                                       <Button
                                         variant="ghost"
-                                        className="h-8 rounded-md border border-[var(--panel-border)] bg-[var(--panel-background)] px-3 text-[var(--text-primary)]"
+                                        className="h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-[var(--color-text-primary)]"
                                         isDisabled={retryingKey === `node:${run.id}:${node.nodeKey}`}
                                         onClick={() => void handleRetryNode(logsTarget.id, run.id, node.nodeKey)}
                                       >
@@ -753,7 +739,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                                   </div>
                                 </div>
                                 {node.errorMessage ? (
-                                  <div className="mt-3 rounded-md border border-[var(--danger-strong)]/30 bg-[var(--danger-soft)] px-3 py-2 text-xs text-[var(--danger-strong)]">
+                                  <div className="mt-3 rounded-md border border-[var(--color-danger)]/30 bg-[var(--color-danger-soft)] px-3 py-2 text-xs text-[var(--color-danger)]">
                                     {node.errorMessage}
                                   </div>
                                 ) : null}
@@ -773,7 +759,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                                 </div>
                               </div>
                             )) : (
-                              <div className="text-sm text-[var(--text-muted)]">暂无节点执行明细</div>
+                              <div className="text-sm text-[var(--color-text-secondary)]">暂无节点执行明细</div>
                             )}
                           </div>
                         </div>
@@ -782,7 +768,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                         <div className="flex justify-center pt-1">
                           <Button
                             variant="ghost"
-                            className="h-9 rounded-md border border-[var(--panel-border)] bg-[var(--panel-background)] px-4 text-[var(--text-primary)]"
+                            className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-4 text-[var(--color-text-primary)]"
                             onClick={() => setVisibleRunCount((current) => current + 10)}
                           >
                             加载更多
@@ -791,7 +777,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                       ) : null}
                     </div>
                   ) : (
-                    <div className="rounded-lg border border-dashed border-[var(--panel-border)] px-4 py-10 text-center text-sm text-[var(--text-secondary)]">
+                    <div className="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-10 text-center text-sm text-[var(--color-text-secondary)]">
                       {runLogs.length > 0 ? "当前筛选条件下暂无运行日志" : "暂无运行日志"}
                     </div>
                   )}
@@ -816,14 +802,14 @@ function Metric({
 }) {
   const toneClassName =
     tone === "green"
-      ? "text-[var(--success-strong)]"
+      ? "text-[var(--color-success)]"
       : tone === "amber"
-        ? "text-[var(--warning-strong)]"
-        : "text-[var(--text-primary)]";
+        ? "text-[var(--color-warning)]"
+        : "text-[var(--color-text-primary)]";
 
   return (
     <div className="theme-panel rounded-lg px-4 py-3">
-      <div className="text-xs text-[var(--text-muted)]">{label}</div>
+      <div className="text-xs text-[var(--color-text-secondary)]">{label}</div>
       <div className={`mt-2 text-2xl font-semibold ${toneClassName}`}>{value}</div>
     </div>
   );
@@ -849,15 +835,15 @@ function AutomationRow({
   const status = statusMeta[flow.status];
 
   return (
-    <tr className="border-t border-[var(--panel-border)] align-top hover:bg-[var(--panel-background-soft)]">
+    <tr className="border-t border-[var(--color-border)] align-top hover:bg-[var(--color-bg-panel-soft)]">
       <td className="px-4 py-4">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent-soft)] text-[var(--accent-strong)]">
+          <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
             <FormIcon />
           </span>
           <div className="min-w-0">
-            <div className="truncate font-medium text-[var(--text-primary)]">{flow.name}</div>
-            <div className="mt-1 max-w-[300px] truncate text-xs text-[var(--text-muted)]">
+            <div className="truncate font-medium text-[var(--color-text-primary)]">{flow.name}</div>
+            <div className="mt-1 max-w-[300px] truncate text-xs text-[var(--color-text-secondary)]">
               {flow.description || flow.id}
             </div>
           </div>
@@ -871,20 +857,18 @@ function AutomationRow({
           {status.label}
         </span>
       </td>
-      <td className="px-4 py-4 text-[var(--text-primary)]">{formName}</td>
-      <td className="px-4 py-4 text-[var(--text-primary)]">{flow.triggerLabel}</td>
-      <td className="px-4 py-4 text-[var(--text-secondary)]">{flow.nodesCount}</td>
-      <td className="px-4 py-4 text-[var(--text-secondary)]">{flow.updatedBy}</td>
-      <td className="px-4 py-4 text-[var(--text-secondary)]">{formatDateTime(flow.updatedAt)}</td>
+      <td className="px-4 py-4 text-[var(--color-text-primary)]">{formName}</td>
+      <td className="px-4 py-4 text-[var(--color-text-primary)]">{flow.triggerLabel}</td>
+      <td className="px-4 py-4 text-[var(--color-text-secondary)]">{flow.nodesCount}</td>
+      <td className="px-4 py-4 text-[var(--color-text-secondary)]">{flow.updatedBy}</td>
+      <td className="px-4 py-4 text-[var(--color-text-secondary)]">{formatDateTime(flow.updatedAt)}</td>
       <td className="px-4 py-4 text-right">
         <Dropdown>
-          <Dropdown.Trigger>
-            <span
-              aria-label={`${flow.name} 更多操作`}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--accent-soft)]"
-            >
-              <MoreIcon />
-            </span>
+          <Dropdown.Trigger
+            aria-label={`${flow.name} 更多操作`}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-primary-soft)]"
+          >
+            <MoreIcon />
           </Dropdown.Trigger>
           <Dropdown.Popover>
             <Dropdown.Menu aria-label={`${flow.name} 操作菜单`} className="min-w-[150px]">
@@ -900,7 +884,7 @@ function AutomationRow({
               <Dropdown.Item
                 id="delete"
                 isDisabled={isBusy}
-                className="text-[var(--danger-strong)]"
+                className="text-[var(--color-danger)]"
                 onAction={onDelete}
               >
                 删除
@@ -916,13 +900,13 @@ function AutomationRow({
 function EmptyState({ hasKeyword }: { hasKeyword: boolean }) {
   return (
     <div className="flex min-h-[260px] flex-col items-center justify-center px-5 py-10 text-center">
-      <div className="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-[var(--accent-soft)] text-[var(--accent-strong)]">
+      <div className="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
         <ListIcon />
       </div>
-      <h3 className="mt-4 text-base font-semibold text-[var(--text-primary)]">
+      <h3 className="mt-4 text-base font-semibold text-[var(--color-text-primary)]">
         {hasKeyword ? "没有匹配的自动化" : "还没有集成自动化"}
       </h3>
-      <p className="mt-2 max-w-[420px] text-sm leading-6 text-[var(--text-secondary)]">
+      <p className="mt-2 max-w-[420px] text-sm leading-6 text-[var(--color-text-secondary)]">
         {hasKeyword
           ? "调整搜索条件后再查看。"
           : "新建后会先进入草稿状态，后续可以继续配置触发器条件和执行节点。"}
@@ -970,6 +954,18 @@ function getTriggerFormName(
   return formNameByUuid.get(flow.triggerFormUuid) ?? flow.triggerFormUuid;
 }
 
+function buildDefaultAutomationName(
+  forms: FormSummary[],
+  formUuid: string,
+  triggerEvent: TriggerEvent,
+) {
+  const formName = forms.find((form) => form.id === formUuid)?.name ?? "表单";
+  const eventLabel =
+    triggerEvents.find((event) => event.id === triggerEvent)?.label ?? "创建成功后";
+
+  return `${formName}${eventLabel}`;
+}
+
 function formatDateTime(value: string) {
   const date = new Date(value);
 
@@ -988,10 +984,10 @@ function formatDateTime(value: string) {
 function RunStatusBadge({ status }: { status: string }) {
   const className =
     status === "success"
-      ? "bg-[var(--success-soft)] text-[var(--success-strong)]"
+      ? "bg-[var(--color-success-soft)] text-[var(--color-success)]"
       : status === "failed"
-        ? "bg-[var(--danger-soft)] text-[var(--danger-strong)]"
-        : "bg-[var(--neutral-soft)] text-[var(--neutral-strong)]";
+        ? "bg-[var(--color-danger-soft)] text-[var(--color-danger)]"
+        : "bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]";
 
   const label =
     status === "success" ? "成功" : status === "failed" ? "失败" : "运行中";
@@ -1008,8 +1004,8 @@ function RetrySourceBadge({ source }: { source: string }) {
     source === "node" ? "节点断点重试" : source === "flow" ? "整流重试" : source;
   const className =
     source === "node"
-      ? "bg-[var(--warning-soft)] text-[var(--warning-strong)]"
-      : "bg-[var(--accent-soft)] text-[var(--accent-strong)]";
+      ? "bg-[var(--color-warning-soft)] text-[var(--color-warning)]"
+      : "bg-[var(--color-primary-soft)] text-[var(--color-primary)]";
 
   return (
     <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${className}`}>
@@ -1033,8 +1029,8 @@ function LogFilterTab({
       className={[
         "h-8 rounded-md px-3 text-xs",
         active
-          ? "bg-[var(--accent-soft)] text-[var(--accent-strong)]"
-          : "border border-[var(--panel-border)] bg-[var(--panel-background)] text-[var(--text-secondary)]",
+          ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]"
+          : "border border-[var(--color-border)] bg-[var(--color-bg-panel)] text-[var(--color-text-secondary)]",
       ].join(" ")}
       onClick={onClick}
     >
@@ -1058,12 +1054,12 @@ function JsonPreviewCard({
   const preview = hasValue ? formatJsonPreview(value) : "暂无数据";
 
   return (
-    <div className="rounded-md border border-[var(--panel-border)] bg-[var(--panel-background-soft)]">
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--panel-border)] px-3 py-2">
-        <div className="text-xs font-medium text-[var(--text-secondary)]">{label}</div>
+    <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel-soft)]">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-3 py-2">
+        <div className="text-xs font-medium text-[var(--color-text-secondary)]">{label}</div>
         <Button
           variant="ghost"
-          className="h-7 rounded-md border border-[var(--panel-border)] bg-[var(--panel-background)] px-2 text-xs text-[var(--text-primary)]"
+          className="h-7 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-2 text-xs text-[var(--color-text-primary)]"
           onClick={onToggle}
         >
           {expanded ? "收起" : "展开"}
@@ -1071,11 +1067,11 @@ function JsonPreviewCard({
       </div>
       <div className="px-3 py-3">
         {expanded ? (
-          <pre className="overflow-x-auto whitespace-pre-wrap break-all text-xs leading-6 text-[var(--text-primary)]">
+          <pre className="overflow-x-auto whitespace-pre-wrap break-all text-xs leading-6 text-[var(--color-text-primary)]">
             {JSON.stringify(value ?? null, null, 2)}
           </pre>
         ) : (
-          <div className="line-clamp-3 text-xs leading-6 text-[var(--text-secondary)]">{preview}</div>
+          <div className="line-clamp-3 text-xs leading-6 text-[var(--color-text-secondary)]">{preview}</div>
         )}
       </div>
     </div>

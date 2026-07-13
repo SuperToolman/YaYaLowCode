@@ -22,6 +22,7 @@ import { DateInputGroup } from "@heroui/react/date-input-group";
 import { Description } from "@heroui/react/description";
 import { parseDate } from "@internationalized/date";
 import { normalizeActionPanelCode } from "../lib/action-panel-code";
+import { calculateFormulaValues } from "../lib/form-formula";
 
 const DEFAULT_COLUMN_GAP = 16;
 const DEFAULT_ROW_GAP = 20;
@@ -167,6 +168,7 @@ export type RuntimeDebugEvent = {
 type RuntimeRendererState = {
   values: Record<string, unknown>;
   dataSources: Record<string, unknown>;
+  formulaErrors: Record<string, string>;
   debugEvent?: RuntimeDebugEvent;
 };
 
@@ -282,9 +284,11 @@ export function RuntimeFormRenderer({
           values: nextValues,
         });
 
+        const calculated = calculateFormulaValues(fields, nextValues);
         return {
-          values: nextValues,
+          values: calculated.values,
           dataSources: nextDataSources,
+          formulaErrors: calculated.errors,
           debugEvent: {
             id: createRuntimeDebugEventId(),
             type: "didMount",
@@ -297,7 +301,7 @@ export function RuntimeFormRenderer({
         };
       });
     }, 0);
-  }, [actionModule, didMountExecutionKey, urlParams]);
+  }, [actionModule, didMountExecutionKey, fields, urlParams]);
 
   const visibleRootFields = useMemo(
     () =>
@@ -318,7 +322,7 @@ export function RuntimeFormRenderer({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const submitValues = { ...values };
+    const submitValues = calculateFormulaValues(fields, values).values;
     const submitDataSources = { ...dataSources };
     const result = runActionHandler({
       actionModule,
@@ -354,16 +358,18 @@ export function RuntimeFormRenderer({
       values: submitValues,
     });
 
+    const calculatedSubmit = calculateFormulaValues(fields, submitValues);
     setRuntimeState({
-      values: submitValues,
+      values: calculatedSubmit.values,
       dataSources: submitDataSources,
+      formulaErrors: calculatedSubmit.errors,
       debugEvent: undefined,
     });
 
     const payload =
       result && typeof result === "object" && !Array.isArray(result)
         ? (result as Record<string, unknown>)
-        : submitValues;
+        : calculatedSubmit.values;
 
     await onSubmit(payload);
   }
@@ -407,9 +413,11 @@ export function RuntimeFormRenderer({
       values: nextValues,
     });
 
+    const calculated = calculateFormulaValues(fields, nextValues);
     setRuntimeState({
-      values: nextValues,
+      values: calculated.values,
       dataSources: nextDataSources,
+      formulaErrors: calculated.errors,
       debugEvent: undefined,
     });
   }
@@ -441,6 +449,7 @@ export function RuntimeFormRenderer({
             <RuntimeFieldNode
               allFields={fields}
               field={field}
+              formulaErrors={runtimeState.formulaErrors}
               value={values[field.id]}
               values={values}
               onFieldAction={setFieldValue}
@@ -451,7 +460,11 @@ export function RuntimeFormRenderer({
 
       {showSubmitButton ? (
         <div className="mt-8 flex justify-end">
-          <Button type="submit" isDisabled={submitting} className="bg-[#2f6bff] text-white">
+          <Button
+            type="submit"
+            isDisabled={submitting}
+            className="bg-[var(--color-primary)] text-[var(--color-text-on-primary)] hover:bg-[var(--color-primary-hover)] active:bg-[var(--color-primary-active)]"
+          >
             {submitting ? "提交中..." : submitLabel}
           </Button>
         </div>
@@ -463,12 +476,14 @@ export function RuntimeFormRenderer({
 function RuntimeFieldNode({
   allFields,
   field,
+  formulaErrors,
   onFieldAction,
   value,
   values,
 }: {
   allFields: RuntimeSchemaField[];
   field: RuntimeSchemaField;
+  formulaErrors: Record<string, string>;
   onFieldAction: (fieldId: string, nextValue: unknown, eventName?: string) => void;
   value: unknown;
   values: Record<string, unknown>;
@@ -479,8 +494,8 @@ function RuntimeFieldNode({
       .sort((left, right) => left.row - right.row || left.column - right.column);
 
     return (
-      <div className="flex w-full flex-col rounded-2xl border border-dashed border-[#cfe0ff] bg-[#f8fbff] p-4">
-        <div className="mb-3 text-sm font-semibold text-[#29446d]">{field.label}</div>
+      <div className="flex w-full flex-col rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-4">
+        <div className="mb-3 text-sm font-semibold text-[var(--color-text-primary)]">{field.label}</div>
         <div
           className="grid"
           style={{
@@ -504,6 +519,7 @@ function RuntimeFieldNode({
               <RuntimeFieldNode
                 allFields={allFields}
                 field={child}
+                formulaErrors={formulaErrors}
                 onFieldAction={onFieldAction}
                 value={values[child.id]}
                 values={values}
@@ -518,6 +534,7 @@ function RuntimeFieldNode({
   return (
     <FormField
       field={field}
+      formulaError={formulaErrors[field.id]}
       onFieldAction={onFieldAction}
       value={value}
     />
@@ -526,17 +543,30 @@ function RuntimeFieldNode({
 
 function FormField({
   field,
+  formulaError,
   onFieldAction,
   value,
 }: {
   field: RuntimeSchemaField;
+  formulaError?: string;
   onFieldAction: (fieldId: string, nextValue: unknown, eventName?: string) => void;
   value: unknown;
 }) {
-  const props = field.props ?? {};
+  const props = {
+    ...(field.props ?? {}),
+    isReadOnly:
+      field.props?.defaultValueType === "formula" ? true : field.props?.isReadOnly,
+  };
   const placeholder = props.placeholder ?? "请输入";
   const options = normalizeFieldOptions(props.options, field.type);
-  const textValue = typeof value === "string" ? value : typeof props.defaultValue === "string" ? props.defaultValue : "";
+  const textValue =
+    typeof value === "string"
+      ? value
+      : typeof value === "number" || typeof value === "boolean"
+        ? String(value)
+        : typeof props.defaultValue === "string"
+          ? props.defaultValue
+          : "";
   const multiValues = Array.isArray(value) ? (value as string[]) : Array.isArray(props.defaultValue) ? props.defaultValue : [];
   const numberValue =
     typeof value === "number"
@@ -552,7 +582,7 @@ function FormField({
   return (
     <div className="flex-1 space-y-2">
       {field.type !== "button" ? (
-        <label className="block text-sm font-medium text-[#263a5c]" htmlFor={field.id}>
+        <label className="block text-sm font-medium text-[var(--color-text-primary)]" htmlFor={field.id}>
           {field.label}
         </label>
       ) : null}
@@ -581,7 +611,7 @@ function FormField({
         </div>
       ) : null}
       {field.type === "description" ? (
-        <p className="rounded-xl bg-[#f8fbff] px-3 py-2 text-sm leading-6 text-[#65748f]">
+        <p className="rounded-xl bg-[var(--color-bg-subtle)] px-3 py-2 text-sm leading-6 text-[var(--color-text-secondary)]">
           {textValue || placeholder}
         </p>
       ) : null}
@@ -741,7 +771,12 @@ function FormField({
           {props.buttonText || field.label}
         </Button>
       ) : null}
-      {description ? <Description className="text-sm text-[#65748f]">{description}</Description> : null}
+      {description ? <Description className="text-sm text-[var(--color-text-secondary)]">{description}</Description> : null}
+      {formulaError ? (
+        <Description className="text-sm text-[var(--color-danger)]">
+          公式错误：{formulaError}
+        </Description>
+      ) : null}
     </div>
   );
 }
@@ -813,12 +848,12 @@ function RuntimeMultiSelect({
         variant="ghost"
         isDisabled={Boolean(props.isDisabled || props.isReadOnly)}
         onClick={() => setIsOpen((current) => !current)}
-        className="min-h-10 w-full justify-start rounded-xl border border-[#dfe5ee] bg-white px-3 py-2 text-left text-sm text-[#202f45]"
+        className="min-h-10 w-full justify-start rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-2 text-left text-sm text-[var(--color-text-primary)]"
       >
         {selectedLabels.length > 0 ? selectedLabels.join("、") : placeholder}
       </Button>
       {isOpen ? (
-        <div className="absolute z-30 mt-2 w-full rounded-xl border border-[#dfe5ee] bg-white p-3 shadow-[0_18px_40px_rgba(20,33,61,0.16)]">
+        <div className="absolute z-30 mt-2 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-3 shadow-[var(--shadow-floating)]">
           <CheckboxGroup
             aria-label={field.label}
             value={value}
@@ -850,10 +885,10 @@ function RuntimeUpload({
   props: RuntimeFieldProps;
 }) {
   return (
-    <label className="block rounded-xl border border-dashed border-[#cbd8ea] bg-[#f8fbff] p-3">
+    <label className="block rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-3">
       <span
         className={[
-          "inline-flex h-8 items-center rounded-lg border border-[#dfe5ee] bg-white px-3 text-sm text-[#202f45]",
+          "inline-flex h-8 items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 text-sm text-[var(--color-text-primary)]",
           props.isDisabled || props.isReadOnly ? "cursor-not-allowed opacity-60" : "cursor-pointer",
         ].join(" ")}
       >
@@ -947,7 +982,7 @@ function RuntimeClearButton({
       aria-label="清除"
       isDisabled={isDisabled}
       onClick={onClear}
-      className="absolute right-2 top-2 h-5 w-5 rounded-full bg-[#edf2f7] text-xs text-[#7b8797] hover:bg-[#dfe7f1]"
+      className="absolute right-2 top-2 h-5 w-5 rounded-full bg-[var(--color-bg-subtle)] text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-primary-soft)]"
     >
       ×
     </Button>
@@ -956,7 +991,7 @@ function RuntimeClearButton({
 
 function Counter({ value }: { value: string }) {
   return (
-    <div className="pointer-events-none absolute -bottom-5 right-0 text-xs text-[#9aa6b6]">
+    <div className="pointer-events-none absolute -bottom-5 right-0 text-xs text-[var(--color-text-disabled)]">
       {value.length}/500
     </div>
   );
@@ -1161,9 +1196,11 @@ function buildInitialRuntimeState(
   dataSourceDefinitions: RuntimeDataSource[] | undefined,
   initialValues?: Record<string, unknown>,
 ): RuntimeRendererState {
-  const values = getInitialValues(fields, initialValues);
+  const initialFieldValues = getInitialValues(fields, initialValues);
+  const calculated = calculateFormulaValues(fields, initialFieldValues);
+  const values = calculated.values;
   const dataSources = getInitialDataSources(dataSourceDefinitions);
-  return { values, dataSources, debugEvent: undefined };
+  return { values, dataSources, formulaErrors: calculated.errors, debugEvent: undefined };
 }
 
 function compileActionModule(code: string): RuntimeActionModule {

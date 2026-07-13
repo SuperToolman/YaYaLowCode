@@ -5,11 +5,10 @@
 "use client";
 
 import type { ChangeEvent, ReactNode } from "react";
-import { Input, Switch } from "@heroui/react";
 import { parseOptionalNumber } from "../../designer-options";
 
 export function PropertyPanel({ children }: { children: ReactNode }) {
-  return <div className="space-y-2 px-2 pb-3">{children}</div>;
+  return <div className="space-y-3 px-4 py-3">{children}</div>;
 }
 
 export function PropertyFold({
@@ -22,15 +21,15 @@ export function PropertyFold({
   title: string;
 }) {
   return (
-    <section className="border-t border-[#eef2f7]">
-      <div className="flex h-9 items-center justify-between bg-[#fafbfd] px-2 text-sm font-semibold text-[#202f45]">
+    <section className="mx-3 mb-3 overflow-hidden rounded-xl border border-[var(--designer-border)] bg-[var(--designer-surface-muted)]">
+      <div className="flex h-10 items-center justify-between border-b border-[var(--designer-border)] bg-[var(--designer-surface-soft)] px-3 text-sm font-semibold text-[var(--color-text-primary)]">
         <span>{title}</span>
-        <span className="flex items-center gap-2 text-[#8d9aae]">
+        <span className="flex items-center gap-2 text-[var(--color-text-disabled)]">
           {rightIcon}
           <ChevronIcon />
         </span>
       </div>
-      <div className="space-y-2 px-2 py-2">{children}</div>
+      <div className="space-y-3 px-3 py-3">{children}</div>
     </section>
   );
 }
@@ -47,11 +46,11 @@ export function PropertyRow({
   return (
     <div
       className={[
-        "grid grid-cols-[76px_minmax(0,1fr)] gap-2 text-sm",
+        "grid grid-cols-[92px_minmax(0,1fr)] gap-3 text-sm",
         align === "start" ? "items-start" : "items-center",
       ].join(" ")}
     >
-      <div className="pt-1 text-[#202f45]">{label}</div>
+      <div className="pt-2 text-[var(--color-text-secondary)]">{label}</div>
       <div className="flex min-w-0 items-center gap-1.5">{children}</div>
     </div>
   );
@@ -66,9 +65,9 @@ export function TextWithActions({
 }) {
   return (
     <>
-      <Input
+      <input
         aria-label="属性值"
-        className="min-w-0 flex-1"
+        className="h-9 min-w-0 flex-1 rounded-lg border border-[var(--designer-border)] bg-[var(--color-bg-input)] px-3 text-sm text-[var(--color-text-primary)] outline-none transition placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-soft)]"
         value={value}
         onChange={(event: ChangeEvent<HTMLInputElement>) =>
           onChange(event.currentTarget.value)
@@ -91,9 +90,9 @@ export function NumberWithActions({
 }) {
   return (
     <>
-      <Input
+      <input
         aria-label="数值属性"
-        className="min-w-0 flex-1"
+        className="h-9 min-w-0 flex-1 rounded-lg border border-[var(--designer-border)] bg-[var(--color-bg-input)] px-3 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-soft)]"
         min={min}
         type="number"
         value={typeof value === "number" ? String(value) : ""}
@@ -114,16 +113,24 @@ export function PanelSwitch({
   onChange: (value: boolean) => void;
 }) {
   return (
-    <Switch
+    <button
+      type="button"
+      role="switch"
       aria-label="开关"
-      isSelected={isSelected}
-      onChange={onChange}
-      size="sm"
+      aria-checked={isSelected}
+      onClick={() => onChange(!isSelected)}
+      className={`relative h-6 w-11 rounded-full border transition ${
+        isSelected
+          ? "border-[var(--color-primary)] bg-[var(--color-primary)]"
+          : "border-[var(--designer-border)] bg-[var(--color-bg-subtle)]"
+      }`}
     >
-      <Switch.Control>
-        <Switch.Thumb />
-      </Switch.Control>
-    </Switch>
+      <span
+        className={`absolute top-0.5 h-4.5 w-4.5 rounded-full bg-[var(--color-control-thumb)] shadow-sm transition ${
+          isSelected ? "left-[21px]" : "left-0.5"
+        }`}
+      />
+    </button>
   );
 }
 
@@ -132,7 +139,7 @@ export function IconAction({ icon, label }: { icon: ReactNode; label: string }) 
     <button
       type="button"
       aria-label={label}
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#8d9aae] transition hover:bg-[#f2f5fa] hover:text-[#2f6bff]"
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--color-text-secondary)] transition hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-primary)]"
     >
       {icon}
     </button>

@@ -1,11 +1,13 @@
 "use client";
 
 import type {
-  DragEvent,
   MouseEvent,
   PointerEvent,
   RefObject,
+  CSSProperties,
+  ReactNode,
 } from "react";
+import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { FieldPreview } from "./CompTool";
 import {
   CELL_MIN_HEIGHT,
@@ -22,44 +24,25 @@ import {
   isTopAlignedField,
 } from "../designer-layout";
 import type {
-  ActiveCell,
+  DesignerDropData,
   PlacedField,
   ResizeDirection,
 } from "../designer-types";
 
 type DesignerCanvasProps = {
-  activeCell: ActiveCell | null;
   fields: PlacedField[];
   gridRef: RefObject<HTMLDivElement | null>;
   rowCount: number;
   selectedFieldId: string | null;
   showMatrix: boolean;
-  onActiveCellChange: (cell: ActiveCell | null) => void;
   onCanvasClick: () => void;
   onCanvasDoubleClick: (event: MouseEvent<HTMLDivElement>) => void;
-  onDragOver: (event: DragEvent<HTMLDivElement>) => void;
-  onDrop: (
-    event: DragEvent<HTMLDivElement>,
-    row: number,
-    column: number,
-  ) => void;
-  onDropToGroup: (
-    event: DragEvent<HTMLDivElement>,
-    groupId: string,
-    row: number,
-    column: number,
-  ) => void;
   onFieldPropertiesOpen: (
     event: MouseEvent<HTMLElement>,
     fieldId: string,
   ) => void;
   onFieldSelect: (
     event: MouseEvent<HTMLDivElement>,
-    fieldId: string,
-  ) => void;
-  onPlacedFieldDragEnd: () => void;
-  onPlacedFieldDragStart: (
-    event: DragEvent<HTMLDivElement>,
     fieldId: string,
   ) => void;
   onResizePointerDown: (
@@ -72,22 +55,15 @@ type DesignerCanvasProps = {
 };
 
 export function DesignerCanvas({
-  activeCell,
   fields,
   gridRef,
   rowCount,
   selectedFieldId,
   showMatrix,
-  onActiveCellChange,
   onCanvasClick,
   onCanvasDoubleClick,
-  onDragOver,
-  onDrop,
-  onDropToGroup,
   onFieldPropertiesOpen,
   onFieldSelect,
-  onPlacedFieldDragEnd,
-  onPlacedFieldDragStart,
   onResizePointerDown,
   onResizePointerMove,
   onResizePointerUp,
@@ -104,10 +80,10 @@ export function DesignerCanvas({
     <div
       onClick={onCanvasClick}
       onDoubleClick={onCanvasDoubleClick}
-      className="flex min-h-0 flex-1 flex-col overflow-auto rounded-[28px] border border-[#dce7f5] bg-white/80 p-4 shadow-[0_20px_70px_rgba(31,65,122,0.08)] backdrop-blur"
+      className="flex min-h-0 flex-1 flex-col overflow-auto rounded-[28px] border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4 shadow-[var(--shadow-designer)] backdrop-blur"
     >
       {fields.length === 0 && !showMatrix ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center rounded-[24px] border border-dashed border-[#cbd8ea] bg-[#f7faff] text-sm text-[#7d8da8]">
+        <div className="flex min-h-0 flex-1 items-center justify-center rounded-[24px] border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-sm text-[var(--color-text-secondary)]">
           从左侧拖拽组件开始设计
         </div>
       ) : (
@@ -124,29 +100,23 @@ export function DesignerCanvas({
           {cells.map(({ row, column }) => {
             const field = getFieldAt(topLevelFields, row, column);
             const isCovered = isCellCovered(topLevelFields, row, column);
-            const isActive =
-              activeCell?.row === row && activeCell.column === column;
 
             if (!field && (!showMatrix || isCovered)) {
               return null;
             }
 
             return (
-              <div
+              <DesignerDropCell
                 key={`${row}-${column}`}
-                onDragEnter={() => onActiveCellChange({ row, column })}
-                onDragLeave={() => onActiveCellChange(null)}
-                onDragOver={onDragOver}
-                onDrop={(event) => onDrop(event, row, column)}
+                id={`canvas-cell:${row}:${column}`}
+                data={{ kind: "cell", row, column, parentGroupId: null }}
+                showMatrix={showMatrix}
                 className={[
                   "rounded-2xl transition",
                   showMatrix ? "border border-dashed p-0" : "p-0",
-                  field && showMatrix ? "border-[#c8d9ee] bg-white" : "",
+                  field && showMatrix ? "border-[var(--color-border)] bg-[var(--color-bg-surface)]" : "",
                   !field && showMatrix
-                    ? "border-[#cfdcee] bg-[#f7faff]/80"
-                    : "",
-                  isActive && showMatrix
-                    ? "border-[#2f6bff] bg-[#eef5ff]"
+                    ? "border-[var(--color-border)] bg-[var(--color-bg-subtle)]"
                     : "",
                 ].join(" ")}
                 style={{
@@ -168,17 +138,14 @@ export function DesignerCanvas({
                       isTopAlignedField(field.type) ||
                       descriptionRows.has(field.row)
                     }
-                    onDragEnd={onPlacedFieldDragEnd}
-                    onDragStart={onPlacedFieldDragStart}
                     onPropertiesOpen={onFieldPropertiesOpen}
-                    onDropToGroup={onDropToGroup}
                     onResizePointerDown={onResizePointerDown}
                     onResizePointerMove={onResizePointerMove}
                     onResizePointerUp={onResizePointerUp}
                     onSelect={onFieldSelect}
                   />
                 ) : null}
-              </div>
+              </DesignerDropCell>
             );
           })}
         </div>
@@ -193,10 +160,7 @@ function PlacedDesignerField({
   isSelected,
   selectedFieldId,
   isTopAligned,
-  onDragEnd,
-  onDragStart,
   onPropertiesOpen,
-  onDropToGroup,
   onResizePointerDown,
   onResizePointerMove,
   onResizePointerUp,
@@ -207,20 +171,9 @@ function PlacedDesignerField({
   isSelected: boolean;
   selectedFieldId: string | null;
   isTopAligned: boolean;
-  onDragEnd: () => void;
-  onDragStart: (
-    event: DragEvent<HTMLDivElement>,
-    fieldId: string,
-  ) => void;
   onPropertiesOpen: (
     event: MouseEvent<HTMLElement>,
     fieldId: string,
-  ) => void;
-  onDropToGroup: (
-    event: DragEvent<HTMLDivElement>,
-    groupId: string,
-    row: number,
-    column: number,
   ) => void;
   onResizePointerDown: (
     event: PointerEvent<HTMLButtonElement>,
@@ -231,21 +184,31 @@ function PlacedDesignerField({
   onResizePointerUp: () => void;
   onSelect: (event: MouseEvent<HTMLDivElement>, fieldId: string) => void;
 }) {
+  const { attributes, isDragging, listeners, setNodeRef } = useDraggable({
+    id: `field:${field.id}`,
+    data: {
+      kind: "field",
+      fieldId: field.id,
+    },
+  });
+
   return (
     <div
-      draggable
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
       onClick={(event) => onSelect(event, field.id)}
       onDoubleClick={(event) => onPropertiesOpen(event, field.id)}
-      onDragStart={(event) => onDragStart(event, field.id)}
-      onDragEnd={onDragEnd}
       className={[
         "relative flex cursor-grab p-0 transition active:cursor-grabbing",
+        isDragging ? "opacity-35" : "",
         isTopAligned ? "min-h-full" : "h-full",
         isTopAligned ? "items-start" : "items-end",
         isSelected
-          ? "rounded-xl outline outline-1 outline-[#2f6bff]/70 outline-offset-2"
+          ? "rounded-xl outline outline-1 outline-[var(--color-primary)] outline-offset-2"
           : "",
       ].join(" ")}
+      style={{ touchAction: "none" }}
     >
       {isSelected ? (
         <>
@@ -253,7 +216,7 @@ function PlacedDesignerField({
             type="button"
             aria-label="打开属性配置"
             onClick={(event) => onPropertiesOpen(event, field.id)}
-            className="absolute right-0 top-0 z-20 flex h-5 max-h-5 w-5 items-center justify-center rounded-full bg-white/95 text-[#2f6bff] shadow-[0_6px_14px_rgba(31,65,122,0.16)]"
+            className="absolute right-0 top-0 z-20 flex h-5 max-h-5 w-5 items-center justify-center rounded-full bg-[var(--color-bg-surface)] text-[var(--color-primary)] shadow-[var(--shadow-sm)]"
           >
             <SettingsIcon />
           </button>
@@ -292,11 +255,8 @@ function PlacedDesignerField({
           field={field}
           isSelected={isSelected}
           selectedFieldId={selectedFieldId}
-          onDropToGroup={onDropToGroup}
           onFieldPropertiesOpen={onPropertiesOpen}
           onFieldSelect={onSelect}
-          onPlacedFieldDragEnd={onDragEnd}
-          onPlacedFieldDragStart={onDragStart}
           onResizePointerDown={onResizePointerDown}
           onResizePointerMove={onResizePointerMove}
           onResizePointerUp={onResizePointerUp}
@@ -319,11 +279,8 @@ function GroupedFieldCanvas({
   field,
   isSelected,
   selectedFieldId,
-  onDropToGroup,
   onFieldPropertiesOpen,
   onFieldSelect,
-  onPlacedFieldDragEnd,
-  onPlacedFieldDragStart,
   onResizePointerDown,
   onResizePointerMove,
   onResizePointerUp,
@@ -332,22 +289,11 @@ function GroupedFieldCanvas({
   field: PlacedField;
   isSelected: boolean;
   selectedFieldId: string | null;
-  onDropToGroup: (
-    event: DragEvent<HTMLDivElement>,
-    groupId: string,
-    row: number,
-    column: number,
-  ) => void;
   onFieldPropertiesOpen: (
     event: MouseEvent<HTMLElement>,
     fieldId: string,
   ) => void;
   onFieldSelect: (event: MouseEvent<HTMLDivElement>, fieldId: string) => void;
-  onPlacedFieldDragEnd: () => void;
-  onPlacedFieldDragStart: (
-    event: DragEvent<HTMLDivElement>,
-    fieldId: string,
-  ) => void;
   onResizePointerDown: (
     event: PointerEvent<HTMLButtonElement>,
     field: PlacedField,
@@ -366,24 +312,24 @@ function GroupedFieldCanvas({
   );
 
   return (
-    <div className="flex min-h-full w-full flex-col rounded-2xl border border-dashed border-[#b9cff8] bg-[#f7fbff] p-3">
+    <div className="flex min-h-full w-full flex-col rounded-2xl border border-dashed border-[var(--color-primary)] bg-[var(--color-bg-subtle)] p-3">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-[#2b4a7f]">
+          <div className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
             {field.label}
           </div>
-          <div className="text-xs text-[#7c8ca6]">
+          <div className="text-xs text-[var(--color-text-secondary)]">
             {childFields.length} 个子组件
           </div>
         </div>
         {isSelected ? (
-          <span className="rounded-full bg-[#e7f0ff] px-2 py-1 text-[11px] font-medium text-[#2f6bff]">
+          <span className="rounded-full bg-[var(--color-primary-soft)] px-2 py-1 text-[11px] font-medium text-[var(--color-primary)]">
             已选中
           </span>
         ) : null}
       </div>
       <div
-        className="grid min-h-[120px] flex-1 content-start rounded-xl border border-dashed border-[#d6e1f4] bg-white/80 p-2"
+        className="grid min-h-[120px] flex-1 content-start rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-surface)] p-2"
         style={{
           gridTemplateColumns: `repeat(${field.colSpan}, minmax(0, 1fr))`,
           gridAutoRows: "minmax(56px, auto)",
@@ -399,13 +345,16 @@ function GroupedFieldCanvas({
           }
 
           return (
-            <div
+            <DesignerDropCell
               key={`${field.id}-${row}-${column}`}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => onDropToGroup(event, field.id, row, column)}
+              id={`group-cell:${field.id}:${row}:${column}`}
+              data={{ kind: "cell", row, column, parentGroupId: field.id }}
+              showMatrix
               className={[
                 "rounded-xl border border-dashed transition",
-                nestedField ? "border-[#cfe0ff] bg-white" : "border-[#e3ebf7] bg-[#fbfdff]",
+                nestedField
+                  ? "border-[var(--color-primary)] bg-[var(--color-bg-surface)]"
+                  : "border-[var(--color-border)] bg-[var(--color-bg-subtle)]",
               ].join(" ")}
               style={{
                 gridColumn: nestedField
@@ -423,20 +372,51 @@ function GroupedFieldCanvas({
                   isSelected={selectedFieldId === nestedField.id}
                   selectedFieldId={selectedFieldId}
                   isTopAligned={isTopAlignedField(nestedField.type)}
-                  onDragEnd={onPlacedFieldDragEnd}
-                  onDragStart={onPlacedFieldDragStart}
                   onPropertiesOpen={onFieldPropertiesOpen}
-                  onDropToGroup={onDropToGroup}
                   onResizePointerDown={onResizePointerDown}
                   onResizePointerMove={onResizePointerMove}
                   onResizePointerUp={onResizePointerUp}
                   onSelect={onFieldSelect}
                 />
               ) : null}
-            </div>
+            </DesignerDropCell>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function DesignerDropCell({
+  children,
+  className,
+  data,
+  id,
+  showMatrix,
+  style,
+}: {
+  children?: ReactNode;
+  className: string;
+  data: DesignerDropData;
+  id: string;
+  showMatrix: boolean;
+  style: CSSProperties;
+}) {
+  const { isOver, setNodeRef } = useDroppable({ id, data });
+
+  return (
+    <div
+      ref={setNodeRef}
+      data-designer-drop-id={id}
+      className={[
+        className,
+        isOver && showMatrix
+          ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)]"
+          : "",
+      ].join(" ")}
+      style={style}
+    >
+      {children}
     </div>
   );
 }
@@ -471,7 +451,7 @@ function ResizeHandle({
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       className={[
-        "absolute z-10 bg-[#2f6bff] opacity-80 transition hover:opacity-100",
+        "absolute z-10 bg-[var(--color-primary)] opacity-80 transition hover:opacity-100",
         className,
       ].join(" ")}
     />

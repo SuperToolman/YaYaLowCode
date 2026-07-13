@@ -61,12 +61,25 @@ export function moveField(
     return fields;
   }
 
-  if (targetField.row === row && targetField.column === column) {
+  const nextParentGroupId =
+    parentGroupId === undefined ? (targetField?.parentGroupId ?? null) : parentGroupId;
+
+  if (
+    nextParentGroupId === targetField.id ||
+    (targetField.type === "groupContainer" &&
+      nextParentGroupId !== null &&
+      collectGroupDescendantIds(fields, targetField.id).has(nextParentGroupId))
+  ) {
     return fields;
   }
 
-  const nextParentGroupId =
-    parentGroupId === undefined ? (targetField?.parentGroupId ?? null) : parentGroupId;
+  if (
+    targetField.row === row &&
+    targetField.column === column &&
+    (targetField.parentGroupId ?? null) === nextParentGroupId
+  ) {
+    return fields;
+  }
 
   if (
     !canPlaceField(
@@ -139,6 +152,12 @@ export function resizeField(
   }
 
   if (
+    !canResizeGroupWithinChildren(
+      fields,
+      targetField,
+      nextRowSpan,
+      nextColSpan,
+    ) ||
     !canPlaceField(
       fields,
       targetField.id,
@@ -146,6 +165,7 @@ export function resizeField(
       targetField.column,
       nextRowSpan,
       nextColSpan,
+      targetField.parentGroupId ?? null,
     )
   ) {
     return fields;
@@ -155,6 +175,24 @@ export function resizeField(
     field.id === targetField.id
       ? { ...field, rowSpan: nextRowSpan, colSpan: nextColSpan }
       : field,
+  );
+}
+
+function canResizeGroupWithinChildren(
+  fields: PlacedField[],
+  targetField: PlacedField,
+  nextRowSpan: number,
+  nextColSpan: number,
+) {
+  if (targetField.type !== "groupContainer") return true;
+  const descendantIds = collectGroupDescendantIds(fields, targetField.id);
+  return fields.every(
+    (field) =>
+      !descendantIds.has(field.id) ||
+      (field.row >= targetField.row &&
+        field.column >= targetField.column &&
+        field.row + field.rowSpan <= targetField.row + nextRowSpan &&
+        field.column + field.colSpan <= targetField.column + nextColSpan),
   );
 }
 

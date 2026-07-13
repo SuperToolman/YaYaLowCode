@@ -35,6 +35,10 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# local runtime settings (may contain database passwords or API keys)
+.yaya-lowcode-settings.json
+.yaya-agent-settings.json
+
 # vercel
 .vercel
 

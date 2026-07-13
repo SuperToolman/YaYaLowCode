@@ -28,7 +28,7 @@ export function FormTable({
   const firstColumnId = tableColumns[0]?.id;
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white">
+    <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-surface)]">
       <Table>
         <Table.ScrollContainer className="overflow-x-auto">
           <Table.Content aria-label={`${title} 数据表格`}>

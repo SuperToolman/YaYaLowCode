@@ -1,0 +1,13 @@
+[package]
+name = "mime_guess"
+version = "2.0.5"
+edition = "2021"
+license = "MIT"
+description = "Build-script-free MIME extension lookup used by YaYa Low Code on restricted Windows hosts."
+
+[dependencies]
+mime = "0.3"
+
+[features]
+default = []
+rev-mappings = []

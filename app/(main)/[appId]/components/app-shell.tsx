@@ -20,7 +20,8 @@ export function AppShell({
   const frameRef = useRef<number | null>(null);
   const sidebarRef = useRef<HTMLDivElement | null>(null);
   const pendingWidthRef = useRef(DEFAULT_SIDEBAR_WIDTH);
-  const hideSidebar = /\/automations\/[^/]+$/.test(pathname);
+  const hideSidebar =
+    /\/automations\/[^/]+$/.test(pathname) || pathname.endsWith("/settings");
 
   useEffect(() => {
     if (!dragging) {
@@ -66,14 +67,14 @@ export function AppShell({
   }, [dragging]);
 
   return (
-    <div className="flex h-full min-h-0 gap-3 overflow-x-hidden p-2 sm:gap-4">
+    <div className="flex h-full min-h-0 gap-2 overflow-x-hidden sm:gap-4 p-2">
       {!hideSidebar ? (
         <div
           ref={sidebarRef}
           className="relative shrink-0 rounded-xl will-change-[width]"
           style={{ width: `${sidebarWidth}px` }}
         >
-          <div className="theme-panel-strong h-full min-h-0 overflow-hidden rounded-xl shadow-[0_6px_18px_rgba(20,33,61,0.035)]">
+          <div className="theme-panel-strong h-full min-h-0 overflow-hidden rounded-xl shadow-[var(--shadow-xs)]">
             {sidebar}
           </div>
           <div
@@ -88,17 +89,36 @@ export function AppShell({
               setDragging(true);
             }}
             className={`absolute right-[-5px] top-0 h-full w-[10px] cursor-col-resize ${
-              dragging ? "bg-[var(--brand-blue)]/10" : "bg-transparent"
+              dragging ? "bg-[var(--color-primary)]/10" : "bg-transparent"
             }`}
           >
-            <span className="mx-auto block h-full w-[2px] bg-transparent transition-colors hover:bg-[var(--brand-blue)]/30" />
+            <span className="mx-auto block h-full w-[2px] bg-transparent transition-colors hover:bg-[var(--color-primary)]/30" />
           </div>
         </div>
       ) : null}
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
         {children}
       </div>
     </div>
+  );
+}
+
+export function AppMainContent({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const segments = pathname.split("/").filter(Boolean);
+  const isFormPage =
+    segments.length === 2 &&
+    segments[1] !== "automations" &&
+    segments[1] !== "settings";
+  const isAutomationEditor = /\/automations\/[^/]+$/.test(pathname);
+  const lockOuterScroll = isFormPage || isAutomationEditor;
+
+  return (
+    <main
+      className={`min-h-0 flex-1 ${lockOuterScroll ? "overflow-hidden" : "overflow-auto"}`}
+    >
+      {children}
+    </main>
   );
 }

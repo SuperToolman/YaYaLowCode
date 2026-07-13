@@ -3,8 +3,15 @@
 import type { ChangeEvent, KeyboardEvent } from "react";
 import { Button, Dropdown, Input } from "@heroui/react";
 import { Card } from "@heroui/react/card";
-import { ArrowLeftIcon, RestoreIcon } from "../../../../components/app-icons";
+import {
+  ArrowLeftIcon,
+  PreviewIcon,
+  PublishIcon,
+  RestoreIcon,
+  SaveIcon,
+} from "../../../../components/app-icons";
 import { COLUMN_COUNT } from "../designer-constants";
+import { CompactThemeSwitcher } from "../../../../components/theme-switcher-menu";
 
 export type FormVersionSummary = {
   version: number;
@@ -15,8 +22,16 @@ export type FormVersionSummary = {
   createdAt: string;
 };
 
+const designerViews = [
+  "表单设计",
+  "流程设计",
+  "页面设置",
+  "页面发布",
+  "数据管理",
+] as const;
+
 type FormDesignerHeaderProps = {
-  appId?: string | null;
+  appName?: string | null;
   fieldsCount: number;
   formName: string;
   formUuid: string;
@@ -36,7 +51,7 @@ type FormDesignerHeaderProps = {
 };
 
 export function FormDesignerHeader({
-  appId,
+  appName,
   fieldsCount,
   formName,
   formUuid,
@@ -54,76 +69,45 @@ export function FormDesignerHeader({
   onSave,
   saveMessage,
 }: FormDesignerHeaderProps) {
+  const displayedVersions = versions.slice(0, 20);
+
   return (
-    <Card className="mb-5 shrink-0 border border-[#dce7f5] bg-white/90 p-5 shadow-[0_20px_70px_rgba(31,65,122,0.08)] backdrop-blur">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
+    <Card className="mb-2 shrink-0 border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-5 shadow-[var(--shadow-designer)] backdrop-blur">
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="ghost"
-                className="h-9 rounded-xl bg-transparent px-3 text-[#35507b]"
+                className="h-9 rounded-xl bg-transparent px-3 text-[var(--color-text-secondary)]"
                 onPress={onBackToApp}
               >
                 <ArrowLeftIcon />
-                {appId ? `返回应用 ${appId}` : "返回应用"}
+                {appName ? `返回应用 ${appName}` : "返回应用"}
               </Button>
-              <span className="rounded-full bg-[#f3f7ff] px-3 py-1 text-xs font-medium text-[#35507b]">
-                FORM {formUuid}
-              </span>
-              <span className="rounded-full bg-[#edf4ff] px-3 py-1 text-xs font-medium text-[#2f6bff]">
+              <span className="rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-medium text-[var(--color-primary)]">
                 草稿 v{latestVersion} / 发布 v{publishedVersion}
               </span>
-              <span className="rounded-full bg-[#f7fbff] px-3 py-1 text-xs font-medium text-[#60718a]">
+              <span className="rounded-full bg-[var(--color-bg-subtle)] px-3 py-1 text-xs font-medium text-[var(--color-text-secondary)]">
                 {rowCount} x {COLUMN_COUNT} 网格 / 控件数：{fieldsCount}
               </span>
-            </div>
-            {isEditingFormName ? (
-              <Input
-                aria-label="表单名称"
-                autoFocus
-                className="mt-3 max-w-[420px]"
-                value={formName}
-                onBlur={() => onEditingFormNameChange(false)}
-                onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                  onFormNameChange(event.currentTarget.value)
-                }
-                onKeyDown={(event: KeyboardEvent<HTMLInputElement>) =>
-                  handleFormNameKeyDown(event, onEditingFormNameChange)
-                }
-              />
-            ) : (
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                <h1
-                  className="cursor-text text-2xl font-semibold text-[#14213d]"
-                  title="双击编辑表单名称"
-                  onDoubleClick={() => onEditingFormNameChange(true)}
-                >
-                  {formName.trim() || "New Page"}
-                </h1>
-                <span className="rounded-full bg-[#f5f8fc] px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-[#7c8ca6]">
-                  Form Designer
-                </span>
-              </div>
-            )}
-        </div>
+          </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex shrink-0 items-center justify-end gap-2 whitespace-nowrap">
+            <CompactThemeSwitcher />
             {saveMessage ? (
-              <span className="mr-1 text-sm text-[#65748f]">{saveMessage}</span>
+              <span className="mr-1 text-sm text-[var(--color-text-secondary)]">{saveMessage}</span>
             ) : null}
             <Dropdown>
-              <Dropdown.Trigger>
-                <span
-                  aria-label="恢复历史版本"
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[#dce7f5] bg-white text-[#35507b] transition hover:bg-[#f7faff]"
-                >
-                  <RestoreIcon />
-                </span>
+              <Dropdown.Trigger
+                aria-label="读取历史版本"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)] transition hover:bg-[var(--color-bg-subtle)]"
+              >
+                <RestoreIcon />
               </Dropdown.Trigger>
               <Dropdown.Popover>
                 <Dropdown.Menu
-                  aria-label="恢复历史版本"
-                  disabledKeys={versions.length === 0 ? ["empty"] : []}
+                  aria-label="读取历史版本"
+                  disabledKeys={displayedVersions.length === 0 ? ["empty"] : []}
                   onAction={(key) => {
                     const version = Number(String(key));
 
@@ -132,8 +116,8 @@ export function FormDesignerHeader({
                     }
                   }}
                 >
-                  {versions.length > 0 ? (
-                    versions.map((item) => (
+                  {displayedVersions.length > 0 ? (
+                    displayedVersions.map((item) => (
                       <Dropdown.Item
                         key={String(item.version)}
                         id={String(item.version)}
@@ -151,20 +135,72 @@ export function FormDesignerHeader({
               </Dropdown.Popover>
             </Dropdown>
             <Button
-              className="bg-[#edf4ff] text-[#2f6bff]"
+              className="bg-[var(--color-primary-soft)] text-[var(--color-primary)]"
               onPress={onPreview}
             >
+              <PreviewIcon />
               预览
             </Button>
             <Button
-              className="bg-[#eaf7ef] text-[#18794e]"
+              className="bg-[var(--color-success-soft)] text-[var(--color-success)]"
               onPress={onPublish}
             >
+              <PublishIcon />
               发布
             </Button>
-            <Button className="bg-[#2f6bff] text-white" onPress={onSave}>
+            <Button className="bg-[var(--color-primary)] text-[var(--color-text-on-primary)]" onPress={onSave}>
+              <SaveIcon />
               保存
             </Button>
+          </div>
+        </div>
+
+        <div className="flex min-w-0 flex-wrap items-center gap-3 border-t border-[var(--color-border)] pt-3">
+          {isEditingFormName ? (
+            <Input
+              aria-label="表单名称"
+              autoFocus
+              className="max-w-[360px]"
+              value={formName}
+              onBlur={() => onEditingFormNameChange(false)}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                onFormNameChange(event.currentTarget.value)
+              }
+              onKeyDown={(event: KeyboardEvent<HTMLInputElement>) =>
+                handleFormNameKeyDown(event, onEditingFormNameChange)
+              }
+            />
+          ) : (
+            <h1
+              className="max-w-[300px] truncate cursor-text text-2xl font-semibold text-[var(--color-text-primary)]"
+              title="双击编辑表单名称"
+              onDoubleClick={() => onEditingFormNameChange(true)}
+            >
+              {formName.trim() || "New Page"}
+            </h1>
+          )}
+          <span className="shrink-0 rounded-full bg-[var(--color-bg-subtle)] px-3 py-1 text-xs font-medium text-[var(--color-text-secondary)]">
+            FORM {formUuid}
+          </span>
+          <nav
+            className="ml-auto flex shrink-0 items-center gap-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-panel-soft)] p-1"
+            aria-label="表单设计器视图"
+          >
+            {designerViews.map((view, index) => (
+              <button
+                key={view}
+                type="button"
+                className={[
+                  "h-8 rounded-lg px-3 text-xs transition-colors",
+                  index === 0
+                    ? "bg-[var(--color-primary)] font-medium text-[var(--color-text-on-primary)]"
+                    : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-text-primary)]",
+                ].join(" ")}
+              >
+                {view}
+              </button>
+            ))}
+          </nav>
         </div>
       </div>
     </Card>

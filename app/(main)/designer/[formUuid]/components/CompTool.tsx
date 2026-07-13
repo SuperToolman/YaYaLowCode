@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { DragEvent, Key } from "react";
+import type { Key } from "react";
+import { useDraggable } from "@dnd-kit/core";
 import {
   Button,
   Card,
@@ -28,9 +29,6 @@ import {
   LinkIcon as AppLinkIcon,
   MessageIcon,
 } from "../../../../components/app-icons";
-
-export const COMPONENT_DRAG_TYPE = "application/x-yaya-designer-component";
-export const PLACED_FIELD_DRAG_TYPE = "application/x-yaya-designer-field";
 
 export const COMPONENT_GROUPS = [
   { key: "basic", label: "基础" },
@@ -384,11 +382,9 @@ export function getDefaultDesignerFieldProps(
 
 type CompToolProps = {
   embedded?: boolean;
-  onDragStart?: () => void;
-  onDragEnd?: () => void;
 };
 
-export function CompTool({ embedded = false, onDragStart, onDragEnd }: CompToolProps) {
+export function CompTool({ embedded = false }: CompToolProps) {
   const [searchKeyword, setSearchKeyword] = useState("");
   const normalizedKeyword = searchKeyword.trim();
   const groupedComponents = useMemo(
@@ -404,23 +400,11 @@ export function CompTool({ embedded = false, onDragStart, onDragEnd }: CompToolP
     [normalizedKeyword],
   );
 
-  function handleDragStart(
-    event: DragEvent<HTMLDivElement>,
-    type: DesignerComponentType,
-  ) {
-    onDragStart?.();
-    event.dataTransfer.effectAllowed = "copy";
-    event.dataTransfer.setData(COMPONENT_DRAG_TYPE, type);
-  }
-
   const content = (
     <>
       {embedded ? null : (
         <div className="mb-3 shrink-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#7c8ca6]">
-            Components
-          </p>
-          <h2 className="mt-1 text-xl font-semibold text-[#14213d]">组件箱</h2>
+          <h2 className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">组件箱</h2>
         </div>
       )}
 
@@ -436,10 +420,10 @@ export function CompTool({ embedded = false, onDragStart, onDragEnd }: CompToolP
         {groupedComponents.map((group) => (
           <section key={group.key}>
             <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[#263a5c]">
+              <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
                 {group.label}
               </h3>
-              <span className="text-xs text-[#9aa6b6]">
+              <span className="text-xs text-[var(--color-text-disabled)]">
                 {group.components.length}
               </span>
             </div>
@@ -447,28 +431,14 @@ export function CompTool({ embedded = false, onDragStart, onDragEnd }: CompToolP
             {group.components.length > 0 ? (
               <div className="grid grid-cols-2 gap-2">
                 {group.components.map((component) => (
-                  <Card
+                  <DraggableComponentCard
                     key={component.type}
-                    draggable
-                    onDragStart={(event) =>
-                      handleDragStart(event, component.type)
-                    }
-                    onDragEnd={onDragEnd}
-                    className="cursor-grab border border-[#dfe8f5] bg-[#fbfdff] p-2 shadow-none transition hover:-translate-y-0.5 hover:border-[#a9c6ff] hover:bg-white hover:shadow-[0_14px_30px_rgba(47,107,255,0.12)] active:cursor-grabbing"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#eaf2ff] text-xs font-bold text-[#2f6bff]">
-                        <ComponentPaletteIcon type={component.type} fallback={component.icon} />
-                      </span>
-                      <span className="truncate text-sm font-semibold text-[#14213d]">
-                        {component.label}
-                      </span>
-                    </div>
-                  </Card>
+                    component={component}
+                  />
                 ))}
               </div>
             ) : (
-              <div className="rounded-2xl border border-dashed border-[#dce7f5] bg-[#f8fbff] px-3 py-4 text-center text-xs text-[#8d9aae]">
+              <div className="rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-4 text-center text-xs text-[var(--color-text-disabled)]">
                 {normalizedKeyword ? "未匹配到组件" : "暂无组件"}
               </div>
             )}
@@ -483,9 +453,44 @@ export function CompTool({ embedded = false, onDragStart, onDragEnd }: CompToolP
   }
 
   return (
-    <aside className="flex h-full min-h-0 flex-col rounded-[28px] border border-[#dce7f5] bg-white/90 p-3 shadow-[0_20px_60px_rgba(31,65,122,0.08)] backdrop-blur">
+    <aside className="flex h-full min-h-0 flex-col rounded-[28px] border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-3 shadow-[var(--shadow-panel)] backdrop-blur">
       {content}
     </aside>
+  );
+}
+
+function DraggableComponentCard({
+  component,
+}: {
+  component: (typeof DESIGNER_COMPONENTS)[number];
+}) {
+  const { attributes, isDragging, listeners, setNodeRef } = useDraggable({
+    id: `component:${component.type}`,
+    data: {
+      kind: "component",
+      componentType: component.type,
+    },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={isDragging ? "opacity-40" : ""}
+      style={{ touchAction: "none" }}
+    >
+      <Card className="cursor-grab border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-2 shadow-none transition hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:bg-[var(--color-bg-subtle)] hover:shadow-[var(--shadow-card-hover)] active:cursor-grabbing">
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-xs font-bold text-[var(--color-primary)]">
+            <ComponentPaletteIcon type={component.type} fallback={component.icon} />
+          </span>
+          <span className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
+            {component.label}
+          </span>
+        </div>
+      </Card>
+    </div>
   );
 }
 
@@ -565,19 +570,19 @@ export function FieldPreview({
       ].join(" ")}
     >
       {showLabel && type !== "button" ? (
-        <label className="block text-sm font-medium text-[#263a5c]">
+        <label className="block text-sm font-medium text-[var(--color-text-primary)]">
           {label}
         </label>
       ) : null}
       {type === "groupContainer" ? (
-        <div className="rounded-2xl border border-dashed border-[#b9cff8] bg-[#f7fbff] p-4">
+        <div className="rounded-2xl border border-dashed border-[var(--color-primary)] bg-[var(--color-bg-subtle)] p-4">
           <div className="flex items-center justify-between gap-3">
-            <span className="truncate text-sm font-semibold text-[#2b4a7f]">
+            <span className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
               {label}
             </span>
-            <span className="shrink-0 text-xs text-[#7c8ca6]">Group</span>
+            <span className="shrink-0 text-xs text-[var(--color-text-secondary)]">Group</span>
           </div>
-          <div className="mt-3 rounded-xl border border-dashed border-[#d6e1f4] bg-white/80 px-3 py-5 text-center text-xs text-[#7d8da8]">
+          <div className="mt-3 rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-5 text-center text-xs text-[var(--color-text-secondary)]">
             将组件拖拽到此分组中
           </div>
         </div>
@@ -600,7 +605,7 @@ export function FieldPreview({
         </div>
       ) : null}
       {type === "description" ? (
-        <p className="rounded-xl bg-[#f8fbff] px-3 py-2 text-sm leading-6 text-[#65748f]">
+        <p className="rounded-xl bg-[var(--color-bg-subtle)] px-3 py-2 text-sm leading-6 text-[var(--color-text-secondary)]">
           {textDefaultValue || placeholder}
         </p>
       ) : null}
@@ -715,7 +720,7 @@ export function FieldPreview({
         <Link
           href={fieldProps.href || "#"}
           target={fieldProps.target}
-          className="text-sm font-medium text-[#2f6bff]"
+          className="text-sm font-medium text-[var(--color-primary)]"
         >
           {textDefaultValue || label}
         </Link>
@@ -753,7 +758,7 @@ export function FieldPreview({
         </Button>
       ) : null}
       {description ? (
-        <Description className="text-sm text-[#65748f]">
+        <Description className="text-sm text-[var(--color-text-secondary)]">
           {description}
         </Description>
       ) : null}
@@ -851,18 +856,18 @@ function MultiSelectPreview({
         aria-haspopup="listbox"
         disabled={isDisabled}
         onClick={() => setIsOpen((current) => !current)}
-        className="flex min-h-10 w-full items-center justify-between gap-3 rounded-xl border border-[#dfe5ee] bg-white px-3 py-2 text-left text-sm text-[#202f45] disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex min-h-10 w-full items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-2 text-left text-sm text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-60"
       >
         <span className="min-w-0 truncate">
           {selectedLabels.length > 0 ? selectedLabels.join("、") : placeholder}
         </span>
-        <span aria-hidden="true" className="shrink-0 text-[#8d9aae]">
+        <span aria-hidden="true" className="shrink-0 text-[var(--color-text-disabled)]">
           v
         </span>
       </button>
 
       {isOpen ? (
-        <div className="absolute z-30 mt-2 w-full rounded-xl border border-[#dfe5ee] bg-white p-3 shadow-[0_18px_40px_rgba(20,33,61,0.16)]">
+        <div className="absolute z-30 mt-2 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-3 shadow-[var(--shadow-floating)]">
           <CheckboxGroup
             aria-label={label}
             value={selectedValues}
@@ -899,11 +904,11 @@ function UploadPreview({
   imageOnly: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-dashed border-[#cbd8ea] bg-[#f8fbff] p-3">
+    <div className="rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-3">
       <Button size="sm" variant="ghost">
         {buttonText}
       </Button>
-      <p className="mt-2 text-xs text-[#8d9aae]">
+      <p className="mt-2 text-xs text-[var(--color-text-disabled)]">
         {imageOnly ? "支持图片上传" : "支持附件上传"}
       </p>
     </div>
@@ -993,7 +998,7 @@ function getOptionLabel(options: DesignerFieldOption[], value: string) {
 
 function ClearButtonPreview() {
   return (
-    <span className="pointer-events-none absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-[#edf2f7] text-xs text-[#7b8797]">
+    <span className="pointer-events-none absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-bg-subtle)] text-xs text-[var(--color-text-secondary)]">
       ×
     </span>
   );
@@ -1001,7 +1006,7 @@ function ClearButtonPreview() {
 
 function CounterPreview({ value }: { value: string }) {
   return (
-    <div className="pointer-events-none absolute -bottom-5 right-0 text-xs text-[#9aa6b6]">
+    <div className="pointer-events-none absolute -bottom-5 right-0 text-xs text-[var(--color-text-disabled)]">
       {value.length}/500
     </div>
   );

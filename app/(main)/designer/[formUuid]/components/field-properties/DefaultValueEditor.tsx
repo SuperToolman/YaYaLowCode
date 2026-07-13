@@ -21,8 +21,14 @@ import type {
   PlacedField,
 } from "../../designer-types";
 import { FormulaEditor } from "./FormulaEditor";
+import { useTheme } from "../../../../../components/theme-provider";
 import { FORMULA_FUNCTION_ITEMS } from "./formula-definitions";
 import { NumberWithActions } from "./PropertyLayout";
+import {
+  findDuplicateFormulaLabels,
+  formulaToDisplay,
+  formulaToStored,
+} from "../../../../../lib/form-formula";
 
 const DEFAULT_VALUE_TYPE_OPTIONS: Array<{
   label: string;
@@ -200,7 +206,7 @@ function CustomDefaultValueEditor({
           }
         />
       </InputGroup>
-      <div className="text-right text-xs text-[#9aa6b6]">{value.length}/500</div>
+      <div className="text-right text-xs text-[var(--color-text-secondary)]">{value.length}/500</div>
     </div>
   );
 }
@@ -221,12 +227,18 @@ function FormulaDefaultValueEditor({
 
   return (
     <div className="min-w-0 space-y-2">
-      <Button fullWidth size="sm" variant="ghost" onPress={() => setIsOpen(true)}>
+      <Button
+        fullWidth
+        size="sm"
+        variant="ghost"
+        className="border border-[var(--designer-border)] bg-[var(--designer-surface-muted)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+        onPress={() => setIsOpen(true)}
+      >
         {value.trim() ? "编辑公式" : "添加公式"}
       </Button>
       {value.trim() ? (
-        <div className="truncate rounded-lg bg-[#f7faff] px-2 py-1 font-mono text-xs text-[#65748f]">
-          {value}
+        <div className="truncate rounded-lg bg-[var(--designer-surface-soft)] px-2 py-1 font-mono text-xs text-[var(--color-text-secondary)]">
+          {formulaToDisplay(value, fields)}
         </div>
       ) : null}
       <FormulaEditorModal
@@ -261,12 +273,13 @@ function FormulaEditorModal({
   onOpenChange: (isOpen: boolean) => void;
   value: string;
 }) {
-  const [draftValue, setDraftValue] = useState(value);
+  const { resolvedTheme } = useTheme();
+  const [draftValue, setDraftValue] = useState(() => formulaToDisplay(value, fields));
   const formulaInputRef = useRef<HTMLTextAreaElement>(null);
 
   function handleOpenChange(nextIsOpen: boolean) {
     if (nextIsOpen) {
-      setDraftValue(value);
+      setDraftValue(formulaToDisplay(value, fields));
     }
 
     onOpenChange(nextIsOpen);
@@ -296,22 +309,25 @@ function FormulaEditorModal({
   }
 
   function confirmFormula() {
-    onChange(draftValue);
+    onChange(formulaToStored(draftValue, fields));
     onOpenChange(false);
   }
 
   return (
     <Modal isOpen={isOpen} onOpenChange={handleOpenChange}>
-      <Modal.Backdrop className="bg-[#14213d]/20" isDismissable>
+      <Modal.Backdrop className="designer-modal-backdrop" isDismissable>
         <Modal.Container placement="center" scroll="inside" size="cover">
-          <Modal.Dialog className="flex h-[78vh] w-[78vw] max-w-[78vw] flex-col overflow-hidden rounded-2xl bg-white text-[#202f45] shadow-[0_30px_90px_rgba(20,33,61,0.24)]">
-            <Modal.Header className="border-b border-[#eef2f7] px-5 py-4">
+          <Modal.Dialog
+            data-theme={resolvedTheme}
+            className="designer-theme-surface flex h-[84vh] w-[min(1240px,92vw)] max-w-[92vw] flex-col overflow-hidden rounded-2xl bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]"
+          >
+            <Modal.Header className="border-b border-[var(--designer-border)] bg-[var(--designer-surface-solid)] px-5 py-4">
               <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
                 <div className="flex min-w-0 items-center gap-3">
-                  <Modal.Heading className="truncate text-xl font-semibold text-[#14213d]">
+                  <Modal.Heading className="truncate text-xl font-semibold text-[var(--color-text-primary)]">
                     公式编辑
                   </Modal.Heading>
-                  <span className="text-sm text-[#8d9aae]">
+                  <span className="text-sm text-[var(--color-text-secondary)]">
                     使用数学运算符编辑公式
                   </span>
                 </div>
@@ -321,34 +337,28 @@ function FormulaEditorModal({
                 />
               </div>
             </Modal.Header>
-            <Modal.Body className="flex-1 overflow-auto bg-white p-5">
-              <div className="flex min-h-full flex-col overflow-hidden rounded-lg border border-[#d7dee9] bg-white">
-                <div className="border-b border-[#eef2f7] bg-[#f8fafc] px-3 py-2">
+            <Modal.Body className="min-h-0 flex-1 overflow-hidden bg-[var(--designer-surface-soft)] p-4">
+              <div className="flex min-h-full flex-col overflow-hidden rounded-lg border border-[var(--designer-border)] bg-[var(--designer-surface-solid)]">
+                <div className="border-b border-[var(--designer-border)] bg-[var(--designer-surface-muted)] px-3 py-2">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0 text-sm font-semibold text-[#202f45]">
+                    <div className="min-w-0 text-sm font-semibold text-[var(--color-text-primary)]">
                       {fieldLabel} =
                     </div>
-                    <div className="flex shrink-0 items-center gap-2 text-xs text-[#66758c]">
+                    <div className="flex shrink-0 items-center gap-2 text-xs text-[var(--color-text-secondary)]">
                       <ToolbarButton onPress={() => navigator.clipboard?.writeText(draftValue)}>
                         复制
                       </ToolbarButton>
-                      <ToolbarButton onPress={() => insertFormulaText("$变量")}>
-                        替换变量
-                      </ToolbarButton>
-                      <ToolbarButton onPress={() => insertFormulaText("// 备注")}>
-                        备注
-                      </ToolbarButton>
-                      <ToolbarButton onPress={() => insertFormulaText("@debug()")}>
-                        调试
+                      <ToolbarButton onPress={() => setDraftValue("")}>
+                        清空
                       </ToolbarButton>
                     </div>
                   </div>
-                  <p className="mt-2 text-xs text-[#9aa6b6]">
+                  <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
                     编辑公式时支持空格、tab 缩进和回车换行
                   </p>
                 </div>
 
-                <div className="formula-modal-editor flex-1 border-b border-[#eef2f7] p-3">
+                <div className="formula-modal-editor min-h-[230px] flex-1 border-b border-[var(--designer-border)] bg-[var(--designer-surface-solid)] p-3">
                   <FormulaEditor
                     ref={formulaInputRef}
                     value={draftValue}
@@ -356,7 +366,7 @@ function FormulaEditorModal({
                   />
                 </div>
 
-                <div className="grid min-h-[260px] grid-cols-[260px_190px_minmax(0,1fr)] divide-x divide-[#eef2f7]">
+                <div className="grid h-[300px] min-h-0 grid-cols-[minmax(220px,0.9fr)_minmax(280px,1.15fr)_minmax(260px,1fr)] divide-x divide-[var(--designer-border)] overflow-hidden">
                   <FormulaVariablePanel
                     currentFieldId={currentFieldId}
                     fields={fields}
@@ -367,7 +377,7 @@ function FormulaEditorModal({
                 </div>
               </div>
             </Modal.Body>
-            <Modal.Footer className="border-t border-[#eef2f7] px-5 py-3">
+            <Modal.Footer className="border-t border-[var(--designer-border)] bg-[var(--designer-surface-solid)] px-5 py-3">
               <div className="flex w-full justify-end gap-3">
                 <Button variant="ghost" onPress={() => onOpenChange(false)}>
                   取消
@@ -392,8 +402,9 @@ function ToolbarButton({
   return (
     <Button
       type="button"
+      variant="ghost"
       onClick={onPress}
-      className="rounded-md px-2 py-1 transition hover:bg-[#edf4ff] hover:text-[#2f6bff]"
+      className="min-h-7 rounded-md border border-transparent px-2 py-1 text-[var(--color-text-secondary)] transition hover:border-[var(--designer-border)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
     >
       {children}
     </Button>
@@ -410,22 +421,24 @@ function FormulaVariablePanel({
   onInsert: (value: string) => void;
 }) {
   const [keyword, setKeyword] = useState("");
-  const variables = getFormulaVariableItems(currentFieldId, fields);
-  const filteredVariables = variables.filter((variable) => {
-    const normalizedKeyword = keyword.trim().toLowerCase();
-
-    if (!normalizedKeyword) {
-      return true;
-    }
-
-    return [variable.label, variable.type, variable.value].some((item) =>
-      item.toLowerCase().includes(normalizedKeyword),
-    );
-  });
+  const normalizedKeyword = keyword.trim().toLocaleLowerCase();
+  const duplicateLabels = findDuplicateFormulaLabels(fields);
+  const rootFields = fields
+    .filter((field) => field.id !== currentFieldId && !field.parentGroupId)
+    .sort((left, right) => left.row - right.row || left.column - right.column);
+  const matchesField = (field: PlacedField) =>
+    !normalizedKeyword || field.label.toLocaleLowerCase().includes(normalizedKeyword);
+  const visibleRoots = rootFields.filter(
+    (field) =>
+      matchesField(field) ||
+      fields.some(
+        (child) => child.parentGroupId === field.id && child.id !== currentFieldId && matchesField(child),
+      ),
+  );
 
   return (
-    <section className="min-w-0 bg-white">
-      <div className="border-b border-[#eef2f7] px-3 py-2">
+    <section className="flex min-h-0 min-w-0 flex-col bg-[var(--designer-surface-solid)]">
+      <div className="shrink-0 border-b border-[var(--designer-border)] px-3 py-2">
         <Input
           aria-label="搜索变量"
           placeholder="搜索变量"
@@ -435,35 +448,27 @@ function FormulaVariablePanel({
           }
         />
       </div>
-      <div className="max-h-[220px] overflow-auto px-3 py-2">
-        <div className="mb-2 flex items-center justify-between rounded-md bg-[#f1f4f8] px-2 py-1 text-sm">
-          <span className="font-medium text-[#202f45]">当前设计器组件</span>
-          <Button
-            type="button"
-            className="text-xs text-[#2f6bff]"
-          >
-            切换
-          </Button>
+      <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
+        <div className="mb-2 rounded-md bg-[var(--designer-surface-soft)] px-2 py-1.5 text-sm">
+          <span className="font-medium text-[var(--color-text-primary)]">当前设计器组件</span>
+          <span className="ml-2 text-xs text-[var(--color-text-secondary)]">按组件名称搜索</span>
         </div>
         <div className="space-y-1">
-          {filteredVariables.length > 0 ? (
-            filteredVariables.map((variable) => (
-              <Button
-                key={variable.value}
-                type="button"
-                onClick={() => onInsert(variable.value)}
-                className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-[#edf4ff]"
-              >
-                <span className="truncate text-[#202f45]">
-                  {variable.label}
-                </span>
-                <span className="ml-2 shrink-0 rounded-full bg-[#eaf2ff] px-2 py-0.5 text-xs text-[#2f6bff]">
-                  {variable.type}
-                </span>
-              </Button>
+          {visibleRoots.length > 0 ? (
+            visibleRoots.map((field) => (
+              <FormulaFieldTreeNode
+                key={field.id}
+                currentFieldId={currentFieldId}
+                duplicateLabels={duplicateLabels}
+                field={field}
+                fields={fields}
+                keyword={normalizedKeyword}
+                level={0}
+                onInsert={onInsert}
+              />
             ))
           ) : (
-            <div className="rounded-md border border-dashed border-[#dfe5ee] px-3 py-6 text-center text-xs text-[#9aa6b6]">
+            <div className="rounded-md border border-dashed border-[var(--color-border)] px-3 py-6 text-center text-xs text-[var(--color-text-disabled)]">
               暂无可用组件
             </div>
           )}
@@ -473,28 +478,67 @@ function FormulaVariablePanel({
   );
 }
 
-function getFormulaVariableItems(
-  currentFieldId: string,
-  fields: PlacedField[],
-) {
-  return fields
-    .filter((field) => field.id !== currentFieldId)
-    .sort((left, right) => left.row - right.row || left.column - right.column)
-    .map((field) => {
-      const name = getFormulaVariableName(field);
+function FormulaFieldTreeNode({
+  currentFieldId,
+  duplicateLabels,
+  field,
+  fields,
+  keyword,
+  level,
+  onInsert,
+}: {
+  currentFieldId: string;
+  duplicateLabels: Set<string>;
+  field: PlacedField;
+  fields: PlacedField[];
+  keyword: string;
+  level: number;
+  onInsert: (value: string) => void;
+}) {
+  const parentMatches = !keyword || field.label.toLocaleLowerCase().includes(keyword);
+  const children = fields
+    .filter((item) => item.parentGroupId === field.id && item.id !== currentFieldId)
+    .filter(
+      (item) => parentMatches || item.label.toLocaleLowerCase().includes(keyword),
+    )
+    .sort((left, right) => left.row - right.row || left.column - right.column);
+  const isContainer = field.type === "groupContainer";
+  const hasDuplicateLabel = duplicateLabels.has(field.label);
 
-      return {
-        field,
-        label: field.label,
-        name,
-        type: getFormulaVariableTypeLabel(field.type),
-        value: `$${name}`,
-      };
-    });
-}
-
-function getFormulaVariableName(field: PlacedField) {
-  return field.id.replace(/[^A-Za-z0-9_]/g, "_");
+  return (
+    <div>
+      <button
+        type="button"
+        disabled={isContainer || hasDuplicateLabel}
+        title={hasDuplicateLabel ? "组件名称重复，请先修改为唯一名称" : undefined}
+        onClick={() => onInsert(`[${field.label}]`)}
+        className="flex min-h-10 w-full items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 text-left transition enabled:hover:border-[var(--designer-border)] enabled:hover:bg-[var(--color-bg-hover)] disabled:cursor-default"
+        style={{ paddingLeft: `${8 + level * 16}px` }}
+      >
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center text-xs text-[var(--color-text-secondary)]">
+          {isContainer ? "▾" : "└"}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm text-[var(--color-text-primary)]">
+          {field.label}
+        </span>
+        <span className="shrink-0 rounded-full bg-[var(--color-bg-subtle)] px-2 py-0.5 text-[10px] text-[var(--color-text-secondary)]">
+          {hasDuplicateLabel ? "名称重复" : getFormulaVariableTypeLabel(field.type)}
+        </span>
+      </button>
+      {children.map((child) => (
+        <FormulaFieldTreeNode
+          key={child.id}
+          currentFieldId={currentFieldId}
+          duplicateLabels={duplicateLabels}
+          field={child}
+          fields={fields}
+          keyword={keyword}
+          level={level + 1}
+          onInsert={onInsert}
+        />
+      ))}
+    </div>
+  );
 }
 
 function getFormulaVariableTypeLabel(type: PlacedField["type"]) {
@@ -543,10 +587,23 @@ function FormulaFunctionPanel({
       ].some((item) => item.toLowerCase().includes(normalizedKeyword)),
     );
   }, [keyword]);
+  const groupedFunctions = useMemo(
+    () =>
+      functions.reduce<Array<{ group: string; items: typeof functions }>>(
+        (groups, item) => {
+          const currentGroup = groups.find((group) => group.group === item.group);
+          if (currentGroup) currentGroup.items.push(item);
+          else groups.push({ group: item.group, items: [item] });
+          return groups;
+        },
+        [],
+      ),
+    [functions],
+  );
 
   return (
-    <section className="min-w-0 bg-white">
-      <div className="border-b border-[#eef2f7] px-3 py-2">
+    <section className="flex min-h-0 min-w-0 flex-col bg-[var(--designer-surface-solid)]">
+      <div className="shrink-0 border-b border-[var(--designer-border)] px-3 py-2">
         <Input
           aria-label="搜索函数"
           placeholder="搜索函数"
@@ -556,30 +613,40 @@ function FormulaFunctionPanel({
           }
         />
       </div>
-      <div className="max-h-[220px] overflow-auto px-3 py-2">
-        <div className="mb-2 text-sm font-medium text-[#202f45]">函数</div>
+      <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
+        <div className="mb-2 text-sm font-medium text-[var(--color-text-primary)]">函数</div>
         <div className="space-y-1">
-          {functions.length > 0 ? (
-            functions.map((formulaFunction) => (
-              <Button
-                key={formulaFunction.name}
-                type="button"
-                onClick={() => onInsert(`@${formulaFunction.name}()`)}
-                className="block w-full rounded-md px-2 py-1.5 text-left transition hover:bg-[#edf4ff]"
-              >
-                <div className="flex items-center justify-between gap-2 text-sm text-[#202f45]">
-                  <span>{formulaFunction.name}</span>
-                  <span className="shrink-0 rounded-full bg-[#f1f4f8] px-2 py-0.5 text-xs text-[#66758c]">
-                    {formulaFunction.group}
-                  </span>
+          {groupedFunctions.length > 0 ? (
+            groupedFunctions.map((group) => (
+              <section key={group.group} className="pb-2">
+                <div className="sticky top-0 z-10 mb-1 bg-[var(--designer-surface-solid)] px-1 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
+                  {group.group} · {group.items.length}
                 </div>
-                <div className="text-xs text-[#9aa6b6]">
-                  {formulaFunction.description || formulaFunction.label}
+                <div className="space-y-1">
+                  {group.items.map((formulaFunction) => (
+                    <Button
+                      key={formulaFunction.name}
+                      type="button"
+                      variant="ghost"
+                      onClick={() => onInsert(`@${formulaFunction.name}()`)}
+                      className="block h-auto min-h-[58px] w-full overflow-hidden whitespace-normal rounded-lg border border-transparent px-2.5 py-2 text-left transition hover:border-[var(--designer-border)] hover:bg-[var(--color-bg-hover)]"
+                    >
+                      <div className="flex min-w-0 items-start justify-between gap-2 text-sm text-[var(--color-text-primary)]">
+                        <span className="min-w-0 break-all font-medium leading-5">{formulaFunction.name}</span>
+                        <span className="shrink-0 rounded-full bg-[var(--color-bg-subtle)] px-2 py-0.5 text-[10px] leading-4 text-[var(--color-text-secondary)]">
+                          {formulaFunction.label}
+                        </span>
+                      </div>
+                      <div className="mt-1 line-clamp-2 break-words text-xs leading-4 text-[var(--color-text-secondary)]">
+                        {formulaFunction.description || formulaFunction.label}
+                      </div>
+                    </Button>
+                  ))}
                 </div>
-              </Button>
+              </section>
             ))
           ) : (
-            <div className="rounded-md border border-dashed border-[#dfe5ee] px-3 py-6 text-center text-xs text-[#9aa6b6]">
+            <div className="rounded-md border border-dashed border-[var(--color-border)] px-3 py-6 text-center text-xs text-[var(--color-text-disabled)]">
               未找到函数
             </div>
           )}
@@ -591,24 +658,18 @@ function FormulaFunctionPanel({
 
 function FormulaHelpPanel() {
   return (
-    <section className="space-y-4 bg-white px-4 py-3 text-sm leading-6 text-[#4f6484]">
+    <section className="min-h-0 space-y-4 overflow-auto bg-[var(--designer-surface-solid)] px-4 py-3 text-sm leading-6 text-[var(--color-text-secondary)]">
       <p>从左侧面板选择字段名和函数，或输入函数。</p>
       <p>
         公式编辑举例：
-        <span className="ml-1 rounded bg-[#e9fbff] px-1 text-[#0c8aa6]">
+        <span className="ml-1 rounded bg-[var(--color-accent-soft)] px-1 text-[var(--color-accent)]">
           AVERAGE(语文成绩, 数学成绩)
         </span>
       </p>
-      <div className="space-y-2 text-[#2f6bff]">
-        <Button type="button" className="block text-left">
-          观看公式入门视频&gt;
-        </Button>
-        <Button type="button" className="block text-left">
-          观看公式进阶案例&gt;
-        </Button>
-        <Button type="button" className="block text-left">
-          查看所有公式的帮助文档
-        </Button>
+      <div className="space-y-2 rounded-lg bg-[var(--designer-surface-soft)] p-3 text-xs leading-5 text-[var(--color-text-secondary)]">
+        <p>点击组件树会插入名称引用，例如：[销售数量]。</p>
+        <p>点击函数会插入函数模板，例如：@SUM()。</p>
+        <p>支持 +、-、*、/、比较运算和函数嵌套。</p>
       </div>
     </section>
   );
@@ -616,7 +677,7 @@ function FormulaHelpPanel() {
 
 function DataLinkagePlaceholder() {
   return (
-    <div className="rounded-lg border border-dashed border-[#dfe5ee] bg-[#fafbfd] px-3 py-4 text-center text-xs text-[#8d9aae]">
+    <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-4 text-center text-xs text-[var(--color-text-disabled)]">
       数据联动暂未配置
     </div>
   );
@@ -630,17 +691,18 @@ function DefaultValueTypeSegmented({
   value: DesignerDefaultValueType;
 }) {
   return (
-    <div className="flex h-8 rounded-lg bg-[#f1f3f6] p-0.5">
+    <div className="flex h-8 rounded-lg bg-[var(--color-bg-subtle)] p-0.5">
       {DEFAULT_VALUE_TYPE_OPTIONS.map((option) => (
         <Button
           key={option.value}
           type="button"
+          variant="ghost"
           onClick={() => onChange(option.value)}
           className={[
             "flex-1 rounded-md px-2 text-xs transition",
             value === option.value
-              ? "bg-white text-[#202f45] shadow-sm"
-              : "text-[#66758c]",
+              ? "bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)] shadow-sm"
+              : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]",
           ].join(" ")}
         >
           {option.label}
@@ -680,7 +742,7 @@ function ChoiceDefaultSelect({
   return (
     <select
       aria-label="默认选项"
-      className="h-9 min-w-0 flex-1 rounded-lg border border-[#dfe5ee] bg-white px-3 text-sm text-[#202f45] outline-none focus:border-[#2f6bff]"
+      className="h-9 min-w-0 flex-1 rounded-lg border border-[var(--designer-border)] bg-[var(--color-bg-input)] px-3 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--color-primary)]"
       value={value}
       onChange={(event: ChangeEvent<HTMLSelectElement>) =>
         onChange(event.currentTarget.value)
@@ -724,8 +786,8 @@ function CheckboxDefaultEditor({
             className={[
               "mr-1 rounded-lg border px-2.5 py-1 text-xs transition",
               isSelected
-                ? "border-[#2f6bff] bg-[#edf4ff] text-[#2f6bff]"
-                : "border-[#dfe5ee] bg-white text-[#66758c]",
+                ? "border-[var(--designer-border)] bg-[var(--designer-surface-soft)] text-[var(--color-text-primary)] shadow-sm"
+                : "border-[var(--designer-border)] bg-[var(--designer-surface-solid)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]",
             ].join(" ")}
           >
             {option.label}

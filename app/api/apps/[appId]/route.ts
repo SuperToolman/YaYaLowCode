@@ -15,6 +15,38 @@ function buildErrorResponse(message: string, status: number) {
   );
 }
 
+export async function GET(
+  _request: Request,
+  context: { params: Promise<{ appId: string }> },
+) {
+  const { appId } = await context.params;
+
+  try {
+    const response = await fetch(`${backendBaseUrl}/api/apps`, {
+      cache: "no-store",
+    });
+    const payload = (await response.json()) as {
+      code: number;
+      data: Array<{ id: string }> | null;
+      message: string;
+      time: string;
+    };
+    const app = payload.data?.find((item) => item.id === appId) ?? null;
+
+    if (!response.ok || payload.code !== 0) {
+      return NextResponse.json(payload, { status: response.status });
+    }
+
+    if (!app) {
+      return buildErrorResponse("app not found", 404);
+    }
+
+    return NextResponse.json({ ...payload, data: app });
+  } catch {
+    return buildErrorResponse("backend unavailable", 503);
+  }
+}
+
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ appId: string }> },

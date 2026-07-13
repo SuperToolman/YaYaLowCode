@@ -71,7 +71,7 @@ export function OptionsEditor({
           onChange={handleChange}
         />
       </InputGroup>
-      <p className="text-xs leading-5 text-[#8d9aae]">
+      <p className="text-xs leading-5 text-[var(--color-text-disabled)]">
         每行一个选项；不写 | 时 value 与 label 一致，写成 label|value
         时二者分开。
       </p>
