@@ -3,8 +3,8 @@
 //! Each module owns a product domain. HTTP registration remains in `http`, while
 //! persistence mappings remain in `infrastructure`.
 
-pub mod agents;
 pub mod agent_config;
+pub mod agents;
 pub mod apps;
 pub mod automations;
 pub mod dingtalk;

@@ -9,6 +9,7 @@ use std::net::SocketAddr;
 use modules::navigation;
 use platform::config::AppConfig;
 use platform::error::AppError;
+use platform::form_storage::ensure_all_form_dynamic_storage;
 use platform::runtime::AppState;
 use sea_orm::Database;
 use sea_orm_migration::MigratorTrait;
@@ -39,6 +40,7 @@ async fn main() -> Result<(), AppError> {
     infrastructure::legacy_bootstrap::ensure_agent_tables(&db).await?;
     infrastructure::legacy_bootstrap::ensure_identity_tables(&db).await?;
     navigation::ensure_system_navigation_items(&db).await?;
+    ensure_all_form_dynamic_storage(&db).await?;
 
     let (shutdown, mut shutdown_signal) = tokio::sync::watch::channel(false);
     let state = AppState::new(db, shutdown);

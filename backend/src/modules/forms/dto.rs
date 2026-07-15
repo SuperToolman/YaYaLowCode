@@ -3,7 +3,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::infrastructure::entities::{form_definition_entity, form_record_entity};
+use crate::infrastructure::entities::form_definition_entity;
+use crate::platform::records::StoredFormRecord;
 use crate::shared::format_date;
 
 #[derive(Debug, Serialize)]
@@ -104,8 +105,8 @@ impl From<form_definition_entity::Model> for ApiFormSummary {
     }
 }
 
-impl From<form_record_entity::Model> for ApiFormRecord {
-    fn from(value: form_record_entity::Model) -> Self {
+impl From<StoredFormRecord> for ApiFormRecord {
+    fn from(value: StoredFormRecord) -> Self {
         Self {
             id: value.record_uuid,
             form_uuid: value.form_uuid,

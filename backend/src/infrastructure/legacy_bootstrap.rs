@@ -39,6 +39,26 @@ pub(crate) async fn ensure_form_tables(db: &DatabaseConnection) -> Result<(), Ap
     )
     .await?;
 
+    // Keep development databases recoverable when an earlier migration was recorded as
+    // applied but its physical metadata table was removed or never committed.
+    db.execute_unprepared(
+        r#"
+        CREATE TABLE IF NOT EXISTS form_storage_definitions (
+          id uuid PRIMARY KEY,
+          form_uuid varchar(40) NOT NULL UNIQUE,
+          storage_mode varchar(24) NOT NULL DEFAULT 'dynamic_table',
+          physical_table varchar(63) NOT NULL,
+          compiled_schema_version integer NOT NULL,
+          column_mapping_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+          created_at timestamptz NOT NULL,
+          updated_at timestamptz NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_form_storage_definitions_mode
+          ON form_storage_definitions (storage_mode);
+        "#,
+    )
+    .await?;
+
     db.execute_unprepared(
         r#"
         CREATE TABLE IF NOT EXISTS form_schemas (
@@ -82,28 +102,6 @@ pub(crate) async fn ensure_form_tables(db: &DatabaseConnection) -> Result<(), Ap
         CREATE UNIQUE INDEX IF NOT EXISTS idx_app_navigation_items_target_form_uuid
           ON app_navigation_items (target_form_uuid)
           WHERE target_form_uuid IS NOT NULL;
-        "#,
-    )
-    .await?;
-
-    db.execute_unprepared(
-        r#"
-        CREATE TABLE IF NOT EXISTS form_records (
-          id uuid PRIMARY KEY,
-          record_uuid varchar(40) NOT NULL UNIQUE,
-          app_route_app_id varchar(32) NOT NULL,
-          form_uuid varchar(40) NOT NULL,
-          schema_version integer NOT NULL,
-          record_data jsonb NOT NULL,
-          created_by varchar(80) NOT NULL,
-          updated_by varchar(80) NOT NULL,
-          created_at timestamptz NOT NULL,
-          updated_at timestamptz NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_form_records_form_uuid_created_at
-          ON form_records (form_uuid, created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_form_records_app_route_app_id
-          ON form_records (app_route_app_id);
         "#,
     )
     .await?;

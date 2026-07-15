@@ -47,7 +47,8 @@ pub(crate) async fn create_agent_session(
         requested_agent_id.as_deref(),
         context.app_id.as_deref(),
         context.business_id.as_deref(),
-    ).map_err(AppError::BadRequest)?;
+    )
+    .map_err(AppError::BadRequest)?;
     let now = Utc::now();
     let session = agent_session_entity::ActiveModel {
         id: Set(Uuid::new_v4()),
@@ -100,7 +101,8 @@ pub(crate) async fn send_agent_message(
         ));
     }
     let session = find_session(&state.db, &session_uuid).await?;
-    let (_, settings) = resolve_agent_settings(Some(&session.agent_id)).map_err(AppError::BadRequest)?;
+    let (_, settings) =
+        resolve_agent_settings(Some(&session.agent_id)).map_err(AppError::BadRequest)?;
     settings.validate().map_err(AppError::BadRequest)?;
     if !settings.enabled {
         return Err(AppError::BadRequest("agent is disabled".to_string()));

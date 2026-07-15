@@ -91,7 +91,8 @@ pub(crate) fn build_blank_schema(form_uuid: &str, form_name: &str) -> Value {
             "beforeSubmitActions": [],
             "afterSubmitActions": [],
             "afterDataInitActions": [],
-            "dataSourceCode": ""
+            "dataSourceCode": "",
+            "indexedFieldIds": []
         },
         "fields": []
     })

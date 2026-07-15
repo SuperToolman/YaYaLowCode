@@ -320,10 +320,36 @@ pub fn resolve_agent_settings_for_scope(
     let registry = load_agent_registry();
     let agent = agent_id
         .and_then(|id| registry.agents.iter().find(|agent| agent.id == id))
-        .or_else(|| app_id.and_then(|scope| registry.agents.iter().find(|agent| agent.enabled && agent.scope_type == "application" && agent.scope_ref_id.as_deref() == Some(scope))))
-        .or_else(|| business_id.and_then(|scope| registry.agents.iter().find(|agent| agent.enabled && agent.scope_type == "business" && agent.scope_ref_id.as_deref() == Some(scope))))
-        .or_else(|| registry.agents.iter().find(|agent| agent.enabled && agent.scope_type == "platform" && agent.is_default))
-        .or_else(|| registry.agents.iter().find(|agent| agent.enabled && agent.scope_type == "platform"))
+        .or_else(|| {
+            app_id.and_then(|scope| {
+                registry.agents.iter().find(|agent| {
+                    agent.enabled
+                        && agent.scope_type == "application"
+                        && agent.scope_ref_id.as_deref() == Some(scope)
+                })
+            })
+        })
+        .or_else(|| {
+            business_id.and_then(|scope| {
+                registry.agents.iter().find(|agent| {
+                    agent.enabled
+                        && agent.scope_type == "business"
+                        && agent.scope_ref_id.as_deref() == Some(scope)
+                })
+            })
+        })
+        .or_else(|| {
+            registry
+                .agents
+                .iter()
+                .find(|agent| agent.enabled && agent.scope_type == "platform" && agent.is_default)
+        })
+        .or_else(|| {
+            registry
+                .agents
+                .iter()
+                .find(|agent| agent.enabled && agent.scope_type == "platform")
+        })
         .or_else(|| registry.agents.iter().find(|agent| agent.enabled))
         .ok_or_else(|| "no agent is configured".to_string())?;
     let profile = registry
@@ -336,8 +362,13 @@ pub fn resolve_agent_settings_for_scope(
         .iter()
         .find(|provider| provider.id == profile.provider_id)
         .ok_or_else(|| "agent model provider not found".to_string())?;
-    let persona = registry.personas.iter().find(|persona| persona.id == profile.persona_id);
-    let persona_prompt = persona.map(|persona| persona.system_prompt.as_str()).unwrap_or("");
+    let persona = registry
+        .personas
+        .iter()
+        .find(|persona| persona.id == profile.persona_id);
+    let persona_prompt = persona
+        .map(|persona| persona.system_prompt.as_str())
+        .unwrap_or("");
 
     Ok((
         agent.id.clone(),
@@ -352,7 +383,11 @@ pub fn resolve_agent_settings_for_scope(
             max_steps: profile.max_steps,
             system_prompt: format!(
                 "{}\n\nAgent capability bindings:\n- plugins: {}\n- skills: {}\n- knowledge bases: {}",
-                if agent.system_prompt.trim().is_empty() { persona_prompt } else { agent.system_prompt.as_str() },
+                if agent.system_prompt.trim().is_empty() {
+                    persona_prompt
+                } else {
+                    agent.system_prompt.as_str()
+                },
                 profile.plugin_ids.join(", "),
                 profile.skill_ids.join(", "),
                 profile.knowledge_base_ids.join(", "),
@@ -426,19 +461,52 @@ fn default_agent_registry() -> AgentRegistry {
     }
 }
 
-fn default_max_retries() -> usize { 3 }
-fn default_persona_id() -> String { "persona-default".to_string() }
-fn default_context_max_turns() -> i32 { 50 }
-fn default_context_discard_turns() -> usize { 10 }
-fn default_context_overflow_strategy() -> String { "llm_compress".to_string() }
-fn default_context_compression_prompt() -> String { "Based on our full conversation history, produce a concise summary of key takeaways and/or project progress.\nThe primary goal of this summary is to enable seamless continuation of the work that follows.\n1. Systematically cover all core topics discussed and the final conclusion/outcome for each; clearly highlight the latest primary focus.\n2. If any tools were used, summarize tool usage and extract the most valuable insights from tool outputs.\n3. If any materials were read that may be helpful for subsequent work, list them with their scope and path.\n4. If there was an initial user goal, state it first and describe the current progress/status.\n5. Write the summary in the user's language.".to_string() }
-fn default_context_keep_recent_ratio() -> f64 { 0.15 }
-fn default_max_context_tokens() -> usize { 128_000 }
+fn default_max_retries() -> usize {
+    3
+}
+fn default_persona_id() -> String {
+    "persona-default".to_string()
+}
+fn default_context_max_turns() -> i32 {
+    50
+}
+fn default_context_discard_turns() -> usize {
+    10
+}
+fn default_context_overflow_strategy() -> String {
+    "llm_compress".to_string()
+}
+fn default_context_compression_prompt() -> String {
+    "Based on our full conversation history, produce a concise summary of key takeaways and/or project progress.\nThe primary goal of this summary is to enable seamless continuation of the work that follows.\n1. Systematically cover all core topics discussed and the final conclusion/outcome for each; clearly highlight the latest primary focus.\n2. If any tools were used, summarize tool usage and extract the most valuable insights from tool outputs.\n3. If any materials were read that may be helpful for subsequent work, list them with their scope and path.\n4. If there was an initial user goal, state it first and describe the current progress/status.\n5. Write the summary in the user's language.".to_string()
+}
+fn default_context_keep_recent_ratio() -> f64 {
+    0.15
+}
+fn default_max_context_tokens() -> usize {
+    128_000
+}
 fn default_personas() -> Vec<AgentPersonaDefinition> {
     vec![
-        AgentPersonaDefinition { id: "persona-default".to_string(), name: "默认人格".to_string(), description: "通用低代码平台助手".to_string(), system_prompt: "你是 YaYa 低代码平台助手。帮助用户设计表单、编排自动化和分析业务配置。".to_string() },
-        AgentPersonaDefinition { id: "persona-business".to_string(), name: "业务分析师".to_string(), description: "聚焦业务流程和需求分析".to_string(), system_prompt: "你是一名业务分析师，擅长梳理业务流程、数据关系与系统需求。".to_string() },
-        AgentPersonaDefinition { id: "persona-builder".to_string(), name: "低代码实施顾问".to_string(), description: "聚焦应用搭建与自动化实施".to_string(), system_prompt: "你是一名低代码实施顾问，擅长表单设计、自动化编排和应用治理。".to_string() },
+        AgentPersonaDefinition {
+            id: "persona-default".to_string(),
+            name: "默认人格".to_string(),
+            description: "通用低代码平台助手".to_string(),
+            system_prompt: "你是 YaYa 低代码平台助手。帮助用户设计表单、编排自动化和分析业务配置。"
+                .to_string(),
+        },
+        AgentPersonaDefinition {
+            id: "persona-business".to_string(),
+            name: "业务分析师".to_string(),
+            description: "聚焦业务流程和需求分析".to_string(),
+            system_prompt: "你是一名业务分析师，擅长梳理业务流程、数据关系与系统需求。".to_string(),
+        },
+        AgentPersonaDefinition {
+            id: "persona-builder".to_string(),
+            name: "低代码实施顾问".to_string(),
+            description: "聚焦应用搭建与自动化实施".to_string(),
+            system_prompt: "你是一名低代码实施顾问，擅长表单设计、自动化编排和应用治理。"
+                .to_string(),
+        },
     ]
 }
 

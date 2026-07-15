@@ -63,7 +63,7 @@ export default function HomeSideBar() {
   const pathname = usePathname();
 
   return (
-    <aside className="sticky top-0 hidden h-[calc(100vh-24px)] w-[54px] shrink-0 lg:flex lg:flex-col">
+    <aside className="sticky top-2 hidden h-[calc(100dvh-16px)] w-[54px] shrink-0 lg:my-2 lg:ml-2 lg:flex lg:flex-col">
       <div className="flex h-full flex-col">
         <div className="flex h-14 items-center justify-center">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--sidebar-active-bg)] text-[var(--color-text-primary)] shadow-[var(--shadow-sm)] backdrop-blur-xl">
@@ -71,7 +71,7 @@ export default function HomeSideBar() {
           </div>
         </div>
 
-        <div className="mt-6 flex flex-1 flex-col justify-between">
+        <div className="flex flex-1 flex-col justify-between">
           <NavGroup items={primaryNavItems} pathname={pathname} />
           <div className="flex flex-col gap-3">
             <AgentAssistantLauncher />

@@ -38,7 +38,7 @@ export default async function AppLayout({
           <FormSidebar initialForms={forms} routeAppId={routeAppId} />
         }
       >
-        <Card className="app-detail-header sticky top-0 z-20 shrink-0 overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg-panel-strong)] shadow-[var(--shadow-sm)] backdrop-blur-xl">
+        <Card className="app-detail-header theme-card-glass sticky top-0 z-20 shrink-0 overflow-hidden">
           <div className="flex flex-wrap items-center">
             <div className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3">
               <Link

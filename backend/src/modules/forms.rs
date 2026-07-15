@@ -3,8 +3,9 @@ use crate::modules::navigation::{
     ensure_system_navigation_for_app, next_navigation_sort_order, normalize_navigation_orders,
     sync_navigation_title,
 };
+use crate::platform::form_storage::{delete_storage_definition, sync_published_storage_plan};
 use crate::platform::prelude::*;
-use crate::platform::records::{decrement_app_records_count, insert_form_record};
+use crate::platform::records::RecordRepository;
 use crate::shared::*;
 use axum::http::StatusCode;
 
@@ -48,6 +49,7 @@ pub(crate) async fn create_form(
     let sort_order = next_navigation_sort_order(&state.db, &app_id, None).await?;
     let initial_schema = build_blank_schema(&form_uuid, &form_name);
 
+    let txn = state.db.begin().await?;
     let definition = form_definition_entity::ActiveModel {
         id: Set(Uuid::new_v4()),
         app_route_app_id: Set(app_id),
@@ -61,7 +63,7 @@ pub(crate) async fn create_form(
         created_at: Set(now.into()),
         updated_at: Set(now.into()),
     }
-    .insert(&state.db)
+    .insert(&txn)
     .await?;
 
     app_navigation_entity::ActiveModel {
@@ -78,21 +80,24 @@ pub(crate) async fn create_form(
         created_at: Set(now.into()),
         updated_at: Set(now.into()),
     }
-    .insert(&state.db)
+    .insert(&txn)
     .await?;
 
     form_schema_entity::ActiveModel {
         id: Set(Uuid::new_v4()),
-        form_uuid: Set(form_uuid),
+        form_uuid: Set(form_uuid.clone()),
         version: Set(1),
-        schema_json: Set(initial_schema),
+        schema_json: Set(initial_schema.clone()),
         change_log: Set(Some("initial version".to_string())),
         published: Set(true),
         created_at: Set(now.into()),
         updated_at: Set(now.into()),
     }
-    .insert(&state.db)
+    .insert(&txn)
     .await?;
+
+    sync_published_storage_plan(&txn, &form_uuid, 1, &initial_schema).await?;
+    txn.commit().await?;
 
     Ok((
         StatusCode::CREATED,
@@ -120,10 +125,16 @@ pub(crate) async fn delete_form(
 ) -> Result<Json<ApiResponse<Value>>, AppError> {
     let definition = find_form_definition(&state.db, &form_uuid).await?;
 
-    FormRecordEntity::delete_many()
-        .filter(form_record_entity::Column::FormUuid.eq(form_uuid.clone()))
-        .exec(&state.db)
+    let record_repository = RecordRepository::new(&state.db);
+    let deleted_record_count = record_repository.delete_by_form(&form_uuid).await?;
+    record_repository
+        .decrement_app_records_count(
+            &definition.app_route_app_id,
+            deleted_record_count as i64,
+            Utc::now(),
+        )
         .await?;
+    delete_storage_definition(&state.db, &form_uuid).await?;
 
     FormSchemaEntity::delete_many()
         .filter(form_schema_entity::Column::FormUuid.eq(form_uuid.clone()))
@@ -144,23 +155,6 @@ pub(crate) async fn delete_form(
         .filter(form_definition_entity::Column::FormUuid.eq(form_uuid))
         .exec(&state.db)
         .await?;
-
-    let records_count = FormRecordEntity::find()
-        .filter(form_record_entity::Column::AppRouteAppId.eq(definition.app_route_app_id.clone()))
-        .count(&state.db)
-        .await? as i64;
-
-    if let Some(app) = AppEntity::find()
-        .filter(app_entity::Column::RouteAppId.eq(definition.app_route_app_id))
-        .one(&state.db)
-        .await?
-    {
-        let now = Utc::now();
-        let mut active_model: app_entity::ActiveModel = app.into();
-        active_model.records_count = Set(records_count);
-        active_model.updated_at = Set(now.into());
-        active_model.update(&state.db).await?;
-    }
 
     Ok(Json(success_response(
         "删除表单成功",
@@ -189,11 +183,7 @@ pub(crate) async fn list_form_records(
 ) -> Result<Json<ApiResponse<ApiFormRecordList>>, AppError> {
     find_form_definition(&state.db, &form_uuid).await?;
 
-    let items = FormRecordEntity::find()
-        .filter(form_record_entity::Column::FormUuid.eq(form_uuid))
-        .order_by_desc(form_record_entity::Column::CreatedAt)
-        .all(&state.db)
-        .await?;
+    let items = RecordRepository::new(&state.db).list(&form_uuid).await?;
 
     let total = items.len() as i64;
 
@@ -229,7 +219,9 @@ pub(crate) async fn create_form_record(
         error!("run automation before create failed: {err:?}");
     }
 
-    let record = insert_form_record(&state.db, &definition, trigger_data, &operator, now).await?;
+    let record = RecordRepository::new(&state.db)
+        .insert(&definition, trigger_data, &operator, now)
+        .await?;
 
     if let Err(err) = automations::execute_automation_flows_for_event(
         &state.db,
@@ -259,7 +251,8 @@ pub(crate) async fn update_form_record(
     Json(payload): Json<UpdateFormRecordRequest>,
 ) -> Result<Json<ApiResponse<ApiFormRecord>>, AppError> {
     let definition = find_form_definition(&state.db, &form_uuid).await?;
-    let record = find_form_record(&state.db, &form_uuid, &record_uuid).await?;
+    let repository = RecordRepository::new(&state.db);
+    let record = repository.find(&form_uuid, &record_uuid).await?;
     let operator = normalize_operator(payload.operator);
     let next_data = normalize_record_payload(payload.data);
     let changed_fields = collect_changed_fields(&record.record_data, &next_data);
@@ -277,12 +270,9 @@ pub(crate) async fn update_form_record(
         error!("run automation before update failed: {err:?}");
     }
 
-    let now = Utc::now();
-    let mut active_model: form_record_entity::ActiveModel = record.into();
-    active_model.record_data = Set(next_data.clone());
-    active_model.updated_by = Set(operator.clone());
-    active_model.updated_at = Set(now.into());
-    let updated = active_model.update(&state.db).await?;
+    let updated = repository
+        .update(&record, next_data.clone(), &operator, Utc::now())
+        .await?;
 
     if let Err(err) = automations::execute_automation_flows_for_event(
         &state.db,
@@ -308,7 +298,8 @@ pub(crate) async fn delete_form_record(
     Path((form_uuid, record_uuid)): Path<(String, String)>,
 ) -> Result<Json<ApiResponse<Value>>, AppError> {
     let definition = find_form_definition(&state.db, &form_uuid).await?;
-    let record = find_form_record(&state.db, &form_uuid, &record_uuid).await?;
+    let repository = RecordRepository::new(&state.db);
+    let record = repository.find(&form_uuid, &record_uuid).await?;
     let operator = "管理员".to_string();
 
     if let Err(err) = automations::execute_automation_flows_for_event(
@@ -324,11 +315,10 @@ pub(crate) async fn delete_form_record(
         error!("run automation before delete failed: {err:?}");
     }
 
-    FormRecordEntity::delete_many()
-        .filter(form_record_entity::Column::Id.eq(record.id))
-        .exec(&state.db)
+    repository.delete(&record).await?;
+    repository
+        .decrement_app_records_count(&definition.app_route_app_id, 1, Utc::now())
         .await?;
-    decrement_app_records_count(&state.db, &definition.app_route_app_id, 1, Utc::now()).await?;
 
     if let Err(err) = automations::execute_automation_flows_for_event(
         &state.db,
@@ -458,32 +448,39 @@ pub(crate) async fn publish_form_schema(
     State(state): State<AppState>,
     Path(form_uuid): Path<String>,
 ) -> Result<Json<ApiResponse<ApiSchemaPayload>>, AppError> {
-    let definition = find_form_definition(&state.db, &form_uuid).await?;
+    let txn = state.db.begin().await?;
+    let definition = FormDefinitionEntity::find()
+        .filter(form_definition_entity::Column::FormUuid.eq(form_uuid.clone()))
+        .one(&txn)
+        .await?
+        .ok_or_else(|| AppError::NotFound("form not found".to_string()))?;
     let now = Utc::now();
     let draft_version = definition.draft_schema_version;
 
     if let Some(current_published) = FormSchemaEntity::find()
         .filter(form_schema_entity::Column::FormUuid.eq(form_uuid.clone()))
         .filter(form_schema_entity::Column::Published.eq(true))
-        .one(&state.db)
+        .one(&txn)
         .await?
     {
         let mut published_active: form_schema_entity::ActiveModel = current_published.into();
         published_active.published = Set(false);
         published_active.updated_at = Set(now.into());
-        published_active.update(&state.db).await?;
+        published_active.update(&txn).await?;
     }
 
-    let draft_schema = load_schema_version(&state.db, &form_uuid, draft_version).await?;
+    let draft_schema = load_schema_version_for_connection(&txn, &form_uuid, draft_version).await?;
+    sync_published_storage_plan(&txn, &form_uuid, draft_version, &draft_schema.schema_json).await?;
     let mut draft_active: form_schema_entity::ActiveModel = draft_schema.clone().into();
     draft_active.published = Set(true);
     draft_active.updated_at = Set(now.into());
-    let published_schema = draft_active.update(&state.db).await?;
+    let published_schema = draft_active.update(&txn).await?;
 
     let mut definition_active: form_definition_entity::ActiveModel = definition.into();
     definition_active.published_schema_version = Set(draft_version);
     definition_active.updated_at = Set(now.into());
-    let updated_definition = definition_active.update(&state.db).await?;
+    let updated_definition = definition_active.update(&txn).await?;
+    txn.commit().await?;
 
     Ok(Json(success_response(
         "发布表单版本成功",
@@ -514,19 +511,6 @@ pub(crate) async fn find_form_definition(
         .one(db)
         .await?
         .ok_or_else(|| AppError::NotFound("form not found".to_string()))
-}
-
-pub(crate) async fn find_form_record(
-    db: &DatabaseConnection,
-    form_uuid: &str,
-    record_uuid: &str,
-) -> Result<form_record_entity::Model, AppError> {
-    FormRecordEntity::find()
-        .filter(form_record_entity::Column::FormUuid.eq(form_uuid.to_string()))
-        .filter(form_record_entity::Column::RecordUuid.eq(record_uuid.to_string()))
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("record not found".to_string()))
 }
 
 pub(crate) fn collect_changed_fields(previous: &Value, next: &Value) -> HashSet<String> {

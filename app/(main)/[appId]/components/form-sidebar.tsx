@@ -306,7 +306,7 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
       onDragOver={handleDragOver}
       onDragStart={handleDragStart}
     >
-      <Card className="flex h-full w-full flex-col items-stretch justify-start self-start overflow-hidden rounded-xl border-0 bg-transparent p-3 text-left text-[var(--color-text-primary)] shadow-none">
+      <Card className="theme-card-glass flex h-full w-full flex-col items-stretch justify-start self-start overflow-hidden rounded-2xl p-3 text-left">
       <div className="mb-3 flex shrink-0 items-center gap-2">
         <SearchField aria-label="搜索表单" name="search" className="min-w-0 flex-1">
           <SearchField.Group>

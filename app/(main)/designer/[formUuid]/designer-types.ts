@@ -126,6 +126,7 @@ export type PageDesignerProps = {
   afterDataInitActions: PageNamedRule[];
   dataSourceCode: string;
   dataSources: DesignerDataSource[];
+  indexedFieldIds: string[];
   actionPanel: DesignerActionPanelState;
   agent: DesignerAgentConfig;
 };

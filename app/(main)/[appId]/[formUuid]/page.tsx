@@ -10,8 +10,10 @@ import {
   Input,
   ListBox,
   ProgressBar,
+  SearchField,
   Select,
   TextArea,
+  Tooltip,
   toast,
 } from "@heroui/react";
 import { AlertDialog } from "@heroui/react/alert-dialog";
@@ -618,11 +620,83 @@ export default function FormHome({
 
   return (
     <div className="h-full min-h-0 overflow-hidden">
-      <Card className="theme-panel-strong mx-auto flex h-full min-h-0 flex-col overflow-hidden shadow-[var(--shadow-designer)]">
-        <div className="flex shrink-0 flex-col gap-3 border-b border-[var(--color-border)] pb-4 md:flex-row md:items-center md:justify-between">
-          <h1 className="min-w-0 truncate text-xl font-semibold text-[var(--color-text-primary)]">
-            {formMetadataName || schema?.formName || "表单详情"}
-          </h1>
+      <Card className="theme-card-glass mx-auto flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="flex shrink-0 flex-col gap-3 border-b border-[var(--color-border)] pb-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h1 className="mr-1 min-w-0 truncate text-xl font-semibold text-[var(--color-text-primary)]">
+              {formMetadataName || schema?.formName || "表单详情"}
+            </h1>
+            <Tooltip>
+              <Button
+                isIconOnly
+                aria-label="新增"
+                className="h-9 w-9 rounded-lg bg-[var(--color-primary)] p-0 text-[var(--color-text-on-primary)]"
+                onClick={() => { setAgentDraftValues({}); setAgentValuePatch(undefined); setDrawerOpen(true); }}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+              <Tooltip.Content>新增</Tooltip.Content>
+            </Tooltip>
+            <Tooltip>
+              <Button
+                isIconOnly
+                aria-label="删除"
+                variant="ghost"
+                onClick={() => setDeleteOpen(true)}
+                className="h-9 w-9 rounded-lg border border-[var(--color-danger)]/30 bg-[var(--color-bg-panel)] p-0 text-[var(--color-danger)]"
+              >
+                <TrashBin className="h-4 w-4" />
+              </Button>
+              <Tooltip.Content>删除</Tooltip.Content>
+            </Tooltip>
+            <Tooltip>
+              <Button
+                isIconOnly
+                aria-label="导入"
+                variant="ghost"
+                onPress={openImportModal}
+                className="h-9 w-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-0 text-[var(--color-text-primary)]"
+              >
+                <ArrowUpFromLine className="h-4 w-4" />
+              </Button>
+              <Tooltip.Content>导入</Tooltip.Content>
+            </Tooltip>
+            <Tooltip>
+              <Button
+                isIconOnly
+                aria-label="导出"
+                variant="ghost"
+                onPress={() => void exportSelectedRecords()}
+                className="h-9 w-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-0 text-[var(--color-text-primary)]"
+              >
+                <ArrowDownToLine className="h-4 w-4" />
+              </Button>
+              <Tooltip.Content>导出</Tooltip.Content>
+            </Tooltip>
+            <Tooltip>
+              <Button
+                isIconOnly
+                aria-label="更多"
+                variant="ghost"
+                className="h-9 w-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-0 text-[var(--color-text-primary)]"
+              >
+                <Ellipsis className="h-4 w-4" />
+              </Button>
+              <Tooltip.Content>更多</Tooltip.Content>
+            </Tooltip>
+            <SearchField
+              aria-label="搜索数据"
+              className="min-w-[220px] flex-1 sm:max-w-[300px]"
+              value={searchValue}
+              onChange={setSearchValue}
+            >
+              <SearchField.Group>
+                <SearchField.SearchIcon />
+                <SearchField.Input placeholder="搜索数据" />
+                <SearchField.ClearButton aria-label="清除搜索数据" />
+              </SearchField.Group>
+            </SearchField>
+          </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <ViewTab
               isActive={activeView === "records"}
@@ -642,6 +716,27 @@ export default function FormHome({
             </Button>
             <Button
               variant="ghost"
+              className="h-9 gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-text-primary)]"
+            >
+              <Funnel className="h-3.5 w-3.5" />
+              筛选
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-9 gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-text-primary)]"
+            >
+              <Sliders className="h-3.5 w-3.5" />
+              显示列
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-9 gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-text-primary)]"
+            >
+              <ArrowUpArrowDown className="h-3.5 w-3.5" />
+              排序
+            </Button>
+            <Button
+              variant="ghost"
               onClick={() => router.push(`/designer/${formUuid}?appId=${appId}`)}
               className="h-9 gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-text-primary)]"
             >
@@ -652,82 +747,6 @@ export default function FormHome({
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
-          <div className="flex shrink-0 flex-col gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-panel-soft)] p-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                className="h-9 gap-1.5 rounded-lg bg-[var(--color-primary)] px-3 text-xs text-[var(--color-text-on-primary)]"
-                onClick={() => { setAgentDraftValues({}); setAgentValuePatch(undefined); setDrawerOpen(true); }}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                新增
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => setDeleteOpen(true)}
-                className="h-9 gap-1.5 rounded-lg border border-[var(--color-danger)]/30 bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-danger)]"
-              >
-                <TrashBin className="h-3.5 w-3.5" />
-                删除
-              </Button>
-              <Button
-                variant="ghost"
-                onPress={openImportModal}
-                className="h-9 gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-text-primary)]"
-              >
-                <ArrowUpFromLine className="h-3.5 w-3.5" />
-                导入
-              </Button>
-              <Button
-                variant="ghost"
-                onPress={() => void exportSelectedRecords()}
-                className="h-9 gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-text-primary)]"
-              >
-                <ArrowDownToLine className="h-3.5 w-3.5" />
-                导出
-              </Button>
-              <Button
-                variant="ghost"
-                className="h-9 gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-text-primary)]"
-              >
-                <Ellipsis className="h-3.5 w-3.5" />
-                更多
-              </Button>
-            </div>
-
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <Input
-                aria-label="搜索数据"
-                className="min-w-[220px] bg-[var(--color-bg-input)]"
-                placeholder="搜索数据"
-                value={searchValue}
-                onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                  setSearchValue(event.currentTarget.value)
-                }
-              />
-              <Button
-                variant="ghost"
-                className="h-9 gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-text-primary)]"
-              >
-                <Funnel className="h-3.5 w-3.5" />
-                筛选
-              </Button>
-              <Button
-                variant="ghost"
-                className="h-9 gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-text-primary)]"
-              >
-                <Sliders className="h-3.5 w-3.5" />
-                显示列
-              </Button>
-              <Button
-                variant="ghost"
-                className="h-9 gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 text-xs text-[var(--color-text-primary)]"
-              >
-                <ArrowUpArrowDown className="h-3.5 w-3.5" />
-                排序
-              </Button>
-            </div>
-          </div>
-
           {activeView === "records" ? (
             <RecordsTable
               fields={visibleFields}
@@ -1412,7 +1431,7 @@ function RecordsTable({
     "64px",
     ...businessColumnWidths.map((width) => `${width}px`),
     ...builtInColumnWidths.map((width) => `${width}px`),
-    "190px",
+    "minmax(190px, 1fr)",
   ].join(" ");
 
   if (loading) {
@@ -1440,10 +1459,10 @@ function RecordsTable({
 
   return (
     <>
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--color-border)]">
-      <div className="data-table-horizontal-scroll min-h-0 flex-1 overflow-x-auto overflow-y-scroll">
+    <div className="theme-card-glass flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl">
+      <div className="data-table-horizontal-scroll min-h-0 flex-1 overflow-x-auto overflow-y-auto">
         <div
-          className="sticky top-0 z-20 grid w-max min-w-full items-center gap-x-2 border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-2 text-[12px] font-medium text-[var(--color-text-secondary)] shadow-[0_1px_0_var(--color-border)]"
+          className="sticky top-0 z-20 grid w-max min-w-full items-center gap-x-2 border-b border-[var(--color-border)] bg-[var(--color-bg-card-glass)] px-3 py-2 text-[12px] font-medium text-[var(--color-text-secondary)] shadow-[0_1px_0_var(--color-border)]"
           style={{
             gridTemplateColumns: tableGridTemplate,
           }}
@@ -1455,7 +1474,7 @@ function RecordsTable({
           {BUILTIN_RECORD_FIELDS.map((field) => (
             <span key={field.id} className="truncate whitespace-nowrap">{field.label}</span>
           ))}
-          <span className="sticky right-0 z-30 flex h-full items-center border-l border-[var(--color-border)] bg-[var(--color-bg-surface)] pl-3 shadow-[-8px_0_12px_-12px_var(--color-text-secondary)]">
+          <span className="sticky right-0 z-30 flex h-full items-center border-l border-[var(--color-border)] bg-[var(--color-bg-card-glass)] pl-3 shadow-[-8px_0_12px_-12px_var(--color-text-secondary)]">
             操作
           </span>
         </div>
@@ -1499,7 +1518,7 @@ function RecordsTable({
                 {builtIns[field.id]}
               </span>
             ))}
-            <span className="sticky right-0 z-10 flex h-full items-center gap-1.5 border-l border-[var(--color-border)] bg-[var(--color-bg-surface)] pl-3 shadow-[-8px_0_12px_-12px_var(--color-text-secondary)] transition-colors group-hover:bg-[var(--color-bg-panel-soft)]">
+            <span className="sticky right-0 z-10 flex h-full items-center gap-1.5 border-l border-[var(--color-border)] bg-[var(--color-bg-card-glass)] pl-3 shadow-[-8px_0_12px_-12px_var(--color-text-secondary)] transition-colors group-hover:bg-[var(--color-bg-panel-soft)]">
               <Button
                 variant="ghost"
                 className="h-8 gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-text-primary)]"

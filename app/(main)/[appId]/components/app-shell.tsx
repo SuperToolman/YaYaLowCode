@@ -67,16 +67,14 @@ export function AppShell({
   }, [dragging]);
 
   return (
-    <div className="flex h-full min-h-0 gap-2 overflow-x-hidden sm:gap-4 p-2">
+    <div className="flex h-full min-h-0 gap-2 overflow-x-hidden sm:gap-4 py-2 pr-2">
       {!hideSidebar ? (
         <div
           ref={sidebarRef}
-          className="relative shrink-0 rounded-xl will-change-[width]"
+          className="relative shrink-0 rounded-2xl will-change-[width]"
           style={{ width: `${sidebarWidth}px` }}
         >
-          <div className="theme-panel-strong h-full min-h-0 overflow-hidden rounded-xl shadow-[var(--shadow-xs)]">
-            {sidebar}
-          </div>
+          {sidebar}
           <div
             aria-label="调整表单导航宽度"
             role="separator"

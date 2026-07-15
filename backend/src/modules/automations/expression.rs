@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{Value, json};
 
-use crate::infrastructure::entities::form_record_entity;
+use crate::platform::records::StoredFormRecord;
 
 use super::graph::{read_json_string, read_json_value};
 use super::runtime::AutomationExecutionContext;
@@ -40,10 +40,10 @@ pub(super) fn build_record_data_from_rows(
 }
 
 pub(super) fn filter_records_by_expression(
-    records: Vec<form_record_entity::Model>,
+    records: Vec<StoredFormRecord>,
     expression: Option<&Value>,
     context: &AutomationExecutionContext,
-) -> Vec<form_record_entity::Model> {
+) -> Vec<StoredFormRecord> {
     let expression = read_json_string(expression).unwrap_or_default();
     if expression.trim().is_empty() {
         return records;

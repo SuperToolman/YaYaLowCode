@@ -1,5 +1,7 @@
 use crate::modules::navigation::ensure_system_navigation_for_app;
+use crate::platform::form_storage::delete_storage_definition;
 use crate::platform::prelude::*;
+use crate::platform::records::RecordRepository;
 use crate::shared::*;
 use axum::http::StatusCode;
 
@@ -117,12 +119,11 @@ pub(crate) async fn delete_app(
         .collect::<Vec<_>>();
 
     let txn = state.db.begin().await?;
+    let record_repository = RecordRepository::new(&txn);
 
     for form_uuid in form_uuids {
-        FormRecordEntity::delete_many()
-            .filter(form_record_entity::Column::FormUuid.eq(form_uuid.clone()))
-            .exec(&txn)
-            .await?;
+        record_repository.delete_by_form(&form_uuid).await?;
+        delete_storage_definition(&txn, &form_uuid).await?;
         FormSchemaEntity::delete_many()
             .filter(form_schema_entity::Column::FormUuid.eq(form_uuid.clone()))
             .exec(&txn)

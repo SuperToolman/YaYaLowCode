@@ -21,7 +21,110 @@ impl MigratorTrait for Migrator {
             Box::new(m20260714_000013_create_identity_role_tables::Migration),
             Box::new(m20260714_000014_expand_identity_user_profile::Migration),
             Box::new(m20260714_000015_bind_agent_sessions::Migration),
+            Box::new(m20260715_000016_create_form_storage_definitions::Migration),
+            Box::new(m20260715_000017_drop_shared_form_records::Migration),
+            Box::new(m20260715_000018_repair_form_storage_definitions::Migration),
         ]
+    }
+}
+
+mod m20260715_000018_repair_form_storage_definitions {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS form_storage_definitions (
+                        id UUID PRIMARY KEY,
+                        form_uuid VARCHAR(40) NOT NULL UNIQUE,
+                        storage_mode VARCHAR(24) NOT NULL DEFAULT 'dynamic_table',
+                        physical_table VARCHAR(63) NOT NULL,
+                        compiled_schema_version INTEGER NOT NULL,
+                        column_mapping_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        created_at TIMESTAMPTZ NOT NULL,
+                        updated_at TIMESTAMPTZ NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_form_storage_definitions_mode
+                        ON form_storage_definitions (storage_mode);
+                    "#,
+                )
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
+    }
+}
+
+mod m20260715_000017_drop_shared_form_records {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE IF EXISTS form_records;")
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
+    }
+}
+
+mod m20260715_000016_create_form_storage_definitions {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS form_storage_definitions (
+                        id UUID PRIMARY KEY,
+                        form_uuid VARCHAR(40) NOT NULL UNIQUE,
+                        storage_mode VARCHAR(24) NOT NULL DEFAULT 'dynamic_table',
+                        physical_table VARCHAR(63) NOT NULL,
+                        compiled_schema_version INTEGER NOT NULL,
+                        column_mapping_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        created_at TIMESTAMPTZ NOT NULL,
+                        updated_at TIMESTAMPTZ NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_form_storage_definitions_mode
+                        ON form_storage_definitions (storage_mode);
+                    "#,
+                )
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE IF EXISTS form_storage_definitions;")
+                .await?;
+            Ok(())
+        }
     }
 }
 
@@ -34,18 +137,23 @@ mod m20260714_000015_bind_agent_sessions {
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
         async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-            manager.get_connection().execute_unprepared(
-                r#"
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
                 ALTER TABLE agent_sessions
                     ADD COLUMN IF NOT EXISTS agent_id VARCHAR(80) NOT NULL DEFAULT 'agent-default';
                 CREATE INDEX IF NOT EXISTS idx_agent_sessions_agent_id
                     ON agent_sessions (agent_id, updated_at DESC);
                 "#,
-            ).await?;
+                )
+                .await?;
             Ok(())
         }
 
-        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> { Ok(()) }
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
     }
 }
 

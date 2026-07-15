@@ -5,7 +5,7 @@ use crate::platform::automation_runs::{
     finalize_automation_run_node_log,
 };
 use crate::platform::prelude::*;
-use crate::platform::records::{decrement_app_records_count, insert_form_record};
+use crate::platform::records::RecordRepository;
 use crate::shared::*;
 use axum::http::StatusCode;
 
@@ -487,17 +487,18 @@ async fn execute_add_data_node(
                 Value::Array(vec![source_item.clone()]),
             );
             let row_data = build_record_data_from_rows(&rows, &scoped_outputs);
-            let record =
-                insert_form_record(db, &target_definition, row_data, &context.operator, now)
-                    .await?;
+            let record = RecordRepository::new(db)
+                .insert(&target_definition, row_data, &context.operator, now)
+                .await?;
             inserted.push(record.record_data);
         }
         return Ok(Value::Array(inserted));
     }
 
     let row_data = build_record_data_from_rows(&rows, &context.outputs);
-    let record =
-        insert_form_record(db, &target_definition, row_data, &context.operator, now).await?;
+    let record = RecordRepository::new(db)
+        .insert(&target_definition, row_data, &context.operator, now)
+        .await?;
     info!(
         "automation add-data executed: flow={}, form={}, record={}",
         flow.flow_uuid, target_form_uuid, record.record_uuid
@@ -530,11 +531,7 @@ async fn execute_get_one_node(
         return Ok(Value::Null);
     }
 
-    let records = FormRecordEntity::find()
-        .filter(form_record_entity::Column::FormUuid.eq(form_uuid))
-        .order_by_desc(form_record_entity::Column::CreatedAt)
-        .all(db)
-        .await?;
+    let records = RecordRepository::new(db).list(&form_uuid).await?;
     let matched = filter_records_by_expression(records, config.get("filterExpression"), context);
     Ok(matched
         .into_iter()
@@ -569,11 +566,7 @@ async fn execute_get_many_node(
         return Ok(Value::Array(vec![]));
     }
 
-    let records = FormRecordEntity::find()
-        .filter(form_record_entity::Column::FormUuid.eq(form_uuid))
-        .order_by_desc(form_record_entity::Column::CreatedAt)
-        .all(db)
-        .await?;
+    let records = RecordRepository::new(db).list(&form_uuid).await?;
     let matched = filter_records_by_expression(records, config.get("filterExpression"), context);
     Ok(Value::Array(
         matched.into_iter().map(|item| item.record_data).collect(),
@@ -590,11 +583,8 @@ async fn execute_update_data_node(
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| AppError::BadRequest("update-data target form is required".to_string()))?;
     let rows = json_array_items(&config.get("rows").cloned().unwrap_or_else(|| json!([])));
-    let records = FormRecordEntity::find()
-        .filter(form_record_entity::Column::FormUuid.eq(target_form_uuid.clone()))
-        .order_by_desc(form_record_entity::Column::CreatedAt)
-        .all(db)
-        .await?;
+    let repository = RecordRepository::new(db);
+    let records = repository.list(&target_form_uuid).await?;
     let matched = filter_records_by_expression(records, config.get("matchRule"), context);
     let patch = build_record_data_from_rows(&rows, &context.outputs);
     let now = Utc::now();
@@ -602,11 +592,9 @@ async fn execute_update_data_node(
 
     for record in matched {
         let merged = merge_record_payload(record.record_data.clone(), &patch);
-        let mut active_model: form_record_entity::ActiveModel = record.into();
-        active_model.record_data = Set(merged.clone());
-        active_model.updated_by = Set(context.operator.clone());
-        active_model.updated_at = Set(now.into());
-        let updated = active_model.update(db).await?;
+        let updated = repository
+            .update(&record, merged, &context.operator, now)
+            .await?;
         updated_items.push(updated.record_data);
     }
 
@@ -629,11 +617,8 @@ async fn execute_delete_data_node(
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| AppError::BadRequest("delete-data target form is required".to_string()))?;
     let definition = forms::find_form_definition(db, &target_form_uuid).await?;
-    let records = FormRecordEntity::find()
-        .filter(form_record_entity::Column::FormUuid.eq(target_form_uuid.clone()))
-        .order_by_desc(form_record_entity::Column::CreatedAt)
-        .all(db)
-        .await?;
+    let repository = RecordRepository::new(db);
+    let records = repository.list(&target_form_uuid).await?;
     let matched = filter_records_by_expression(records, config.get("matchRule"), context);
     let deleted_count = matched.len() as i64;
     let deleted_payloads = matched
@@ -641,15 +626,11 @@ async fn execute_delete_data_node(
         .map(|item| item.record_data.clone())
         .collect::<Vec<_>>();
 
-    for record in matched {
-        FormRecordEntity::delete_many()
-            .filter(form_record_entity::Column::Id.eq(record.id))
-            .exec(db)
-            .await?;
-    }
+    repository.delete_many(&matched).await?;
 
     if deleted_count > 0 {
-        decrement_app_records_count(db, &definition.app_route_app_id, deleted_count, Utc::now())
+        repository
+            .decrement_app_records_count(&definition.app_route_app_id, deleted_count, Utc::now())
             .await?;
     }
 

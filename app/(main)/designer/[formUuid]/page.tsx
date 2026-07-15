@@ -545,10 +545,12 @@ export default function FormDesigner({ params }: FormDesignerProps) {
   }
 
   function removeField(fieldId: string) {
-    setFields((currentFields) => {
-      const removedIds = new Set(getFieldSubtree(currentFields, fieldId).map((field) => field.id));
-      return currentFields.filter((field) => !removedIds.has(field.id));
-    });
+    const removedIds = new Set(getFieldSubtree(fields, fieldId).map((field) => field.id));
+    setFields((currentFields) => currentFields.filter((field) => !removedIds.has(field.id)));
+    setPageProps((current) => ({
+      ...current,
+      indexedFieldIds: current.indexedFieldIds.filter((id) => !removedIds.has(id)),
+    }));
     setSelectedFieldId(null);
   }
 

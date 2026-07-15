@@ -4,7 +4,9 @@ use serde::Serialize;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
-use crate::modules::{agent_config, agents, apps, automations, dingtalk, forms, identity, navigation, settings};
+use crate::modules::{
+    agent_config, agents, apps, automations, dingtalk, forms, identity, navigation, settings,
+};
 use crate::platform::runtime::AppState;
 
 #[derive(Debug, Serialize)]
@@ -48,12 +50,31 @@ pub(crate) fn build(state: AppState) -> Router {
             "/api/agents/{id}",
             axum::routing::put(agent_config::update_agent).delete(agent_config::delete_agent),
         )
-        .route("/api/agent/plugins", get(agent_config::list_plugins).post(agent_config::create_plugin))
-        .route("/api/agent/plugins/{id}", axum::routing::put(agent_config::update_plugin).delete(agent_config::delete_plugin))
-        .route("/api/agent/skills", get(agent_config::list_skills).post(agent_config::create_skill))
-        .route("/api/agent/skills/{id}", axum::routing::put(agent_config::update_skill).delete(agent_config::delete_skill))
-        .route("/api/agent/knowledge-bases", get(agent_config::list_knowledge_bases).post(agent_config::create_knowledge_base))
-        .route("/api/agent/knowledge-bases/{id}", axum::routing::put(agent_config::update_knowledge_base).delete(agent_config::delete_knowledge_base))
+        .route(
+            "/api/agent/plugins",
+            get(agent_config::list_plugins).post(agent_config::create_plugin),
+        )
+        .route(
+            "/api/agent/plugins/{id}",
+            axum::routing::put(agent_config::update_plugin).delete(agent_config::delete_plugin),
+        )
+        .route(
+            "/api/agent/skills",
+            get(agent_config::list_skills).post(agent_config::create_skill),
+        )
+        .route(
+            "/api/agent/skills/{id}",
+            axum::routing::put(agent_config::update_skill).delete(agent_config::delete_skill),
+        )
+        .route(
+            "/api/agent/knowledge-bases",
+            get(agent_config::list_knowledge_bases).post(agent_config::create_knowledge_base),
+        )
+        .route(
+            "/api/agent/knowledge-bases/{id}",
+            axum::routing::put(agent_config::update_knowledge_base)
+                .delete(agent_config::delete_knowledge_base),
+        )
         .route(
             "/api/settings/identity-source",
             get(settings::get_identity_source_settings)

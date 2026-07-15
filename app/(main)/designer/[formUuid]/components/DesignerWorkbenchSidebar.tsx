@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { Monaco } from "@monaco-editor/react";
 import dynamic from "next/dynamic";
-import { Button, Card, Input, ListBox, Modal, Select, Switch, TextArea, toast } from "@heroui/react";
+import { Button, Card, Checkbox, CheckboxGroup, Input, ListBox, Modal, Select, Switch, TextArea, toast } from "@heroui/react";
 import {
   AddIcon,
   CodeIcon,
@@ -44,6 +44,7 @@ export type DesignerPanelKey =
   | "outline"
   | "components"
   | "dataSources"
+  | "indexes"
   | "agent"
   | "actions"
   | "fieldOutline"
@@ -71,6 +72,7 @@ const DESIGNER_PANELS: Array<{
   { key: "outline", label: "大纲树", icon: <ListIcon /> },
   { key: "components", label: "组件", icon: <GridIcon /> },
   { key: "dataSources", label: "数据源", icon: <SwapIcon /> },
+  { key: "indexes", label: "索引", icon: <ListIcon /> },
   { key: "agent", label: "Agent", icon: <MessageIcon /> },
   { key: "actions", label: "动作面板", icon: <ToolIcon /> },
   { key: "fieldOutline", label: "字段大纲", icon: <MessageIcon /> },
@@ -191,6 +193,16 @@ function renderDesignerPanelContent({
     );
   }
 
+  if (activePanel === "indexes") {
+    return (
+      <IndexPanel
+        fields={fields}
+        value={pageProps.indexedFieldIds}
+        onChange={(indexedFieldIds) => onPagePropsChange({ ...pageProps, indexedFieldIds })}
+      />
+    );
+  }
+
   if (activePanel === "agent") {
     return (
       <AgentPanel
@@ -220,6 +232,79 @@ function renderDesignerPanelContent({
   }
 
   return <SchemaPanel schema={schema} />;
+}
+
+const INDEXABLE_FIELD_TYPES = new Set<PlacedField["type"]>([
+  "singleLineText",
+  "number",
+  "radio",
+  "select",
+  "date",
+  "member",
+  "department",
+]);
+
+function IndexPanel({
+  fields,
+  value,
+  onChange,
+}: {
+  fields: PlacedField[];
+  value: string[];
+  onChange: (value: string[]) => void;
+}) {
+  const indexableFields = fields.filter((field) => INDEXABLE_FIELD_TYPES.has(field.type));
+  const indexableIds = new Set(indexableFields.map((field) => field.id));
+  const selectedValue = value.filter((fieldId) => indexableIds.has(fieldId));
+
+  if (indexableFields.length === 0) {
+    return (
+      <PlaceholderPanel title="暂无可建立索引的字段" />
+    );
+  }
+
+  return (
+    <div className="space-y-4 p-1">
+      <div className="border-b border-[var(--color-border)] pb-3">
+        <div className="text-sm font-medium text-[var(--color-text-primary)]">字段索引</div>
+        <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">
+          发布表单时为选中字段创建普通 B-tree 索引；取消选择并重新发布后会移除对应索引。
+        </p>
+      </div>
+
+      <CheckboxGroup
+        aria-label="选择需要建立索引的字段"
+        className="gap-2"
+        value={selectedValue}
+        onChange={(nextValue) => onChange(nextValue.map(String))}
+      >
+        {indexableFields.map((field) => {
+          const parent = field.parentGroupId
+            ? fields.find((candidate) => candidate.id === field.parentGroupId)
+            : null;
+          return (
+            <Checkbox key={field.id} value={field.id} className="rounded-lg px-2 py-2 hover:bg-[var(--color-bg-subtle)]">
+              <Checkbox.Control>
+                <Checkbox.Indicator />
+              </Checkbox.Control>
+              <Checkbox.Content>
+                <span className="block text-xs font-medium text-[var(--color-text-primary)]">
+                  {field.label}
+                </span>
+                <span className="mt-0.5 block text-[10px] text-[var(--color-text-secondary)]">
+                  {parent ? `${parent.label} / ` : ""}{field.type} · {field.id}
+                </span>
+              </Checkbox.Content>
+            </Checkbox>
+          );
+        })}
+      </CheckboxGroup>
+
+      <p className="border-t border-[var(--color-border)] pt-3 text-xs leading-5 text-[var(--color-text-secondary)]">
+        已选择 {selectedValue.length} 个字段。索引适用于筛选、匹配和排序；长文本、附件、复选、容器及子表单本身不提供普通索引。
+      </p>
+    </div>
+  );
 }
 
 type DesignerAgentOption = {

@@ -33,6 +33,7 @@ export function getDefaultPageDesignerProps(): PageDesignerProps {
         description: "当前登录用户",
       },
     ],
+    indexedFieldIds: [],
     actionPanel: {
       code: getDefaultActionPanelCode(),
     },
@@ -74,6 +75,7 @@ export function normalizePageDesignerProps(
     afterSubmitActions: pageProps?.afterSubmitActions ?? defaults.afterSubmitActions,
     afterDataInitActions: pageProps?.afterDataInitActions ?? defaults.afterDataInitActions,
     dataSources: pageProps?.dataSources ?? defaults.dataSources,
+    indexedFieldIds: pageProps?.indexedFieldIds ?? defaults.indexedFieldIds,
     actionPanel: {
       ...defaults.actionPanel,
       ...pageProps?.actionPanel,
