@@ -1,4 +1,4 @@
-//! Local platform settings. Credentials are persisted locally and never returned by the API.
+//! Local platform settings persisted by the Rust backend.
 
 use axum::Json;
 use axum::http::StatusCode;
@@ -6,8 +6,9 @@ use sea_orm::Database;
 use serde::{Deserialize, Serialize};
 
 use crate::platform::config::{
-    AgentSettings, DatabaseSettings, load_agent_settings, load_database_settings,
-    save_agent_settings, save_database_settings,
+    AgentSettings, DatabaseSettings, DingTalkSettings, IdentitySourceSettings, load_agent_settings,
+    load_database_settings, load_identity_source_settings, save_agent_settings,
+    save_database_settings, save_identity_source_settings,
 };
 use crate::platform::prelude::{ApiResponse, AppError, AppState};
 use crate::shared::success_response;
@@ -57,6 +58,14 @@ pub(crate) struct UpdateAgentSettingsRequest {
     temperature: f64,
     max_steps: usize,
     system_prompt: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UpdateIdentitySourceSettingsRequest {
+    active_provider: String,
+    local_admin_login_enabled: bool,
+    dingtalk: DingTalkSettings,
 }
 
 pub(crate) async fn get_database_settings(
@@ -158,6 +167,46 @@ pub(crate) async fn update_agent_settings(
     )))
 }
 
+pub(crate) async fn get_identity_source_settings(
+    axum::extract::State(_state): axum::extract::State<AppState>,
+) -> Result<Json<ApiResponse<IdentitySourceSettings>>, AppError> {
+    let settings = load_identity_source_settings().unwrap_or_else(default_identity_source_settings);
+    Ok(Json(success_response(
+        "identity source settings loaded",
+        settings,
+    )))
+}
+
+pub(crate) async fn update_identity_source_settings(
+    axum::extract::State(_state): axum::extract::State<AppState>,
+    Json(payload): Json<UpdateIdentitySourceSettingsRequest>,
+) -> Result<Json<ApiResponse<IdentitySourceSettings>>, AppError> {
+    let settings = IdentitySourceSettings {
+        active_provider: payload.active_provider.trim().to_lowercase(),
+        local_admin_login_enabled: payload.local_admin_login_enabled,
+        dingtalk: DingTalkSettings {
+            app_id: payload.dingtalk.app_id.trim().to_string(),
+            agent_id: payload.dingtalk.agent_id.trim().to_string(),
+            client_id: payload.dingtalk.client_id.trim().to_string(),
+            client_secret: payload.dingtalk.client_secret.trim().to_string(),
+            access_token: payload.dingtalk.access_token.trim().to_string(),
+            access_token_expires_at: payload.dingtalk.access_token_expires_at,
+            sync_enabled: payload.dingtalk.sync_enabled,
+            sync_interval_minutes: payload.dingtalk.sync_interval_minutes,
+            include_child_departments: payload.dingtalk.include_child_departments,
+            disable_departed_users: payload.dingtalk.disable_departed_users,
+            allow_jit_provisioning: payload.dingtalk.allow_jit_provisioning,
+        },
+    };
+    settings.validate().map_err(AppError::BadRequest)?;
+    save_identity_source_settings(&settings).map_err(AppError::Server)?;
+
+    Ok(Json(success_response(
+        "identity source settings saved",
+        settings,
+    )))
+}
+
 impl From<&AgentSettings> for AgentSettingsResponse {
     fn from(settings: &AgentSettings) -> Self {
         Self {
@@ -195,5 +244,25 @@ pub(crate) fn default_agent_settings() -> AgentSettings {
         temperature: 0.2,
         max_steps: 8,
         system_prompt: "你是 YaYa 低代码平台助手。帮助用户理解表单、自动化和应用结构。当前只允许使用只读工具，不得声称已经修改任何数据。".to_string(),
+    }
+}
+
+pub(crate) fn default_identity_source_settings() -> IdentitySourceSettings {
+    IdentitySourceSettings {
+        active_provider: "local".to_string(),
+        local_admin_login_enabled: true,
+        dingtalk: DingTalkSettings {
+            app_id: String::new(),
+            agent_id: String::new(),
+            client_id: String::new(),
+            client_secret: String::new(),
+            access_token: String::new(),
+            access_token_expires_at: None,
+            sync_enabled: false,
+            sync_interval_minutes: 720,
+            include_child_departments: true,
+            disable_departed_users: true,
+            allow_jit_provisioning: false,
+        },
     }
 }

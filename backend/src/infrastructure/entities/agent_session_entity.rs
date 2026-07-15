@@ -7,6 +7,7 @@ pub struct Model {
     pub id: Uuid,
     #[sea_orm(unique)]
     pub session_uuid: String,
+    pub agent_id: String,
     pub title: String,
     pub app_route_app_id: Option<String>,
     pub context_json: Json,

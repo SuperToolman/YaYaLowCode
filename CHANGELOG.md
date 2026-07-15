@@ -2,6 +2,68 @@
 
 本文档用于记录项目的重要变更。
 
+## 0.28a - 2026-08-04
+
+> `0.28a` 为中期迭代版本；npm 与 Cargo 包版本仍标识为 `0.2.0-alpha.0`。
+
+### 新增
+
+- 新增 Agent 多级管理体系：
+  - 模型提供商（Provider）配置与 CRUD 页面 `/settings/model-providers`
+  - Agent 配置档案（Config Profile）与 CRUD 页面 `/settings/agent-profiles`
+  - Agent 定义（Agent Definition）管理页面 `/settings/agents`
+  - Agent 人格（Persona）预设（默认人格、业务分析师、低代码实施顾问）
+  - 插件（Plugin）、技能（Skill）、知识库（Knowledge Base）定义与管理 API
+- 新增 Agent 注册表（Agent Registry）后端持久化，支持按平台/应用/业务范围解析 Agent 配置，兼容旧版 Agent 设置自动迁移。
+- 新增身份源管理：
+  - 钉钉集成：AccessToken 获取与刷新、部门同步、用户同步的后端接口
+  - 平台用户体系，支持本地和钉钉双身份来源
+  - 身份源设置页面 `/settings/identity-source`，配置保存后立即生效
+- 新增身份与权限数据模型与数据库迁移：
+  - `organization_units` 组织单位表
+  - `iam_users` / `iam_external_identities` 用户与外部身份表
+  - `iam_roles` / `iam_user_roles` 角色与用户角色关联表
+  - `iam_organization_memberships` 用户组织成员关系表
+  - Agent session 绑定 agent_id 迁移
+- 新增子表单（Subform）组件运行时渲染：
+  - 表格视图，支持行新增、删除、复制、上移/下移排序
+  - 斑马纹、分割线、边框三种主题
+  - 序号列、操作列显示控制，自定义列宽与冻结
+  - 批量导入、导出 Excel、批量删除、子表单标题过滤
+  - 布局模式（auto/fixed）、每页行数、最大行数限制
+- 新增表单运行时 `onValuesChange` 回调和 `valuePatch` 外部值同步能力。
+- 新增 Agent Markdown 渲染组件（`react-markdown` + `remark-gfm`）。
+- 新增 `xlsx` 依赖用于 Excel 批量导入导出。
+- 新增表单 GET API 端点（`GET /api/forms/:form_uuid`）。
+- 新增设计器校验模块（`designer-validation.ts`）。
+- 新增设置页面子路由：模型供应商、Agent 管理、配置档案、身份源、组织架构、插件、Skills、用户、角色。
+
+### 调整
+
+- Agent 设置页面 `/settings/agent` 改为自动重定向到 `/settings/agents`。
+- 设置导航从 4 项扩展为 13 项，支持多级分组与独立路由。
+- 设计器工作台、画布、侧边栏、字段属性面板、页面属性面板、布局系统大幅重构，增强交互体验和视觉一致性。
+- 设计器新增调试事件通道、页面级 Agent 上下文配置等能力。
+- 全局 CSS 主题变量、玻璃拟态样式、布局高度和滚动容器全面优化。
+- 运行时表单分组容器边距缩减（`p-4` → `p-1`），Radio/Checkbox 选项文本字号调整为 12px。
+- Agent 助手面板重构，支持模型切换、上下文统计和更丰富的会话交互。
+- 后端设置模块扩展：新增身份源配置读写、Agent 注册表读写、Agent 配置按范围解析。
+
+### 修复
+
+- 修复表单预览和运行时下拉单选/下拉复选组件（SelectPreview / MultiSelectPreview）从非受控改为受控模式，解决选择其他选项后显示不更新的问题。
+- 修复后端 Agent 流式响应中 `assistant_message` 插入数据库的 `Result` 未处理问题，添加 `error!` 日志和 `message.persist_failed` SSE 事件通知。
+- 移除运行时表单页面对本地 `testSchema.json` 的硬编码依赖，改为完全从 API 动态加载 Schema，并添加 schema 为 null 时的加载状态保护。
+- 新增 `.yaya-agent-registry.json` 和 `.yaya-identity-settings.json` 到 `.gitignore`，防止敏感配置被误提交。
+
+### 当前限制
+
+- 知识库与 Skills 后端定义已完成，前端页面仍为功能占位，尚未接入向量检索和 Skill 加载器。
+- 插件机制目前为管理端的定义配置，尚未实现运行时插件的加载与执行。
+- 子表单当前仅支持运行时渲染，设计器端拖拽和属性配置尚未完成。
+- 身份源的用户/角色列表当前为只读查询，尚未接入权限校验中间件。
+- 项目仍处于 Alpha 阶段，接口、数据结构与交互可能继续调整。
+
 ## 0.2a - 2026-07-13
 
 > `0.2a` 为早期预览版本；npm 与 Cargo 包版本使用语义化标识 `0.2.0-alpha.0`。

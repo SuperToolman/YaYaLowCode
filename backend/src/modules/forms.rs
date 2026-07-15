@@ -103,6 +103,17 @@ pub(crate) async fn create_form(
     ))
 }
 
+pub(crate) async fn get_form(
+    State(state): State<AppState>,
+    Path(form_uuid): Path<String>,
+) -> Result<Json<ApiResponse<ApiFormSummary>>, AppError> {
+    let definition = find_form_definition(&state.db, &form_uuid).await?;
+    Ok(Json(success_response(
+        "获取表单详情成功",
+        ApiFormSummary::from(definition),
+    )))
+}
+
 pub(crate) async fn delete_form(
     State(state): State<AppState>,
     Path(form_uuid): Path<String>,

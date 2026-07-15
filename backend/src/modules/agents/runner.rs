@@ -39,9 +39,14 @@ pub(crate) async fn execute_agent_run(
         .map_err(|error| format!("create model client failed: {error}"))?;
 
     let context_json = serde_json::to_string(&context).unwrap_or_else(|_| "{}".to_string());
+    let interaction_policy = if context.form_draft_assist.unwrap_or(false) {
+        "你只能使用已注册的只读工具，不能创建、发布、删除或提交任何持久化数据。当前页面允许你协助填写浏览器中的未提交表单草稿：这只是在客户端更新字段值，不属于提交或持久化修改。用户要求填写时，应直接根据消息中提供的可填写字段与当前值完成，不要先进行不必要的表单分析；在正常回复末尾输出严格格式的不可见标记 <!--FORM_VALUES:{\"字段ID\":\"字段值\"}-->，仅包含需要填写或修改的字段。绝不能代替用户提交表单。"
+    } else {
+        "你只能使用已注册的只读工具。不能创建、修改、发布或删除任何数据。如果用户要求修改，请说明当前 MVP 只能分析，并给出建议步骤。优先根据页面上下文调用工具，不要猜测表单或自动化结构。"
+    };
     let preamble = format!(
-        "{}\n\n当前页面上下文：{}\n\n你只能使用已注册的只读工具。不能创建、修改、发布或删除任何数据。如果用户要求修改，请说明当前 MVP 只能分析，并给出建议步骤。优先根据页面上下文调用工具，不要猜测表单或自动化结构。",
-        settings.system_prompt, context_json,
+        "{}\n\n当前页面上下文：{}\n\n{}",
+        settings.system_prompt, context_json, interaction_policy,
     );
     let allowed_app_id = context.app_id.clone();
     let agent = client

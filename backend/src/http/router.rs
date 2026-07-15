@@ -4,7 +4,7 @@ use serde::Serialize;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
-use crate::modules::{agents, apps, automations, forms, navigation, settings};
+use crate::modules::{agent_config, agents, apps, automations, dingtalk, forms, identity, navigation, settings};
 use crate::platform::runtime::AppState;
 
 #[derive(Debug, Serialize)]
@@ -23,6 +23,60 @@ pub(crate) fn build(state: AppState) -> Router {
             "/api/settings/agent",
             get(settings::get_agent_settings).put(settings::update_agent_settings),
         )
+        .route(
+            "/api/agent/providers",
+            get(agent_config::list_providers).post(agent_config::create_provider),
+        )
+        .route(
+            "/api/agent/providers/{id}",
+            axum::routing::put(agent_config::update_provider).delete(agent_config::delete_provider),
+        )
+        .route(
+            "/api/agent/config-profiles",
+            get(agent_config::list_profiles).post(agent_config::create_profile),
+        )
+        .route(
+            "/api/agent/config-profiles/{id}",
+            axum::routing::put(agent_config::update_profile).delete(agent_config::delete_profile),
+        )
+        .route("/api/agent/personas", get(agent_config::list_personas))
+        .route(
+            "/api/agents",
+            get(agent_config::list_agents).post(agent_config::create_agent),
+        )
+        .route(
+            "/api/agents/{id}",
+            axum::routing::put(agent_config::update_agent).delete(agent_config::delete_agent),
+        )
+        .route("/api/agent/plugins", get(agent_config::list_plugins).post(agent_config::create_plugin))
+        .route("/api/agent/plugins/{id}", axum::routing::put(agent_config::update_plugin).delete(agent_config::delete_plugin))
+        .route("/api/agent/skills", get(agent_config::list_skills).post(agent_config::create_skill))
+        .route("/api/agent/skills/{id}", axum::routing::put(agent_config::update_skill).delete(agent_config::delete_skill))
+        .route("/api/agent/knowledge-bases", get(agent_config::list_knowledge_bases).post(agent_config::create_knowledge_base))
+        .route("/api/agent/knowledge-bases/{id}", axum::routing::put(agent_config::update_knowledge_base).delete(agent_config::delete_knowledge_base))
+        .route(
+            "/api/settings/identity-source",
+            get(settings::get_identity_source_settings)
+                .put(settings::update_identity_source_settings),
+        )
+        .route(
+            "/api/settings/identity-source/dingtalk/access-token",
+            post(dingtalk::refresh_access_token),
+        )
+        .route(
+            "/api/settings/identity-source/dingtalk/sync-departments",
+            post(dingtalk::sync_departments),
+        )
+        .route(
+            "/api/settings/identity-source/dingtalk/sync-users",
+            post(dingtalk::sync_users),
+        )
+        .route(
+            "/api/identity/organization-units",
+            get(identity::list_organization_units),
+        )
+        .route("/api/identity/users", get(identity::list_users))
+        .route("/api/identity/roles", get(identity::list_roles))
         .route(
             "/api/agent/sessions",
             get(agents::list_agent_sessions).post(agents::create_agent_session),
@@ -109,7 +163,7 @@ pub(crate) fn build(state: AppState) -> Router {
         )
         .route(
             "/api/forms/{form_uuid}",
-            axum::routing::delete(forms::delete_form),
+            get(forms::get_form).delete(forms::delete_form),
         )
         .with_state(state)
         .layer(TraceLayer::new_for_http())

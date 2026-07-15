@@ -39,7 +39,7 @@ export default async function AppLayout({
         }
       >
         <Card className="app-detail-header sticky top-0 z-20 shrink-0 overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg-panel-strong)] shadow-[var(--shadow-sm)] backdrop-blur-xl">
-          <div className="flex min-h-16 flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2 sm:px-4 lg:px-5">
+          <div className="flex flex-wrap items-center">
             <div className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3">
               <Link
                 href="/myApp"

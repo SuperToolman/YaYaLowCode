@@ -12,9 +12,10 @@ import {
   useSensors,
   type CollisionDetection,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { toast } from "@heroui/react";
+import { Card, toast } from "@heroui/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   getDefaultDesignerFieldProps,
@@ -26,26 +27,30 @@ import {
   DesignerWorkbenchSidebar,
   type DesignerPanelKey,
 } from "./components/DesignerWorkbenchSidebar";
-import { FieldPropertyDrawer } from "./components/field-properties/FieldPropertyDrawer";
+import { FieldPropertyPanel } from "./components/field-properties/FieldPropertyDrawer";
 import { FormPreviewModal } from "./components/FormPreviewModal";
 import { FormDesignerHeader } from "./components/FormDesignerHeader";
 import type { FormVersionSummary } from "./components/FormDesignerHeader";
-import { PagePropertyDrawer } from "./components/page-properties/PagePropertyDrawer";
+import { PagePropertyPanel } from "./components/page-properties/PagePropertyDrawer";
 import { CELL_MIN_HEIGHT, COLUMN_COUNT, GRID_ROW_GAP } from "./designer-constants";
 import {
   canPlaceField,
   getColumnStep,
   getInitialFieldLayout,
   getRowCount,
+  isContainerFieldType,
   moveField,
+  planFieldInsertion,
   resizeField,
 } from "./designer-layout";
 import { buildSchema } from "./designer-schema";
 import type { FormDesignerSchema } from "./designer-schema";
 import { getDefaultPageDesignerProps, normalizePageDesignerProps } from "./designer-schema";
+import { validateDesignerSchema } from "./designer-validation";
 import type {
   DesignerDragData,
   DesignerDropData,
+  DesignerInsertionIndicator,
   FormDesignerProps,
   PageDesignerProps,
   PlacedField,
@@ -54,9 +59,10 @@ import type {
 } from "./designer-types";
 import type { RuntimeDebugEvent } from "../../../components/runtime-form-renderer";
 import { getFormulaFieldKey } from "../../../lib/form-formula";
+import { FORM_COMPONENT_AGENT_CAPABILITIES_VERSION, getFormComponentAgentCapability } from "../../../lib/form-component-agent-capabilities";
 
 export default function FormDesigner({ params }: FormDesignerProps) {
-  const DESIGNER_WORKBENCH_MIN_WIDTH = 360;
+  const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
   const DESIGNER_WORKBENCH_MAX_WIDTH = 860;
   const { formUuid } = use(params);
   const router = useRouter();
@@ -80,14 +86,12 @@ export default function FormDesigner({ params }: FormDesignerProps) {
   const [isResizing, setIsResizing] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
-  const [inspectorFieldId, setInspectorFieldId] = useState<string | null>(null);
 
   const rowCount = getRowCount(fields);
   const showMatrix = isDragging || isResizing;
   const currentSchema = buildSchema(formUuid, formName, fields, pageProps);
-  const inspectorField =
-    fields.find((field) => field.id === inspectorFieldId) ?? null;
-  const [isPagePropertiesOpen, setIsPagePropertiesOpen] = useState(false);
+  const selectedField =
+    fields.find((field) => field.id === selectedFieldId) ?? null;
   const [saveMessage, setSaveMessage] = useState("");
   const [latestVersion, setLatestVersion] = useState(1);
   const [publishedVersion, setPublishedVersion] = useState(1);
@@ -95,8 +99,11 @@ export default function FormDesigner({ params }: FormDesignerProps) {
   const [activeDesignerPanel, setActiveDesignerPanel] =
     useState<DesignerPanelKey>("components");
   const [debugEvents, setDebugEvents] = useState<RuntimeDebugEvent[]>([]);
-  const [workbenchWidth, setWorkbenchWidth] = useState(420);
+  const [isAnalyzingAgent, setIsAnalyzingAgent] = useState(false);
+  const [workbenchWidth, setWorkbenchWidth] = useState(DESIGNER_WORKBENCH_MIN_WIDTH);
   const [activeDragData, setActiveDragData] = useState<DesignerDragData | null>(null);
+  const [insertionIndicator, setInsertionIndicator] =
+    useState<DesignerInsertionIndicator | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 },
@@ -106,6 +113,7 @@ export default function FormDesigner({ params }: FormDesignerProps) {
   const historyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isApplyingHistoryRef = useRef(false);
   const copiedFieldsRef = useRef<PlacedField[]>([]);
+  const dragOriginFieldsRef = useRef<PlacedField[] | null>(null);
 
   useEffect(() => {
     if (!appId) {
@@ -129,6 +137,8 @@ export default function FormDesigner({ params }: FormDesignerProps) {
   }, [appId]);
 
   useEffect(() => {
+    if (dragOriginFieldsRef.current) return;
+
     const nextSnapshot = createDesignerSnapshot(formName, fields, pageProps);
 
     if (isApplyingHistoryRef.current) {
@@ -307,28 +317,109 @@ export default function FormDesigner({ params }: FormDesignerProps) {
       return;
     }
 
+    flushDesignerHistory();
+    dragOriginFieldsRef.current = cloneFields(fields);
+    setInsertionIndicator(null);
     setActiveDragData(dragData);
     setIsDragging(true);
     setSelectedFieldId(null);
-    setInspectorFieldId(null);
+  }
+
+  function createInsertionPlan(
+    sourceFields: PlacedField[],
+    dragData: DesignerDragData,
+    dropData: DesignerDropData,
+  ) {
+    if (!dropData.insertionDirection || !dropData.targetFieldId) return null;
+
+    const incoming = dragData.kind === "field"
+      ? sourceFields.find((field) => field.id === dragData.fieldId)
+      : null;
+    if (dragData.kind === "field" && !incoming) return null;
+    const defaultLayout = dragData.kind === "component"
+      ? getInitialFieldLayout(dragData.componentType)
+      : null;
+
+    return planFieldInsertion(
+      sourceFields,
+      {
+        fieldId: dragData.kind === "field" ? dragData.fieldId : null,
+        type: dragData.kind === "field" ? incoming!.type : dragData.componentType,
+        rowSpan: dragData.kind === "field" ? incoming!.rowSpan : defaultLayout!.rowSpan,
+        colSpan: dragData.kind === "field" ? incoming!.colSpan : defaultLayout!.colSpan,
+      },
+      dropData.targetFieldId,
+      dropData.insertionDirection,
+    );
+  }
+
+  function handleDesignerDragOver(event: DragOverEvent) {
+    const originFields = dragOriginFieldsRef.current;
+    const dragData = event.active.data.current as DesignerDragData | undefined;
+    const rawDropData = event.over?.data.current as DesignerDropData | undefined;
+    const dropData = resolvePointerInsertionDirection(event, rawDropData);
+    if (!originFields || !dragData || !dropData || dropData.kind !== "cell") {
+      setInsertionIndicator(null);
+      return;
+    }
+
+    const nextIndicator: DesignerInsertionIndicator | null =
+      dropData.insertionDirection && dropData.targetFieldId
+        ? {
+            kind: "edge",
+            fieldId: dropData.targetFieldId,
+            direction: dropData.insertionDirection,
+          }
+        : null;
+    setInsertionIndicator((current) =>
+      JSON.stringify(current) === JSON.stringify(nextIndicator)
+        ? current
+        : nextIndicator,
+    );
+  }
+
+  function handleDesignerDragCancel() {
+    dragOriginFieldsRef.current = null;
+    setInsertionIndicator(null);
+    endDragging();
   }
 
   function handleDesignerDragEnd(event: DragEndEvent) {
     const dragData = event.active.data.current as DesignerDragData | undefined;
-    const dropData = event.over?.data.current as DesignerDropData | undefined;
+    const rawDropData = event.over?.data.current as DesignerDropData | undefined;
+    const dropData = resolvePointerInsertionDirection(event, rawDropData);
+    const originFields = dragOriginFieldsRef.current ?? fields;
+    const insertionPlan = dragData && dropData?.insertionDirection
+      ? createInsertionPlan(originFields, dragData, dropData)
+      : null;
+
+    const attemptedInsertion = Boolean(dropData?.insertionDirection);
+    dragOriginFieldsRef.current = null;
+    setInsertionIndicator(null);
 
     endDragging();
 
     if (!dragData || !dropData || dropData.kind !== "cell") {
+      setFields(originFields);
       return;
     }
 
-    const { column, parentGroupId, row } = dropData;
+    if (attemptedInsertion && !insertionPlan?.valid) {
+      setFields(originFields);
+      toast.danger("无法插入组件", {
+        description: insertionPlan?.reason ?? "当前位置无法完成自动重排。",
+      });
+      return;
+    }
 
-    setFields((currentFields) => {
+    const placement = insertionPlan?.valid ? insertionPlan.target : dropData;
+    const baseFields = insertionPlan?.valid ? insertionPlan.fields : originFields;
+    const { column, parentGroupId, row } = placement;
+
+    setFields(() => {
       if (dragData.kind === "field") {
         return moveField(
-          currentFields,
+          baseFields,
           dragData.fieldId,
           row,
           column,
@@ -338,26 +429,39 @@ export default function FormDesigner({ params }: FormDesignerProps) {
 
       const componentType = dragData.componentType;
       const component = getDesignerComponent(componentType);
+      const parentField = parentGroupId
+        ? baseFields.find((field) => field.id === parentGroupId)
+        : null;
+      if (
+        (componentType === "subform" && parentGroupId !== null) ||
+        (parentField?.type === "subform" && isContainerFieldType(componentType))
+      ) {
+        return originFields;
+      }
       const nextIndex =
-        currentFields.filter((field) => field.type === componentType).length + 1;
-      const initialLayout = getInitialFieldLayout(componentType);
+        baseFields.filter((field) => field.type === componentType).length + 1;
+      const defaultLayout = getInitialFieldLayout(componentType);
+      const initialLayout = parentField?.type === "subform"
+        ? { rowSpan: 1, colSpan: 1 }
+        : defaultLayout;
+      const targetColumn = componentType === "subform" ? 0 : column;
 
       if (
         !canPlaceField(
-          currentFields,
+          baseFields,
           null,
           row,
-          column,
+          targetColumn,
           initialLayout.rowSpan,
           initialLayout.colSpan,
           parentGroupId,
         )
       ) {
-        return currentFields;
+        return originFields;
       }
 
       return [
-        ...currentFields,
+        ...baseFields,
         {
           id: `${componentType}-${Date.now()}-${Math.random()
             .toString(36)
@@ -365,7 +469,7 @@ export default function FormDesigner({ params }: FormDesignerProps) {
           type: componentType,
           label: `${component.label}${nextIndex}`,
           row,
-          column,
+          column: targetColumn,
           rowSpan: initialLayout.rowSpan,
           colSpan: initialLayout.colSpan,
           props: getDefaultDesignerFieldProps(componentType),
@@ -392,7 +496,6 @@ export default function FormDesigner({ params }: FormDesignerProps) {
       direction,
     };
     setSelectedFieldId(field.id);
-    setInspectorFieldId(null);
     setIsResizing(true);
   }
 
@@ -423,20 +526,6 @@ export default function FormDesigner({ params }: FormDesignerProps) {
     setSelectedFieldId(fieldId);
   }
 
-  function openFieldProperties(event: MouseEvent<HTMLElement>, fieldId: string) {
-    event.stopPropagation();
-    setSelectedFieldId(fieldId);
-    setIsPagePropertiesOpen(false);
-    setInspectorFieldId(fieldId);
-  }
-
-  function openPageProperties(event: MouseEvent<HTMLDivElement>) {
-    event.stopPropagation();
-    setSelectedFieldId(null);
-    setInspectorFieldId(null);
-    setIsPagePropertiesOpen(true);
-  }
-
   function updateFieldLabel(fieldId: string, label: string) {
     setFields((currentFields) =>
       currentFields.map((field) =>
@@ -461,7 +550,6 @@ export default function FormDesigner({ params }: FormDesignerProps) {
       return currentFields.filter((field) => !removedIds.has(field.id));
     });
     setSelectedFieldId(null);
-    setInspectorFieldId(null);
   }
 
   function commitDesignerSnapshot(snapshot: DesignerSnapshot) {
@@ -507,8 +595,6 @@ export default function FormDesigner({ params }: FormDesignerProps) {
     setFields(cloneFields(snapshot.fields));
     setPageProps(clonePageProps(snapshot.pageProps));
     setSelectedFieldId(null);
-    setInspectorFieldId(null);
-    setIsPagePropertiesOpen(false);
   }
 
   function undoDesignerChange() {
@@ -552,7 +638,9 @@ export default function FormDesigner({ params }: FormDesignerProps) {
         id: idMap.get(field.id)!,
         label: `${field.label} 副本`,
         row: pasteStartRow + field.row - minimumCopiedRow,
-        column: Math.min(field.column, COLUMN_COUNT - field.colSpan),
+        column: field.parentGroupId
+          ? field.column
+          : Math.min(field.column, COLUMN_COUNT - field.colSpan),
         props: {
           ...clonedField.props,
           defaultValueFormula: remapCopiedFormula(
@@ -567,19 +655,27 @@ export default function FormDesigner({ params }: FormDesignerProps) {
     });
     setFields((currentFields) => [...currentFields, ...pastedFields]);
     setSelectedFieldId(pastedFields[0]?.id ?? null);
-    setInspectorFieldId(null);
   }
 
-  function handleDrawerOpenChange(isOpen: boolean) {
-    if (!isOpen) {
-      setInspectorFieldId(null);
+  function validateBeforePersist() {
+    if (beforeDesignerActionRef.current && !beforeDesignerActionRef.current()) {
+      return false;
     }
+
+    const issues = validateDesignerSchema(fields);
+    if (issues.length === 0) return true;
+
+    setSelectedFieldId(issues[0].fieldId);
+    toast.danger("Schema 校验失败", {
+      description: issues.length === 1
+        ? issues[0].message
+        : `${issues[0].message}，另有 ${issues.length - 1} 个空容器`,
+    });
+    return false;
   }
 
   function handleSave() {
-    if (beforeDesignerActionRef.current && !beforeDesignerActionRef.current()) {
-      return;
-    }
+    if (!validateBeforePersist()) return;
 
     setSaveMessage("保存中...");
 
@@ -639,15 +735,95 @@ export default function FormDesigner({ params }: FormDesignerProps) {
     })();
   }
 
-  function handlePublish() {
-    if (beforeDesignerActionRef.current && !beforeDesignerActionRef.current()) {
+  async function handleAnalyzeAgentSchema() {
+    if (!pageProps.agent.enabled) return;
+    if (!pageProps.agent.agentId) {
+      toast.danger("无法分析 Schema", { description: "请先在 Agent 工具中选择机器人。" });
       return;
     }
+
+    const sourceHash = getAgentAnalysisSourceHash(currentSchema);
+    setIsAnalyzingAgent(true);
+    setPageProps((current) => ({
+      ...current,
+      agent: {
+        ...current.agent,
+        context: { ...current.agent.context, status: "analyzing", error: "" },
+      },
+    }));
+    try {
+      const generated = await analyzeSchemaBeforePublish({
+        agentId: pageProps.agent.agentId,
+        appId,
+        formUuid,
+        prompt: pageProps.agent.prompt,
+        schema: currentSchema,
+      });
+      setPageProps((current) => ({
+        ...current,
+        agent: {
+          ...current.agent,
+          context: {
+            ...current.agent.context,
+            generated,
+            overrides: "",
+            generatedAt: new Date().toISOString(),
+            sourceHash,
+            status: "ready",
+            error: "",
+          },
+        },
+      }));
+      toast.success("Schema 分析完成", { description: "分析结果已写入当前设计草稿，请保存后发布。" });
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : "Schema 分析失败";
+      setPageProps((current) => ({
+        ...current,
+        agent: {
+          ...current.agent,
+          context: { ...current.agent.context, status: "failed", error: message },
+        },
+      }));
+      toast.danger("Schema 分析失败", { description: message });
+    } finally {
+      setIsAnalyzingAgent(false);
+    }
+  }
+
+  function handlePublish() {
+    if (!validateBeforePersist()) return;
 
     setSaveMessage("发布中...");
 
     void (async () => {
       try {
+        if (pageProps.agent.enabled && !pageProps.agent.agentId) throw new Error("请先在 Agent 工具中选择机器人");
+        const currentAnalysisHash = getAgentAnalysisSourceHash(currentSchema);
+        const analysisIsFresh = pageProps.agent.context.status === "ready" && pageProps.agent.context.sourceHash === currentAnalysisHash;
+        const publishPageProps: PageDesignerProps = pageProps.agent.enabled && !analysisIsFresh
+          ? { ...pageProps, agent: { ...pageProps.agent, context: { ...pageProps.agent.context, status: "stale" } } }
+          : pageProps;
+        if (publishPageProps !== pageProps) setPageProps(publishPageProps);
+        const schemaToPublish = buildSchema(formUuid, formName, fields, publishPageProps);
+
+        setSaveMessage("正在保存发布版本...");
+        const draftResponse = await fetch(`/api/forms/${formUuid}/schema/draft`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            schema: schemaToPublish,
+            change_log: `publish draft prepared at ${new Date().toISOString()}`,
+          }),
+        });
+        const draftPayload = (await draftResponse.json()) as {
+          code: number;
+          message: string;
+          data: { latestVersion: number; publishedVersion: number } | null;
+        };
+        if (!draftResponse.ok || draftPayload.code !== 0 || !draftPayload.data) {
+          throw new Error(draftPayload.message || "保存发布版本失败");
+        }
+
         const response = await fetch(`/api/forms/${formUuid}/publish`, {
           method: "POST",
         });
@@ -685,10 +861,10 @@ export default function FormDesigner({ params }: FormDesignerProps) {
             description: payload.message,
           });
         }
-      } catch {
+      } catch (reason) {
         setSaveMessage("发布失败");
         toast.danger("发布失败", {
-          description: "请稍后重试。",
+          description: reason instanceof Error ? reason.message : "请稍后重试。",
         });
       }
     })();
@@ -774,26 +950,31 @@ export default function FormDesigner({ params }: FormDesignerProps) {
 
   return (
     <DndContext
+      id={`form-designer-${formUuid}`}
       collisionDetection={designerCollisionDetection}
       sensors={sensors}
-      onDragCancel={endDragging}
+      onDragCancel={handleDesignerDragCancel}
       onDragEnd={handleDesignerDragEnd}
+      onDragOver={handleDesignerDragOver}
       onDragStart={handleDesignerDragStart}
     >
-      <div className="designer-theme-root h-screen min-h-screen overflow-hidden p-2">
+      <div className="designer-theme-root h-dvh min-h-0 w-full max-w-full overflow-hidden p-1">
       <div
-        className="grid h-full min-h-0 gap-0"
+        className="grid h-full min-h-0 w-full max-w-full gap-0 overflow-hidden"
         style={{
           gridTemplateColumns: `${workbenchWidth}px 16px minmax(0, 1fr)`,
         }}
       >
         <DesignerWorkbenchSidebar
           activePanel={activeDesignerPanel}
+          agentAnalysisStale={pageProps.agent.enabled && pageProps.agent.context.sourceHash !== getAgentAnalysisSourceHash(currentSchema)}
           debugEvents={debugEvents}
           fields={fields}
           pageProps={pageProps}
           schema={currentSchema}
           onActivePanelChange={setActiveDesignerPanel}
+          isAnalyzingAgent={isAnalyzingAgent}
+          onAnalyzeAgentSchema={() => void handleAnalyzeAgentSchema()}
           onBeforeDesignerActionRegister={(handler) => {
             beforeDesignerActionRef.current = handler;
           }}
@@ -811,7 +992,7 @@ export default function FormDesigner({ params }: FormDesignerProps) {
           </button>
         </div>
 
-        <section className="flex min-h-0 min-w-0 flex-col">
+        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden">
           <FormDesignerHeader
             appName={appName}
             fieldsCount={fields.length}
@@ -832,38 +1013,40 @@ export default function FormDesigner({ params }: FormDesignerProps) {
             saveMessage={saveMessage}
           />
 
-          <DesignerCanvas
-            fields={fields}
-            gridRef={gridRef}
-            rowCount={rowCount}
-            selectedFieldId={selectedFieldId}
-            showMatrix={showMatrix}
-            onCanvasClick={() => setSelectedFieldId(null)}
-            onCanvasDoubleClick={openPageProperties}
-            onFieldPropertiesOpen={openFieldProperties}
-            onFieldSelect={selectField}
-            onResizePointerDown={handleResizePointerDown}
-            onResizePointerMove={handleResizePointerMove}
-            onResizePointerUp={endResizing}
-          />
+          <div className="flex min-h-0 min-w-0 flex-1 gap-2 overflow-hidden">
+            <DesignerCanvas
+              fields={fields}
+              gridRef={gridRef}
+              insertionIndicator={insertionIndicator}
+              rowCount={rowCount}
+              selectedFieldId={selectedFieldId}
+              showMatrix={showMatrix}
+              onCanvasClick={() => setSelectedFieldId(null)}
+              onFieldSelect={selectField}
+              onResizePointerDown={handleResizePointerDown}
+              onResizePointerMove={handleResizePointerMove}
+              onResizePointerUp={endResizing}
+            />
+            <Card className="h-full w-[300px] shrink-0 overflow-hidden rounded-lg border border-[var(--designer-border)] bg-[var(--designer-surface-solid)] p-0 shadow-none">
+              {selectedField ? (
+                <FieldPropertyPanel
+                  fields={fields}
+                  field={selectedField}
+                  onDelete={removeField}
+                  onLabelChange={updateFieldLabel}
+                  onPropsChange={updateFieldProps}
+                />
+              ) : (
+                <PagePropertyPanel
+                  formName={formName}
+                  pageProps={pageProps}
+                  onPropsChange={setPageProps}
+                />
+              )}
+            </Card>
+          </div>
         </section>
       </div>
-
-      <FieldPropertyDrawer
-        fields={fields}
-        field={inspectorField}
-        isOpen={inspectorField !== null}
-        onDelete={removeField}
-        onLabelChange={updateFieldLabel}
-        onOpenChange={handleDrawerOpenChange}
-        onPropsChange={updateFieldProps}
-      />
-      <PagePropertyDrawer
-        isOpen={isPagePropertiesOpen}
-        pageProps={pageProps}
-        onOpenChange={setIsPagePropertiesOpen}
-        onPropsChange={setPageProps}
-      />
       <FormPreviewModal
         isOpen={isPreviewOpen}
         schema={currentSchema}
@@ -886,17 +1069,185 @@ export default function FormDesigner({ params }: FormDesignerProps) {
   );
 }
 
+function getAgentAnalysisSourceHash(schema: FormDesignerSchema) {
+  const source = JSON.stringify({
+    formName: schema.formName,
+    columns: schema.columns,
+    rows: schema.rows,
+    fields: schema.fields,
+    capabilitiesVersion: FORM_COMPONENT_AGENT_CAPABILITIES_VERSION,
+    agentId: schema.pageProps.agent.agentId,
+    prompt: schema.pageProps.agent.prompt,
+  });
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+async function analyzeSchemaBeforePublish({ agentId, appId, formUuid, prompt, schema }: { agentId: string; appId: string | null; formUuid: string; prompt: string; schema: FormDesignerSchema }) {
+  const context = { appId: appId ?? undefined, formUuid, route: `/designer/${formUuid}` };
+  const sessionResponse = await fetch("/api/agent/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ agentId, context }),
+  });
+  const sessionPayload = (await sessionResponse.json()) as { code: number; message: string; data: { id: string } | null };
+  if (!sessionResponse.ok || sessionPayload.code !== 0 || !sessionPayload.data) {
+    throw new Error(sessionPayload.message || "无法创建 Schema 分析会话");
+  }
+
+  const schemaForAnalysis = {
+    ...schema,
+    fields: schema.fields.map((field) => ({
+      ...field,
+      agentCapability: getFormComponentAgentCapability(field.type),
+    })),
+    pageProps: {
+      ...schema.pageProps,
+      agent: {
+        enabled: schema.pageProps.agent.enabled,
+        agentId: schema.pageProps.agent.agentId,
+        prompt: schema.pageProps.agent.prompt,
+      },
+    },
+  };
+  const analysisPrompt = [
+    "分析下面的低代码表单 Schema，为运行时表单 Agent 生成简洁、可复用的业务上下文。只输出最终分析结果，不要描述分析过程。",
+    prompt.trim() ? `设计者提供的业务提示：${prompt.trim()}` : "",
+    [
+      "输出规则：",
+      "- 使用紧凑 Markdown，只允许必要的小标题、表格和列表。",
+      "- 不要输出寒暄、前言、总结、主观意见、改进建议或工具调用过程。",
+      "- 不要出现“我来获取”“现在我已拥有完整上下文”“开始生成分析报告”“以下是”等过程性或口语化句子。",
+      "- 不要重复 Schema 原文，不要使用连续空行，每个段落只保留必要换行。",
+      "- 只陈述能从 Schema 和设计者提示中确认的事实；不确定内容明确标记为“需询问”。",
+      "- 字段必须同时标注 label 和 fieldId；相同类型规则尽量合并表达。",
+      "- 内容结构限定为：业务目的、字段与约束、Agent 填写策略、关联规则。没有内容的章节省略。",
+    ].join("\n"),
+    `Schema：${JSON.stringify(schemaForAnalysis)}`,
+  ].filter(Boolean).join("\n\n");
+  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(sessionPayload.data.id)}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "text/event-stream" },
+    body: JSON.stringify({ content: analysisPrompt, context }),
+  });
+  if (!response.ok || !response.body) {
+    const payload = (await response.json()) as { message?: string };
+    throw new Error(payload.message || "Schema 分析失败");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+    for (const frame of frames) result += readAgentAnalysisDelta(frame);
+    if (done) {
+      if (buffer.trim()) result += readAgentAnalysisDelta(buffer);
+      break;
+    }
+  }
+  const normalizedResult = normalizeAgentSchemaAnalysis(result);
+  if (!normalizedResult) throw new Error("机器人未生成有效的 Schema 分析结果");
+  return normalizedResult;
+}
+
+function normalizeAgentSchemaAnalysis(content: string) {
+  const narrationPatterns = [
+    /^(好的|当然|没问题)[，。！!]?/,
+    /^(我来|接下来我将|现在我已|现在开始|开始生成|以下是|下面是)/,
+    /(获取该应用下的其他表单|拥有完整的上下文|为分析提供更完整的上下文)/,
+  ];
+  return content
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => !narrationPatterns.some((pattern) => pattern.test(line.trim())))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function readAgentAnalysisDelta(frame: string) {
+  let eventName = "message";
+  const dataLines: string[] = [];
+  for (const line of frame.split(/\r?\n/)) {
+    if (line.startsWith("event:")) eventName = line.slice(6).trim();
+    if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+  }
+  if (dataLines.length === 0) return "";
+  let payload: Record<string, unknown>;
+  try { payload = JSON.parse(dataLines.join("\n")) as Record<string, unknown>; } catch { return ""; }
+  if (eventName === "message.delta" && typeof payload.delta === "string") return payload.delta;
+  if (eventName === "run.failed") throw new Error(typeof payload.message === "string" ? payload.message : "Schema 分析失败");
+  return "";
+}
+
 const designerCollisionDetection: CollisionDetection = (args) => {
   const collisions = pointerWithin(args);
   const resolvedCollisions = collisions.length > 0 ? collisions : rectIntersection(args);
 
   return [...resolvedCollisions].sort((left, right) => {
-    const leftIsGroupCell = String(left.id).startsWith("group-cell:");
-    const rightIsGroupCell = String(right.id).startsWith("group-cell:");
+    const leftIsGroupCell = String(left.id).startsWith("group-cell:") || String(left.id).startsWith("subform-cell:");
+    const rightIsGroupCell = String(right.id).startsWith("group-cell:") || String(right.id).startsWith("subform-cell:");
 
     return Number(rightIsGroupCell) - Number(leftIsGroupCell);
   });
 };
+
+function resolvePointerInsertionDirection(
+  event: DragOverEvent | DragEndEvent,
+  dropData?: DesignerDropData,
+): DesignerDropData | undefined {
+  if (!dropData?.targetFieldId || !event.over) return dropData;
+  const activatorEvent = event.activatorEvent as Event & {
+    clientX?: number;
+    clientY?: number;
+  };
+  if (
+    typeof activatorEvent.clientX !== "number" ||
+    typeof activatorEvent.clientY !== "number"
+  ) {
+    return { ...dropData, insertionDirection: undefined };
+  }
+
+  const rect = event.over.rect;
+  const pointerX = activatorEvent.clientX + event.delta.x;
+  const pointerY = activatorEvent.clientY + event.delta.y;
+  const relativeX = (pointerX - rect.left) / Math.max(rect.width, 1);
+  const relativeY = (pointerY - rect.top) / Math.max(rect.height, 1);
+  const topThreshold = 0.09;
+  const bottomThreshold = 0.09;
+  const leftThreshold = 0.08;
+  const rightThreshold = 0.08;
+  const candidates: Array<{
+    direction: NonNullable<DesignerDropData["insertionDirection"]>;
+    distance: number;
+  }> = [];
+  if (dropData.allowRowInsertion !== false && relativeY >= 0 && relativeY <= topThreshold) {
+    candidates.push({ direction: "before-row", distance: relativeY / topThreshold });
+  }
+  if (dropData.allowRowInsertion !== false && relativeY <= 1 && relativeY >= 1 - bottomThreshold) {
+    candidates.push({ direction: "after-row", distance: (1 - relativeY) / bottomThreshold });
+  }
+  if (relativeX >= 0 && relativeX <= leftThreshold) {
+    candidates.push({ direction: "before-column", distance: relativeX / leftThreshold });
+  }
+  if (relativeX <= 1 && relativeX >= 1 - rightThreshold) {
+    candidates.push({ direction: "after-column", distance: (1 - relativeX) / rightThreshold });
+  }
+  candidates.sort((left, right) => left.distance - right.distance);
+  const insertionDirection = candidates[0]?.direction;
+
+  return { ...dropData, insertionDirection };
+}
 
 type DesignerSnapshot = {
   fields: PlacedField[];

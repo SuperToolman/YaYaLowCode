@@ -62,7 +62,7 @@ export function DefaultValueEditor({
   }
 
   return (
-    <div className="min-w-0 flex-1 space-y-2">
+    <div className="w-full min-w-0 flex-1 space-y-1 overflow-hidden">
       <DefaultValueTypeSegmented
         value={defaultValueType}
         onChange={handleDefaultValueTypeChange}
@@ -502,7 +502,7 @@ function FormulaFieldTreeNode({
       (item) => parentMatches || item.label.toLocaleLowerCase().includes(keyword),
     )
     .sort((left, right) => left.row - right.row || left.column - right.column);
-  const isContainer = field.type === "groupContainer";
+  const isContainer = field.type === "groupContainer" || field.type === "subform";
   const hasDuplicateLabel = duplicateLabels.has(field.label);
 
   return (
@@ -691,22 +691,27 @@ function DefaultValueTypeSegmented({
   value: DesignerDefaultValueType;
 }) {
   return (
-    <div className="flex h-8 rounded-lg bg-[var(--color-bg-subtle)] p-0.5">
+    <div
+      role="tablist"
+      aria-label="默认值类型"
+      className="grid h-7 w-full min-w-0 grid-cols-3 overflow-hidden rounded-md bg-[var(--color-bg-subtle)] p-0.5"
+    >
       {DEFAULT_VALUE_TYPE_OPTIONS.map((option) => (
-        <Button
+        <button
           key={option.value}
           type="button"
-          variant="ghost"
+          role="tab"
+          aria-selected={value === option.value}
           onClick={() => onChange(option.value)}
           className={[
-            "flex-1 rounded-md px-2 text-xs transition",
+            "min-w-0 overflow-hidden truncate whitespace-nowrap rounded-sm px-1 text-[10px] transition",
             value === option.value
-              ? "bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)] shadow-sm"
+              ? "bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)]"
               : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]",
           ].join(" ")}
         >
           {option.label}
-        </Button>
+        </button>
       ))}
     </div>
   );

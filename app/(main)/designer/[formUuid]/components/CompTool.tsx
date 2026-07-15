@@ -43,7 +43,14 @@ export const DESIGNER_COMPONENTS = [
     label: "分组组件",
     placeholder: "",
     icon: "组",
-    group: "basic",
+    group: "advanced",
+  },
+  {
+    type: "subform",
+    label: "子表单",
+    placeholder: "",
+    icon: "表",
+    group: "advanced",
   },
   {
     type: "singleLineText",
@@ -198,6 +205,31 @@ export type DesignerFieldProps = {
   buttonText?: string;
   accept?: string;
   multiple?: boolean;
+  subformAddButtonText?: string;
+  subformButtonState?: "normal" | "disabled" | "hidden";
+  subformAllowBatchImport?: boolean;
+  subformAllowExcelExport?: boolean;
+  subformAllowBatchDelete?: boolean;
+  subformFilterEmptyRows?: boolean;
+  subformShowActionColumn?: boolean;
+  subformShowCopyButton?: boolean;
+  subformShowDeleteButton?: boolean;
+  subformDeleteButtonText?: string;
+  subformConfirmDelete?: boolean;
+  subformShowSort?: boolean;
+  subformDisplayMode?: "desktop" | "mobile";
+  subformArrangement?: "tile" | "table";
+  subformTheme?: "zebra" | "divider" | "border";
+  subformShowHeader?: boolean;
+  subformShowIndex?: boolean;
+  subformLayoutMode?: "auto" | "fixed";
+  subformPageSize?: number;
+  subformMaxRows?: number;
+  subformFrozenLeftColumns?: number;
+  subformFreezeActionColumn?: boolean;
+  subformActionColumnWidth?: number;
+  subformAllowCustomColumns?: boolean;
+  subformEnableTotals?: boolean;
 };
 
 const DEFAULT_OPTIONS: DesignerFieldOption[] = [
@@ -269,6 +301,39 @@ export function getDefaultDesignerFieldProps(
     return {
       ...commonProps,
       description: "用于收纳子组件的分组容器。",
+    };
+  }
+
+  if (type === "subform") {
+    return {
+      ...commonProps,
+      defaultValue: [],
+      description: "可拖入普通字段作为表格列。",
+      subformAddButtonText: "新增一项",
+      subformButtonState: "normal",
+      subformAllowBatchImport: true,
+      subformAllowExcelExport: true,
+      subformAllowBatchDelete: false,
+      subformFilterEmptyRows: true,
+      subformShowActionColumn: true,
+      subformShowCopyButton: false,
+      subformShowDeleteButton: true,
+      subformDeleteButtonText: "删除",
+      subformConfirmDelete: true,
+      subformShowSort: false,
+      subformDisplayMode: "desktop",
+      subformArrangement: "table",
+      subformTheme: "divider",
+      subformShowHeader: true,
+      subformShowIndex: true,
+      subformLayoutMode: "fixed",
+      subformPageSize: 20,
+      subformMaxRows: 500,
+      subformFrozenLeftColumns: 0,
+      subformFreezeActionColumn: true,
+      subformActionColumnWidth: 70,
+      subformAllowCustomColumns: false,
+      subformEnableTotals: false,
     };
   }
 
@@ -404,13 +469,13 @@ export function CompTool({ embedded = false }: CompToolProps) {
     <>
       {embedded ? null : (
         <div className="mb-3 shrink-0">
-          <h2 className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">组件箱</h2>
+          <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">组件箱</h2>
         </div>
       )}
 
       <Input
         aria-label="搜索组件"
-        className="mb-3 shrink-0"
+        className="mb-3 shrink-0 text-xs font-normal"
         placeholder="搜索组件中文名"
         value={searchKeyword}
         onChange={(event) => setSearchKeyword(event.currentTarget.value)}
@@ -420,10 +485,10 @@ export function CompTool({ embedded = false }: CompToolProps) {
         {groupedComponents.map((group) => (
           <section key={group.key}>
             <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+              <h3 className="text-xs font-normal text-[var(--color-text-primary)]">
                 {group.label}
               </h3>
-              <span className="text-xs text-[var(--color-text-disabled)]">
+              <span className="text-xs font-normal text-[var(--color-text-disabled)]">
                 {group.components.length}
               </span>
             </div>
@@ -438,7 +503,7 @@ export function CompTool({ embedded = false }: CompToolProps) {
                 ))}
               </div>
             ) : (
-              <div className="rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-4 text-center text-xs text-[var(--color-text-disabled)]">
+              <div className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-4 text-center text-xs font-normal text-[var(--color-text-disabled)]">
                 {normalizedKeyword ? "未匹配到组件" : "暂无组件"}
               </div>
             )}
@@ -480,12 +545,12 @@ function DraggableComponentCard({
       className={isDragging ? "opacity-40" : ""}
       style={{ touchAction: "none" }}
     >
-      <Card className="cursor-grab border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-2 shadow-none transition hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:bg-[var(--color-bg-subtle)] hover:shadow-[var(--shadow-card-hover)] active:cursor-grabbing">
+      <Card className="cursor-grab rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-2 shadow-none transition hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:bg-[var(--color-bg-subtle)] hover:shadow-[var(--shadow-card-hover)] active:cursor-grabbing">
         <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-xs font-bold text-[var(--color-primary)]">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-soft)] text-xs font-normal text-[var(--color-primary)]">
             <ComponentPaletteIcon type={component.type} fallback={component.icon} />
           </span>
-          <span className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
+          <span className="truncate text-xs font-normal text-[var(--color-text-primary)]">
             {component.label}
           </span>
         </div>
@@ -503,6 +568,10 @@ function ComponentPaletteIcon({
 }) {
   if (type === "groupContainer") {
     return <FolderIcon />;
+  }
+
+  if (type === "subform") {
+    return <GridIcon />;
   }
 
   if (type === "description") {
@@ -565,7 +634,7 @@ export function FieldPreview({
   return (
     <div
       className={[
-        "w-full flex-1 space-y-2",
+        "w-full min-w-0 flex-1 space-y-2",
         fieldProps.isHidden ? "opacity-40" : "",
       ].join(" ")}
     >
@@ -575,7 +644,7 @@ export function FieldPreview({
         </label>
       ) : null}
       {type === "groupContainer" ? (
-        <div className="rounded-2xl border border-dashed border-[var(--color-primary)] bg-[var(--color-bg-subtle)] p-4">
+        <div className="rounded-2xl border border-dashed border-[var(--color-primary)] bg-[var(--color-bg-subtle)] p-1">
           <div className="flex items-center justify-between gap-3">
             <span className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
               {label}
@@ -585,6 +654,12 @@ export function FieldPreview({
           <div className="mt-3 rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-5 text-center text-xs text-[var(--color-text-secondary)]">
             将组件拖拽到此分组中
           </div>
+        </div>
+      ) : null}
+      {type === "subform" ? (
+        <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)]">
+          <div className="flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2"><span className="text-sm font-semibold">{label}</span><span className="text-xs text-[var(--color-text-secondary)]">子表单</span></div>
+          <div className="grid grid-cols-3 divide-x divide-[var(--color-border)] text-center text-xs text-[var(--color-text-secondary)]"><span className="p-2">字段列</span><span className="p-2">字段列</span><span className="p-2">操作</span></div>
         </div>
       ) : null}
       {type === "singleLineText" ? (
@@ -667,7 +742,7 @@ export function FieldPreview({
               <Radio.Control>
                 <Radio.Indicator />
               </Radio.Control>
-              <Radio.Content>{option.label}</Radio.Content>
+              <Radio.Content className="text-[12px]">{option.label}</Radio.Content>
             </Radio>
           ))}
         </RadioGroup>
@@ -691,7 +766,7 @@ export function FieldPreview({
               <Checkbox.Control>
                 <Checkbox.Indicator />
               </Checkbox.Control>
-              <Checkbox.Content>{option.label}</Checkbox.Content>
+              <Checkbox.Content className="text-[12px]">{option.label}</Checkbox.Content>
             </Checkbox>
           ))}
         </CheckboxGroup>

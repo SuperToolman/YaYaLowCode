@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Field, inputClassName } from "../_components/field";
+import { Button, Input } from "@heroui/react";
+import { Field } from "../_components/field";
 
 type ApiEnvelope<T> = { code: number; message: string; data: T | null };
 type DatabaseSettings = {
@@ -127,22 +128,22 @@ export default function DatabaseSettingsPage() {
       <form className="mt-6 space-y-5" onSubmit={saveSettings}>
         <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_160px]">
           <Field label="主机地址">
-            <input className={inputClassName} value={form.host} onChange={(event) => updateField("host", event.target.value)} required disabled={loading || saving} />
+            <Input fullWidth value={form.host} onChange={(event) => updateField("host", event.target.value)} required disabled={loading || saving} />
           </Field>
           <Field label="端口">
-            <input className={inputClassName} type="number" min="1" max="65535" value={form.port} onChange={(event) => updateField("port", event.target.value)} required disabled={loading || saving} />
+            <Input fullWidth type="number" min="1" max="65535" value={form.port} onChange={(event) => updateField("port", event.target.value)} required disabled={loading || saving} />
           </Field>
         </div>
         <div className="grid gap-5 sm:grid-cols-2">
           <Field label="数据库名称">
-            <input className={inputClassName} value={form.database} onChange={(event) => updateField("database", event.target.value)} required disabled={loading || saving} />
+            <Input fullWidth value={form.database} onChange={(event) => updateField("database", event.target.value)} required disabled={loading || saving} />
           </Field>
           <Field label="用户名">
-            <input className={inputClassName} value={form.username} onChange={(event) => updateField("username", event.target.value)} required disabled={loading || saving} />
+            <Input fullWidth value={form.username} onChange={(event) => updateField("username", event.target.value)} required disabled={loading || saving} />
           </Field>
         </div>
         <Field label="密码" hint={passwordConfigured ? "留空则保留当前密码；密码不会回显。" : "首次保存必须填写密码。"}>
-          <input className={inputClassName} type="password" autoComplete="new-password" value={form.password} onChange={(event) => updateField("password", event.target.value)} disabled={loading || saving} />
+          <Input fullWidth type="password" autoComplete="new-password" value={form.password} onChange={(event) => updateField("password", event.target.value)} disabled={loading || saving} />
         </Field>
 
         {error ? <p className="rounded-xl bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">{error}</p> : null}
@@ -150,9 +151,9 @@ export default function DatabaseSettingsPage() {
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] pt-5">
           <p className="text-xs leading-5 text-[var(--color-text-secondary)]">配置文件只保存在后端运行目录，不会发送到浏览器。</p>
-          <button className="h-11 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-semibold text-[var(--color-text-on-primary)] shadow-[var(--shadow-primary)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60" type="submit" disabled={loading || saving}>
+          <Button type="submit" isDisabled={loading || saving}>
             {saving ? "正在验证并重启…" : "保存并重启后端"}
-          </button>
+          </Button>
         </div>
       </form>
     </section>

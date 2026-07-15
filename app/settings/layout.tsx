@@ -16,17 +16,57 @@ const settingsGroups = [
     ],
   },
   {
+    label: "权限中心",
+    items: [
+      {
+        href: "/settings/identity-source",
+        label: "身份源设置",
+        description: "平台账号或钉钉组织",
+      },
+      {
+        href: "/settings/organization",
+        label: "组织架构",
+        description: "部门与组织层级",
+      },
+      {
+        href: "/settings/roles",
+        label: "角色管理",
+        description: "角色与权限范围",
+      },
+      {
+        href: "/settings/users",
+        label: "用户管理",
+        description: "账号、状态与归属",
+      },
+    ],
+  },
+  {
     label: "Agent",
     items: [
       {
-        href: "/settings/agent",
-        label: "模型配置",
-        description: "供应商、模型与执行参数",
+        href: "/settings/agents",
+        label: "机器人",
+        description: "多 Agent 与专属能力",
+      },
+      {
+        href: "/settings/model-providers",
+        label: "模型提供商",
+        description: "API、网关与密钥",
+      },
+      {
+        href: "/settings/agent-profiles",
+        label: "配置文件",
+        description: "模型与执行参数组合",
       },
       {
         href: "/settings/knowledge",
         label: "知识库",
         description: "文档与向量检索",
+      },
+      {
+        href: "/settings/plugins",
+        label: "插件",
+        description: "扩展入口与确认策略",
       },
       {
         href: "/settings/skills",
@@ -41,19 +81,16 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   const pathname = usePathname();
 
   return (
-    <div className="theme-page-shell h-full min-h-0 overflow-hidden">
-      <main className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col px-4 py-5 sm:px-6">
-        <section className="theme-panel-strong shrink-0 rounded-[28px] p-6 shadow-[var(--shadow-panel)]">
-          <p className="text-xs font-semibold tracking-[0.14em] text-[var(--color-primary)]">
-            PLATFORM SETTINGS
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold text-[var(--color-text-primary)]">设置</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--color-text-secondary)]">
-            管理平台基础设施、Agent 模型、知识库与 Skills。每个设置项目拥有独立地址，可以直接访问和分享。
+    <div className="theme-page-shell h-full min-h-0 overflow-hidden p-6">
+      <main className="mx-auto grid h-full min-h-0 w-full grid-rows-[auto_minmax(0,1fr)]">
+        <section className="flex flex-end items-center theme-panel-strong shrink-0 rounded-[28px] p-4 shadow-[var(--shadow-panel)]">
+          <h1 className=" text-3xl font-semibold text-[var(--color-text-primary)]">设置</h1>
+          <p className="ml-2 max-w-2xl text-sm leading-6 text-[var(--color-text-secondary)]">
+            管理平台基础设施、用户权限与 Agent 能力。每个设置项目拥有独立地址，可以直接访问和分享。
           </p>
         </section>
 
-        <div className="mt-5 flex min-h-0 flex-1 items-stretch gap-4">
+        <div className="mt-5 flex min-h-0 overflow-hidden gap-4">
           <Card className="theme-panel h-full min-h-0 w-[200px] shrink-0 overflow-hidden rounded-[22px] p-3 shadow-[var(--shadow-card)]">
             <div className="flex h-full min-h-0 flex-col">
               <div className="shrink-0 px-3 pb-3 pt-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-disabled)]">

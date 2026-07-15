@@ -23,6 +23,7 @@ import { Description } from "@heroui/react/description";
 import { parseDate } from "@internationalized/date";
 import { normalizeActionPanelCode } from "../lib/action-panel-code";
 import { calculateFormulaValues } from "../lib/form-formula";
+import { TrashIcon } from "./app-icons";
 
 const DEFAULT_COLUMN_GAP = 16;
 const DEFAULT_ROW_GAP = 20;
@@ -46,6 +47,7 @@ const DID_MOUNT_DEDUP_WINDOW_MS = 2000;
 
 export type RuntimeFieldType =
   | "groupContainer"
+  | "subform"
   | "singleLineText"
   | "description"
   | "multiLineText"
@@ -92,6 +94,31 @@ export type RuntimeFieldProps = {
   buttonText?: string;
   accept?: string;
   multiple?: boolean;
+  subformAddButtonText?: string;
+  subformButtonState?: "normal" | "disabled" | "hidden";
+  subformAllowBatchImport?: boolean;
+  subformAllowExcelExport?: boolean;
+  subformAllowBatchDelete?: boolean;
+  subformFilterEmptyRows?: boolean;
+  subformShowActionColumn?: boolean;
+  subformShowCopyButton?: boolean;
+  subformShowDeleteButton?: boolean;
+  subformDeleteButtonText?: string;
+  subformConfirmDelete?: boolean;
+  subformShowSort?: boolean;
+  subformDisplayMode?: "desktop" | "mobile";
+  subformArrangement?: "tile" | "table";
+  subformTheme?: "zebra" | "divider" | "border";
+  subformShowHeader?: boolean;
+  subformShowIndex?: boolean;
+  subformLayoutMode?: "auto" | "fixed";
+  subformPageSize?: number;
+  subformMaxRows?: number;
+  subformFrozenLeftColumns?: number;
+  subformFreezeActionColumn?: boolean;
+  subformActionColumnWidth?: number;
+  subformAllowCustomColumns?: boolean;
+  subformEnableTotals?: boolean;
 };
 
 export type RuntimeSchemaField = {
@@ -132,6 +159,19 @@ export type RuntimePageProps = {
   submitButtonText?: string;
   dataSources?: RuntimeDataSource[];
   actionPanel?: Partial<RuntimeActionPanelState>;
+  agent?: {
+    enabled?: boolean;
+    agentId?: string;
+    prompt?: string;
+    context?: {
+      generated?: string;
+      overrides?: string;
+      generatedAt?: string;
+      sourceHash?: string;
+      status?: "idle" | "analyzing" | "ready" | "stale" | "failed";
+      error?: string;
+    };
+  };
 };
 
 export type RuntimeFormSchema = {
@@ -151,6 +191,8 @@ type RuntimeFormRendererProps = {
   initialValues?: Record<string, unknown>;
   urlParams?: Record<string, string>;
   onDebugEvent?: (event: RuntimeDebugEvent) => void;
+  onValuesChange?: (values: Record<string, unknown>) => void;
+  valuePatch?: { id: number; values: Record<string, unknown> };
   onSubmit: (values: Record<string, unknown>) => Promise<void> | void;
 };
 
@@ -180,6 +222,8 @@ export function RuntimeFormRenderer({
   initialValues,
   urlParams = {},
   onDebugEvent,
+  onValuesChange,
+  valuePatch,
   onSubmit,
 }: RuntimeFormRendererProps) {
   const didMountExecutedRef = useRef(false);
@@ -200,6 +244,23 @@ export function RuntimeFormRenderer({
     ),
   );
   const values = runtimeState.values;
+
+  useEffect(() => {
+    onValuesChange?.(runtimeState.values);
+  }, [onValuesChange, runtimeState.values]);
+
+  useEffect(() => {
+    if (!valuePatch) return;
+    setRuntimeState((current) => {
+      const nextValues = { ...current.values, ...valuePatch.values };
+      const calculated = calculateFormulaValues(fields, nextValues);
+      return {
+        ...current,
+        values: calculated.values,
+        formulaErrors: calculated.errors,
+      };
+    });
+  }, [fields, valuePatch]);
   const dataSources = runtimeState.dataSources;
   const actionModule = useMemo(
     () => compileActionModule(normalizedActionCode),
@@ -488,13 +549,20 @@ function RuntimeFieldNode({
   value: unknown;
   values: Record<string, unknown>;
 }) {
+  if (field.type === "subform") {
+    const childFields = allFields
+      .filter((item) => item.parentGroupId === field.id && !item.props?.isHidden)
+      .sort((left, right) => left.column - right.column);
+    return <RuntimeSubform field={field} childFields={childFields} value={value} onChange={(nextValue) => onFieldAction(field.id, nextValue, "onChange")} />;
+  }
+
   if (field.type === "groupContainer") {
     const childFields = allFields
       .filter((item) => item.parentGroupId === field.id && !item.props?.isHidden)
       .sort((left, right) => left.row - right.row || left.column - right.column);
 
     return (
-      <div className="flex w-full flex-col rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-4">
+      <div className="flex w-full min-w-0 flex-col rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-1">
         <div className="mb-3 text-sm font-semibold text-[var(--color-text-primary)]">{field.label}</div>
         <div
           className="grid"
@@ -541,15 +609,85 @@ function RuntimeFieldNode({
   );
 }
 
+function RuntimeSubform({ field, childFields, value, onChange }: { field: RuntimeSchemaField; childFields: RuntimeSchemaField[]; value: unknown; onChange: (value: Array<Record<string, unknown>>) => void }) {
+  const props = field.props ?? {};
+  const rows = Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item)) : [];
+  const maxRows = props.subformMaxRows ?? 500;
+  const showActions = true;
+
+  function updateCell(rowIndex: number, fieldId: string, nextValue: unknown) {
+    onChange(rows.map((row, index) => index === rowIndex ? { ...row, [fieldId]: nextValue } : row));
+  }
+
+  function addRow() {
+    if (rows.length >= maxRows || props.subformButtonState !== "normal") return;
+    onChange([...rows, Object.fromEntries(childFields.map((child) => [child.id, getFieldDefaultValue(child)]))]);
+  }
+
+  function removeRow(rowIndex: number) {
+    if (props.subformConfirmDelete !== false && !window.confirm("确认删除这一行吗？")) return;
+    onChange(rows.filter((_, index) => index !== rowIndex));
+  }
+
+  function copyRow(rowIndex: number) {
+    if (rows.length >= maxRows) return;
+    onChange([...rows.slice(0, rowIndex + 1), { ...rows[rowIndex] }, ...rows.slice(rowIndex + 1)]);
+  }
+
+  function moveRow(rowIndex: number, direction: -1 | 1) {
+    const targetIndex = rowIndex + direction;
+    if (targetIndex < 0 || targetIndex >= rows.length) return;
+    const nextRows = [...rows];
+    [nextRows[rowIndex], nextRows[targetIndex]] = [nextRows[targetIndex], nextRows[rowIndex]];
+    onChange(nextRows);
+  }
+
+  return (
+    <section className="w-full min-w-0 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><div className="text-sm font-semibold">{field.label}</div>{props.description ? <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{props.description}</p> : null}</div>
+        <div className="flex flex-wrap gap-2">
+          {props.subformAllowBatchImport ? <Button size="sm" variant="secondary" isDisabled>批量导入</Button> : null}
+          {props.subformAllowExcelExport ? <Button size="sm" variant="secondary" isDisabled={rows.length === 0}>导出 Excel</Button> : null}
+          {props.subformButtonState !== "hidden" ? <Button size="sm" isDisabled={props.subformButtonState === "disabled" || rows.length >= maxRows} onPress={addRow}>{props.subformAddButtonText ?? "新增一项"}</Button> : null}
+        </div>
+      </div>
+      <div className={`subform-horizontal-scroll overflow-x-auto rounded-xl border border-[var(--color-border)] ${props.subformTheme === "border" ? "divide-y divide-[var(--color-border)]" : ""}`}>
+        <table
+          className="w-full border-collapse text-left text-sm"
+          style={{
+            tableLayout: props.subformLayoutMode === "auto" ? "auto" : "fixed",
+            minWidth: Math.max(
+              720,
+              childFields.length * 180 +
+                (props.subformShowIndex !== false ? 56 : 0) +
+                (showActions ? props.subformActionColumnWidth ?? 70 : 0),
+            ),
+          }}
+        >
+          {props.subformShowHeader !== false ? <thead className="bg-[var(--color-bg-subtle)]"><tr>{props.subformShowIndex !== false ? <th className="w-14 px-3 py-2 text-center font-medium">序号</th> : null}{childFields.map((child) => <th key={child.id} className="px-3 py-2 font-medium">{child.label}</th>)}{showActions ? <th className="sticky right-0 z-20 border-l border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2 text-center font-medium shadow-[-6px_0_12px_-10px_rgba(15,23,42,0.7)]" style={{ width: props.subformActionColumnWidth ?? 70, minWidth: props.subformActionColumnWidth ?? 70 }}>操作</th> : null}</tr></thead> : null}
+          <tbody>
+            {rows.map((row, rowIndex) => <tr key={rowIndex} className={props.subformTheme === "zebra" && rowIndex % 2 === 1 ? "bg-[var(--color-bg-subtle)]" : "border-t border-[var(--color-border)]"}>{props.subformShowIndex !== false ? <td className="px-3 py-2 text-center text-[var(--color-text-secondary)]">{rowIndex + 1}</td> : null}{childFields.map((child) => <td key={child.id} className="min-w-36 px-2 py-2 align-top"><FormField field={child} value={row[child.id]} showLabel={false} onFieldAction={(_, nextValue) => updateCell(rowIndex, child.id, nextValue)} /></td>)}{showActions ? <td className="sticky right-0 z-10 border-l border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2 py-2 align-middle shadow-[-6px_0_12px_-10px_rgba(15,23,42,0.7)]"><div className="flex items-center justify-center gap-1">{props.subformShowSort ? <><Button isIconOnly size="sm" variant="ghost" aria-label="上移" onPress={() => moveRow(rowIndex, -1)}>↑</Button><Button isIconOnly size="sm" variant="ghost" aria-label="下移" onPress={() => moveRow(rowIndex, 1)}>↓</Button></> : null}{props.subformShowCopyButton ? <Button size="sm" variant="ghost" onPress={() => copyRow(rowIndex)}>复制</Button> : null}{props.subformShowDeleteButton !== false ? <Button isIconOnly size="sm" variant="ghost" className="text-[var(--color-danger)]" aria-label={props.subformDeleteButtonText ?? "删除"} onPress={() => removeRow(rowIndex)}><TrashIcon /></Button> : null}</div></td> : null}</tr>)}
+            {rows.length === 0 ? <tr><td className="px-4 py-8 text-center text-sm text-[var(--color-text-secondary)]" colSpan={childFields.length + (props.subformShowIndex !== false ? 1 : 0) + (showActions ? 1 : 0)}>暂无子表单数据，点击“{props.subformAddButtonText ?? "新增一项"}”开始填写。</td></tr> : null}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex justify-between text-xs text-[var(--color-text-secondary)]"><span>共 {rows.length} 行</span><span>最多 {maxRows} 行 · 每页 {props.subformPageSize ?? 20} 行</span></div>
+    </section>
+  );
+}
+
 function FormField({
   field,
   formulaError,
   onFieldAction,
+  showLabel = true,
   value,
 }: {
   field: RuntimeSchemaField;
   formulaError?: string;
   onFieldAction: (fieldId: string, nextValue: unknown, eventName?: string) => void;
+  showLabel?: boolean;
   value: unknown;
 }) {
   const props = {
@@ -580,8 +718,8 @@ function FormField({
       : (props.orientation ?? "vertical");
 
   return (
-    <div className="flex-1 space-y-2">
-      {field.type !== "button" ? (
+    <div className="w-full min-w-0 flex-1 space-y-2">
+      {showLabel && field.type !== "button" ? (
         <label className="block text-sm font-medium text-[var(--color-text-primary)]" htmlFor={field.id}>
           {field.label}
         </label>
@@ -680,7 +818,7 @@ function FormField({
               <Radio.Control>
                 <Radio.Indicator />
               </Radio.Control>
-              <Radio.Content>{option.label}</Radio.Content>
+              <Radio.Content className="text-[12px]">{option.label}</Radio.Content>
             </Radio>
           ))}
         </RadioGroup>
@@ -703,7 +841,7 @@ function FormField({
               <Checkbox.Control>
                 <Checkbox.Indicator />
               </Checkbox.Control>
-              <Checkbox.Content>{option.label}</Checkbox.Content>
+              <Checkbox.Content className="text-[12px]">{option.label}</Checkbox.Content>
             </Checkbox>
           ))}
         </CheckboxGroup>
@@ -1002,9 +1140,18 @@ function getInitialValues(
   initialValues?: Record<string, unknown>,
 ) {
   const values: Record<string, unknown> = {};
+  const subformIds = new Set(fields.filter((field) => field.type === "subform").map((field) => field.id));
 
   for (const field of fields) {
+    if (field.parentGroupId && subformIds.has(field.parentGroupId)) {
+      continue;
+    }
     if (field.type === "description" || field.type === "link" || field.type === "groupContainer") {
+      continue;
+    }
+
+    if (field.type === "subform") {
+      values[field.id] = Array.isArray(initialValues?.[field.id]) ? initialValues?.[field.id] : [];
       continue;
     }
 
@@ -1322,5 +1469,6 @@ function isTopAlignedRuntimeField(type: RuntimeFieldType) {
     type === "checkbox" ||
     type === "attachment" ||
     type === "imageUpload"
+    || type === "subform"
   );
 }

@@ -4,8 +4,11 @@
 //! persistence mappings remain in `infrastructure`.
 
 pub mod agents;
+pub mod agent_config;
 pub mod apps;
 pub mod automations;
+pub mod dingtalk;
 pub mod forms;
+pub mod identity;
 pub mod navigation;
 pub mod settings;

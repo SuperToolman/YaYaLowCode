@@ -298,6 +298,7 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
 
   return (
     <DndContext
+      id={`form-sidebar-${routeAppId}`}
       collisionDetection={pointerWithin}
       sensors={sensors}
       onDragCancel={clearDragState}

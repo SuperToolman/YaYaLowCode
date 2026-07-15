@@ -15,6 +15,24 @@ function buildErrorResponse(message: string, status: number) {
   );
 }
 
+export async function GET(
+  _request: Request,
+  context: { params: Promise<{ formUuid: string }> },
+) {
+  const { formUuid } = await context.params;
+
+  try {
+    const response = await fetch(`${backendBaseUrl}/api/forms/${formUuid}`, {
+      cache: "no-store",
+    });
+    const payload = await response.json();
+
+    return NextResponse.json(payload, { status: response.status });
+  } catch {
+    return buildErrorResponse("backend unavailable", 503);
+  }
+}
+
 export async function DELETE(
   _request: Request,
   context: { params: Promise<{ formUuid: string }> },

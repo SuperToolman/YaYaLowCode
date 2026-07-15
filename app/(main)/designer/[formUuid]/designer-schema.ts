@@ -36,6 +36,19 @@ export function getDefaultPageDesignerProps(): PageDesignerProps {
     actionPanel: {
       code: getDefaultActionPanelCode(),
     },
+    agent: {
+      enabled: false,
+      agentId: "",
+      prompt: "",
+      context: {
+        generated: "",
+        overrides: "",
+        generatedAt: "",
+        sourceHash: "",
+        status: "idle",
+        error: "",
+      },
+    },
   };
 }
 
@@ -65,6 +78,14 @@ export function normalizePageDesignerProps(
       ...defaults.actionPanel,
       ...pageProps?.actionPanel,
       code: normalizeActionPanelCode(pageProps?.actionPanel),
+    },
+    agent: {
+      ...defaults.agent,
+      ...pageProps?.agent,
+      context: {
+        ...defaults.agent.context,
+        ...pageProps?.agent?.context,
+      },
     },
   };
 }

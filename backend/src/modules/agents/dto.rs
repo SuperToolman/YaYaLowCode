@@ -10,12 +10,15 @@ pub(crate) struct AgentPageContext {
     pub(crate) app_id: Option<String>,
     pub(crate) form_uuid: Option<String>,
     pub(crate) automation_id: Option<String>,
+    pub(crate) business_id: Option<String>,
     pub(crate) route: Option<String>,
+    pub(crate) form_draft_assist: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CreateAgentSessionRequest {
+    pub(crate) agent_id: Option<String>,
     pub(crate) context: Option<AgentPageContext>,
 }
 
@@ -30,6 +33,7 @@ pub(crate) struct SendAgentMessageRequest {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiAgentSession {
     pub(crate) id: String,
+    pub(crate) agent_id: String,
     pub(crate) title: String,
     pub(crate) app_id: Option<String>,
     pub(crate) context: Value,
@@ -52,6 +56,7 @@ impl From<agent_session_entity::Model> for ApiAgentSession {
     fn from(value: agent_session_entity::Model) -> Self {
         Self {
             id: value.session_uuid,
+            agent_id: value.agent_id,
             title: value.title,
             app_id: value.app_route_app_id,
             context: value.context_json,

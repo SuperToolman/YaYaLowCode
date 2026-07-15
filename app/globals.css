@@ -288,8 +288,92 @@ html[data-resolved-theme="dark"] {
   --font-mono: var(--font-mono-ui);
 }
 
+html,
+body,
 * {
   box-sizing: border-box;
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb {
+  background: transparent !important;
+}
+
+/* Subforms intentionally expose horizontal scrolling for large column sets. */
+.subform-horizontal-scroll {
+  -ms-overflow-style: auto !important;
+  scrollbar-color: var(--color-border) transparent !important;
+  scrollbar-width: thin !important;
+}
+
+.subform-horizontal-scroll::-webkit-scrollbar {
+  display: block !important;
+  width: 8px !important;
+  height: 8px !important;
+  background: var(--color-bg-subtle) !important;
+}
+
+.subform-horizontal-scroll::-webkit-scrollbar-thumb {
+  display: block !important;
+  min-width: 32px;
+  border: 2px solid var(--color-bg-subtle);
+  border-radius: 999px;
+  background: var(--color-border) !important;
+}
+
+/* Record tables expose their horizontal overflow so wide, content-sized columns stay discoverable. */
+.data-table-horizontal-scroll {
+  -ms-overflow-style: auto !important;
+  scrollbar-color: var(--color-border) var(--color-bg-subtle) !important;
+  scrollbar-width: thin !important;
+}
+
+.data-table-horizontal-scroll::-webkit-scrollbar {
+  display: block !important;
+  width: 8px !important;
+  height: 8px !important;
+  background: var(--color-bg-subtle) !important;
+}
+
+.data-table-horizontal-scroll::-webkit-scrollbar-thumb {
+  display: block !important;
+  min-width: 32px;
+  border: 2px solid var(--color-bg-subtle);
+  border-radius: 999px;
+  background: var(--color-border) !important;
+}
+
+.data-table-horizontal-scroll::-webkit-scrollbar-corner {
+  background: var(--color-bg-subtle) !important;
+}
+
+/* Monaco renders and toggles its own scrollbar elements at runtime. */
+.monaco-editor .monaco-scrollable-element > .scrollbar,
+.monaco-scrollable-element > .scrollbar {
+  display: none !important;
+  height: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+  width: 0 !important;
+}
+
+.monaco-scrollable-element > .scrollbar > .slider {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
 }
 
 html {
@@ -326,9 +410,9 @@ select {
   display: flex;
   height: 100dvh;
   min-height: 0;
-  gap: 12px;
+  gap: 6px;
+  padding: 6px;
   overflow: hidden;
-  padding: 12px;
   align-items: stretch;
 }
 
@@ -495,8 +579,12 @@ html[data-resolved-theme="dark"] .designer-properties-drawer button:hover {
 .low-code-number-field {
   display: block !important;
   margin: 0 !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
   padding: 0 !important;
   line-height: normal !important;
+  width: 100% !important;
 }
 
 .low-code-number-field .number-field__group {
@@ -504,8 +592,12 @@ html[data-resolved-theme="dark"] .designer-properties-drawer button:hover {
   display: flex !important;
   height: 40px !important;
   margin: 0 !important;
+  max-width: 100% !important;
   min-height: 40px !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
   padding: 0 !important;
+  width: 100% !important;
 }
 
 .low-code-number-field .number-field__input,
@@ -518,12 +610,20 @@ html[data-resolved-theme="dark"] .designer-properties-drawer button:hover {
 }
 
 .low-code-number-field .number-field__input {
+  flex: 1 1 0% !important;
   min-height: 0 !important;
+  min-width: 0 !important;
+  width: 0 !important;
+}
+
+.low-code-number-field .number-field__decrement-button,
+.low-code-number-field .number-field__increment-button {
+  flex: 0 0 auto !important;
 }
 
 .low-code-choice-field {
   align-content: flex-start !important;
-  gap: 8px !important;
+  gap: 6px !important;
   margin: 0 !important;
   min-height: 24px !important;
   overflow: visible !important;
@@ -536,20 +636,23 @@ html[data-resolved-theme="dark"] .designer-properties-drawer button:hover {
 }
 
 .low-code-choice-horizontal {
-  align-items: start !important;
-  column-gap: 18px !important;
-  display: grid !important;
-  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)) !important;
+  align-items: center !important;
+  column-gap: 12px !important;
+  display: flex !important;
+  flex-flow: row wrap !important;
   overflow: visible !important;
-  row-gap: 10px !important;
+  row-gap: 6px !important;
   white-space: normal !important;
 }
 
 .low-code-choice-horizontal > * {
+  flex: 0 1 auto !important;
+  max-width: 100% !important;
   min-width: 0 !important;
+  overflow-wrap: anywhere !important;
   white-space: normal !important;
-  width: 100% !important;
-  word-break: break-word !important;
+  width: auto !important;
+  word-break: normal !important;
 }
 
 .low-code-choice-vertical {

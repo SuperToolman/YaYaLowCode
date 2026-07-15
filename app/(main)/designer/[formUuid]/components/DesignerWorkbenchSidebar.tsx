@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { Monaco } from "@monaco-editor/react";
 import dynamic from "next/dynamic";
-import { Button, Card, Input, ListBox, Modal, Select, toast } from "@heroui/react";
+import { Button, Card, Input, ListBox, Modal, Select, Switch, TextArea, toast } from "@heroui/react";
 import {
   AddIcon,
   CodeIcon,
@@ -25,6 +25,7 @@ import type {
   PlacedField,
 } from "../designer-types";
 import type { RuntimeDebugEvent } from "../../../../components/runtime-form-renderer";
+import { AgentMarkdown } from "../../../../components/agent-markdown";
 import {
   getDefaultActionPanelCode,
   validateActionPanelCode,
@@ -43,17 +44,21 @@ export type DesignerPanelKey =
   | "outline"
   | "components"
   | "dataSources"
+  | "agent"
   | "actions"
   | "fieldOutline"
   | "schema";
 
 type DesignerWorkbenchSidebarProps = {
   activePanel: DesignerPanelKey;
+  agentAnalysisStale: boolean;
   fields: PlacedField[];
+  isAnalyzingAgent: boolean;
   pageProps: PageDesignerProps;
   schema: FormDesignerSchema;
   debugEvents: RuntimeDebugEvent[];
   onActivePanelChange: (panel: DesignerPanelKey) => void;
+  onAnalyzeAgentSchema: () => void;
   onBeforeDesignerActionRegister?: (handler: (() => boolean) | null) => void;
   onPagePropsChange: (props: PageDesignerProps) => void;
 };
@@ -66,6 +71,7 @@ const DESIGNER_PANELS: Array<{
   { key: "outline", label: "大纲树", icon: <ListIcon /> },
   { key: "components", label: "组件", icon: <GridIcon /> },
   { key: "dataSources", label: "数据源", icon: <SwapIcon /> },
+  { key: "agent", label: "Agent", icon: <MessageIcon /> },
   { key: "actions", label: "动作面板", icon: <ToolIcon /> },
   { key: "fieldOutline", label: "字段大纲", icon: <MessageIcon /> },
   { key: "schema", label: "页面源码", icon: <GearMiniIcon /> },
@@ -73,11 +79,14 @@ const DESIGNER_PANELS: Array<{
 
 export function DesignerWorkbenchSidebar({
   activePanel,
+  agentAnalysisStale,
   fields,
+  isAnalyzingAgent,
   pageProps,
   schema,
   debugEvents,
   onActivePanelChange,
+  onAnalyzeAgentSchema,
   onBeforeDesignerActionRegister,
   onPagePropsChange,
 }: DesignerWorkbenchSidebarProps) {
@@ -85,8 +94,11 @@ export function DesignerWorkbenchSidebar({
     DESIGNER_PANELS.find((item) => item.key === activePanel) ?? DESIGNER_PANELS[0];
   const panelContent = renderDesignerPanelContent({
     activePanel,
+    agentAnalysisStale,
     debugEvents,
     fields,
+    isAnalyzingAgent,
+    onAnalyzeAgentSchema,
     onBeforeDesignerActionRegister,
     onPagePropsChange,
     pageProps,
@@ -94,9 +106,9 @@ export function DesignerWorkbenchSidebar({
   });
 
   return (
-    <Card className="flex h-full min-h-0 min-w-0 flex-row items-stretch overflow-hidden rounded-[28px] border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-2 shadow-[var(--shadow-panel)] backdrop-blur">
-      <div className="flex h-full min-h-0 w-14 shrink-0 flex-col gap-2 border-r border-[var(--color-border)] pr-2">
-        <div className="flex min-h-0 flex-1 flex-col gap-2 pt-1">
+    <div className="p-1 flex h-full min-h-0 min-w-0 flex-row items-stretch overflow-hidden rounded-[22px] border border-[var(--color-border)] bg-[var(--color-bg-surface)] shadow-[var(--shadow-panel)] backdrop-blur">
+      <div className="flex h-full min-h-0 shrink-0 flex-col gap-1 border-r border-[var(--color-border)] pr-1">
+        <div className="flex min-h-0 flex-1 flex-col gap-1">
           {DESIGNER_PANELS.map((panel) => {
             const isActive = panel.key === activePanel;
             return (
@@ -106,14 +118,14 @@ export function DesignerWorkbenchSidebar({
                 aria-label={panel.label}
                 variant="ghost"
                 className={[
-                  "h-11 w-11 min-w-11 justify-center rounded-2xl px-0 text-[var(--color-text-secondary)]",
+                  "h-9 w-9 min-w-9 justify-center rounded-lg px-0 text-[var(--color-text-secondary)]",
                   isActive
                     ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]"
                     : "hover:bg-[var(--color-bg-subtle)]",
                 ].join(" ")}
                 onPress={() => onActivePanelChange(panel.key)}
               >
-                <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center">
+                <span className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
                   {panel.icon}
                 </span>
               </Button>
@@ -122,9 +134,9 @@ export function DesignerWorkbenchSidebar({
         </div>
       </div>
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="pl-1 flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="mb-3 shrink-0">
-          <h2 className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">
+          <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">
             {activePanelMeta.label}
           </h2>
         </div>
@@ -135,22 +147,28 @@ export function DesignerWorkbenchSidebar({
           </div>
         </div>
       </div>
-    </Card>
+    </div>
   );
 }
 
 function renderDesignerPanelContent({
   activePanel,
+  agentAnalysisStale,
   debugEvents,
   fields,
+  isAnalyzingAgent,
+  onAnalyzeAgentSchema,
   onBeforeDesignerActionRegister,
   onPagePropsChange,
   pageProps,
   schema,
 }: {
   activePanel: DesignerPanelKey;
+  agentAnalysisStale: boolean;
   debugEvents: RuntimeDebugEvent[];
   fields: PlacedField[];
+  isAnalyzingAgent: boolean;
+  onAnalyzeAgentSchema: () => void;
   onBeforeDesignerActionRegister?: (handler: (() => boolean) | null) => void;
   onPagePropsChange: (props: PageDesignerProps) => void;
   pageProps: PageDesignerProps;
@@ -173,6 +191,18 @@ function renderDesignerPanelContent({
     );
   }
 
+  if (activePanel === "agent") {
+    return (
+      <AgentPanel
+        analysisStale={agentAnalysisStale}
+        isAnalyzing={isAnalyzingAgent}
+        onAnalyze={onAnalyzeAgentSchema}
+        value={pageProps.agent}
+        onChange={(agent) => onPagePropsChange({ ...pageProps, agent })}
+      />
+    );
+  }
+
   if (activePanel === "actions") {
     return (
       <ActionPanel
@@ -190,6 +220,114 @@ function renderDesignerPanelContent({
   }
 
   return <SchemaPanel schema={schema} />;
+}
+
+type DesignerAgentOption = {
+  id: string;
+  name: string;
+  enabled: boolean;
+};
+
+function AgentPanel({ analysisStale, isAnalyzing, onAnalyze, value, onChange }: { analysisStale: boolean; isAnalyzing: boolean; onAnalyze: () => void; value: PageDesignerProps["agent"]; onChange: (value: PageDesignerProps["agent"]) => void }) {
+  const [agents, setAgents] = useState<DesignerAgentOption[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/agents", { cache: "no-store" });
+        const payload = (await response.json()) as { code: number; message: string; data: DesignerAgentOption[] | null };
+        if (!response.ok || !payload.data) throw new Error(payload.message || "无法加载机器人");
+        if (!cancelled) setAgents(payload.data.filter((item) => item.enabled));
+      } catch (reason) {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : "无法加载机器人");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const selectedAgent = agents.find((item) => item.id === value.agentId);
+  const analysisStatus = isAnalyzing ? "analyzing" : analysisStale && value.context.generated ? "stale" : value.context.status;
+  const analysisStatusMeta = {
+    idle: { label: "未分析", className: "bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]" },
+    analyzing: { label: "分析中", className: "bg-[var(--color-info-soft)] text-[var(--color-info)]" },
+    ready: { label: "已就绪", className: "bg-[var(--color-success-soft)] text-[var(--color-success)]" },
+    stale: { label: "已过期", className: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]" },
+    failed: { label: "分析失败", className: "bg-[var(--color-danger-soft)] text-[var(--color-danger)]" },
+  }[analysisStatus];
+  const analysisContent = value.context.overrides || value.context.generated;
+
+  return (
+    <div className="space-y-4 p-1">
+      <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-3">
+        <Switch isSelected={value.enabled} onChange={(enabled) => onChange({ ...value, enabled })}>
+          <Switch.Content>
+            <span className="block text-sm font-medium text-[var(--color-text-primary)]">开启 Agent</span>
+            <span className="mt-1 block text-xs leading-5 text-[var(--color-text-secondary)]">发布后，新增数据抽屉将使用全屏表单和 Agent 对话双栏。</span>
+          </Switch.Content>
+          <Switch.Control><Switch.Thumb /></Switch.Control>
+        </Switch>
+      </div>
+
+      {value.enabled ? (
+        <>
+          <div>
+            <div className="mb-2 text-xs font-medium text-[var(--color-text-secondary)]">选择机器人</div>
+            <Select aria-label="选择机器人" fullWidth selectedKey={value.agentId || null} isDisabled={loading} onSelectionChange={(key) => onChange({ ...value, agentId: key === null ? "" : String(key) })}>
+              <Select.Trigger><Select.Value>{selectedAgent?.name ?? (loading ? "正在加载机器人…" : "请选择机器人")}</Select.Value><Select.Indicator /></Select.Trigger>
+              <Select.Popover><ListBox>{agents.map((agent) => <ListBox.Item key={agent.id} id={agent.id} textValue={agent.name}>{agent.name}</ListBox.Item>)}</ListBox></Select.Popover>
+            </Select>
+          </div>
+          <div>
+            <div className="mb-2 text-xs font-medium text-[var(--color-text-secondary)]">表单描述提示词</div>
+            <TextArea fullWidth className="min-h-40 text-sm leading-6" placeholder="例如：你是采购申请助手，请结合当前表单结构帮助用户梳理申请信息、检查缺失内容并给出业务建议。" value={value.prompt} onChange={(event) => onChange({ ...value, prompt: event.currentTarget.value })} />
+            <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">该提示词会作为此表单 Agent 对话的业务背景。</p>
+          </div>
+          <section className="space-y-3 border-y border-[var(--color-border)] py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium text-[var(--color-text-primary)]">Schema 预分析</div>
+                <div className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">分析当前 Schema 并缓存业务理解；下方只读结果会随重新分析更新。</div>
+              </div>
+              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-medium ${analysisStatusMeta.className}`}>{analysisStatusMeta.label}</span>
+            </div>
+            <Button fullWidth className="mt-3" variant={analysisStatus === "ready" ? "secondary" : "primary"} isDisabled={loading || isAnalyzing || !value.agentId} onPress={onAnalyze}>
+              {isAnalyzing ? "正在分析 Schema…" : value.context.generated ? "重新分析 Schema" : "分析 Schema"}
+            </Button>
+            {value.context.error ? <p className="mt-2 text-xs leading-5 text-[var(--color-danger)]">{value.context.error}</p> : null}
+
+            <div className="border-t border-[var(--color-border)] pt-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-medium text-[var(--color-text-primary)]">分析结果</div>
+                  <div className="mt-0.5 text-[10px] text-[var(--color-text-secondary)]">保存和发布时随 Schema 一并写入</div>
+                </div>
+              </div>
+              {analysisContent ? (
+                <div className="max-h-[460px] overflow-y-auto border-l-2 border-[var(--color-primary)] pl-3 text-xs leading-5 text-[var(--color-text-primary)]">
+                  <AgentMarkdown compact content={analysisContent} />
+                </div>
+              ) : (
+                <div className="py-5 text-center text-xs text-[var(--color-text-secondary)]">
+                  点击上方“分析 Schema”生成只读分析结果
+                </div>
+              )}
+              <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">
+                {value.context.generatedAt ? `自动分析生成于 ${new Date(value.context.generatedAt).toLocaleString("zh-CN")}。Schema 变化后需要重新分析。` : "尚未生成分析结果。完成表单设计后点击上方按钮开始分析。"}
+              </p>
+            </div>
+          </section>
+        </>
+      ) : null}
+
+      {error ? <p className="rounded-lg bg-[var(--color-danger-soft)] p-3 text-xs text-[var(--color-danger)]">{error}</p> : null}
+      {value.enabled && !loading && agents.length === 0 ? <p className="rounded-lg bg-[var(--color-bg-subtle)] p-3 text-xs text-[var(--color-text-secondary)]">暂无已启用机器人，请先到设置页创建并启用机器人。</p> : null}
+    </div>
+  );
 }
 
 function FieldOutlinePanel({ fields }: { fields: PlacedField[] }) {
@@ -264,7 +402,7 @@ function OutlineNode({
         style={{ paddingLeft: 12 + level * 18 }}
       >
         <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-[var(--color-text-secondary)]">
-          {field.type === "groupContainer" ? <GridIcon /> : <ListIcon />}
+          {field.type === "groupContainer" || field.type === "subform" ? <GridIcon /> : <ListIcon />}
         </span>
         <span className="truncate">{field.label}</span>
       </div>
@@ -405,6 +543,7 @@ function ActionPanel({
 }) {
   const actionCode = actionPanel.code ?? getDefaultActionPanelCode();
   const [isContextOpen, setIsContextOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [editorState, setEditorState] = useState(() => ({
     baseline: actionCode,
     draft: actionCode,
@@ -458,9 +597,26 @@ function ActionPanel({
     };
   }, [applyEditorValue, onBeforeDesignerActionRegister]);
 
+  useEffect(() => {
+    if (!isFullscreen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsFullscreen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isFullscreen]);
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto pr-1">
-      <Card className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-3 shadow-none">
+      <Card
+        className={[
+          "border border-[var(--color-border)] bg-[var(--color-bg-surface)] shadow-none",
+          isFullscreen
+            ? "fixed inset-0 z-[100] flex flex-col rounded-none p-4 shadow-[var(--shadow-dialog)]"
+            : "rounded-2xl p-3",
+        ].join(" ")}
+      >
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <div className="text-sm font-semibold text-[var(--color-text-primary)]">统一动作编辑器</div>
@@ -469,6 +625,10 @@ function ActionPanel({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <EditorFullscreenButton
+              isFullscreen={isFullscreen}
+              onPress={() => setIsFullscreen((current) => !current)}
+            />
             <Button
               isIconOnly
               variant="ghost"
@@ -480,29 +640,31 @@ function ActionPanel({
             </Button>
           </div>
         </div>
-        <MonacoEditor
-          height="360px"
-          value={editorValue}
-          defaultLanguage="javascript"
-          beforeMount={handleMonacoBeforeMount}
-          onChange={(value) =>
-            setEditorState({
-              baseline: isDirty ? editorState.baseline : actionCode,
-              draft: value ?? "",
-            })
-          }
-          theme="vs-dark"
-          options={{
-            automaticLayout: true,
-            minimap: { enabled: false },
-            fontSize: 13,
-            lineNumbersMinChars: 3,
-            padding: { top: 16, bottom: 16 },
-            scrollBeyondLastLine: false,
-            wordWrap: "on",
-            tabSize: 2,
-          }}
-        />
+        <div className={isFullscreen ? "min-h-0 flex-1" : ""}>
+          <MonacoEditor
+            height={isFullscreen ? "100%" : "360px"}
+            value={editorValue}
+            defaultLanguage="javascript"
+            beforeMount={handleMonacoBeforeMount}
+            onChange={(value) =>
+              setEditorState({
+                baseline: isDirty ? editorState.baseline : actionCode,
+                draft: value ?? "",
+              })
+            }
+            theme="vs-dark"
+            options={{
+              automaticLayout: true,
+              minimap: { enabled: false },
+              fontSize: 13,
+              lineNumbersMinChars: 3,
+              padding: { top: 16, bottom: 16 },
+              scrollBeyondLastLine: false,
+              wordWrap: "on",
+              tabSize: 2,
+            }}
+          />
+        </div>
         {parseError ? (
           <div className="mt-2 rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-soft)] px-3 py-2 text-xs text-[var(--color-danger)]">
             {parseError}
@@ -723,6 +885,10 @@ function getFieldEventOptions(fieldType?: PlacedField["type"]) {
     return [{ id: "onChildrenChange", label: "onChildrenChange" }];
   }
 
+  if (fieldType === "subform") {
+    return [{ id: "onRowsChange", label: "onRowsChange" }];
+  }
+
   return common;
 }
 
@@ -821,26 +987,86 @@ function handleMonacoBeforeMount(monaco: Monaco) {
 }
 
 function SchemaPanel({ schema }: { schema: FormDesignerSchema }) {
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const schemaMarkdown = `\`\`\`json\n${JSON.stringify(schema, null, 2).replace(/\`\`\`/g, "\`\u200b\`\`")}\n\`\`\``;
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsFullscreen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isFullscreen]);
+
   return (
-    <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-code-bg)]">
-      <MonacoEditor
-        height="calc(100vh - 320px)"
-        value={JSON.stringify(schema, null, 2)}
-        defaultLanguage="json"
-        theme="vs-dark"
-        options={{
-          automaticLayout: true,
-          readOnly: true,
-          minimap: { enabled: false },
-          fontSize: 13,
-          lineNumbersMinChars: 3,
-          padding: { top: 16, bottom: 16 },
-          scrollBeyondLastLine: false,
-          wordWrap: "on",
-          tabSize: 2,
-        }}
-      />
+    <div
+      className={[
+        "overflow-hidden border border-[var(--color-border)] bg-[var(--color-code-bg)]",
+        isFullscreen
+          ? "fixed inset-0 z-[100] flex flex-col rounded-none shadow-[var(--shadow-dialog)]"
+          : "rounded-2xl",
+      ].join(" ")}
+    >
+      <div className="flex h-11 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3">
+        <span className="text-xs font-medium text-[var(--color-text-primary)]">Schema（只读）</span>
+        <EditorFullscreenButton
+          isFullscreen={isFullscreen}
+          onPress={() => setIsFullscreen((current) => !current)}
+        />
+      </div>
+      <div className={isFullscreen ? "min-h-0 flex-1 overflow-auto p-4" : "max-h-[calc(100vh-365px)] overflow-auto p-3"}>
+        <AgentMarkdown compact content={schemaMarkdown} />
+      </div>
     </div>
+  );
+}
+
+function EditorFullscreenButton({
+  isFullscreen,
+  onPress,
+}: {
+  isFullscreen: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Button
+      isIconOnly
+      variant="ghost"
+      aria-label={isFullscreen ? "退出全屏编辑" : "全屏编辑"}
+      className="h-8 w-8 min-w-8 rounded-lg text-[var(--color-text-secondary)]"
+      onPress={onPress}
+    >
+      <FullscreenIcon isFullscreen={isFullscreen} />
+    </Button>
+  );
+}
+
+function FullscreenIcon({ isFullscreen }: { isFullscreen: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      {isFullscreen ? (
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M9 4v5H4m16 0h-5V4M4 15h5v5m6 0v-5h5"
+        />
+      ) : (
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4"
+        />
+      )}
+    </svg>
   );
 }
 

@@ -5,7 +5,6 @@
 "use client";
 
 import { Button } from "@heroui/react";
-import { Drawer } from "@heroui/react/drawer";
 import type {
   DesignerComponentType,
   DesignerFieldProps,
@@ -48,25 +47,21 @@ const COUNTER_FIELD_TYPES = new Set<DesignerComponentType>([
   "multiLineText",
 ]);
 
-type FieldPropertyDrawerProps = {
+type FieldPropertyPanelProps = {
   fields: PlacedField[];
   field: PlacedField | null;
-  isOpen: boolean;
   onDelete: (fieldId: string) => void;
   onLabelChange: (fieldId: string, label: string) => void;
-  onOpenChange: (isOpen: boolean) => void;
   onPropsChange: FieldPropsChangeHandler;
 };
 
-export function FieldPropertyDrawer({
+export function FieldPropertyPanel({
   fields,
   field,
-  isOpen,
   onDelete,
   onLabelChange,
-  onOpenChange,
   onPropsChange,
-}: FieldPropertyDrawerProps) {
+}: FieldPropertyPanelProps) {
   if (!field) {
     return null;
   }
@@ -76,29 +71,20 @@ export function FieldPropertyDrawer({
   const supportsOptions = isChoiceFieldType(field.type);
 
   return (
-    <Drawer isOpen={isOpen} onOpenChange={onOpenChange}>
-      <Drawer.Backdrop className="theme-modal-backdrop" isDismissable>
-        <Drawer.Content placement="right" className="designer-properties-drawer">
-          <Drawer.Dialog className="flex h-full w-full flex-col bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)] shadow-[var(--shadow-drawer)]">
-            <Drawer.Header className="border-b border-[var(--designer-border)] px-4 py-3">
-              <Drawer.Heading className="sr-only">组件属性</Drawer.Heading>
-              <div className="relative flex min-h-12 items-center gap-3 pr-10">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] font-mono text-xs font-bold text-[var(--color-primary)]">
-                  {field.type.slice(0, 2).toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <div className="truncate font-semibold text-[var(--color-text-primary)]">{field.label}</div>
-                  <div className="text-xs text-[var(--color-text-secondary)]">组件属性 · {field.type}</div>
-                </div>
-                <Drawer.CloseTrigger
-                  aria-label="关闭属性栏"
-                  className="absolute right-0 top-1"
-                />
-              </div>
-            </Drawer.Header>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden text-[11px] text-[var(--color-text-primary)]">
+      <header className="border-b border-[var(--designer-border)] p-1">
+        <h2 className="truncate text-xs font-medium text-[var(--color-text-primary)]">
+          {field.label}
+        </h2>
+        <div className="flex min-w-0 items-center gap-1 text-[10px] text-[var(--color-text-secondary)]">
+          <span className="shrink-0">{field.type}</span>
+          <span aria-hidden>·</span>
+          <span className="truncate font-mono">{field.id}</span>
+        </div>
+      </header>
 
-            <Drawer.Body className="flex-1 overflow-y-auto px-0 py-0">
-              <div className="py-1">
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="py-0.5">
                 <PropertyPanel>
                   <PropertyRow label="标题">
                     <TextWithActions
@@ -131,13 +117,13 @@ export function FieldPropertyDrawer({
                     />
                     <IconAction label="表达式" icon={<CodeToken />} />
                   </PropertyRow>
-                  <PropertyRow label="默认值" align="start">
+                  {field.type !== "subform" ? <PropertyRow label="默认值" align="start">
                     <DefaultValueEditor
                       fields={fields}
                       field={field}
                       onPropsChange={onPropsChange}
                     />
-                  </PropertyRow>
+                  </PropertyRow> : null}
                   {supportsOptions ? (
                     <PropertyRow label="选项" align="start">
                       <OptionsEditor
@@ -173,7 +159,9 @@ export function FieldPropertyDrawer({
                   ) : null}
                 </PropertyPanel>
 
-                <PropertyFold title="校验">
+                {field.type === "subform" ? <SubformProperties field={field} onPropsChange={onPropsChange} /> : null}
+
+                {field.type !== "subform" ? <PropertyFold title="校验">
                   <PropertyRow label="必填">
                     <PanelSwitch
                       isSelected={Boolean(field.props.isRequired)}
@@ -202,7 +190,7 @@ export function FieldPropertyDrawer({
                       </PropertyRow>
                     </>
                   ) : null}
-                </PropertyFold>
+                </PropertyFold> : null}
 
                 <PropertyFold title="HeroUI 组件属性" rightIcon={<CodeToken />}>
                   <PropertyRow label="禁用">
@@ -247,22 +235,19 @@ export function FieldPropertyDrawer({
                   ) : null}
                 </PropertyFold>
               </div>
-            </Drawer.Body>
+            </div>
 
-            <Drawer.Footer className="border-t border-[var(--designer-border)] bg-[var(--designer-surface-soft)] px-4 py-3">
+            <footer className="border-t border-[var(--designer-border)] bg-[var(--designer-surface-soft)] p-1">
               <Button
                 fullWidth
                 variant="ghost"
                 onPress={() => onDelete(field.id)}
-                className="border border-transparent text-[var(--color-danger)] hover:border-[var(--designer-border)] hover:bg-[var(--color-danger-soft)]"
+                className="h-7 border border-transparent text-[11px] text-[var(--color-danger)] hover:border-[var(--designer-border)] hover:bg-[var(--color-danger-soft)]"
               >
                 删除组件
               </Button>
-            </Drawer.Footer>
-          </Drawer.Dialog>
-        </Drawer.Content>
-      </Drawer.Backdrop>
-    </Drawer>
+            </footer>
+    </div>
   );
 }
 
@@ -335,6 +320,45 @@ function FieldSpecificProperties({
   );
 }
 
+function SubformProperties({ field, onPropsChange }: { field: PlacedField; onPropsChange: FieldPropsChangeHandler }) {
+  const update = (props: DesignerFieldProps) => onPropsChange(field.id, props);
+  return <>
+    <PropertyFold title="子表全局配置">
+      <PropertyRow label="按钮名称"><TextWithActions value={field.props.subformAddButtonText ?? "新增一项"} onChange={(value) => update({ subformAddButtonText: value })} /></PropertyRow>
+      <PropertyRow label="按钮状态"><PropertySegmented value={field.props.subformButtonState ?? "normal"} options={[{ label: "普通", value: "normal" }, { label: "禁用", value: "disabled" }, { label: "隐藏", value: "hidden" }]} onChange={(value) => update({ subformButtonState: value as "normal" | "disabled" | "hidden" })} /></PropertyRow>
+      <PropertyRow label="批量导入"><PanelSwitch isSelected={Boolean(field.props.subformAllowBatchImport)} onChange={(value) => update({ subformAllowBatchImport: value })} /></PropertyRow>
+      <PropertyRow label="导出 Excel"><PanelSwitch isSelected={Boolean(field.props.subformAllowExcelExport)} onChange={(value) => update({ subformAllowExcelExport: value })} /></PropertyRow>
+      <PropertyRow label="批量删除"><PanelSwitch isSelected={Boolean(field.props.subformAllowBatchDelete)} onChange={(value) => update({ subformAllowBatchDelete: value })} /></PropertyRow>
+      <PropertyRow label="过滤空行"><PanelSwitch isSelected={field.props.subformFilterEmptyRows !== false} onChange={(value) => update({ subformFilterEmptyRows: value })} /></PropertyRow>
+    </PropertyFold>
+    <PropertyFold title="操作项配置">
+      <PropertyRow label="复制按钮"><PanelSwitch isSelected={Boolean(field.props.subformShowCopyButton)} onChange={(value) => update({ subformShowCopyButton: value })} /></PropertyRow>
+      <PropertyRow label="删除按钮"><PanelSwitch isSelected={field.props.subformShowDeleteButton !== false} onChange={(value) => update({ subformShowDeleteButton: value })} /></PropertyRow>
+      <PropertyRow label="按钮名称"><TextWithActions value={field.props.subformDeleteButtonText ?? "删除"} onChange={(value) => update({ subformDeleteButtonText: value })} /></PropertyRow>
+      <PropertyRow label="删除确认"><PanelSwitch isSelected={field.props.subformConfirmDelete !== false} onChange={(value) => update({ subformConfirmDelete: value })} /></PropertyRow>
+      <PropertyRow label="显示排序"><PanelSwitch isSelected={Boolean(field.props.subformShowSort)} onChange={(value) => update({ subformShowSort: value })} /></PropertyRow>
+    </PropertyFold>
+    <PropertyFold title="展示样式">
+      <PropertyRow label="设备"><PropertySegmented value={field.props.subformDisplayMode ?? "desktop"} options={[{ label: "电脑端", value: "desktop" }, { label: "移动端", value: "mobile" }]} onChange={(value) => update({ subformDisplayMode: value as "desktop" | "mobile" })} /></PropertyRow>
+      <PropertyRow label="排列方式"><PropertySegmented value={field.props.subformArrangement ?? "table"} options={[{ label: "平铺方式", value: "tile" }, { label: "表格方式", value: "table" }]} onChange={(value) => update({ subformArrangement: value as "tile" | "table" })} /></PropertyRow>
+      <PropertyRow label="主题"><PropertySegmented value={field.props.subformTheme ?? "divider"} options={[{ label: "斑马纹", value: "zebra" }, { label: "分割线", value: "divider" }, { label: "边框线", value: "border" }]} onChange={(value) => update({ subformTheme: value as "zebra" | "divider" | "border" })} /></PropertyRow>
+      <PropertyRow label="显示表头"><PanelSwitch isSelected={field.props.subformShowHeader !== false} onChange={(value) => update({ subformShowHeader: value })} /></PropertyRow>
+      <PropertyRow label="显示序号"><PanelSwitch isSelected={field.props.subformShowIndex !== false} onChange={(value) => update({ subformShowIndex: value })} /></PropertyRow>
+      <PropertyRow label="布局算法"><PropertySegmented value={field.props.subformLayoutMode ?? "fixed"} options={[{ label: "自动", value: "auto" }, { label: "固定", value: "fixed" }]} onChange={(value) => update({ subformLayoutMode: value as "auto" | "fixed" })} /></PropertyRow>
+      <PropertyRow label="分页条数"><NumberWithActions min={1} value={field.props.subformPageSize} onChange={(value) => update({ subformPageSize: Math.max(1, value ?? 20) })} /></PropertyRow>
+      <PropertyRow label="最大条数"><NumberWithActions min={1} value={field.props.subformMaxRows} onChange={(value) => update({ subformMaxRows: Math.max(1, value ?? 500) })} /></PropertyRow>
+      <PropertyRow label="左侧列冻结"><NumberWithActions min={0} value={field.props.subformFrozenLeftColumns} onChange={(value) => update({ subformFrozenLeftColumns: Math.max(0, value ?? 0) })} /></PropertyRow>
+      <PropertyRow label="操作列宽"><NumberWithActions min={40} value={field.props.subformActionColumnWidth} onChange={(value) => update({ subformActionColumnWidth: Math.max(40, value ?? 70) })} /></PropertyRow>
+      <PropertyRow label="自定义其它列"><PanelSwitch isSelected={Boolean(field.props.subformAllowCustomColumns)} onChange={(value) => update({ subformAllowCustomColumns: value })} /></PropertyRow>
+    </PropertyFold>
+    <PropertyFold title="合计设置"><PropertyRow label="启用合计"><PanelSwitch isSelected={Boolean(field.props.subformEnableTotals)} onChange={(value) => update({ subformEnableTotals: value })} /></PropertyRow></PropertyFold>
+  </>;
+}
+
+function PropertySegmented({ value, options, onChange }: { value: string; options: Array<{ label: string; value: string }>; onChange: (value: string) => void }) {
+  return <div className="flex h-7 min-w-0 flex-1 rounded-md bg-[var(--color-bg-subtle)] p-0.5">{options.map((option) => <button key={option.value} type="button" onClick={() => onChange(option.value)} className={`min-w-0 flex-1 truncate rounded-sm px-1 text-[10px] ${value === option.value ? "bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-sm" : "text-[var(--color-text-secondary)]"}`}>{option.label}</button>)}</div>;
+}
+
 function StatusSegmented({
   field,
   onPropsChange,
@@ -357,7 +381,7 @@ function StatusSegmented({
   ];
 
   return (
-    <div className="flex h-8 flex-1 rounded-lg bg-[var(--color-bg-subtle)] p-0.5">
+    <div className="flex h-7 flex-1 rounded-md bg-[var(--color-bg-subtle)] p-0.5">
       {options.map((option) => (
         <button
           key={option.value}
@@ -370,7 +394,7 @@ function StatusSegmented({
             })
           }
           className={[
-            "flex-1 rounded-md px-2 text-xs transition",
+            "flex-1 rounded-sm px-1 text-[10px] transition",
             current === option.value
               ? "bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-sm"
               : "text-[var(--color-text-secondary)]",

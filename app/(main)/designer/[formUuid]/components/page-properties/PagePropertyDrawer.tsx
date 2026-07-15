@@ -5,7 +5,6 @@
 "use client";
 
 import { Button, Input } from "@heroui/react";
-import { Drawer } from "@heroui/react/drawer";
 import type { PageDesignerProps, PageNamedRule } from "../../designer-types";
 import {
   CodeToken,
@@ -17,10 +16,9 @@ import {
   TextWithActions,
 } from "../field-properties/PropertyLayout";
 
-type PagePropertyDrawerProps = {
-  isOpen: boolean;
+type PagePropertyPanelProps = {
+  formName: string;
   pageProps: PageDesignerProps;
-  onOpenChange: (isOpen: boolean) => void;
   onPropsChange: (props: PageDesignerProps) => void;
 };
 
@@ -36,12 +34,11 @@ type RuleListKey =
   | "afterSubmitActions"
   | "afterDataInitActions";
 
-export function PagePropertyDrawer({
-  isOpen,
+export function PagePropertyPanel({
+  formName,
   pageProps,
-  onOpenChange,
   onPropsChange,
-}: PagePropertyDrawerProps) {
+}: PagePropertyPanelProps) {
   function updateRuleList(key: RuleListKey, rules: PageNamedRule[]) {
     onPropsChange({ ...pageProps, [key]: rules });
   }
@@ -70,25 +67,13 @@ export function PagePropertyDrawer({
   }
 
   return (
-    <Drawer isOpen={isOpen} onOpenChange={onOpenChange}>
-      <Drawer.Backdrop className="theme-modal-backdrop" isDismissable>
-        <Drawer.Content placement="right" className="designer-properties-drawer">
-          <Drawer.Dialog className="flex h-full w-full flex-col bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)] shadow-[var(--shadow-drawer)]">
-            <Drawer.Header className="border-b border-[var(--designer-border)] px-4 py-3">
-              <Drawer.Heading className="sr-only">页面属性</Drawer.Heading>
-              <div className="relative flex h-12 items-center pr-10">
-                <div>
-                  <div className="font-semibold text-[var(--color-text-primary)]">页面属性</div>
-                  <div className="text-xs text-[var(--color-text-secondary)]">校验、事件与数据源配置</div>
-                </div>
-                <Drawer.CloseTrigger
-                  aria-label="关闭页面属性"
-                  className="absolute right-0 top-1"
-                />
-              </div>
-            </Drawer.Header>
-
-            <Drawer.Body className="flex-1 overflow-y-auto px-0 py-0">
+    <div className="flex h-full min-h-0 flex-col text-[11px] text-[var(--color-text-primary)]">
+      <header className="border-b border-[var(--designer-border)] p-1">
+        <h2 className="truncate text-xs font-medium text-[var(--color-text-primary)]">
+          {formName} 页面属性
+        </h2>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto px-0 py-0">
               <PropertyFold title="表单校验">
                 <PageSection title="公式校验">
                   <RuleList
@@ -305,11 +290,8 @@ export function PagePropertyDrawer({
                   </Button>
                 </PageSection>
               </PropertyFold>
-            </Drawer.Body>
-          </Drawer.Dialog>
-        </Drawer.Content>
-      </Drawer.Backdrop>
-    </Drawer>
+      </div>
+    </div>
   );
 }
 

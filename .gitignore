@@ -38,6 +38,8 @@ yarn-error.log*
 # local runtime settings (may contain database passwords or API keys)
 .yaya-lowcode-settings.json
 .yaya-agent-settings.json
+.yaya-agent-registry.json
+.yaya-identity-settings.json
 
 # vercel
 .vercel

@@ -16,7 +16,244 @@ impl MigratorTrait for Migrator {
             Box::new(m20260629_000008_create_automation_nodes_table::Migration),
             Box::new(m20260629_000009_create_automation_edges_table::Migration),
             Box::new(m20260713_000010_create_agent_mvp_tables::Migration),
+            Box::new(m20260714_000011_create_identity_organization_tables::Migration),
+            Box::new(m20260714_000012_create_identity_user_tables::Migration),
+            Box::new(m20260714_000013_create_identity_role_tables::Migration),
+            Box::new(m20260714_000014_expand_identity_user_profile::Migration),
+            Box::new(m20260714_000015_bind_agent_sessions::Migration),
         ]
+    }
+}
+
+mod m20260714_000015_bind_agent_sessions {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(
+                r#"
+                ALTER TABLE agent_sessions
+                    ADD COLUMN IF NOT EXISTS agent_id VARCHAR(80) NOT NULL DEFAULT 'agent-default';
+                CREATE INDEX IF NOT EXISTS idx_agent_sessions_agent_id
+                    ON agent_sessions (agent_id, updated_at DESC);
+                "#,
+            ).await?;
+            Ok(())
+        }
+
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> { Ok(()) }
+    }
+}
+
+mod m20260714_000014_expand_identity_user_profile {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                    ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS state_code VARCHAR(16);
+                    ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS telephone VARCHAR(40);
+                    ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS work_place VARCHAR(160);
+                    ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS remark TEXT;
+                    ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS hired_at TIMESTAMPTZ;
+                    ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS manager_external_user_id VARCHAR(128);
+                    ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS primary_organization_unit_id UUID REFERENCES organization_units(id) ON DELETE SET NULL;
+                    ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS senior BOOLEAN NOT NULL DEFAULT FALSE;
+                    ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
+                    ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS is_boss BOOLEAN NOT NULL DEFAULT FALSE;
+                    ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS real_authed BOOLEAN NOT NULL DEFAULT FALSE;
+                    ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS extension_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+                    "#,
+                )
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
+    }
+}
+
+mod m20260714_000013_create_identity_role_tables {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS iam_roles (
+                        id UUID PRIMARY KEY,
+                        source_type VARCHAR(32) NOT NULL,
+                        external_id VARCHAR(128) NOT NULL,
+                        name VARCHAR(120) NOT NULL,
+                        group_name VARCHAR(120),
+                        status VARCHAR(24) NOT NULL DEFAULT 'active',
+                        created_at TIMESTAMPTZ NOT NULL,
+                        updated_at TIMESTAMPTZ NOT NULL,
+                        UNIQUE (source_type, external_id)
+                    );
+
+                    CREATE TABLE IF NOT EXISTS iam_user_roles (
+                        id UUID PRIMARY KEY,
+                        user_id UUID NOT NULL REFERENCES iam_users(id) ON DELETE CASCADE,
+                        role_id UUID NOT NULL REFERENCES iam_roles(id) ON DELETE CASCADE,
+                        created_at TIMESTAMPTZ NOT NULL,
+                        UNIQUE (user_id, role_id)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_iam_user_roles_role
+                        ON iam_user_roles (role_id, user_id);
+                    "#,
+                )
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                    DROP TABLE IF EXISTS iam_user_roles;
+                    DROP TABLE IF EXISTS iam_roles;
+                    "#,
+                )
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260714_000012_create_identity_user_tables {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS iam_users (
+                        id UUID PRIMARY KEY,
+                        display_name VARCHAR(120) NOT NULL,
+                        mobile VARCHAR(40),
+                        email VARCHAR(160),
+                        avatar_url TEXT,
+                        job_number VARCHAR(80),
+                        title VARCHAR(120),
+                        status VARCHAR(24) NOT NULL DEFAULT 'active',
+                        created_at TIMESTAMPTZ NOT NULL,
+                        updated_at TIMESTAMPTZ NOT NULL
+                    );
+
+                    CREATE TABLE IF NOT EXISTS iam_external_identities (
+                        id UUID PRIMARY KEY,
+                        user_id UUID NOT NULL REFERENCES iam_users(id) ON DELETE CASCADE,
+                        provider VARCHAR(32) NOT NULL,
+                        external_user_id VARCHAR(128) NOT NULL,
+                        union_id VARCHAR(128),
+                        raw_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        created_at TIMESTAMPTZ NOT NULL,
+                        updated_at TIMESTAMPTZ NOT NULL,
+                        UNIQUE (provider, external_user_id)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_iam_external_identities_user
+                        ON iam_external_identities (user_id);
+
+                    CREATE TABLE IF NOT EXISTS iam_organization_memberships (
+                        id UUID PRIMARY KEY,
+                        user_id UUID NOT NULL REFERENCES iam_users(id) ON DELETE CASCADE,
+                        organization_unit_id UUID NOT NULL REFERENCES organization_units(id) ON DELETE CASCADE,
+                        is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+                        created_at TIMESTAMPTZ NOT NULL,
+                        UNIQUE (user_id, organization_unit_id)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_iam_memberships_organization
+                        ON iam_organization_memberships (organization_unit_id, user_id);
+                    "#,
+                )
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                    DROP TABLE IF EXISTS iam_organization_memberships;
+                    DROP TABLE IF EXISTS iam_external_identities;
+                    DROP TABLE IF EXISTS iam_users;
+                    "#,
+                )
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260714_000011_create_identity_organization_tables {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS organization_units (
+                        id UUID PRIMARY KEY,
+                        source_type VARCHAR(32) NOT NULL,
+                        external_id VARCHAR(128) NOT NULL,
+                        parent_external_id VARCHAR(128),
+                        name VARCHAR(160) NOT NULL,
+                        sort_order BIGINT NOT NULL DEFAULT 0,
+                        status VARCHAR(24) NOT NULL DEFAULT 'active',
+                        raw_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        created_at TIMESTAMPTZ NOT NULL,
+                        updated_at TIMESTAMPTZ NOT NULL,
+                        UNIQUE (source_type, external_id)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_organization_units_source_parent
+                        ON organization_units (source_type, parent_external_id, sort_order);
+                    "#,
+                )
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE IF EXISTS organization_units;")
+                .await?;
+            Ok(())
+        }
     }
 }
 

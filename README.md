@@ -2,7 +2,7 @@
 
 一个面向表单设计、数据录入、集成自动化与智能辅助场景的低代码平台原型项目。当前仓库已经包含应用管理、表单设计器、表单运行时、自动化工作流编辑器、只读 Agent MVP，以及基于 Rust + PostgreSQL 的后端服务。
 
-当前版本：**0.2a**（内部语义化版本：`0.2.0-alpha.0`）
+当前版本：**0.28a**（内部语义化版本：`0.2.0-alpha.0`）
 
 ## 当前状态
 
@@ -28,6 +28,8 @@
 - React Flow
 - Monaco Editor
 - `@hey-api/openapi-ts`
+- `react-markdown` / `remark-gfm`
+- `xlsx`
 
 ### 后端
 
@@ -84,6 +86,7 @@
 - 记录级编辑
 - 记录级删除
 - 运行时记录变更触发自动化
+- 子表单（Subform）表格视图：行增删改排序、主题切换、批量导入/导出、列冻结
 
 ### 5. 集成自动化
 
@@ -117,13 +120,16 @@
 - 整条流程重头触发
 - 错误节点断点重试
 
-### 7. Agent MVP
+### 7. Agent 智能助手
 
-- OpenAI Compatible 模型配置
-- Agent 启用状态、模型、Temperature 和最大执行步骤设置
+- 多级 Agent 管理体系：模型提供商 → 配置档案 → Agent 定义
+- 模型提供商（Provider）管理，支持 OpenAI Compatible / DeepSeek 等
+- Agent 配置档案：对话模型、Embedding 模型、Temperature、最大执行步骤、上下文策略、插件/Skill/知识库绑定
+- Agent 定义：按平台/应用/业务范围分配 Agent，可指定人格（Persona）
+- Agent 人格预设：默认人格、业务分析师、低代码实施顾问
 - 全局 Agent 助手入口
 - Agent 会话与历史消息
-- SSE 流式响应
+- SSE 流式响应，支持 Markdown 渲染
 - 表单列表与表单草稿 Schema 只读工具
 - 自动化列表与流程图只读工具
 - 会话、消息、运行和步骤审计记录
@@ -132,9 +138,12 @@
 ### 8. 平台与应用设置
 
 - 平台数据库连接设置
-- Agent 模型设置
-- 知识库和 Skills 规划入口
-- 设置页面独立子路由与左侧导航
+- Agent 多级管理：模型供应商、配置档案、Agent 定义、人格管理
+- 插件与 Skills 定义管理
+- 知识库配置入口
+- 身份源设置：平台用户体系 + 钉钉组织体系，AccessToken 管理与部门/用户同步
+- 组织架构、用户、角色管理（查询）
+- 设置页面独立子路由与左侧导航（共 13 项），支持多级分组
 - 设置导航和内容区域独立滚动
 - 应用基础设置、表单设置、管理员、权限与数据工厂页面（当前大部分配置为前端占位）
 
@@ -217,9 +226,16 @@ DATABASE_URL=postgres://postgres:your_password@localhost:5432/yaya_low_code
 
 ## Agent 配置
 
-在 `/settings/agent` 页面配置模型供应商、API Base URL、API Key 和模型参数。当前支持 OpenAI Compatible 接口。
+在 `/settings/model-providers` 配置模型供应商，在 `/settings/agent-profiles` 配置对话模型、Embedding 模型、Temperature 等参数，在 `/settings/agents` 创建和管理 Agent 定义。Agent 可按平台/应用/业务范围分配，并指定人格（Persona）。
 
-Agent 配置保存在 `.yaya-agent-settings.json`，该文件可能包含 API Key，已被 Git 忽略。Agent 启用后可通过全局侧边栏入口创建会话，当前只允许读取应用、表单和自动化信息。
+Agent 配置保存在 `.yaya-agent-registry.json`，该文件可能包含 API Key，已被 Git 忽略。Agent 启用后可通过全局侧边栏入口创建会话，当前只允许读取应用、表单和自动化信息。
+
+## 身份源配置
+
+权限中心支持平台用户体系和钉钉组织体系两种身份来源，并为企业微信、飞书预留了 Tab 配置入口。钉钉的 App ID、原企业内部应用 AgentId、Client ID、Client Secret 和同步策略可以在 `/settings/identity-source` 页面维护，保存后立即生效，无需重启服务。
+
+身份源配置保存在后端本地 `.yaya-identity-settings.json` 文件中，该文件已被 Git 忽略。
+钉钉 AccessToken 通过后端接口获取，并连同过期时间直接写回该配置文件。
 
 ## 目录结构
 
@@ -253,12 +269,13 @@ pnpm build
 cd backend && cargo check
 ```
 
-`0.2a` 发布前，上述前后端核心检查均应通过。
+`0.28a` 发布前，上述前后端核心检查均应通过。
 
 发布前还应确认本地设置文件未被 Git 跟踪，并避免在文档、日志或提交内容中写入数据库密码和模型 API Key。
 
 ## 下一步建议
 
+- 子表单设计器端拖拽、字段配置与属性编辑
 - 自动化递归触发防护
   - 事件来源标记
   - 执行深度限制
@@ -267,10 +284,12 @@ cd backend && cargo check
 - HTTP 请求节点补充更完整的响应状态、响应头与错误上下文
 - 条件分支规则编辑器继续向宜搭式交互收敛
 - 字段映射编辑器继续细化
-- 表单权限模型
+- 表单权限模型与中间件接入
+- 权限中心 RBAC 管理界面与角色分配
 - 自定义视图能力
 - 动作脚本调试增强
 - 更多字段类型与运行时校验能力
 - Agent 写操作的人工确认与权限审计
+- Agent 插件运行时加载与执行引擎
 - 知识库文档处理、Embedding 与 pgvector 检索
 - Skills 加载器、工具白名单和知识范围配置

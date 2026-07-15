@@ -253,6 +253,10 @@ pub(crate) async fn ensure_agent_tables(db: &DatabaseConnection) -> Result<(), A
             ON agent_sessions (updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_agent_sessions_app_id
             ON agent_sessions (app_route_app_id, updated_at DESC);
+        ALTER TABLE agent_sessions
+            ADD COLUMN IF NOT EXISTS agent_id VARCHAR(80) NOT NULL DEFAULT 'agent-default';
+        CREATE INDEX IF NOT EXISTS idx_agent_sessions_agent_id
+            ON agent_sessions (agent_id, updated_at DESC);
 
         CREATE TABLE IF NOT EXISTS agent_messages (
             id UUID PRIMARY KEY,
@@ -300,5 +304,98 @@ pub(crate) async fn ensure_agent_tables(db: &DatabaseConnection) -> Result<(), A
     )
     .await?;
 
+    Ok(())
+}
+
+pub(crate) async fn ensure_identity_tables(db: &DatabaseConnection) -> Result<(), AppError> {
+    db.execute_unprepared(
+        r#"
+        CREATE TABLE IF NOT EXISTS organization_units (
+            id UUID PRIMARY KEY,
+            source_type VARCHAR(32) NOT NULL,
+            external_id VARCHAR(128) NOT NULL,
+            parent_external_id VARCHAR(128),
+            name VARCHAR(160) NOT NULL,
+            sort_order BIGINT NOT NULL DEFAULT 0,
+            status VARCHAR(24) NOT NULL DEFAULT 'active',
+            raw_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            UNIQUE (source_type, external_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_organization_units_source_parent
+            ON organization_units (source_type, parent_external_id, sort_order);
+
+        CREATE TABLE IF NOT EXISTS iam_users (
+            id UUID PRIMARY KEY,
+            display_name VARCHAR(120) NOT NULL,
+            mobile VARCHAR(40),
+            email VARCHAR(160),
+            avatar_url TEXT,
+            job_number VARCHAR(80),
+            title VARCHAR(120),
+            status VARCHAR(24) NOT NULL DEFAULT 'active',
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL
+        );
+        ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS state_code VARCHAR(16);
+        ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS telephone VARCHAR(40);
+        ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS work_place VARCHAR(160);
+        ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS remark TEXT;
+        ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS hired_at TIMESTAMPTZ;
+        ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS manager_external_user_id VARCHAR(128);
+        ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS primary_organization_unit_id UUID REFERENCES organization_units(id) ON DELETE SET NULL;
+        ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS senior BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS is_boss BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS real_authed BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS extension_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+        CREATE TABLE IF NOT EXISTS iam_external_identities (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL REFERENCES iam_users(id) ON DELETE CASCADE,
+            provider VARCHAR(32) NOT NULL,
+            external_user_id VARCHAR(128) NOT NULL,
+            union_id VARCHAR(128),
+            raw_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            UNIQUE (provider, external_user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_iam_external_identities_user
+            ON iam_external_identities (user_id);
+        CREATE TABLE IF NOT EXISTS iam_organization_memberships (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL REFERENCES iam_users(id) ON DELETE CASCADE,
+            organization_unit_id UUID NOT NULL REFERENCES organization_units(id) ON DELETE CASCADE,
+            is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL,
+            UNIQUE (user_id, organization_unit_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_iam_memberships_organization
+            ON iam_organization_memberships (organization_unit_id, user_id);
+
+        CREATE TABLE IF NOT EXISTS iam_roles (
+            id UUID PRIMARY KEY,
+            source_type VARCHAR(32) NOT NULL,
+            external_id VARCHAR(128) NOT NULL,
+            name VARCHAR(120) NOT NULL,
+            group_name VARCHAR(120),
+            status VARCHAR(24) NOT NULL DEFAULT 'active',
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            UNIQUE (source_type, external_id)
+        );
+        CREATE TABLE IF NOT EXISTS iam_user_roles (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL REFERENCES iam_users(id) ON DELETE CASCADE,
+            role_id UUID NOT NULL REFERENCES iam_roles(id) ON DELETE CASCADE,
+            created_at TIMESTAMPTZ NOT NULL,
+            UNIQUE (user_id, role_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_iam_user_roles_role
+            ON iam_user_roles (role_id, user_id);
+        "#,
+    )
+    .await?;
     Ok(())
 }

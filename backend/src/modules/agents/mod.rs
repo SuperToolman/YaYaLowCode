@@ -13,7 +13,7 @@ use rig_core::completion::Message;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::platform::config::load_agent_settings;
+use crate::platform::config::{resolve_agent_settings, resolve_agent_settings_for_scope};
 use crate::platform::prelude::*;
 use crate::shared::success_response;
 
@@ -40,13 +40,19 @@ pub(crate) async fn create_agent_session(
     State(state): State<AppState>,
     payload: Option<Json<CreateAgentSessionRequest>>,
 ) -> Result<(StatusCode, Json<ApiResponse<ApiAgentSession>>), AppError> {
-    let context = payload
-        .and_then(|Json(value)| value.context)
-        .unwrap_or_default();
+    let payload = payload.map(|Json(value)| value);
+    let requested_agent_id = payload.as_ref().and_then(|value| value.agent_id.clone());
+    let context = payload.and_then(|value| value.context).unwrap_or_default();
+    let (agent_id, _) = resolve_agent_settings_for_scope(
+        requested_agent_id.as_deref(),
+        context.app_id.as_deref(),
+        context.business_id.as_deref(),
+    ).map_err(AppError::BadRequest)?;
     let now = Utc::now();
     let session = agent_session_entity::ActiveModel {
         id: Set(Uuid::new_v4()),
         session_uuid: Set(format!("ASESSION-{}", Uuid::new_v4().simple())),
+        agent_id: Set(agent_id),
         title: Set("新对话".to_string()),
         app_route_app_id: Set(context.app_id.clone()),
         context_json: Set(serde_json::to_value(context).unwrap_or_else(|_| json!({}))),
@@ -93,14 +99,13 @@ pub(crate) async fn send_agent_message(
             "agent message is required".to_string(),
         ));
     }
-    let settings = load_agent_settings()
-        .ok_or_else(|| AppError::BadRequest("agent is not configured".to_string()))?;
+    let session = find_session(&state.db, &session_uuid).await?;
+    let (_, settings) = resolve_agent_settings(Some(&session.agent_id)).map_err(AppError::BadRequest)?;
     settings.validate().map_err(AppError::BadRequest)?;
     if !settings.enabled {
         return Err(AppError::BadRequest("agent is disabled".to_string()));
     }
 
-    let session = find_session(&state.db, &session_uuid).await?;
     let history_models = AgentMessageEntity::find()
         .filter(agent_message_entity::Column::SessionId.eq(session.id))
         .order_by_asc(agent_message_entity::Column::CreatedAt)

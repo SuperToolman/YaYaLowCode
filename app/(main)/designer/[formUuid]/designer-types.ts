@@ -39,6 +39,19 @@ export type DesignerDropData = {
   row: number;
   column: number;
   parentGroupId: string | null;
+  insertionDirection?:
+    | "before-row"
+    | "after-row"
+    | "before-column"
+    | "after-column";
+  targetFieldId?: string;
+  allowRowInsertion?: boolean;
+};
+
+export type DesignerInsertionIndicator = {
+  kind: "edge";
+  fieldId: string;
+  direction: NonNullable<DesignerDropData["insertionDirection"]>;
 };
 
 export type ResizeDirection = "columns" | "rows" | "both";
@@ -84,6 +97,20 @@ export type DesignerActionPanelState = {
   fieldEvents?: DesignerFieldAction[];
 };
 
+export type DesignerAgentConfig = {
+  enabled: boolean;
+  agentId: string;
+  prompt: string;
+  context: {
+    generated: string;
+    overrides: string;
+    generatedAt: string;
+    sourceHash: string;
+    status: "idle" | "analyzing" | "ready" | "stale" | "failed";
+    error: string;
+  };
+};
+
 export type PageDesignerProps = {
   formulaValidations: PageNamedRule[];
   serviceValidations: PageNamedRule[];
@@ -100,4 +127,5 @@ export type PageDesignerProps = {
   dataSourceCode: string;
   dataSources: DesignerDataSource[];
   actionPanel: DesignerActionPanelState;
+  agent: DesignerAgentConfig;
 };

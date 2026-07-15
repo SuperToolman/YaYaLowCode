@@ -11,6 +11,41 @@ type FieldRectangle = Pick<
   "row" | "column" | "rowSpan" | "colSpan"
 >;
 
+type ComponentResizeCapabilities = {
+  columns: boolean;
+  rows: boolean;
+};
+
+const COMPONENT_RESIZE_CAPABILITIES: Record<
+  DesignerComponentType,
+  ComponentResizeCapabilities
+> = {
+  singleLineText: { columns: true, rows: false },
+  number: { columns: true, rows: false },
+  link: { columns: true, rows: false },
+  select: { columns: true, rows: false },
+  multiSelect: { columns: true, rows: false },
+  date: { columns: true, rows: false },
+  dateRange: { columns: true, rows: false },
+  attachment: { columns: true, rows: false },
+  imageUpload: { columns: true, rows: false },
+  member: { columns: true, rows: false },
+  department: { columns: true, rows: false },
+  button: { columns: true, rows: false },
+  description: { columns: false, rows: true },
+  radio: { columns: true, rows: true },
+  checkbox: { columns: true, rows: true },
+  groupContainer: { columns: true, rows: true },
+  subform: { columns: false, rows: false },
+  multiLineText: { columns: true, rows: true },
+};
+
+export function getComponentResizeCapabilities(
+  type: DesignerComponentType,
+): ComponentResizeCapabilities {
+  return COMPONENT_RESIZE_CAPABILITIES[type];
+}
+
 export function createDesignerCells(rowCount: number) {
   return Array.from({ length: rowCount * COLUMN_COUNT }, (_, index) => ({
     row: Math.floor(index / COLUMN_COUNT),
@@ -64,9 +99,13 @@ export function moveField(
   const nextParentGroupId =
     parentGroupId === undefined ? (targetField?.parentGroupId ?? null) : parentGroupId;
 
+  const nextParent = nextParentGroupId
+    ? fields.find((field) => field.id === nextParentGroupId)
+    : null;
+
   if (
     nextParentGroupId === targetField.id ||
-    (targetField.type === "groupContainer" &&
+    (isContainerFieldType(targetField.type) &&
       nextParentGroupId !== null &&
       collectGroupDescendantIds(fields, targetField.id).has(nextParentGroupId))
   ) {
@@ -74,8 +113,19 @@ export function moveField(
   }
 
   if (
+    (targetField.type === "subform" && nextParentGroupId !== null) ||
+    (nextParent?.type === "subform" && isContainerFieldType(targetField.type))
+  ) {
+    return fields;
+  }
+
+  const targetRowSpan = nextParent?.type === "subform" ? 1 : targetField.rowSpan;
+  const targetColSpan = nextParent?.type === "subform" ? 1 : targetField.colSpan;
+  const targetColumn = targetField.type === "subform" ? 0 : column;
+
+  if (
     targetField.row === row &&
-    targetField.column === column &&
+    targetField.column === targetColumn &&
     (targetField.parentGroupId ?? null) === nextParentGroupId
   ) {
     return fields;
@@ -86,18 +136,18 @@ export function moveField(
       fields,
       fieldId,
       row,
-      column,
-      targetField.rowSpan,
-      targetField.colSpan,
+      targetColumn,
+      targetRowSpan,
+      targetColSpan,
       nextParentGroupId,
     )
   ) {
     return fields;
   }
 
-  if (targetField.type === "groupContainer") {
+  if (isContainerFieldType(targetField.type)) {
     const deltaRow = row - targetField.row;
-    const deltaColumn = column - targetField.column;
+    const deltaColumn = targetColumn - targetField.column;
     const descendantIds = collectGroupDescendantIds(fields, targetField.id);
 
     return fields.map((field) => {
@@ -115,8 +165,398 @@ export function moveField(
   }
 
   return fields.map((field) =>
-    field.id === fieldId ? { ...field, row, column, parentGroupId: nextParentGroupId } : field,
+    field.id === fieldId ? { ...field, row, column: targetColumn, rowSpan: targetRowSpan, colSpan: targetColSpan, parentGroupId: nextParentGroupId } : field,
   );
+}
+
+export type FieldInsertionDirection =
+  | "before-row"
+  | "after-row"
+  | "before-column"
+  | "after-column";
+
+export type FieldInsertionPlan = {
+  valid: boolean;
+  fields: PlacedField[];
+  target: { row: number; column: number; parentGroupId: string | null };
+  affectedFieldIds: string[];
+  reason?: string;
+};
+
+type IncomingFieldLayout = Pick<PlacedField, "colSpan" | "rowSpan" | "type"> & {
+  fieldId: string | null;
+};
+
+/** Plans an Android-launcher-style insertion without placing the dragged item. */
+export function planFieldInsertion(
+  fields: PlacedField[],
+  incoming: IncomingFieldLayout,
+  targetFieldId: string,
+  direction: FieldInsertionDirection,
+): FieldInsertionPlan {
+  const targetField = fields.find((field) => field.id === targetFieldId);
+  const fallbackTarget = {
+    row: targetField?.row ?? 0,
+    column: targetField?.column ?? 0,
+    parentGroupId: targetField?.parentGroupId ?? null,
+  };
+
+  if (!targetField || incoming.fieldId === targetFieldId) {
+    return invalidInsertionPlan(fields, fallbackTarget, "请选择其他组件作为插入位置");
+  }
+
+  const parentGroupId = targetField.parentGroupId ?? null;
+  const parentField = parentGroupId
+    ? fields.find((field) => field.id === parentGroupId)
+    : null;
+
+  if (
+    (incoming.type === "subform" && parentGroupId !== null) ||
+    (parentField?.type === "subform" && isContainerFieldType(incoming.type))
+  ) {
+    return invalidInsertionPlan(fields, fallbackTarget, "容器组件不能插入当前容器");
+  }
+
+  if (incoming.fieldId) {
+    const draggedField = fields.find((field) => field.id === incoming.fieldId);
+    if (
+      draggedField &&
+      isContainerFieldType(draggedField.type) &&
+      collectGroupDescendantIds(fields, draggedField.id).has(parentGroupId ?? "")
+    ) {
+      return invalidInsertionPlan(fields, fallbackTarget, "容器不能插入自身的子级");
+    }
+  }
+
+  if (
+    (direction === "before-column" || direction === "after-column") &&
+    incoming.type === "subform"
+  ) {
+    return invalidInsertionPlan(fields, fallbackTarget, "子表单固定跨全行，请从组件上方或下方插入");
+  }
+
+  if (
+    (direction === "before-row" || direction === "after-row") &&
+    parentField?.type === "subform"
+  ) {
+    return invalidInsertionPlan(fields, fallbackTarget, "子表单为固定单行布局，请从组件左侧或右侧插入");
+  }
+
+  const ignoredIds = incoming.fieldId
+    ? new Set([incoming.fieldId, ...collectGroupDescendantIds(fields, incoming.fieldId)])
+    : new Set<string>();
+  const draggedFields = fields.filter((field) => ignoredIds.has(field.id));
+  const workingFields = fields.filter((field) => !ignoredIds.has(field.id));
+  const normalizedIncoming = parentField?.type === "subform"
+    ? { ...incoming, rowSpan: 1, colSpan: 1 }
+    : incoming;
+
+  const planned = direction === "before-row" || direction === "after-row"
+    ? planRowInsertion(workingFields, normalizedIncoming, targetField, direction)
+    : planColumnInsertion(workingFields, normalizedIncoming, targetField, direction);
+
+  if (!planned.valid) return planned;
+  return {
+    ...planned,
+    fields: [...planned.fields, ...draggedFields],
+  };
+}
+
+function planRowInsertion(
+  fields: PlacedField[],
+  incoming: IncomingFieldLayout,
+  targetField: PlacedField,
+  direction: Extract<FieldInsertionDirection, "before-row" | "after-row">,
+): FieldInsertionPlan {
+  const parentGroupId = targetField.parentGroupId ?? null;
+  const targetColumn = incoming.type === "subform"
+    ? 0
+    : Math.min(targetField.column, COLUMN_COUNT - incoming.colSpan);
+  const target = {
+    row: direction === "after-row"
+      ? targetField.row + targetField.rowSpan
+      : targetField.row,
+    column: targetColumn,
+    parentGroupId,
+  };
+  const affectedFieldIds = new Set<string>();
+  let nextFields = fields;
+  const pushQueue: Array<FieldRectangle & { fieldId: string | null }> = [
+    {
+      row: target.row,
+      column: target.column,
+      rowSpan: incoming.rowSpan,
+      colSpan: incoming.colSpan,
+      fieldId: null,
+    },
+  ];
+  let pushCount = 0;
+
+  while (pushQueue.length > 0 && pushCount < fields.length * fields.length + 10) {
+    const pusher = pushQueue.shift()!;
+
+    while (true) {
+      const blocker = nextFields
+        .filter(
+          (field) =>
+            field.id !== pusher.fieldId &&
+            (field.parentGroupId ?? null) === parentGroupId &&
+            rectanglesOverlap(pusher, field),
+        )
+        .sort(compareFieldPosition)[0];
+      if (!blocker) break;
+
+      const nextRow = pusher.row + pusher.rowSpan;
+      const deltaRow = Math.max(1, nextRow - blocker.row);
+      nextFields = translateFieldRoots(
+        nextFields,
+        new Set([blocker.id]),
+        deltaRow,
+        0,
+      );
+      affectedFieldIds.add(blocker.id);
+      const movedBlocker = nextFields.find((field) => field.id === blocker.id)!;
+      pushQueue.push({
+        row: movedBlocker.row,
+        column: movedBlocker.column,
+        rowSpan: movedBlocker.rowSpan,
+        colSpan: movedBlocker.colSpan,
+        fieldId: movedBlocker.id,
+      });
+      pushCount += 1;
+    }
+  }
+
+  if (pushCount >= fields.length * fields.length + 10) {
+    return invalidInsertionPlan(fields, target, "组件碰撞关系过于复杂，无法自动腾位");
+  }
+
+  if (parentGroupId) {
+    const requiredBottom = Math.max(
+      target.row + incoming.rowSpan,
+      ...nextFields
+        .filter((field) => field.parentGroupId === parentGroupId)
+        .map((field) => field.row + field.rowSpan),
+    );
+    nextFields = expandContainerToFit(nextFields, parentGroupId, requiredBottom);
+  }
+
+  if (
+    !canPlaceField(
+      nextFields,
+      null,
+      target.row,
+      target.column,
+      incoming.rowSpan,
+      incoming.colSpan,
+      parentGroupId,
+    )
+  ) {
+    return invalidInsertionPlan(fields, target, "当前位置无法腾出足够空间");
+  }
+
+  return {
+    valid: true,
+    fields: nextFields,
+    target,
+    affectedFieldIds: [...affectedFieldIds],
+  };
+}
+
+function planColumnInsertion(
+  fields: PlacedField[],
+  incoming: IncomingFieldLayout,
+  targetField: PlacedField,
+  direction: Extract<FieldInsertionDirection, "before-column" | "after-column">,
+): FieldInsertionPlan {
+  const parentGroupId = targetField.parentGroupId ?? null;
+  const parentField = parentGroupId
+    ? fields.find((field) => field.id === parentGroupId)
+    : null;
+  const columnStart = parentField?.column ?? 0;
+  const siblings = fields
+    .filter((field) => (field.parentGroupId ?? null) === parentGroupId)
+    .sort(compareFieldPosition);
+  const columnEnd = parentField?.type === "subform"
+    ? Math.max(
+        columnStart + 1,
+        ...siblings.map((field) => field.column + field.colSpan),
+      ) + incoming.colSpan + siblings.length
+    : parentField
+      ? parentField.column + parentField.colSpan
+      : COLUMN_COUNT;
+  let target = {
+    row: targetField.row,
+    column: direction === "after-column"
+      ? targetField.column + targetField.colSpan
+      : targetField.column,
+    parentGroupId,
+  };
+  if (target.column + incoming.colSpan > columnEnd && parentField?.type !== "subform") {
+    target = { ...target, row: target.row + 1, column: columnStart };
+  }
+  const affectedFieldIds = new Set<string>();
+  let nextFields = fields;
+  const pushQueue: Array<FieldRectangle & { fieldId: string | null }> = [
+    {
+      row: target.row,
+      column: target.column,
+      rowSpan: incoming.rowSpan,
+      colSpan: incoming.colSpan,
+      fieldId: null,
+    },
+  ];
+  let pushCount = 0;
+
+  while (pushQueue.length > 0 && pushCount < fields.length * fields.length + 10) {
+    const pusher = pushQueue.shift()!;
+
+    while (true) {
+      const blocker = nextFields
+        .filter(
+          (field) =>
+            field.id !== pusher.fieldId &&
+            (field.parentGroupId ?? null) === parentGroupId &&
+            rectanglesOverlap(pusher, field),
+        )
+        .sort(compareFieldPosition)[0];
+      if (!blocker) break;
+
+      let nextRow = blocker.row;
+      let nextColumn = pusher.column + pusher.colSpan;
+      if (nextColumn + blocker.colSpan > columnEnd) {
+        if (parentField?.type === "subform") {
+          nextColumn = columnEnd;
+        } else {
+          nextRow = Math.max(blocker.row, pusher.row) + 1;
+          nextColumn = columnStart;
+        }
+      }
+
+      const deltaRow = nextRow - blocker.row;
+      const deltaColumn = nextColumn - blocker.column;
+      nextFields = translateFieldRoots(
+        nextFields,
+        new Set([blocker.id]),
+        deltaRow,
+        deltaColumn,
+      );
+      affectedFieldIds.add(blocker.id);
+      const movedBlocker = nextFields.find((field) => field.id === blocker.id)!;
+      pushQueue.push({
+        row: movedBlocker.row,
+        column: movedBlocker.column,
+        rowSpan: movedBlocker.rowSpan,
+        colSpan: movedBlocker.colSpan,
+        fieldId: movedBlocker.id,
+      });
+      pushCount += 1;
+    }
+  }
+
+  if (pushCount >= fields.length * fields.length + 10) {
+    return invalidInsertionPlan(fields, target, "组件碰撞关系过于复杂，无法自动腾位");
+  }
+
+  if (
+    !canPlaceField(
+      nextFields,
+      null,
+      target.row,
+      target.column,
+      incoming.rowSpan,
+      incoming.colSpan,
+      parentGroupId,
+    )
+  ) {
+    return invalidInsertionPlan(fields, target, "当前位置无法腾出足够空间");
+  }
+
+  if (parentGroupId) {
+    const requiredBottom = Math.max(
+      target.row + incoming.rowSpan,
+      ...nextFields
+        .filter((field) => field.parentGroupId === parentGroupId)
+        .map((field) => field.row + field.rowSpan),
+    );
+    nextFields = expandContainerToFit(nextFields, parentGroupId, requiredBottom);
+  }
+
+  return {
+    valid: true,
+    fields: nextFields,
+    target,
+    affectedFieldIds: [...affectedFieldIds],
+  };
+}
+
+function translateFieldRoots(
+  fields: PlacedField[],
+  rootIds: Set<string>,
+  deltaRow: number,
+  deltaColumn: number,
+) {
+  const translatedIds = new Set(rootIds);
+  for (const rootId of rootIds) {
+    for (const descendantId of collectGroupDescendantIds(fields, rootId)) {
+      translatedIds.add(descendantId);
+    }
+  }
+  return fields.map((field) =>
+    translatedIds.has(field.id)
+      ? { ...field, row: field.row + deltaRow, column: field.column + deltaColumn }
+      : field,
+  );
+}
+
+function expandContainerToFit(
+  fields: PlacedField[],
+  containerId: string,
+  requiredBottom: number,
+): PlacedField[] {
+  const container = fields.find((field) => field.id === containerId);
+  if (!container || container.type !== "groupContainer") return fields;
+  const currentBottom = container.row + container.rowSpan;
+  const deltaRows = Math.max(0, requiredBottom - currentBottom);
+  if (deltaRows === 0) return fields;
+
+  const siblingIds = new Set(
+    fields
+      .filter(
+        (field) =>
+          field.id !== container.id &&
+          (field.parentGroupId ?? null) === (container.parentGroupId ?? null) &&
+          field.row >= currentBottom,
+      )
+      .map((field) => field.id),
+  );
+  let nextFields = translateFieldRoots(fields, siblingIds, deltaRows, 0).map(
+    (field) =>
+      field.id === container.id
+        ? { ...field, rowSpan: field.rowSpan + deltaRows }
+        : field,
+  );
+
+  if (container.parentGroupId) {
+    nextFields = expandContainerToFit(
+      nextFields,
+      container.parentGroupId,
+      currentBottom + deltaRows,
+    );
+  }
+  return nextFields;
+}
+
+function invalidInsertionPlan(
+  fields: PlacedField[],
+  target: FieldInsertionPlan["target"],
+  reason: string,
+): FieldInsertionPlan {
+  return { valid: false, fields, target, affectedFieldIds: [], reason };
+}
+
+function compareFieldPosition(left: PlacedField, right: PlacedField) {
+  return left.row - right.row || left.column - right.column;
 }
 
 export function resizeField(
@@ -131,8 +571,16 @@ export function resizeField(
     return fields;
   }
 
+  const resizeCapabilities = getComponentResizeCapabilities(targetField.type);
+  const shouldResizeColumns =
+    resizeCapabilities.columns &&
+    (resizeState.direction === "columns" || resizeState.direction === "both");
+  const shouldResizeRows =
+    resizeCapabilities.rows &&
+    (resizeState.direction === "rows" || resizeState.direction === "both");
+
   const nextColSpan =
-    resizeState.direction === "columns" || resizeState.direction === "both"
+    shouldResizeColumns
       ? clamp(
           resizeState.startColSpan + deltaColumns,
           1,
@@ -140,7 +588,7 @@ export function resizeField(
         )
       : targetField.colSpan;
   const nextRowSpan =
-    resizeState.direction === "rows" || resizeState.direction === "both"
+    shouldResizeRows
       ? Math.max(1, resizeState.startRowSpan + deltaRows)
       : targetField.rowSpan;
 
@@ -205,20 +653,28 @@ export function canPlaceField(
   colSpan: number,
   parentGroupId: string | null = null,
 ) {
-  if (row < 0 || column < 0 || column + colSpan > COLUMN_COUNT) {
+  if (row < 0 || column < 0) {
     return false;
   }
+
+  const parentGroup = parentGroupId
+    ? fields.find((field) => field.id === parentGroupId)
+    : null;
+  const isSubformChild = parentGroup?.type === "subform";
+  if (!isSubformChild && column + colSpan > COLUMN_COUNT) return false;
 
   const candidate = { row, column, rowSpan, colSpan };
 
   if (parentGroupId) {
-    const parentGroup = fields.find((field) => field.id === parentGroupId);
     if (
       !parentGroup ||
-      row < parentGroup.row ||
-      column < parentGroup.column ||
-      row + rowSpan > parentGroup.row + parentGroup.rowSpan ||
-      column + colSpan > parentGroup.column + parentGroup.colSpan
+      !isContainerFieldType(parentGroup.type) ||
+      (parentGroup.type === "subform"
+        ? row !== parentGroup.row || rowSpan !== 1 || colSpan !== 1
+        : row < parentGroup.row ||
+          column < parentGroup.column ||
+          row + rowSpan > parentGroup.row + parentGroup.rowSpan ||
+          column + colSpan > parentGroup.column + parentGroup.colSpan)
     ) {
       return false;
     }
@@ -261,12 +717,17 @@ export function isTopAlignedField(type: DesignerComponentType) {
     type === "checkbox" ||
     type === "attachment" ||
     type === "imageUpload"
+    || type === "subform"
   );
 }
 
 export function getInitialFieldLayout(type: DesignerComponentType) {
   if (type === "groupContainer") {
     return { rowSpan: 2, colSpan: 2 };
+  }
+
+  if (type === "subform") {
+    return { rowSpan: 1, colSpan: COLUMN_COUNT };
   }
 
   if (type === "multiLineText") {
@@ -305,7 +766,7 @@ export function collectGroupDescendantIds(fields: PlacedField[], groupId: string
     for (const field of fields) {
       if (field.parentGroupId === currentGroupId && !result.has(field.id)) {
         result.add(field.id);
-        if (field.type === "groupContainer") {
+        if (isContainerFieldType(field.type)) {
           queue.push(field.id);
         }
       }
@@ -313,4 +774,8 @@ export function collectGroupDescendantIds(fields: PlacedField[], groupId: string
   }
 
   return result;
+}
+
+export function isContainerFieldType(type: DesignerComponentType) {
+  return type === "groupContainer" || type === "subform";
 }

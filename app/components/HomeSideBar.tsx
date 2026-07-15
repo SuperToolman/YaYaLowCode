@@ -27,13 +27,13 @@ const primaryNavItems: NavItem[] = [
   },
   {
     href: "/myApp",
-    label: "我的应用",
+    label: "应用",
     icon: LayoutHeaderCellsLarge,
     match: (pathname) => pathname.startsWith("/myApp") || /^\/[^/]+$/.test(pathname),
   },
   {
     href: "/designer",
-    label: "字段大纲",
+    label: "大纲",
     icon: SquareListUl,
     match: (pathname) => pathname.startsWith("/designer"),
   },
