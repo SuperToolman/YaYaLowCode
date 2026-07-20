@@ -2,7 +2,7 @@
 
 一个面向表单设计、数据录入、集成自动化与智能辅助场景的低代码平台原型项目。当前仓库已经包含应用管理、表单设计器、表单运行时、自动化工作流编辑器、只读 Agent MVP，以及基于 Rust + PostgreSQL 的后端服务。
 
-当前版本：**0.3a**（内部语义化版本：`0.2.0-alpha.0`）
+当前版本：**0.3b**（内部语义化版本：`0.2.0-alpha.0`）
 
 ## 当前状态
 
@@ -24,6 +24,7 @@
 
 - Next.js 16
 - React 19
+- Tauri 2（桌面端）
 - HeroUI
 - React Flow
 - Monaco Editor
@@ -196,26 +197,48 @@ Agent MVP 使用以下结构保存会话与审计信息：
 
 ```bash
 pnpm install
-pnpm dev
+pnpm dev:web
 ```
 
-执行 `pnpm dev` 前会自动先运行一次：
+执行 `pnpm dev:web` 前会自动先运行一次：
 
 ```bash
 pnpm codegen:api
 ```
 
-用于根据 [`openapi/openapi.json`](openapi/openapi.json) 自动更新前端 API Client。
+用于根据 [`web/openapi/openapi.json`](web/openapi/openapi.json) 自动更新前端 API Client。
 
 ### 后端启动
 
-进入 [`backend`](backend) 目录后执行：
+在仓库根目录执行：
 
 ```bash
-cargo run
+pnpm dev:api
 ```
 
 如果前端已经更新了自动化相关页面或代理接口，而本地运行日志接口仍然返回 `404` 或提示路由不可用，通常是后端进程还是旧版本，直接重启后端即可。
+
+### Tauri 桌面端
+
+桌面端位于 [`web/src-tauri`](web/src-tauri)，使用 Tauri 2。由于当前 Next.js 项目使用了 SSR、Server Components 和 API Route，桌面客户端采用“桌面壳连接独立 Web 服务”的结构，以完整保留现有功能。
+
+本地开发时先启动 API，再启动桌面端：
+
+```bash
+pnpm dev:api
+pnpm dev:desktop
+```
+
+`pnpm dev:desktop` 会自动启动 Next.js 开发服务器，并在 Tauri 窗口中打开 `http://127.0.0.1:3000`。
+
+构建桌面安装包前，需要先确定桌面客户端连接的 Web 地址。默认地址是 `http://127.0.0.1:3000`，也可以通过 `YAYA_WEB_URL` 指向已部署的 Web 服务：
+
+```powershell
+$env:YAYA_WEB_URL="https://your-web.example.com"
+pnpm build:desktop
+```
+
+桌面端安装包不内嵌 Next.js 服务和 PostgreSQL；生产环境仍需单独部署 `web` 与 `api`。如果后续需要完全离线的单机版，可再将 Next.js Server 和 API 打包为 Tauri sidecar。
 
 ## 数据库配置
 
@@ -250,11 +273,12 @@ Agent 配置保存在 `.yaya-agent-registry.json`，该文件可能包含 API Ke
 ## 目录结构
 
 ```text
-app/                前端主项目（Next.js App Router）
-backend/            Rust 后端
-openapi/            OpenAPI 描述文件
-app/lib/api-client/ heyapi 生成的前端 API Client
-public/             静态资源
+web/                    Next.js Web 前端
+web/app/                Next.js App Router
+web/openapi/            OpenAPI 描述文件
+web/app/lib/api-client/ heyapi 生成的前端 API Client
+web/src-tauri/          Tauri 2 桌面端壳层
+api/                    Rust + Axum API 服务
 ```
 
 ## 设计说明
@@ -274,12 +298,13 @@ public/             静态资源
 常用命令：
 
 ```bash
-pnpm lint
-pnpm build
-cd backend && cargo check
+pnpm lint:web
+pnpm build:web
+pnpm check:api
+cd web && cargo check --manifest-path src-tauri/Cargo.toml
 ```
 
-`0.3a` 发布前，应完成上述前后端核心检查，并验证动态表、索引和子表单触发器可在目标 PostgreSQL 环境正常执行。
+`0.3b` 发布前，应完成上述前后端核心检查，并验证动态表、索引和子表单触发器可在目标 PostgreSQL 环境正常执行。
 
 发布前还应确认本地设置文件未被 Git 跟踪，并避免在文档、日志或提交内容中写入数据库密码和模型 API Key。
 

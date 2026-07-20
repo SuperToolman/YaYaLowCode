@@ -1,0 +1,15 @@
+[package]
+name = "yaya-desktop"
+version = "0.2.0-alpha.0"
+description = "Yaya Low Code desktop shell"
+edition = "2024"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

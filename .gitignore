@@ -1,7 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -14,12 +14,14 @@
 /coverage
 
 # next.js
-/.next/
-/out/
+.next/
+out/
 
 # production
-/build
-/backend/target/
+build/
+api/target/
+web/src-tauri/target/
+web/src-tauri/gen/
 
 # misc
 .DS_Store
@@ -42,7 +44,7 @@ yarn-error.log*
 .yaya-identity-settings.json
 
 # vercel
-.vercel
+.vercel/
 
 # typescript
 *.tsbuildinfo

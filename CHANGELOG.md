@@ -2,6 +2,29 @@
 
 本文档用于记录项目的重要变更。
 
+## 0.3b - 2026-07-20
+
+> `0.3b` 为前后端工程拆分与桌面端支持版本；npm 与 Cargo 包版本仍标识为 `0.2.0-alpha.0`。
+
+### 新增
+
+- 新增 Tauri 2 桌面客户端壳层，支持在桌面窗口中连接本地或独立部署的 Next.js Web 服务。
+- 新增仓库级开发、构建和检查命令，统一管理 Web、API 与桌面端工作流。
+- 新增 Tauri 桌面应用图标、权限配置及 Windows 可执行文件构建能力。
+
+### 调整
+
+- 将 Next.js 前端项目迁移至 `web/`，包名调整为 `@yaya-low-code/web`。
+- 将 Rust 后端项目从 `backend/` 迁移至 `api/`，Cargo 包名调整为 `yaya-api`。
+- pnpm workspace 改为以仓库根目录管理 `web` 项目，API 继续保持独立 Cargo 工程。
+- 更新 README、构建脚本、忽略规则和 Turbopack workspace root 配置以适配新目录结构。
+
+### 修复
+
+- 修复表单视图、自动化列表、成员选择器、运行时表单和 Agent 设置页面中的 React Hook Effect 同步状态更新问题。
+- 修复表单视图 ID 生成触发的 React 纯度检查错误。
+- 清理未使用的表单记录过滤变量、无效 ARIA 属性和 Tauri 构建目录的 ESLint 扫描警告。
+
 ## 0.3a - 2026-07-15
 
 > `0.3a` 为 Alpha 阶段的存储模型与工作区体验迭代版本；npm 与 Cargo 包版本仍标识为 `0.2.0-alpha.0`。
