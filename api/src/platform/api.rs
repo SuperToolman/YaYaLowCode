@@ -1,8 +1,9 @@
 //! Transport-level response envelope shared by every API domain.
 
 use serde::Serialize;
+use utoipa::ToSchema;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub(crate) struct ApiResponse<T>
 where
     T: Serialize,

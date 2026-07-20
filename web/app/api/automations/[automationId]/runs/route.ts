@@ -1,60 +1,8 @@
-import { NextResponse } from "next/server";
+import { proxyBackendJson } from "../../../_lib/backend-json-proxy";
 
-const backendBaseUrl =
-  process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8787";
+type Context = { params: Promise<{ automationId: string }> };
 
-function buildErrorResponse(message: string, status: number) {
-  return NextResponse.json(
-    {
-      code: status,
-      data: null,
-      message,
-      time: new Date().toISOString(),
-    },
-    { status },
-  );
-}
-
-async function buildProxyResponse(response: Response) {
-  const text = await response.text();
-  const payload = text
-    ? (() => {
-        try {
-          return JSON.parse(text);
-        } catch {
-          return {
-            code: response.status,
-            data: null,
-            message: text,
-            time: new Date().toISOString(),
-          };
-        }
-      })()
-    : {
-        code: response.status,
-        data: null,
-        message:
-          response.status === 404
-            ? "automation runs route unavailable, restart backend service"
-            : "empty backend response",
-        time: new Date().toISOString(),
-      };
-
-  return NextResponse.json(payload, { status: response.status });
-}
-
-export async function GET(
-  _request: Request,
-  context: { params: Promise<{ automationId: string }> },
-) {
-  const { automationId } = await context.params;
-
-  try {
-    const response = await fetch(`${backendBaseUrl}/api/automations/${automationId}/runs`, {
-      cache: "no-store",
-    });
-    return buildProxyResponse(response);
-  } catch {
-    return buildErrorResponse("backend unavailable", 503);
-  }
+export async function GET(request: Request, { params }: Context) {
+  const { automationId } = await params;
+  return proxyBackendJson(request, `/api/automations/${encodeURIComponent(automationId)}/runs`);
 }

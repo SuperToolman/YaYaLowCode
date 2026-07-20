@@ -2,6 +2,15 @@ import { NextResponse } from "next/server";
 
 const backendBaseUrl = process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8787";
 
+export function backendAuthorizationHeaders(
+  request: Request,
+): Record<string, string> {
+  const token = request.headers
+    .get("cookie")
+    ?.match(/(?:^|;\s*)yaya-auth-token=([^;]+)/)?.[1];
+  return token ? { authorization: `Bearer ${token}` } : {};
+}
+
 export async function proxyBackendJson(
   request: Request,
   path: string,
@@ -11,7 +20,10 @@ export async function proxyBackendJson(
     const hasBody = method !== "GET" && method !== "HEAD" && method !== "DELETE";
     const response = await fetch(`${backendBaseUrl}${path}`, {
       method,
-      headers: hasBody ? { "content-type": "application/json" } : undefined,
+      headers: {
+        ...(hasBody ? { "content-type": "application/json" } : {}),
+        ...backendAuthorizationHeaders(request),
+      },
       body: hasBody ? await request.text() : undefined,
       cache: "no-store",
     });

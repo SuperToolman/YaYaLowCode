@@ -7,9 +7,8 @@ import type {
   CSSProperties,
   ReactNode,
 } from "react";
-import { createContext, useContext, useLayoutEffect, useRef } from "react";
+import { createContext, memo, useContext, useLayoutEffect, useMemo, useRef } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import { FieldPreview } from "./CompTool";
 import { TrashIcon } from "../../../../components/app-icons";
 import {
   CELL_MIN_HEIGHT,
@@ -59,7 +58,7 @@ const InsertionIndicatorContext = createContext<
   DesignerCanvasProps["insertionIndicator"]
 >(null);
 
-export function DesignerCanvas({
+export const DesignerCanvas = memo(function DesignerCanvas({
   fields,
   gridRef,
   insertionIndicator,
@@ -72,14 +71,38 @@ export function DesignerCanvas({
   onResizePointerMove,
   onResizePointerUp,
 }: DesignerCanvasProps) {
-  const cells = createDesignerCells(rowCount);
+  const cells = useMemo(() => createDesignerCells(rowCount), [rowCount]);
   const previousFieldRectsRef = useRef<Map<string, DOMRect>>(new Map());
   const fieldAnimationsRef = useRef<Map<string, Animation>>(new Map());
-  const topLevelFields = getTopLevelFields(fields);
-  const descriptionRows = new Set(
-    topLevelFields
-      .filter((field) => field.props.description?.trim())
-      .map((field) => field.row),
+  const topLevelFields = useMemo(() => getTopLevelFields(fields), [fields]);
+  const { coveredCellKeys, fieldByCell } = useMemo(() => {
+    const nextCoveredCellKeys = new Set<string>();
+    const nextFieldByCell = new Map<string, PlacedField>();
+
+    for (const field of topLevelFields) {
+      nextFieldByCell.set(`${field.row}:${field.column}`, field);
+      for (let row = field.row; row < field.row + field.rowSpan; row += 1) {
+        for (let column = field.column; column < field.column + field.colSpan; column += 1) {
+          nextCoveredCellKeys.add(`${row}:${column}`);
+        }
+      }
+    }
+
+    return { coveredCellKeys: nextCoveredCellKeys, fieldByCell: nextFieldByCell };
+  }, [topLevelFields]);
+  const descriptionRows = useMemo(
+    () => new Set(
+      topLevelFields
+        .filter((field) => field.props.description?.trim())
+        .map((field) => field.row),
+    ),
+    [topLevelFields],
+  );
+  const layoutSignature = useMemo(
+    () => fields
+      .map((field) => `${field.id}:${field.row}:${field.column}:${field.rowSpan}:${field.colSpan}`)
+      .join("|"),
+    [fields],
   );
 
   useLayoutEffect(() => {
@@ -95,6 +118,13 @@ export function DesignerCanvas({
       const fieldId = element.dataset.designerFieldId;
       if (!fieldId) continue;
       nextRects.set(fieldId, element.getBoundingClientRect());
+    }
+
+    // Keep the current geometry during direct manipulation. Animating every resize
+    // frame forces repeated compositing work across the entire canvas.
+    if (showMatrix) {
+      previousFieldRectsRef.current = nextRects;
+      return;
     }
 
     for (const element of elements) {
@@ -149,7 +179,7 @@ export function DesignerCanvas({
     }
 
     previousFieldRectsRef.current = nextRects;
-  }, [fields, gridRef]);
+  }, [gridRef, layoutSignature, showMatrix]);
 
   return (
     <InsertionIndicatorContext.Provider value={insertionIndicator}>
@@ -173,8 +203,9 @@ export function DesignerCanvas({
           }}
         >
           {cells.map(({ row, column }) => {
-            const field = getFieldAt(topLevelFields, row, column);
-            const isCovered = isCellCovered(topLevelFields, row, column);
+            const cellKey = `${row}:${column}`;
+            const field = fieldByCell.get(cellKey);
+            const isCovered = coveredCellKeys.has(cellKey);
 
             if (!field && (!showMatrix || isCovered)) {
               return null;
@@ -229,7 +260,7 @@ export function DesignerCanvas({
     </div>
     </InsertionIndicatorContext.Provider>
   );
-}
+});
 
 function PlacedDesignerField({
   allFields,
@@ -343,14 +374,44 @@ function PlacedDesignerField({
           onResizePointerUp={onResizePointerUp}
         />
       ) : (
-        <FieldPreview
-          type={field.type}
-          label={field.label}
-          compact
-          showLabel
-          componentProps={field.props}
-        />
+        <DesignerFieldPreview field={field} />
       )}
+    </div>
+  );
+}
+
+function DesignerFieldPreview({ field }: { field: PlacedField }) {
+  const props = field.props;
+  const placeholder = props.placeholder || "请输入";
+  const options = props.options ?? [];
+  const description = props.description?.trim();
+  const isChoice = field.type === "radio" || field.type === "checkbox";
+  const isMultiline = field.type === "multiLineText";
+  const isUpload = field.type === "attachment" || field.type === "imageUpload";
+
+  if (field.type === "description") {
+    return <p className="w-full rounded-md bg-[var(--color-bg-subtle)] px-3 py-2 text-sm text-[var(--color-text-secondary)]">{String(props.defaultValue || placeholder)}</p>;
+  }
+
+  if (field.type === "button") {
+    return <div className="inline-flex h-9 items-center rounded-md bg-[var(--color-primary)] px-3 text-sm font-medium text-[var(--color-text-on-primary)]">{props.buttonText || field.label}</div>;
+  }
+
+  return (
+    <div className="w-full min-w-0 space-y-2">
+      <div className="text-sm font-medium text-[var(--color-text-primary)]">{field.label}</div>
+      {isChoice ? (
+        <div className="flex flex-wrap gap-3 text-sm text-[var(--color-text-secondary)]">
+          {(options.length > 0 ? options : [{ label: "选项一" }, { label: "选项二" }]).map((option, index) => (
+            <span key={`${option.label}-${index}`} className="inline-flex items-center gap-1.5"><span className={field.type === "radio" ? "h-3.5 w-3.5 rounded-full border border-[var(--color-border)]" : "h-3.5 w-3.5 rounded border border-[var(--color-border)]"} />{option.label}</span>
+          ))}
+        </div>
+      ) : isUpload ? (
+        <div className="flex min-h-12 items-center justify-center rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-xs text-[var(--color-text-secondary)]">{props.buttonText || (field.type === "imageUpload" ? "上传图片" : "上传附件")}</div>
+      ) : (
+        <div className={["flex w-full items-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 text-sm text-[var(--color-text-disabled)]", isMultiline ? "min-h-16 items-start py-2" : "h-10"].join(" ")}>{placeholder}</div>
+      )}
+      {description ? <div className="text-xs text-[var(--color-text-secondary)]">{description}</div> : null}
     </div>
   );
 }

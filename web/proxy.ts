@@ -8,6 +8,7 @@ export function proxy(request: NextRequest) {
   const authenticated = hasUsableToken(token);
 
   if (pathname === "/login") {
+    if (request.nextUrl.searchParams.get("dingtalkComplete") === "1") return NextResponse.next();
     if (!authenticated) return NextResponse.next();
 
     const redirect = request.nextUrl.searchParams.get("redirect");

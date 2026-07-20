@@ -1,6 +1,7 @@
 //! Cross-cutting platform configuration and runtime concerns.
 
 pub mod api;
+pub mod authorization;
 pub mod automation_runs;
 pub mod config;
 pub mod error;

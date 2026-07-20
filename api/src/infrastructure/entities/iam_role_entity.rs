@@ -8,7 +8,6 @@ pub struct Model {
     pub source_type: String,
     pub external_id: String,
     pub name: String,
-    pub group_name: Option<String>,
     pub status: String,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,

@@ -1,16 +1,20 @@
 //! Local platform settings persisted by the Rust backend.
 
 use axum::Json;
+use axum::extract::Path;
 use axum::http::StatusCode;
 use sea_orm::Database;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::platform::config::{
-    AgentSettings, DatabaseSettings, DingTalkSettings, IdentitySourceSettings, load_agent_settings,
-    load_database_settings, load_identity_source_settings, save_agent_settings,
-    save_database_settings, save_identity_source_settings,
+    AgentSettings, DatabaseSettings, DingTalkSettings, IdentitySourceSettings, RbacPermissionSettings,
+    load_agent_settings, load_database_settings, load_identity_source_settings,
+    load_rbac_permission_settings, save_agent_settings, save_database_settings,
+    save_identity_source_settings, save_rbac_permission_settings,
 };
 use crate::platform::prelude::{ApiResponse, AppError, AppState};
+use crate::platform::authorization;
 use crate::shared::success_response;
 
 #[derive(Serialize)]
@@ -60,12 +64,23 @@ pub(crate) struct UpdateAgentSettingsRequest {
     system_prompt: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct UpdateIdentitySourceSettingsRequest {
-    active_provider: String,
-    local_admin_login_enabled: bool,
     dingtalk: DingTalkSettings,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UpdateRolePermissionsRequest {
+    grants: Vec<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RolePermissionsResponse {
+    role_id: String,
+    grants: Vec<String>,
 }
 
 pub(crate) async fn get_database_settings(
@@ -177,13 +192,23 @@ pub(crate) async fn get_identity_source_settings(
     )))
 }
 
+pub(crate) async fn get_internal_identity_source_settings(
+    axum::extract::State(_state): axum::extract::State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<ApiResponse<IdentitySourceSettings>>, AppError> {
+    authorization::require_internal(&headers)?;
+    let settings = load_identity_source_settings().unwrap_or_else(default_identity_source_settings);
+    Ok(Json(success_response(
+        "identity source settings loaded",
+        settings,
+    )))
+}
+
 pub(crate) async fn update_identity_source_settings(
     axum::extract::State(_state): axum::extract::State<AppState>,
     Json(payload): Json<UpdateIdentitySourceSettingsRequest>,
 ) -> Result<Json<ApiResponse<IdentitySourceSettings>>, AppError> {
     let settings = IdentitySourceSettings {
-        active_provider: payload.active_provider.trim().to_lowercase(),
-        local_admin_login_enabled: payload.local_admin_login_enabled,
         dingtalk: DingTalkSettings {
             app_id: payload.dingtalk.app_id.trim().to_string(),
             agent_id: payload.dingtalk.agent_id.trim().to_string(),
@@ -204,6 +229,51 @@ pub(crate) async fn update_identity_source_settings(
     Ok(Json(success_response(
         "identity source settings saved",
         settings,
+    )))
+}
+
+pub(crate) async fn get_role_permissions(
+    axum::extract::State(_state): axum::extract::State<AppState>,
+    Path(role_id): Path<String>,
+) -> Result<Json<ApiResponse<RolePermissionsResponse>>, AppError> {
+    let settings = load_rbac_permission_settings().unwrap_or_default();
+    let grants = if role_id == "00000000-0000-4000-8000-000000000002" {
+        vec!["*".to_string()]
+    } else {
+        settings.grants.get(&role_id).cloned().unwrap_or_default()
+    };
+    Ok(Json(success_response(
+        "role permissions loaded",
+        RolePermissionsResponse { role_id, grants },
+    )))
+}
+
+pub(crate) async fn update_role_permissions(
+    axum::extract::State(_state): axum::extract::State<AppState>,
+    Path(role_id): Path<String>,
+    Json(payload): Json<UpdateRolePermissionsRequest>,
+) -> Result<Json<ApiResponse<RolePermissionsResponse>>, AppError> {
+    let role_id = role_id.trim().to_string();
+    if role_id.is_empty() {
+        return Err(AppError::BadRequest("role id is required".to_string()));
+    }
+    if role_id == "00000000-0000-4000-8000-000000000002" {
+        return Err(AppError::BadRequest("system administrator permissions cannot be modified".to_string()));
+    }
+    let mut settings: RbacPermissionSettings = load_rbac_permission_settings().unwrap_or_default();
+    let mut grants = payload
+        .grants
+        .into_iter()
+        .map(|grant| grant.trim().to_string())
+        .filter(|grant| !grant.is_empty())
+        .collect::<Vec<_>>();
+    grants.sort();
+    grants.dedup();
+    settings.grants.insert(role_id.clone(), grants.clone());
+    save_rbac_permission_settings(&settings).map_err(AppError::Server)?;
+    Ok(Json(success_response(
+        "role permissions saved",
+        RolePermissionsResponse { role_id, grants },
     )))
 }
 
@@ -249,8 +319,6 @@ pub(crate) fn default_agent_settings() -> AgentSettings {
 
 pub(crate) fn default_identity_source_settings() -> IdentitySourceSettings {
     IdentitySourceSettings {
-        active_provider: "local".to_string(),
-        local_admin_login_enabled: true,
         dingtalk: DingTalkSettings {
             app_id: String::new(),
             agent_id: String::new(),

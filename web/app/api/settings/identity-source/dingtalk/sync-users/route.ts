@@ -1,22 +1,6 @@
-import { NextResponse } from "next/server";
+import { syncDingTalkUsers } from "../../../../../lib/api-client";
+import { createBackendSdkClient, sdkJsonResponse } from "../../../../_lib/backend-sdk-client";
 
-const backendBaseUrl = process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8787";
-
-export async function POST() {
-  try {
-    const response = await fetch(
-      `${backendBaseUrl}/api/settings/identity-source/dingtalk/sync-users`,
-      { method: "POST", cache: "no-store" },
-    );
-    const body = await response.text();
-    return new NextResponse(body, {
-      status: response.status,
-      headers: { "content-type": "application/json" },
-    });
-  } catch {
-    return NextResponse.json(
-      { code: 503, data: null, message: "backend unavailable", time: new Date().toISOString() },
-      { status: 503 },
-    );
-  }
+export async function POST(request: Request) {
+  return sdkJsonResponse(syncDingTalkUsers({ client: createBackendSdkClient(request) }));
 }

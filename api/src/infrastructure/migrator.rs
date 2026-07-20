@@ -24,7 +24,56 @@ impl MigratorTrait for Migrator {
             Box::new(m20260715_000016_create_form_storage_definitions::Migration),
             Box::new(m20260715_000017_drop_shared_form_records::Migration),
             Box::new(m20260715_000018_repair_form_storage_definitions::Migration),
+            Box::new(m20260720_000019_create_form_views::Migration),
+            Box::new(m20260720_000020_remove_role_groups::Migration),
+            Box::new(m20260720_000021_create_user_email_addresses::Migration),
+            Box::new(m20260720_000022_create_local_credentials::Migration),
         ]
+    }
+}
+mod m20260720_000022_create_local_credentials { use sea_orm_migration::prelude::*; #[derive(DeriveMigrationName)] pub struct Migration; #[async_trait::async_trait] impl MigrationTrait for Migration { async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> { manager.get_connection().execute_unprepared("CREATE TABLE IF NOT EXISTS iam_local_credentials (user_id UUID PRIMARY KEY REFERENCES iam_users(id) ON DELETE CASCADE, username VARCHAR(80) NOT NULL UNIQUE, password TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL);").await?; Ok(()) } async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> { manager.get_connection().execute_unprepared("DROP TABLE IF EXISTS iam_local_credentials;").await?; Ok(()) } } }
+
+mod m20260720_000021_create_user_email_addresses {
+    use sea_orm_migration::prelude::*;
+    #[derive(DeriveMigrationName)] pub struct Migration;
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> { manager.get_connection().execute_unprepared(r#"
+            CREATE TABLE IF NOT EXISTS iam_user_email_addresses (
+              id UUID PRIMARY KEY, user_id UUID NOT NULL REFERENCES iam_users(id) ON DELETE CASCADE,
+              label VARCHAR(80) NOT NULL, email VARCHAR(160) NOT NULL,
+              created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL,
+              UNIQUE(user_id, email)
+            );
+            CREATE INDEX IF NOT EXISTS idx_iam_user_email_addresses_user_id ON iam_user_email_addresses(user_id);
+        "#).await?; Ok(()) }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> { manager.get_connection().execute_unprepared("DROP TABLE IF EXISTS iam_user_email_addresses;").await?; Ok(()) }
+    }
+}
+
+mod m20260720_000019_create_form_views {
+    use sea_orm_migration::prelude::*;
+    #[derive(DeriveMigrationName)] pub struct Migration;
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> { manager.get_connection().execute_unprepared(r#"
+            CREATE TABLE IF NOT EXISTS form_views (
+              id UUID PRIMARY KEY, form_uuid VARCHAR(40) NOT NULL REFERENCES form_definitions(form_uuid) ON DELETE CASCADE,
+              view_uuid VARCHAR(40) NOT NULL, name VARCHAR(120) NOT NULL, config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+              created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL, UNIQUE(form_uuid, view_uuid)
+            ); CREATE INDEX IF NOT EXISTS idx_form_views_form ON form_views(form_uuid, updated_at DESC);
+        "#).await?; Ok(()) }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> { manager.get_connection().execute_unprepared("DROP TABLE IF EXISTS form_views;").await?; Ok(()) }
+    }
+}
+
+mod m20260720_000020_remove_role_groups {
+    use sea_orm_migration::prelude::*;
+    #[derive(DeriveMigrationName)] pub struct Migration;
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> { manager.get_connection().execute_unprepared("ALTER TABLE iam_roles DROP COLUMN IF EXISTS group_name;").await?; Ok(()) }
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> { Ok(()) }
     }
 }
 

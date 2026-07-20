@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { Monaco } from "@monaco-editor/react";
 import dynamic from "next/dynamic";
@@ -79,7 +79,7 @@ const DESIGNER_PANELS: Array<{
   { key: "schema", label: "页面源码", icon: <GearMiniIcon /> },
 ];
 
-export function DesignerWorkbenchSidebar({
+export const DesignerWorkbenchSidebar = memo(function DesignerWorkbenchSidebar({
   activePanel,
   agentAnalysisStale,
   fields,
@@ -150,6 +150,30 @@ export function DesignerWorkbenchSidebar({
         </div>
       </div>
     </div>
+  );
+}, areDesignerWorkbenchPropsEqual);
+
+function areDesignerWorkbenchPropsEqual(
+  previous: DesignerWorkbenchSidebarProps,
+  next: DesignerWorkbenchSidebarProps,
+) {
+  if (previous.activePanel !== next.activePanel) return false;
+
+  // The component toolbox owns its search state and does not consume form data.
+  // Avoid rebuilding it on every field move, resize, or property update.
+  if (next.activePanel === "components") return true;
+
+  return (
+    previous.agentAnalysisStale === next.agentAnalysisStale &&
+    previous.debugEvents === next.debugEvents &&
+    previous.fields === next.fields &&
+    previous.isAnalyzingAgent === next.isAnalyzingAgent &&
+    previous.pageProps === next.pageProps &&
+    previous.schema === next.schema &&
+    previous.onActivePanelChange === next.onActivePanelChange &&
+    previous.onAnalyzeAgentSchema === next.onAnalyzeAgentSchema &&
+    previous.onBeforeDesignerActionRegister === next.onBeforeDesignerActionRegister &&
+    previous.onPagePropsChange === next.onPagePropsChange
   );
 }
 

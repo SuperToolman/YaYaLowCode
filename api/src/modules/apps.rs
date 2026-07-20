@@ -4,18 +4,23 @@ use crate::platform::prelude::*;
 use crate::platform::records::RecordRepository;
 use crate::shared::*;
 use axum::http::StatusCode;
+use axum::http::HeaderMap;
+use crate::platform::authorization;
 
 pub(crate) async fn list_apps(
     State(state): State<AppState>,
+    headers: HeaderMap,
 ) -> Result<Json<ApiResponse<Vec<ApiApp>>>, AppError> {
     let items = AppEntity::find()
         .order_by_desc(app_entity::Column::CreatedAt)
         .all(&state.db)
         .await?;
 
+    let grants = authorization::grants(&headers, &state).await?;
+    let all = grants.contains("*");
     Ok(Json(success_response(
         "获取应用列表成功",
-        items.into_iter().map(ApiApp::from).collect(),
+        items.into_iter().filter(|app| all || grants.contains(&format!("app:{}:display", app.route_app_id))).map(ApiApp::from).collect(),
     )))
 }
 
@@ -179,6 +184,6 @@ pub(crate) async fn delete_app(
         json!({ "deleted": true }),
     )))
 }
-mod dto;
+pub(crate) mod dto;
 
-use dto::*;
+pub(crate) use dto::*;

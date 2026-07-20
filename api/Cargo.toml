@@ -28,6 +28,8 @@ uuid = { version = "1", features = ["v4", "serde"] }
 rig-core = "0.40.0"
 futures-util = "0.3.32"
 tokio-stream = "0.1.18"
+jsonwebtoken = "9"
+utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 
 [patch.crates-io]
 mime_guess = { path = "vendor/mime_guess" }

@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use utoipa::ToSchema;
 
 use crate::infrastructure::entities::{agent_message_entity, agent_session_entity};
 use crate::shared::format_date;
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AgentPageContext {
     pub(crate) app_id: Option<String>,
@@ -15,21 +16,21 @@ pub(crate) struct AgentPageContext {
     pub(crate) form_draft_assist: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CreateAgentSessionRequest {
     pub(crate) agent_id: Option<String>,
     pub(crate) context: Option<AgentPageContext>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SendAgentMessageRequest {
     pub(crate) content: String,
     pub(crate) context: Option<AgentPageContext>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiAgentSession {
     pub(crate) id: String,
@@ -42,7 +43,7 @@ pub(crate) struct ApiAgentSession {
     pub(crate) updated_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiAgentMessage {
     pub(crate) id: String,

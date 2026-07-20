@@ -1,7 +1,9 @@
+﻿use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 #[derive(Clone)]
 pub struct AppConfig {
@@ -10,7 +12,7 @@ pub struct AppConfig {
     pub database_url: String,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
 pub struct DatabaseSettings {
     pub host: String,
     pub port: u16,
@@ -19,7 +21,7 @@ pub struct DatabaseSettings {
     pub password: String,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSettings {
     pub enabled: bool,
@@ -52,7 +54,7 @@ pub struct AgentRegistry {
     pub personas: Vec<AgentPersonaDefinition>,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentPersonaDefinition {
     pub id: String,
@@ -61,7 +63,7 @@ pub struct AgentPersonaDefinition {
     pub system_prompt: String,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentPluginDefinition {
     pub id: String,
@@ -75,7 +77,7 @@ pub struct AgentPluginDefinition {
     pub requires_confirmation: bool,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSkillDefinition {
     pub id: String,
@@ -88,7 +90,7 @@ pub struct AgentSkillDefinition {
     pub requires_confirmation: bool,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentKnowledgeBaseDefinition {
     pub id: String,
@@ -101,7 +103,7 @@ pub struct AgentKnowledgeBaseDefinition {
     pub source_ids: Vec<String>,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentModelProvider {
     pub id: String,
@@ -112,7 +114,7 @@ pub struct AgentModelProvider {
     pub api_key: String,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentConfigProfile {
     pub id: String,
@@ -152,7 +154,7 @@ pub struct AgentConfigProfile {
     pub knowledge_base_ids: Vec<String>,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentDefinition {
     pub id: String,
@@ -174,15 +176,13 @@ pub struct AgentDefinition {
     pub knowledge_base_ids: Vec<String>,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentitySourceSettings {
-    pub active_provider: String,
-    pub local_admin_login_enabled: bool,
     pub dingtalk: DingTalkSettings,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DingTalkSettings {
     #[serde(default)]
@@ -199,6 +199,13 @@ pub struct DingTalkSettings {
     pub include_child_departments: bool,
     pub disable_departed_users: bool,
     pub allow_jit_provisioning: bool,
+}
+
+#[derive(Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RbacPermissionSettings {
+    #[serde(default)]
+    pub grants: HashMap<String, Vec<String>>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -528,6 +535,24 @@ pub fn save_identity_source_settings(
     fs::rename(temporary_path, path)
 }
 
+pub fn load_rbac_permission_settings() -> Option<RbacPermissionSettings> {
+    let content = fs::read_to_string(rbac_permission_settings_path()).ok()?;
+    serde_json::from_str::<RbacPermissionSettings>(&content).ok()
+}
+
+pub fn save_rbac_permission_settings(
+    settings: &RbacPermissionSettings,
+) -> Result<(), std::io::Error> {
+    let path = rbac_permission_settings_path();
+    let temporary_path = path.with_extension("tmp");
+    let content = serde_json::to_vec_pretty(settings).expect("rbac permission settings are serializable");
+    fs::write(&temporary_path, content)?;
+    if path.exists() {
+        fs::remove_file(&path)?;
+    }
+    fs::rename(temporary_path, path)
+}
+
 impl AgentSettings {
     pub fn validate(&self) -> Result<(), String> {
         if self.api_base_url.trim().is_empty() {
@@ -551,24 +576,9 @@ impl AgentSettings {
 
 impl IdentitySourceSettings {
     pub fn validate(&self) -> Result<(), String> {
-        if !matches!(self.active_provider.as_str(), "local" | "dingtalk") {
-            return Err("active identity provider must be local or dingtalk".to_string());
-        }
         if self.dingtalk.sync_interval_minutes == 0 || self.dingtalk.sync_interval_minutes > 10_080
         {
             return Err("dingtalk sync interval must be between 1 and 10080 minutes".to_string());
-        }
-        if self.active_provider == "dingtalk" {
-            for (label, value) in [
-                ("App ID", self.dingtalk.app_id.trim()),
-                ("AgentId", self.dingtalk.agent_id.trim()),
-                ("Client ID", self.dingtalk.client_id.trim()),
-                ("Client Secret", self.dingtalk.client_secret.trim()),
-            ] {
-                if value.is_empty() {
-                    return Err(format!("dingtalk {label} is required when enabled"));
-                }
-            }
         }
         Ok(())
     }
@@ -596,6 +606,12 @@ fn identity_settings_path() -> PathBuf {
     std::env::var_os("YAYA_IDENTITY_SETTINGS_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(".yaya-identity-settings.json"))
+}
+
+fn rbac_permission_settings_path() -> PathBuf {
+    std::env::var_os("YAYA_RBAC_PERMISSION_SETTINGS_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(".yaya-rbac-permissions.json"))
 }
 
 fn percent_encode(value: &str) -> String {

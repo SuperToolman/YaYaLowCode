@@ -68,6 +68,45 @@ where
             .collect()
     }
 
+    pub(crate) async fn list_page(
+        &self,
+        form_uuid: &str,
+        page: u64,
+        page_size: u64,
+    ) -> Result<(Vec<StoredFormRecord>, i64), AppError> {
+        let plan = self.storage_plan(form_uuid).await?;
+        let offset = ((page - 1) * page_size) as i64;
+        let rows = self
+            .db
+            .query_all_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                format!(
+                    "SELECT {} FROM \"{}\" ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+                    base_select_columns(&plan),
+                    plan.main_table
+                ),
+                vec![
+                    SeaValue::BigInt(Some(page_size as i64)),
+                    SeaValue::BigInt(Some(offset)),
+                ],
+            ))
+            .await?;
+        let total_row = self
+            .db
+            .query_one_raw(Statement::from_string(
+                DbBackend::Postgres,
+                format!("SELECT COUNT(*) AS total FROM \"{}\"", plan.main_table),
+            ))
+            .await?
+            .ok_or_else(|| AppError::Server(std::io::Error::other("record count query returned no row")))?;
+        let total = total_row.try_get("", "total")?;
+        let records = rows
+            .into_iter()
+            .map(|row| stored_record_from_row(&row, form_uuid).map_err(AppError::from))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok((records, total))
+    }
+
     pub(crate) async fn find(
         &self,
         form_uuid: &str,

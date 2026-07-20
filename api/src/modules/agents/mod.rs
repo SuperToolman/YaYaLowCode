@@ -1,4 +1,4 @@
-mod dto;
+pub(crate) mod dto;
 mod runner;
 mod tools;
 
@@ -17,7 +17,7 @@ use crate::platform::config::{resolve_agent_settings, resolve_agent_settings_for
 use crate::platform::prelude::*;
 use crate::shared::success_response;
 
-use self::dto::{
+pub(crate) use self::dto::{
     AgentPageContext, ApiAgentMessage, ApiAgentSession, CreateAgentSessionRequest,
     SendAgentMessageRequest,
 };

@@ -4,6 +4,7 @@ use chrono::Utc;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::Serialize;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::infrastructure::entities::{
@@ -14,7 +15,7 @@ use crate::platform::error::AppError;
 
 use super::dto::{DingTalkDepartment, DingTalkUser};
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DepartmentSyncResponse {
     total: usize,
@@ -24,7 +25,7 @@ pub(crate) struct DepartmentSyncResponse {
     synchronized_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct UserSyncResponse {
     total: usize,
@@ -153,6 +154,15 @@ pub(super) async fn save_users(
             .filter(iam_external_identity_entity::Column::ExternalUserId.eq(user.userid.clone()))
             .one(db)
             .await?;
+        let identity = match identity {
+            Some(identity) => Some(identity),
+            None if !user.unionid.trim().is_empty() => iam_external_identity_entity::Entity::find()
+                .filter(iam_external_identity_entity::Column::Provider.eq("dingtalk"))
+                .filter(iam_external_identity_entity::Column::UnionId.eq(user.unionid.clone()))
+                .one(db)
+                .await?,
+            None => None,
+        };
 
         let user_id = if let Some(identity) = identity {
             let user_id = identity.user_id;
@@ -246,17 +256,15 @@ pub(super) async fn save_users(
                 continue;
             }
             let external_role_id = role.id.to_string();
-            synchronized_role_ids.insert(external_role_id.clone());
+            let role_name = role.name.trim();
             let existing_role = iam_role_entity::Entity::find()
                 .filter(iam_role_entity::Column::SourceType.eq("dingtalk"))
-                .filter(iam_role_entity::Column::ExternalId.eq(external_role_id.clone()))
+                .filter(iam_role_entity::Column::Name.eq(role_name))
                 .one(db)
                 .await?;
             let role_id = if let Some(existing_role) = existing_role {
                 let role_id = existing_role.id;
                 let mut active: iam_role_entity::ActiveModel = existing_role.into();
-                active.name = Set(role.name.trim().to_string());
-                active.group_name = Set(optional_text(&role.group_name));
                 active.status = Set("active".to_string());
                 active.updated_at = Set(now.into());
                 iam_role_entity::Entity::update(active).exec(db).await?;
@@ -267,8 +275,7 @@ pub(super) async fn save_users(
                     id: Set(role_id),
                     source_type: Set("dingtalk".to_string()),
                     external_id: Set(external_role_id),
-                    name: Set(role.name.trim().to_string()),
-                    group_name: Set(optional_text(&role.group_name)),
+                    name: Set(role_name.to_string()),
                     status: Set("active".to_string()),
                     created_at: Set(now.into()),
                     updated_at: Set(now.into()),
@@ -277,6 +284,13 @@ pub(super) async fn save_users(
                 .await?;
                 role_id
             };
+            synchronized_role_ids.insert(
+                iam_role_entity::Entity::find_by_id(role_id)
+                    .one(db)
+                    .await?
+                    .ok_or_else(|| AppError::NotFound("synchronized role not found".to_string()))?
+                    .external_id,
+            );
             iam_user_role_entity::ActiveModel {
                 id: Set(Uuid::new_v4()),
                 user_id: Set(user_id),
@@ -343,24 +357,16 @@ fn apply_user_fields(
     organization_map: &HashMap<String, Uuid>,
     now: chrono::DateTime<Utc>,
 ) {
-    active.display_name = Set(if user.name.trim().is_empty() {
-        user.userid.clone()
-    } else {
-        user.name.trim().to_string()
-    });
-    active.mobile = Set(optional_text(&user.mobile));
-    active.state_code = Set(optional_text(&user.state_code));
-    active.telephone = Set(optional_text(&user.telephone));
-    active.email = Set(optional_text(if user.email.is_empty() {
-        &user.org_email
-    } else {
-        &user.email
-    }));
-    active.avatar_url = Set(optional_text(&user.avatar));
-    active.job_number = Set(optional_text(&user.job_number));
-    active.title = Set(optional_text(&user.title));
-    active.work_place = Set(optional_text(&user.work_place));
-    active.remark = Set(optional_text(&user.remark));
+    if !user.name.trim().is_empty() { active.display_name = Set(user.name.trim().to_string()); }
+    if let Some(value) = optional_text(&user.mobile) { active.mobile = Set(Some(value)); }
+    if let Some(value) = optional_text(&user.state_code) { active.state_code = Set(Some(value)); }
+    if let Some(value) = optional_text(&user.telephone) { active.telephone = Set(Some(value)); }
+    if let Some(value) = optional_text(if user.email.is_empty() { &user.org_email } else { &user.email }) { active.email = Set(Some(value)); }
+    if let Some(value) = optional_text(&user.avatar) { active.avatar_url = Set(Some(value)); }
+    if let Some(value) = optional_text(&user.job_number) { active.job_number = Set(Some(value)); }
+    if let Some(value) = optional_text(&user.title) { active.title = Set(Some(value)); }
+    if let Some(value) = optional_text(&user.work_place) { active.work_place = Set(Some(value)); }
+    if let Some(value) = optional_text(&user.remark) { active.remark = Set(Some(value)); }
     active.hired_at = Set((user.hired_date > 0)
         .then(|| chrono::DateTime::<Utc>::from_timestamp_millis(user.hired_date))
         .flatten());

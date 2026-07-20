@@ -1,0 +1,2011 @@
+﻿{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Yaya Low Code Frontend API",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": ""
+    }
+  ],
+  "paths": {
+    "/api/apps": {
+      "get": {
+        "operationId": "listApps",
+        "summary": "List apps",
+        "responses": {
+          "200": {
+            "description": "Wrapped app list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppListResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Backend unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createApp",
+        "summary": "Create empty app",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAppRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Wrapped created app",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Backend unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{appId}": {
+      "patch": {
+        "operationId": "updateApp",
+        "summary": "Update app name or status",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAppRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Wrapped updated app",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "App not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteApp",
+        "summary": "Delete app and related form data",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped delete result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericSuccessResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "App not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{appId}/navigation": {
+      "get": {
+        "operationId": "listAppNavigation",
+        "summary": "List app navigation items",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped navigation item list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NavigationListResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Backend unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{appId}/forms": {
+      "get": {
+        "operationId": "listForms",
+        "summary": "List forms by app",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped form list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormListResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Backend unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createForm",
+        "summary": "Create blank form",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Wrapped created form",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Backend unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{appId}/automations": {
+      "get": {
+        "operationId": "listAutomationFlows",
+        "summary": "List automation flows by app",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped automation flow list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationFlowListResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Backend unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createAutomationFlow",
+        "summary": "Create automation flow",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAutomationFlowRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Wrapped created automation flow",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationFlowResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid automation configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Backend error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Backend unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automations/{automationId}": {
+      "get": {
+        "operationId": "getAutomationFlow",
+        "summary": "Get automation flow detail",
+        "parameters": [
+          {
+            "name": "automationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped automation flow detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationFlowDetailResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Automation flow not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateAutomationFlow",
+        "summary": "Update automation flow",
+        "parameters": [
+          {
+            "name": "automationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAutomationFlowRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Wrapped updated automation flow",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationFlowResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid automation configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Automation flow not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAutomationFlow",
+        "summary": "Delete automation flow",
+        "parameters": [
+          {
+            "name": "automationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped delete result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericSuccessResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Automation flow not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automations/{automationId}/versions": {
+      "get": {
+        "operationId": "listAutomationFlowVersions",
+        "summary": "List automation flow versions",
+        "parameters": [
+          {
+            "name": "automationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped automation version list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationFlowVersionListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Automation flow not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/schema": {
+      "get": {
+        "operationId": "getFormSchema",
+        "summary": "Get latest schema by form uuid",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["draft", "published", "latest"]
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormSchemaResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Schema not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Backend unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/records": {
+      "get": {
+        "operationId": "listFormRecords",
+        "summary": "List form records",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped form records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormRecordListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Form not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createFormRecord",
+        "summary": "Create form record",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFormRecordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Wrapped created form record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormRecordResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Form not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/records/{recordUuid}": {
+      "patch": {
+        "operationId": "updateFormRecord",
+        "summary": "Update form record",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "recordUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFormRecordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Wrapped updated form record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormRecordResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Form or record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteFormRecord",
+        "summary": "Delete form record",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "recordUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped delete result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericSuccessResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Form or record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/versions": {
+      "get": {
+        "operationId": "listFormVersions",
+        "summary": "List form schema versions",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped version list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormVersionListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Form not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Backend unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/versions/{version}": {
+      "get": {
+        "operationId": "getFormVersion",
+        "summary": "Get specific form schema version",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormSchemaResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Schema not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/publish": {
+      "post": {
+        "operationId": "publishFormSchema",
+        "summary": "Publish current draft schema",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped published schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormSchemaResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Form not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/versions/{version}/restore": {
+      "post": {
+        "operationId": "restoreFormVersion",
+        "summary": "Restore historical version as new draft",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreVersionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Wrapped restored schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormSchemaResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Version not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/schema/draft": {
+      "post": {
+        "operationId": "saveFormSchemaDraft",
+        "summary": "Save form schema draft",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveSchemaRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Wrapped saved schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormSchemaResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Form not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Backend unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiMeta": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "App": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "desc",
+          "icon",
+          "color",
+          "status",
+          "createdAt",
+          "owner",
+          "records"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "desc": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "badge": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "draft",
+              "paused"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "records": {
+            "type": "integer"
+          }
+        }
+      },
+      "FormSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "category",
+          "status",
+          "latestSchemaVersion",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "count": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "latestSchemaVersion": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        }
+      },
+      "NavigationItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "itemType",
+          "title",
+          "pathSlug",
+          "sortOrder",
+          "isDefaultEntry"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "itemType": {
+            "type": "string",
+            "enum": [
+              "form",
+              "system",
+              "group",
+              "link"
+            ]
+          },
+          "targetFormUuid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "pathSlug": {
+            "type": "string"
+          },
+          "sortOrder": {
+            "type": "integer"
+          },
+          "isDefaultEntry": {
+            "type": "boolean"
+          },
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "visibilityRule": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SchemaPayload": {
+        "type": "object",
+        "required": [
+          "formUuid",
+          "schema",
+          "version",
+          "draftVersion",
+          "publishedVersion",
+          "latestVersion",
+          "published"
+        ],
+        "properties": {
+          "formUuid": {
+            "type": "string"
+          },
+          "schema": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "version": {
+            "type": "integer"
+          },
+          "draftVersion": {
+            "type": "integer"
+          },
+          "publishedVersion": {
+            "type": "integer"
+          },
+          "latestVersion": {
+            "type": "integer"
+          },
+          "published": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FormRecord": {
+        "type": "object",
+        "required": [
+          "id",
+          "formUuid",
+          "schemaVersion",
+          "data",
+          "createdBy",
+          "updatedBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "formUuid": {
+            "type": "string"
+          },
+          "schemaVersion": {
+            "type": "integer"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FormRecordList": {
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FormRecord"
+            }
+          },
+          "total": {
+            "type": "integer"
+          }
+        }
+      },
+      "AutomationFlow": {
+        "type": "object",
+        "required": [
+          "id",
+          "appId",
+          "name",
+          "status",
+          "currentVersion",
+          "triggerEvent",
+          "triggerLabel",
+          "nodesCount",
+          "createdBy",
+          "updatedBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "appId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "paused",
+              "draft"
+            ]
+          },
+          "currentVersion": {
+            "type": "integer"
+          },
+          "triggerFormUuid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "triggerEvent": {
+            "type": "string",
+            "enum": [
+              "before_create",
+              "after_create",
+              "before_update",
+              "after_update",
+              "before_delete",
+              "after_delete"
+            ]
+          },
+          "triggerLabel": {
+            "type": "string"
+          },
+          "nodesCount": {
+            "type": "integer"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AutomationFlowList": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "enabled",
+          "paused",
+          "draft"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AutomationFlow"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "integer"
+          },
+          "paused": {
+            "type": "integer"
+          },
+          "draft": {
+            "type": "integer"
+          }
+        }
+      },
+      "AutomationFlowDetail": {
+        "type": "object",
+        "required": [
+          "id",
+          "appId",
+          "name",
+          "status",
+          "currentVersion",
+          "triggerEvent",
+          "triggerLabel",
+          "triggerConfig",
+          "nodes",
+          "edges",
+          "nodesCount",
+          "createdBy",
+          "updatedBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "appId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "paused",
+              "draft"
+            ]
+          },
+          "currentVersion": {
+            "type": "integer"
+          },
+          "triggerFormUuid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "triggerEvent": {
+            "type": "string",
+            "enum": [
+              "before_create",
+              "after_create",
+              "before_update",
+              "after_update",
+              "before_delete",
+              "after_delete"
+            ]
+          },
+          "triggerLabel": {
+            "type": "string"
+          },
+          "triggerConfig": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "nodesCount": {
+            "type": "integer"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FormVersionSummary": {
+        "type": "object",
+        "required": [
+          "version",
+          "published",
+          "isCurrentDraft",
+          "isCurrentPublished",
+          "createdAt"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer"
+          },
+          "published": {
+            "type": "boolean"
+          },
+          "isCurrentDraft": {
+            "type": "boolean"
+          },
+          "isCurrentPublished": {
+            "type": "boolean"
+          },
+          "changeLog": {
+            "type": ["string", "null"]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AutomationFlowVersionSummary": {
+        "type": "object",
+        "required": [
+          "version",
+          "name",
+          "status",
+          "createdBy",
+          "createdAt"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "paused",
+              "draft"
+            ]
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "changeSummary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CreateAppRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateAppRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["enabled", "paused"]
+          }
+        }
+      },
+      "SaveSchemaRequest": {
+        "type": "object",
+        "required": [
+          "schema"
+        ],
+        "properties": {
+          "schema": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "change_log": {
+            "type": "string"
+          }
+        }
+      },
+      "RestoreVersionRequest": {
+        "type": "object",
+        "properties": {
+          "change_log": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateFormRecordRequest": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "operator": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateFormRecordRequest": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "operator": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateAutomationFlowRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "triggerFormUuid": {
+            "type": "string"
+          },
+          "triggerEvent": {
+            "type": "string",
+            "enum": [
+              "before_create",
+              "after_create",
+              "before_update",
+              "after_update",
+              "before_delete",
+              "after_delete"
+            ]
+          },
+          "operator": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateAutomationFlowRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "paused",
+              "draft"
+            ]
+          },
+          "triggerFormUuid": {
+            "type": "string"
+          },
+          "triggerEvent": {
+            "type": "string",
+            "enum": [
+              "before_create",
+              "after_create",
+              "before_update",
+              "after_update",
+              "before_delete",
+              "after_delete"
+            ]
+          },
+          "triggerConfig": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "changeSummary": {
+            "type": "string"
+          },
+          "operator": {
+            "type": "string"
+          }
+        }
+      },
+      "AppResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": { "$ref": "#/components/schemas/App" }
+            }
+          }
+        ]
+      },
+      "AppListResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/App" }
+              }
+            }
+          }
+        ]
+      },
+      "FormResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": { "$ref": "#/components/schemas/FormSummary" }
+            }
+          }
+        ]
+      },
+      "FormListResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/FormSummary" }
+              }
+            }
+          }
+        ]
+      },
+      "NavigationListResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/NavigationItem" }
+              }
+            }
+          }
+        ]
+      },
+      "FormSchemaResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": { "$ref": "#/components/schemas/SchemaPayload" }
+            }
+          }
+        ]
+      },
+      "FormRecordResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": { "$ref": "#/components/schemas/FormRecord" }
+            }
+          }
+        ]
+      },
+      "FormRecordListResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": { "$ref": "#/components/schemas/FormRecordList" }
+            }
+          }
+        ]
+      },
+      "AutomationFlowResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": { "$ref": "#/components/schemas/AutomationFlow" }
+            }
+          }
+        ]
+      },
+      "AutomationFlowListResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": { "$ref": "#/components/schemas/AutomationFlowList" }
+            }
+          }
+        ]
+      },
+      "AutomationFlowDetailResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": { "$ref": "#/components/schemas/AutomationFlowDetail" }
+            }
+          }
+        ]
+      },
+      "AutomationFlowVersionListResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/AutomationFlowVersionSummary" }
+              }
+            }
+          }
+        ]
+      },
+      "GenericSuccessResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        ]
+      },
+      "FormVersionListResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/FormVersionSummary" }
+              }
+            }
+          }
+        ]
+      },
+      "ErrorResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ApiMeta" },
+          {
+            "type": "object",
+            "required": ["data"],
+            "properties": {
+              "data": { "type": "null" }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

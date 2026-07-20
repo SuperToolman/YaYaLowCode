@@ -24,6 +24,7 @@
     "monaco-editor": "^0.55.1",
     "next": "16.2.7",
     "react": "19.2.4",
+    "react-arborist": "^3.13.2",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
@@ -33,8 +34,8 @@
   "devDependencies": {
     "@gravity-ui/icons": "^2.18.0",
     "@hey-api/openapi-ts": "^0.99.0",
-    "@tauri-apps/cli": "^2.0.0",
     "@tailwindcss/postcss": "^4",
+    "@tauri-apps/cli": "^2.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

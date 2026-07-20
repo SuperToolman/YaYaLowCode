@@ -156,6 +156,4 @@ pub(super) struct DingTalkRole {
     pub id: i64,
     #[serde(default)]
     pub name: String,
-    #[serde(default)]
-    pub group_name: String,
 }

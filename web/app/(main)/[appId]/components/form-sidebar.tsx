@@ -121,24 +121,31 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
   useEffect(() => {
     let cancelled = false;
 
-    startTransition(async () => {
+    void (async () => {
       try {
         const response = await fetch(`/api/apps/${routeAppId}/navigation`, {
           cache: "no-store",
         });
         const payload = (await response.json()) as ApiEnvelope<NavigationItem[]>;
 
+        if (!cancelled && response.status === 403) {
+          setItems([]);
+          setExpandedGroups({});
+          return;
+        }
         if (!cancelled && payload.code === 0 && payload.data) {
           const nextItems = payload.data;
-          setItems(nextItems);
-          setExpandedGroups((current) => expandGroupsFromItems(nextItems, current));
+          startTransition(() => {
+            setItems(nextItems);
+            setExpandedGroups((current) => expandGroupsFromItems(nextItems, current));
+          });
         }
       } catch {
         if (!cancelled) {
           setErrorMessage("导航加载失败，当前展示本地数据。");
         }
       }
-    });
+    })();
 
     return () => {
       cancelled = true;
@@ -146,37 +153,52 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
   }, [routeAppId]);
 
   function refreshNavigation() {
-    startTransition(async () => {
-      const response = await fetch(`/api/apps/${routeAppId}/navigation`, {
-        cache: "no-store",
-      });
-      const payload = (await response.json()) as ApiEnvelope<NavigationItem[]>;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/apps/${routeAppId}/navigation`, {
+          cache: "no-store",
+        });
+        const payload = (await response.json()) as ApiEnvelope<NavigationItem[]>;
 
-      if (payload.code === 0 && payload.data) {
-        const nextItems = payload.data;
-        setItems(nextItems);
-        setExpandedGroups((current) => expandGroupsFromItems(nextItems, current));
+        if (response.status === 403) {
+          setItems([]);
+          setExpandedGroups({});
+          return;
+        }
+        if (payload.code === 0 && payload.data) {
+          const nextItems = payload.data;
+          startTransition(() => {
+            setItems(nextItems);
+            setExpandedGroups((current) => expandGroupsFromItems(nextItems, current));
+          });
+        }
+      } catch {
+        setErrorMessage("导航刷新失败，请稍后重试。");
       }
-    });
+    })();
   }
 
   function handleCreateForm() {
     setErrorMessage("");
 
-    startTransition(async () => {
-      const response = await fetch(`/api/apps/${routeAppId}/forms`, {
-        method: "POST",
-      });
-      const payload = (await response.json()) as ApiEnvelope<FormSummary>;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/apps/${routeAppId}/forms`, {
+          method: "POST",
+        });
+        const payload = (await response.json()) as ApiEnvelope<FormSummary>;
 
-      if (payload.code !== 0 || !payload.data) {
-        setErrorMessage(payload.message || "创建表单失败。");
-        return;
+        if (payload.code !== 0 || !payload.data) {
+          setErrorMessage(payload.message || "创建表单失败。");
+          return;
+        }
+
+        refreshNavigation();
+        router.push(`/designer/${payload.data.id}?appId=${routeAppId}`);
+      } catch {
+        setErrorMessage("创建表单失败，请稍后重试。");
       }
-
-      refreshNavigation();
-      router.push(`/designer/${payload.data.id}?appId=${routeAppId}`);
-    });
+    })();
   }
 
   function handleCreateGroup() {
@@ -188,29 +210,33 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
 
     setErrorMessage("");
 
-    startTransition(async () => {
-      const response = await fetch(`/api/apps/${routeAppId}/navigation/groups`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          title: nextTitle,
-          parent_id: groupParentId === ROOT_PARENT_VALUE ? null : groupParentId,
-        }),
-      });
-      const payload = (await response.json()) as ApiEnvelope<NavigationItem>;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/apps/${routeAppId}/navigation/groups`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            title: nextTitle,
+            parent_id: groupParentId === ROOT_PARENT_VALUE ? null : groupParentId,
+          }),
+        });
+        const payload = (await response.json()) as ApiEnvelope<NavigationItem>;
 
-      if (payload.code !== 0) {
-        setErrorMessage(payload.message || "创建分组失败。");
-        return;
+        if (payload.code !== 0) {
+          setErrorMessage(payload.message || "创建分组失败。");
+          return;
+        }
+
+        setGroupName("");
+        setGroupParentId(ROOT_PARENT_VALUE);
+        setCreateGroupOpen(false);
+        refreshNavigation();
+      } catch {
+        setErrorMessage("创建分组失败，请稍后重试。");
       }
-
-      setGroupName("");
-      setGroupParentId(ROOT_PARENT_VALUE);
-      setCreateGroupOpen(false);
-      refreshNavigation();
-    });
+    })();
   }
 
   function toggleGroup(groupId: string) {
@@ -262,7 +288,7 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
       return;
     }
 
-    startTransition(async () => {
+    void (async () => {
       try {
         const response = await fetch(`/api/apps/${routeAppId}/navigation`, {
           method: "PATCH",
@@ -279,8 +305,10 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
 
         if (payload.code === 0 && payload.data) {
           const nextItems = payload.data;
-          setItems(nextItems);
-          setExpandedGroups((current) => expandGroupsFromItems(nextItems, current));
+          startTransition(() => {
+            setItems(nextItems);
+            setExpandedGroups((current) => expandGroupsFromItems(nextItems, current));
+          });
         } else {
           setErrorMessage(payload.message || "更新导航顺序失败。");
         }
@@ -289,7 +317,7 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
       } finally {
         clearDragState();
       }
-    });
+    })();
   }
 
   function clearDragState() {

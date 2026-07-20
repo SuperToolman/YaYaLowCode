@@ -77,11 +77,52 @@ const FORMULA_FUNCTIONS: Record<string, (...args: unknown[]) => unknown> = {
   MAPX: (value) => value,
 };
 
+type CompiledFormula = (
+  getValue: (fieldId: string) => unknown,
+  callFunction: (name: string, ...args: unknown[]) => unknown,
+) => unknown;
+
+const compiledFormulaCache = new Map<string, CompiledFormula>();
+const MAX_COMPILED_FORMULAS = 200;
+
+type FormulaPlan = {
+  cyclicFields: Set<string>;
+  dependencies: Map<string, string[]>;
+  formulaFields: RuntimeSchemaField[];
+};
+
+const formulaPlanCache = new Map<string, FormulaPlan>();
+
 export function evaluateFormFormula(
   formula: string,
   fields: RuntimeSchemaField[],
   values: Record<string, unknown>,
 ) {
+  const cacheKey = `${formula}\u0000${fields.map((field) => field.id).join("\u0001")}`;
+  let runner = compiledFormulaCache.get(cacheKey);
+
+  if (!runner) {
+    runner = compileFormFormula(formula, fields);
+    if (compiledFormulaCache.size >= MAX_COMPILED_FORMULAS) {
+      compiledFormulaCache.delete(compiledFormulaCache.keys().next().value!);
+    }
+    compiledFormulaCache.set(cacheKey, runner);
+  }
+
+  return runner(
+    (fieldId) => values[fieldId],
+    (name, ...args) => {
+      const formulaFunction = FORMULA_FUNCTIONS[name.toUpperCase()];
+      if (!formulaFunction) throw new Error(`不支持的函数：${name}`);
+      return formulaFunction(...args);
+    },
+  );
+}
+
+function compileFormFormula(
+  formula: string,
+  fields: RuntimeSchemaField[],
+): CompiledFormula {
   const fieldByKey = new Map(fields.map((field) => [getFormulaFieldKey(field.id), field]));
   let expression = formula.trim().replace(/@([A-Za-z][A-Za-z0-9_]*)\s*\(/g, '__fn("$1",');
   expression = expression.replace(/\$([A-Za-z0-9_]+)/g, (_match, key: string) => {
@@ -99,18 +140,7 @@ export function evaluateFormFormula(
     .replace(/[0-9eE.()+\-*/%<>=!&,|?:\s]/g, "");
   if (residue) throw new Error(`公式包含不支持的内容：${residue}`);
 
-  const runner = new Function("__get", "__fn", `"use strict"; return (${expression});`) as (
-    getValue: (fieldId: string) => unknown,
-    callFunction: (name: string, ...args: unknown[]) => unknown,
-  ) => unknown;
-  return runner(
-    (fieldId) => values[fieldId],
-    (name, ...args) => {
-      const formulaFunction = FORMULA_FUNCTIONS[name.toUpperCase()];
-      if (!formulaFunction) throw new Error(`不支持的函数：${name}`);
-      return formulaFunction(...args);
-    },
-  );
+  return new Function("__get", "__fn", `"use strict"; return (${expression});`) as CompiledFormula;
 }
 
 export function calculateFormulaValues(
@@ -119,20 +149,8 @@ export function calculateFormulaValues(
   options?: { changedFieldIds?: Iterable<string> },
 ) {
   const values = { ...sourceValues };
-  const formulaFields = fields.filter(
-    (field) => field.props?.defaultValueType === "formula" && field.props.defaultValueFormula?.trim(),
-  );
+  const { cyclicFields, dependencies, formulaFields } = getFormulaPlan(fields);
   const errors: Record<string, string> = {};
-  const fieldByKey = new Map(fields.map((field) => [getFormulaFieldKey(field.id), field.id]));
-  const dependencies = new Map(
-    formulaFields.map((field) => [
-      field.id,
-      [...(field.props?.defaultValueFormula ?? "").matchAll(/\$([A-Za-z0-9_]+)/g)]
-        .map((match) => fieldByKey.get(match[1]))
-        .filter((fieldId): fieldId is string => Boolean(fieldId)),
-    ]),
-  );
-  const cyclicFields = findCyclicFormulaFields(dependencies);
   for (const fieldId of cyclicFields) errors[fieldId] = "公式存在循环引用";
   const affectedFormulaFields = options?.changedFieldIds
     ? findAffectedFormulaFields(dependencies, options.changedFieldIds)
@@ -158,6 +176,38 @@ export function calculateFormulaValues(
   }
 
   return { values, errors };
+}
+
+function getFormulaPlan(fields: RuntimeSchemaField[]): FormulaPlan {
+  const cacheKey = fields
+    .map((field) => `${field.id}\u0000${field.props?.defaultValueType ?? ""}\u0000${field.props?.defaultValueFormula ?? ""}`)
+    .join("\u0001");
+  const cached = formulaPlanCache.get(cacheKey);
+  if (cached) return cached;
+
+  const formulaFields = fields.filter(
+    (field) => field.props?.defaultValueType === "formula" && field.props.defaultValueFormula?.trim(),
+  );
+  const fieldByKey = new Map(fields.map((field) => [getFormulaFieldKey(field.id), field.id]));
+  const dependencies = new Map(
+    formulaFields.map((field) => [
+      field.id,
+      [...(field.props?.defaultValueFormula ?? "").matchAll(/\$([A-Za-z0-9_]+)/g)]
+        .map((match) => fieldByKey.get(match[1]))
+        .filter((fieldId): fieldId is string => Boolean(fieldId)),
+    ]),
+  );
+  const plan = {
+    formulaFields,
+    dependencies,
+    cyclicFields: findCyclicFormulaFields(dependencies),
+  };
+
+  if (formulaPlanCache.size >= MAX_COMPILED_FORMULAS) {
+    formulaPlanCache.delete(formulaPlanCache.keys().next().value!);
+  }
+  formulaPlanCache.set(cacheKey, plan);
+  return plan;
 }
 
 function findCyclicFormulaFields(dependencies: Map<string, string[]>) {

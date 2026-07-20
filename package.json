@@ -5,6 +5,7 @@
   "packageManager": "pnpm@11.1.2",
   "scripts": {
     "dev": "pnpm dev:web",
+    "dev:all": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-dev.ps1",
     "build": "pnpm build:web",
     "lint": "pnpm lint:web",
     "codegen:api": "pnpm --dir web codegen:api",

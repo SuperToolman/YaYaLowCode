@@ -13,6 +13,7 @@ pub(crate) enum AppError {
     Database(DbErr),
     NotFound(String),
     BadRequest(String),
+    Forbidden(String),
     Address(std::net::AddrParseError),
     Server(std::io::Error),
 }
@@ -34,6 +35,7 @@ impl IntoResponse for AppError {
             Self::BadRequest(message) => {
                 (StatusCode::BAD_REQUEST, Json(error_response(400, message))).into_response()
             }
+            Self::Forbidden(message) => (StatusCode::FORBIDDEN, Json(error_response(403, message))).into_response(),
             Self::Address(err) => {
                 error!("address parse error: {err}");
                 (

@@ -538,6 +538,11 @@ select {
   backdrop-filter: blur(4px);
 }
 
+.record-detail-backdrop {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 html[data-resolved-theme="dark"] .theme-modal-backdrop {
   background: rgba(11, 7, 16, 0.72);
 }
@@ -563,6 +568,11 @@ html[data-resolved-theme="dark"] .theme-modal-backdrop {
 .designer-theme-root {
   background: var(--designer-background);
   transition: background 180ms ease, color 180ms ease;
+}
+
+.designer-is-interacting :is(.backdrop-blur, .backdrop-blur-xl, .backdrop-blur-2xl) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 
 .designer-modal-backdrop {

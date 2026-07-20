@@ -1,52 +1,28 @@
 "use client";
-
 import { useCallback, useEffect, useState } from "react";
-import { Button } from "@heroui/react";
+import { Button, Input, Modal } from "@heroui/react";
+import { Plus } from "@gravity-ui/icons";
 
-type ApiEnvelope<T> = { code: number; message: string; data: T | null };
-type RoleItem = { id: string; sourceType: string; externalId: string; name: string; groupName: string | null; status: string; memberCount: number };
+type Envelope<T> = { code: number; message: string; data: T | null };
+type Role = { id: string; sourceType: string; externalId: string; name: string; status: string; memberCount: number };
 
 export default function RolesSettingsPage() {
-  const [roles, setRoles] = useState<RoleItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const loadRoles = useCallback(async () => {
-    setLoading(true); setError("");
-    try {
-      const response = await fetch("/api/identity/roles", { cache: "no-store" });
-      const payload = (await response.json()) as ApiEnvelope<RoleItem[]>;
-      if (!response.ok || payload.code !== 0 || !payload.data) throw new Error(payload.message || "无法加载角色");
-      setRoles(payload.data);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "无法加载角色"); }
-    finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => void loadRoles(), 0);
-    return () => window.clearTimeout(timer);
-  }, [loadRoles]);
-
-  return (
-    <section className="theme-panel h-full min-h-0 overflow-y-auto overscroll-contain rounded-[24px] p-6 shadow-[var(--shadow-card)]">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div><h2 className="text-lg font-semibold text-[var(--color-text-primary)]">角色管理</h2><p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">查看平台角色以及第三方身份源同步的角色和成员数量。</p></div>
-        <Button variant="secondary" isDisabled={loading} onPress={() => void loadRoles()}>{loading ? "正在刷新…" : "刷新数据"}</Button>
-      </div>
-      <div className="mt-6 grid gap-4 sm:grid-cols-3">
-        <Metric label="全部角色" value={String(roles.length)} />
-        <Metric label="已启用" value={String(roles.filter((role) => role.status === "active").length)} />
-        <Metric label="钉钉角色" value={String(roles.filter((role) => role.sourceType === "dingtalk").length)} />
-      </div>
-      {error ? <p className="mt-5 rounded-xl bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">{error}</p> : null}
-      <div className="mt-5 overflow-hidden rounded-2xl border border-[var(--color-border)]">
-        <div className="grid grid-cols-[minmax(0,1fr)_minmax(160px,1fr)_80px_100px_90px] gap-3 border-b border-[var(--color-border)] bg-[var(--color-control-soft)] px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)]"><div>角色</div><div>角色组</div><div>来源</div><div>成员</div><div>状态</div></div>
-        {roles.map((role) => <div key={role.id} className="grid grid-cols-[minmax(0,1fr)_minmax(160px,1fr)_80px_100px_90px] items-center gap-3 border-b border-[var(--color-border)] px-4 py-3 last:border-b-0"><div className="min-w-0"><span className="block truncate text-sm font-medium text-[var(--color-text-primary)]">{role.name}</span></div><div className="truncate text-xs text-[var(--color-text-secondary)]">{role.groupName || "—"}</div><div><SourceTag source={role.sourceType} /></div><div className="text-xs text-[var(--color-text-secondary)]">{role.memberCount}</div><div className={role.status === "active" ? "text-xs text-[var(--color-success)]" : "text-xs text-[var(--color-text-disabled)]"}>{role.status === "active" ? "启用" : "停用"}</div></div>)}
-        {!loading && roles.length === 0 ? <div className="px-5 py-10 text-center text-sm text-[var(--color-text-secondary)]">暂无角色，钉钉用户同步后会自动生成角色数据。</div> : null}
-      </div>
-    </section>
-  );
+  const [roles, setRoles] = useState<Role[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [editing, setEditing] = useState<Role | null>(null); const [name, setName] = useState(""); const [open, setOpen] = useState(false); const [saving, setSaving] = useState(false);
+  const load = useCallback(async () => { setLoading(true); setError(""); try { const response = await fetch("/api/identity/roles", { cache: "no-store" }); const body = await response.json() as Envelope<Role[]>; if (!response.ok || !body.data) throw new Error(body.message || "无法加载角色"); setRoles(body.data); } catch (reason) { setError(reason instanceof Error ? reason.message : "无法加载角色"); } finally { setLoading(false); } }, []);
+  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
+  function edit(role?: Role) { setEditing(role ?? null); setName(role?.name ?? ""); setOpen(true); }
+  async function save() { if (!name.trim()) return; setSaving(true); try { const response = await fetch(editing ? `/api/identity/roles/${editing.id}` : "/api/identity/roles", { method: editing ? "PUT" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) }); const body = await response.json() as Envelope<Role>; if (!response.ok || !body.data) throw new Error(body.message || "保存失败"); setOpen(false); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "保存失败"); } finally { setSaving(false); } }
+  async function status(role: Role) { await mutate(role, { status: role.status === "active" ? "inactive" : "active" }); }
+  async function remove(role: Role) { if (window.confirm(`确认删除角色“${role.name}”？`)) { try { const response = await fetch(`/api/identity/roles/${role.id}`, { method: "DELETE" }); if (!response.ok) throw new Error((await response.json() as Envelope<unknown>).message); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "删除失败"); } } }
+  async function mutate(role: Role, data: object) { try { const response = await fetch(`/api/identity/roles/${role.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(data) }); if (!response.ok) throw new Error((await response.json() as Envelope<unknown>).message); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "更新失败"); } }
+  return <section className="theme-panel h-full min-h-0 overflow-y-auto rounded-[24px] p-6 shadow-[var(--shadow-card)]"><header className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-lg font-semibold">角色管理</h2><p className="mt-1 text-sm text-[var(--color-text-secondary)]">管理平台角色；钉钉同步角色保持只读。</p></div><div className="flex gap-2"><Button variant="secondary" isDisabled={loading} onPress={() => void load()}><span aria-hidden="true">↻</span>{loading ? "正在刷新…" : "刷新数据"}</Button><Button onPress={() => edit()}><Plus className="h-4 w-4" />新增角色</Button></div></header><div className="mt-6 grid gap-4 sm:grid-cols-3"><Metric label="全部角色" value={roles.length} /><Metric label="已启用" value={roles.filter((item) => item.status === "active").length} /><Metric label="平台角色" value={roles.filter((item) => item.sourceType === "local").length} /></div>{error ? <p className="mt-4 rounded-xl bg-[var(--color-danger-soft)] p-3 text-sm text-[var(--color-danger)]">{error}</p> : null}<div className="mt-5 overflow-hidden rounded-2xl border border-[var(--color-border)]"><div className="grid grid-cols-[minmax(0,1fr)_80px_80px_90px_120px] gap-3 border-b border-[var(--color-border)] bg-[var(--color-control-soft)] px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)]"><div>角色</div><div>来源</div><div>成员</div><div>状态</div><div>操作</div></div>{roles.map((role) => { const editable = role.sourceType === "local" && role.externalId !== "system-administrator"; const reason = role.sourceType !== "local" ? "钉钉同步角色不可修改" : "系统管理员角色受保护"; return <div key={role.id} className="grid grid-cols-[minmax(0,1fr)_80px_80px_90px_120px] items-center gap-3 border-b border-[var(--color-border)] px-4 py-3 last:border-0"><span className="truncate text-sm font-medium">{role.name}</span><SourceTag source={role.sourceType} /><span className="text-xs text-[var(--color-text-secondary)]">{role.memberCount}</span><StatusTag status={role.status} /><div className="flex gap-1"><IconAction title={editable ? "编辑角色" : reason} disabled={!editable} onPress={() => edit(role)}><EditIcon /></IconAction><IconAction title={editable ? role.status === "active" ? "禁用角色" : "启用角色" : reason} disabled={!editable} onPress={() => void status(role)}>{role.status === "active" ? <DisableIcon /> : <EnableIcon />}</IconAction><IconAction title={editable ? "删除角色" : reason} disabled={!editable} danger onPress={() => void remove(role)}><TrashIcon /></IconAction></div></div>; })}</div><RoleModal open={open} editing={editing} name={name} saving={saving} onName={setName} onClose={() => setOpen(false)} onSave={save} /></section>;
 }
-
-function Metric({ label, value }: { label: string; value: string }) { return <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-control-soft)] p-4"><div className="text-xs text-[var(--color-text-secondary)]">{label}</div><div className="mt-2 text-xl font-semibold text-[var(--color-text-primary)]">{value}</div></div>; }
-function SourceTag({ source }: { source: string }) { return source === "dingtalk" ? <span className="shrink-0 rounded-full bg-[#eaf2ff] px-2 py-0.5 text-[10px] font-semibold text-[#1677ff]">钉钉</span> : <span className="shrink-0 rounded-full bg-[var(--color-primary-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-primary)]">平台</span>; }
+function RoleModal({ open, editing, name, saving, onName, onClose, onSave }: { open: boolean; editing: Role | null; name: string; saving: boolean; onName: (value: string) => void; onClose: () => void; onSave: () => void }) { return <Modal isOpen={open} onOpenChange={(value) => !value && onClose()}><Modal.Backdrop className="theme-modal-backdrop" isDismissable><Modal.Container placement="center" size="sm"><Modal.Dialog className="rounded-2xl bg-[var(--color-bg-surface)]"><Modal.Header><Modal.Heading>{editing ? "编辑角色" : "新增角色"}</Modal.Heading><Modal.CloseTrigger aria-label="关闭" /></Modal.Header><Modal.Body><Input autoFocus fullWidth placeholder="请输入角色名称" value={name} onChange={(event) => onName(event.currentTarget.value)} />{!editing ? <p className="mt-3 text-xs text-[var(--color-text-secondary)]">新角色默认来源为平台、状态为停用，且不拥有权限。</p> : null}</Modal.Body><Modal.Footer><Button variant="ghost" onPress={onClose}>取消</Button><Button isDisabled={!name.trim() || saving} onPress={onSave}>{saving ? "正在保存…" : "确认"}</Button></Modal.Footer></Modal.Dialog></Modal.Container></Modal.Backdrop></Modal>; }
+function Metric({ label, value }: { label: string; value: number }) { return <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-control-soft)] p-4"><p className="text-xs text-[var(--color-text-secondary)]">{label}</p><p className="mt-2 text-xl font-semibold">{value}</p></div>; }
+function SourceTag({ source }: { source: string }) { const ding = source === "dingtalk"; return <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${ding ? "border-[#b7d4ff] bg-[#eaf2ff] text-[#1677ff]" : "border-[#d9d9d9] bg-[#f5f5f5] text-[#595959]"}`}>{ding ? "钉钉" : "平台"}</span>; }
+function StatusTag({ status }: { status: string }) { return <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${status === "active" ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]"}`}>{status === "active" ? "启用" : "停用"}</span>; }
+function IconAction({ title, disabled, danger = false, onPress, children }: { title: string; disabled: boolean; danger?: boolean; onPress: () => void; children: React.ReactNode }) { return <span className="group relative"><Button aria-label={title} variant="ghost" isDisabled={disabled} onPress={onPress} className={`h-8 min-w-8 p-1.5 ${danger ? "text-[var(--color-danger)]" : "text-[var(--color-text-secondary)]"}`}>{children}</Button><span className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-[var(--color-text-primary)] px-2 py-1 text-[11px] text-[var(--color-text-on-primary)] opacity-0 group-hover:opacity-100">{title}</span></span>; }
+function EditIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m4 16.5-.8 4.3 4.3-.8L18.7 8.8a2.3 2.3 0 0 0-3.3-3.3L4 16.5Z" /><path d="m13.8 7.2 3 3" /></svg>; }
+function EnableIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="8.5" /><path d="M12 7v10M7 12h10" /></svg>; }
+function DisableIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="8.5" /><path d="m6 6 12 12" /></svg>; }
+function TrashIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4.5 7h15M9 7V4.5h6V7m-8.5 0 .7 13h9.6l.7-13" /></svg>; }

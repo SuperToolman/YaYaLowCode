@@ -8,6 +8,38 @@ use crate::platform::prelude::*;
 use crate::platform::records::RecordRepository;
 use crate::shared::*;
 use axum::http::StatusCode;
+use crate::infrastructure::entities::form_view_entity;
+use crate::infrastructure::entities::form_storage_definition_entity;
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FormViewResponse { pub(crate) view_uuid: String, pub(crate) name: String, pub(crate) config: Value, pub(crate) updated_at: String }
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SaveFormViewRequest { pub(crate) name: String, pub(crate) config: Value }
+
+pub(crate) async fn list_form_views(State(state): State<AppState>, Path(form_uuid): Path<String>) -> Result<Json<ApiResponse<Vec<FormViewResponse>>>, AppError> {
+    let views = form_view_entity::Entity::find().filter(form_view_entity::Column::FormUuid.eq(form_uuid)).order_by_desc(form_view_entity::Column::UpdatedAt).all(&state.db).await?;
+    Ok(Json(success_response("form views loaded", views.into_iter().map(view_response).collect())))
+}
+pub(crate) async fn create_form_view(State(state): State<AppState>, Path(form_uuid): Path<String>, Json(payload): Json<SaveFormViewRequest>) -> Result<Json<ApiResponse<FormViewResponse>>, AppError> {
+    let name = payload.name.trim(); if name.is_empty() { return Err(AppError::BadRequest("view name is required".to_string())); }
+    let now = Utc::now(); let created = form_view_entity::ActiveModel { id: Set(Uuid::new_v4()), form_uuid: Set(form_uuid), view_uuid: Set(format!("VIEW-{}", Uuid::new_v4().simple().to_string().to_uppercase())), name: Set(name.to_string()), config_json: Set(payload.config), created_at: Set(now.into()), updated_at: Set(now.into()) }.insert(&state.db).await?;
+    Ok(Json(success_response("form view created", view_response(created))))
+}
+pub(crate) async fn update_form_view(State(state): State<AppState>, Path((form_uuid, view_uuid)): Path<(String, String)>, Json(payload): Json<SaveFormViewRequest>) -> Result<Json<ApiResponse<FormViewResponse>>, AppError> {
+    let view = form_view_entity::Entity::find().filter(form_view_entity::Column::FormUuid.eq(form_uuid)).filter(form_view_entity::Column::ViewUuid.eq(view_uuid)).one(&state.db).await?.ok_or_else(|| AppError::NotFound("view not found".to_string()))?;
+    let name = payload.name.trim(); if name.is_empty() { return Err(AppError::BadRequest("view name is required".to_string())); }
+    let mut active: form_view_entity::ActiveModel = view.into(); active.name = Set(name.to_string()); active.config_json = Set(payload.config); active.updated_at = Set(Utc::now().into()); let updated = active.update(&state.db).await?;
+    Ok(Json(success_response("form view updated", view_response(updated))))
+}
+pub(crate) async fn delete_form_view(State(state): State<AppState>, Path((form_uuid, view_uuid)): Path<(String, String)>) -> Result<Json<ApiResponse<Value>>, AppError> {
+    let result = form_view_entity::Entity::delete_many().filter(form_view_entity::Column::FormUuid.eq(form_uuid)).filter(form_view_entity::Column::ViewUuid.eq(&view_uuid)).exec(&state.db).await?; if result.rows_affected == 0 { return Err(AppError::NotFound("view not found".to_string())); }
+    Ok(Json(success_response("form view deleted", json!({ "viewUuid": view_uuid }))))
+}
+fn view_response(view: form_view_entity::Model) -> FormViewResponse { FormViewResponse { view_uuid: view.view_uuid, name: view.name, config: view.config_json, updated_at: view.updated_at.to_rfc3339() } }
 
 pub(crate) async fn list_forms(
     State(state): State<AppState>,
@@ -23,6 +55,85 @@ pub(crate) async fn list_forms(
         "获取表单列表成功",
         forms.into_iter().map(ApiFormSummary::from).collect(),
     )))
+}
+
+pub(crate) async fn get_app_field_outline(
+    State(state): State<AppState>,
+    Path(app_id): Path<String>,
+) -> Result<Json<ApiResponse<ApiAppFieldOutline>>, AppError> {
+    let app = AppEntity::find()
+        .filter(app_entity::Column::RouteAppId.eq(app_id.clone()))
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("app not found".to_string()))?;
+    let forms = FormDefinitionEntity::find()
+        .filter(form_definition_entity::Column::AppRouteAppId.eq(app_id.clone()))
+        .order_by_desc(form_definition_entity::Column::UpdatedAt)
+        .all(&state.db)
+        .await?;
+    let form_uuids = forms.iter().map(|form| form.form_uuid.clone()).collect::<Vec<_>>();
+    let schemas = FormSchemaEntity::find()
+        .filter(form_schema_entity::Column::FormUuid.is_in(form_uuids.clone()))
+        .all(&state.db)
+        .await?;
+    let schemas_by_key = schemas.into_iter().map(|schema| {
+        ((schema.form_uuid.clone(), schema.version), schema)
+    }).collect::<HashMap<_, _>>();
+    let storage_by_form = form_storage_definition_entity::Entity::find()
+        .filter(form_storage_definition_entity::Column::FormUuid.is_in(form_uuids))
+        .all(&state.db)
+        .await?
+        .into_iter()
+        .map(|storage| (storage.form_uuid.clone(), storage))
+        .collect::<HashMap<_, _>>();
+
+    let outlined_forms = forms.into_iter().map(|form| {
+        let schema = schemas_by_key.get(&(form.form_uuid.clone(), form.draft_schema_version));
+        let fields = schema
+            .and_then(|item| item.schema_json.get("fields"))
+            .and_then(Value::as_array)
+            .map(|items| items.iter().filter_map(outline_field).collect())
+            .unwrap_or_default();
+        let storage = storage_by_form.get(&form.form_uuid);
+        ApiFieldOutlineForm {
+            form_uuid: form.form_uuid,
+            name: form.name,
+            status: form.status,
+            schema_version: form.draft_schema_version,
+            physical_table: storage.map(|item| item.physical_table.clone()),
+            compiled_schema_version: storage.map(|item| item.compiled_schema_version),
+            fields,
+        }
+    }).collect();
+
+    Ok(Json(success_response(
+        "获取应用字段大纲成功",
+        ApiAppFieldOutline {
+            app_id,
+            app_name: app.name,
+            forms: outlined_forms,
+        },
+    )))
+}
+
+fn outline_field(field: &Value) -> Option<ApiFieldOutlineField> {
+    let id = field.get("id")?.as_str()?.trim();
+    if id.is_empty() {
+        return None;
+    }
+    let props = field.get("props");
+    let label = props
+        .and_then(|value| value.get("label"))
+        .and_then(Value::as_str)
+        .or_else(|| field.get("label").and_then(Value::as_str))
+        .unwrap_or(id)
+        .to_string();
+    Some(ApiFieldOutlineField {
+        id: id.to_string(),
+        label,
+        component_type: field.get("type").and_then(Value::as_str).unwrap_or("unknown").to_string(),
+        parent_group_id: field.get("parentGroupId").and_then(Value::as_str).map(ToString::to_string),
+    })
 }
 pub(crate) async fn create_form(
     State(state): State<AppState>,
@@ -125,7 +236,8 @@ pub(crate) async fn delete_form(
 ) -> Result<Json<ApiResponse<Value>>, AppError> {
     let definition = find_form_definition(&state.db, &form_uuid).await?;
 
-    let record_repository = RecordRepository::new(&state.db);
+    let txn = state.db.begin().await?;
+    let record_repository = RecordRepository::new(&txn);
     let deleted_record_count = record_repository.delete_by_form(&form_uuid).await?;
     record_repository
         .decrement_app_records_count(
@@ -134,27 +246,71 @@ pub(crate) async fn delete_form(
             Utc::now(),
         )
         .await?;
-    delete_storage_definition(&state.db, &form_uuid).await?;
+    delete_storage_definition(&txn, &form_uuid).await?;
 
     FormSchemaEntity::delete_many()
         .filter(form_schema_entity::Column::FormUuid.eq(form_uuid.clone()))
-        .exec(&state.db)
+        .exec(&txn)
+        .await?;
+
+    form_view_entity::Entity::delete_many()
+        .filter(form_view_entity::Column::FormUuid.eq(form_uuid.clone()))
+        .exec(&txn)
         .await?;
 
     AppNavigationEntity::delete_many()
         .filter(app_navigation_entity::Column::TargetFormUuid.eq(Some(form_uuid.clone())))
-        .exec(&state.db)
+        .exec(&txn)
         .await?;
 
-    AutomationFlowEntity::delete_many()
+    let flow_ids = AutomationFlowEntity::find()
         .filter(automation_flow_entity::Column::TriggerFormUuid.eq(Some(form_uuid.clone())))
-        .exec(&state.db)
-        .await?;
+        .all(&txn)
+        .await?
+        .into_iter()
+        .map(|flow| flow.id)
+        .collect::<Vec<_>>();
+    if !flow_ids.is_empty() {
+        let run_ids = AutomationRunEntity::find()
+            .filter(automation_run_entity::Column::FlowId.is_in(flow_ids.clone()))
+            .all(&txn)
+            .await?
+            .into_iter()
+            .map(|run| run.id)
+            .collect::<Vec<_>>();
+        if !run_ids.is_empty() {
+            AutomationRunNodeEntity::delete_many()
+                .filter(automation_run_node_entity::Column::RunId.is_in(run_ids))
+                .exec(&txn)
+                .await?;
+        }
+        AutomationRunEntity::delete_many()
+            .filter(automation_run_entity::Column::FlowId.is_in(flow_ids.clone()))
+            .exec(&txn)
+            .await?;
+        AutomationFlowVersionEntity::delete_many()
+            .filter(automation_flow_version_entity::Column::FlowId.is_in(flow_ids.clone()))
+            .exec(&txn)
+            .await?;
+        AutomationNodeEntity::delete_many()
+            .filter(automation_node_entity::Column::FlowId.is_in(flow_ids.clone()))
+            .exec(&txn)
+            .await?;
+        AutomationEdgeEntity::delete_many()
+            .filter(automation_edge_entity::Column::FlowId.is_in(flow_ids.clone()))
+            .exec(&txn)
+            .await?;
+        AutomationFlowEntity::delete_many()
+            .filter(automation_flow_entity::Column::Id.is_in(flow_ids))
+            .exec(&txn)
+            .await?;
+    }
 
     FormDefinitionEntity::delete_many()
         .filter(form_definition_entity::Column::FormUuid.eq(form_uuid))
-        .exec(&state.db)
+        .exec(&txn)
         .await?;
+    txn.commit().await?;
 
     Ok(Json(success_response(
         "删除表单成功",
@@ -180,20 +336,37 @@ pub(crate) async fn get_form_schema(
 pub(crate) async fn list_form_records(
     State(state): State<AppState>,
     Path(form_uuid): Path<String>,
+    Query(query): Query<ListFormRecordsQuery>,
 ) -> Result<Json<ApiResponse<ApiFormRecordList>>, AppError> {
     find_form_definition(&state.db, &form_uuid).await?;
 
-    let items = RecordRepository::new(&state.db).list(&form_uuid).await?;
-
-    let total = items.len() as i64;
+    let repository = RecordRepository::new(&state.db);
+    let (items, total, page, page_size) = match (query.page, query.page_size) {
+        (None, None) => {
+            let items = repository.list(&form_uuid).await?;
+            let page_size = items.len() as u64;
+            (items, page_size as i64, 1, page_size)
+        }
+        (page, page_size) => {
+            let (page, page_size) = normalize_record_pagination(page, page_size);
+            let (items, total) = repository.list_page(&form_uuid, page, page_size).await?;
+            (items, total, page, page_size)
+        }
+    };
 
     Ok(Json(success_response(
         "获取表单数据成功",
         ApiFormRecordList {
             items: items.into_iter().map(ApiFormRecord::from).collect(),
             total,
+            page,
+            page_size,
         },
     )))
+}
+
+fn normalize_record_pagination(page: Option<u64>, page_size: Option<u64>) -> (u64, u64) {
+    (page.unwrap_or(1).max(1), page_size.unwrap_or(50).clamp(1, 100))
 }
 
 pub(crate) async fn create_form_record(
@@ -588,4 +761,4 @@ pub(crate) fn build_schema_payload(
 }
 pub(crate) mod dto;
 
-use dto::*;
+pub(crate) use dto::*;

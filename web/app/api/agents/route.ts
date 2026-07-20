@@ -1,9 +1,10 @@
-import { proxyBackendJson } from "../_lib/backend-json-proxy";
+import { createAgent, listAgents } from "../../lib/api-client";
+import { createBackendSdkClient, sdkJsonResponse } from "../_lib/backend-sdk-client";
 
 export async function GET(request: Request) {
-  return proxyBackendJson(request, "/api/agents");
+  return sdkJsonResponse(listAgents({ client: createBackendSdkClient(request) }));
 }
 
 export async function POST(request: Request) {
-  return proxyBackendJson(request, "/api/agents");
+  return sdkJsonResponse(createAgent({ client: createBackendSdkClient(request), body: await request.json() }));
 }

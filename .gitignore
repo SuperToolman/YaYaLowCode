@@ -20,6 +20,7 @@ out/
 # production
 build/
 api/target/
+api/target-openapi/
 web/src-tauri/target/
 web/src-tauri/gen/
 
@@ -42,6 +43,8 @@ yarn-error.log*
 .yaya-agent-settings.json
 .yaya-agent-registry.json
 .yaya-identity-settings.json
+api/.yaya-rbac-permissions.json
+web/openapi/openapi.generated.json
 
 # vercel
 .vercel/

@@ -1,12 +1,6 @@
-import { NextResponse } from "next/server";
+import { listOrganizationUnits } from "../../../lib/api-client";
+import { createBackendSdkClient, sdkJsonResponse } from "../../_lib/backend-sdk-client";
 
-const backendBaseUrl = process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8787";
-
-export async function GET() {
-  try {
-    const response = await fetch(`${backendBaseUrl}/api/identity/organization-units`, { cache: "no-store" });
-    return new NextResponse(await response.text(), { status: response.status, headers: { "content-type": "application/json" } });
-  } catch {
-    return NextResponse.json({ code: 503, data: null, message: "backend unavailable" }, { status: 503 });
-  }
+export async function GET(request: Request) {
+  return sdkJsonResponse(listOrganizationUnits({ client: createBackendSdkClient(request) }));
 }

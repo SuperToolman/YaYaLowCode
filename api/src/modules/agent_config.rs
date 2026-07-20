@@ -1,7 +1,8 @@
-use axum::Json;
+﻿use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::platform::config::{
@@ -12,7 +13,7 @@ use crate::platform::config::{
 use crate::platform::prelude::{ApiResponse, AppError, AppState};
 use crate::shared::success_response;
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ProviderResponse {
     id: String,
@@ -23,7 +24,7 @@ pub(crate) struct ProviderResponse {
     api_key_configured: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ProviderRequest {
     name: String,
@@ -33,7 +34,7 @@ pub(crate) struct ProviderRequest {
     api_key: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ProfileRequest {
     name: String,
@@ -58,7 +59,7 @@ pub(crate) struct ProfileRequest {
     knowledge_base_ids: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AgentRequest {
     name: String,
@@ -74,7 +75,7 @@ pub(crate) struct AgentRequest {
     knowledge_base_ids: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PluginRequest {
     name: String,
@@ -85,7 +86,7 @@ pub(crate) struct PluginRequest {
     requires_confirmation: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SkillRequest {
     name: String,
@@ -95,7 +96,7 @@ pub(crate) struct SkillRequest {
     requires_confirmation: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct KnowledgeBaseRequest {
     name: String,

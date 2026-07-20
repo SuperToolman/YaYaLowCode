@@ -81,6 +81,24 @@ pub(crate) async fn ensure_form_tables(db: &DatabaseConnection) -> Result<(), Ap
 
     db.execute_unprepared(
         r#"
+        CREATE TABLE IF NOT EXISTS form_views (
+          id uuid PRIMARY KEY,
+          form_uuid varchar(40) NOT NULL REFERENCES form_definitions(form_uuid) ON DELETE CASCADE,
+          view_uuid varchar(40) NOT NULL,
+          name varchar(120) NOT NULL,
+          config_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+          created_at timestamptz NOT NULL,
+          updated_at timestamptz NOT NULL,
+          UNIQUE(form_uuid, view_uuid)
+        );
+        CREATE INDEX IF NOT EXISTS idx_form_views_form
+          ON form_views (form_uuid, updated_at DESC);
+        "#,
+    )
+    .await?;
+
+    db.execute_unprepared(
+        r#"
         CREATE TABLE IF NOT EXISTS app_navigation_items (
           id uuid PRIMARY KEY,
           app_route_app_id varchar(32) NOT NULL,
@@ -348,6 +366,20 @@ pub(crate) async fn ensure_identity_tables(db: &DatabaseConnection) -> Result<()
         ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS is_boss BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS real_authed BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS extension_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+        -- Keep this idempotent bootstrap for databases created before the multi-email migration.
+        -- It also protects upgrades where an older migration history has already been recorded.
+        CREATE TABLE IF NOT EXISTS iam_user_email_addresses (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL REFERENCES iam_users(id) ON DELETE CASCADE,
+            label VARCHAR(80) NOT NULL,
+            email VARCHAR(160) NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            UNIQUE (user_id, email)
+        );
+        CREATE INDEX IF NOT EXISTS idx_iam_user_email_addresses_user_id
+            ON iam_user_email_addresses (user_id);
+        CREATE TABLE IF NOT EXISTS iam_local_credentials (user_id UUID PRIMARY KEY REFERENCES iam_users(id) ON DELETE CASCADE, username VARCHAR(80) NOT NULL UNIQUE, password TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL);
         CREATE TABLE IF NOT EXISTS iam_external_identities (
             id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES iam_users(id) ON DELETE CASCADE,
@@ -377,7 +409,6 @@ pub(crate) async fn ensure_identity_tables(db: &DatabaseConnection) -> Result<()
             source_type VARCHAR(32) NOT NULL,
             external_id VARCHAR(128) NOT NULL,
             name VARCHAR(120) NOT NULL,
-            group_name VARCHAR(120),
             status VARCHAR(24) NOT NULL DEFAULT 'active',
             created_at TIMESTAMPTZ NOT NULL,
             updated_at TIMESTAMPTZ NOT NULL,
@@ -392,6 +423,76 @@ pub(crate) async fn ensure_identity_tables(db: &DatabaseConnection) -> Result<()
         );
         CREATE INDEX IF NOT EXISTS idx_iam_user_roles_role
             ON iam_user_roles (role_id, user_id);
+        "#,
+    )
+    .await?;
+    db.execute_unprepared(
+        r#"
+        INSERT INTO iam_users (
+            id, display_name, status, is_admin, is_boss, real_authed, extension_json, created_at, updated_at
+        ) VALUES (
+            '00000000-0000-4000-8000-000000000001',
+            'YaYa 超级管理员',
+            'active',
+            TRUE,
+            TRUE,
+            TRUE,
+            '{"protected": true, "source": "local"}'::jsonb,
+            NOW(),
+            NOW()
+        ) ON CONFLICT (id) DO UPDATE SET
+            display_name = EXCLUDED.display_name,
+            status = 'active',
+            is_admin = TRUE,
+            is_boss = TRUE,
+            real_authed = TRUE,
+            extension_json = iam_users.extension_json || '{"protected": true, "source": "local"}'::jsonb,
+            updated_at = NOW();
+        "#,
+    )
+    .await?;
+    db.execute_unprepared("INSERT INTO iam_local_credentials (user_id, username, password, created_at, updated_at) VALUES ('00000000-0000-4000-8000-000000000001', 'yaya', 'yaya', NOW(), NOW()) ON CONFLICT (user_id) DO UPDATE SET username = 'yaya', password = 'yaya', updated_at = NOW();").await?;
+    db.execute_unprepared(
+        r#"
+        INSERT INTO iam_external_identities (
+            id, user_id, provider, external_user_id, raw_json, created_at, updated_at
+        ) VALUES (
+            '00000000-0000-4000-8000-000000000004',
+            '00000000-0000-4000-8000-000000000001',
+            'local',
+            'yaya',
+            '{"protected": true, "source": "local"}'::jsonb,
+            NOW(),
+            NOW()
+        ) ON CONFLICT (provider, external_user_id) DO UPDATE SET
+            user_id = EXCLUDED.user_id,
+            raw_json = iam_external_identities.raw_json || '{"protected": true, "source": "local"}'::jsonb,
+            updated_at = NOW();
+
+        INSERT INTO iam_roles (
+            id, source_type, external_id, name, status, created_at, updated_at
+        ) VALUES (
+            '00000000-0000-4000-8000-000000000002',
+            'local',
+            'system-administrator',
+            '系统管理员',
+            'active',
+            NOW(),
+            NOW()
+        ) ON CONFLICT (source_type, external_id) DO UPDATE SET
+            name = EXCLUDED.name,
+            status = 'active',
+            updated_at = NOW();
+
+        INSERT INTO iam_user_roles (id, user_id, role_id, created_at)
+        SELECT
+            '00000000-0000-4000-8000-000000000003',
+            '00000000-0000-4000-8000-000000000001',
+            id,
+            NOW()
+        FROM iam_roles
+        WHERE source_type = 'local' AND external_id = 'system-administrator'
+        ON CONFLICT (user_id, role_id) DO NOTHING;
         "#,
     )
     .await?;

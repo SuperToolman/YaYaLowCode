@@ -1,10 +1,11 @@
 //! Navigation-domain API models.
 
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::infrastructure::entities::app_navigation_entity;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiNavigationItem {
     pub(crate) id: String,
@@ -18,13 +19,13 @@ pub(crate) struct ApiNavigationItem {
     pub(crate) visibility_rule: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct CreateNavigationGroupRequest {
     pub(crate) title: String,
     pub(crate) parent_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct ReorderNavigationRequest {
     pub(crate) item_id: String,
     pub(crate) target_item_id: String,

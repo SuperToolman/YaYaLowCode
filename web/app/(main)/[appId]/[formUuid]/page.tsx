@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, Dispatch, ReactNode, SetStateAction } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -247,14 +247,25 @@ export default function FormHome({
     [effectiveViewConfig.visibleFieldIds],
   );
   const displayedRecords = useMemo(() => applyViewConfig(records, effectiveViewConfig, formMetadataName || schema?.formName || formUuid, submitterOrganizations), [effectiveViewConfig, formMetadataName, formUuid, records, schema?.formName, submitterOrganizations]);
+  const searchedRecords = useMemo(() => {
+    const query = searchValue.trim().toLowerCase();
+    if (!query) return displayedRecords;
+    return displayedRecords.filter((record) =>
+      JSON.stringify(record.data).toLowerCase().includes(query),
+    );
+  }, [displayedRecords, searchValue]);
   const viewConfigDirty = Boolean(pendingViewConfig && JSON.stringify(pendingViewConfig) !== JSON.stringify(activeFormView?.config ?? defaultViewConfig));
 
   useEffect(() => {
     if (!visibleFields.length) return;
     const timer = window.setTimeout(() => {
-      const stored = readFormViews(formUuid, defaultViewConfig);
-      setViews(stored);
-      setActiveViewId((current) => stored.some((view) => view.id === current) ? current : stored[0]?.id ?? "default");
+      void fetch(`/api/forms/${encodeURIComponent(formUuid)}/views`, { cache: "no-store" }).then(async (response) => {
+        const payload = (await response.json()) as { code: number; data: Array<{ viewUuid: string; name: string; config: ViewConfig; updatedAt: string }> | null; message: string };
+        if (!response.ok || !payload.data) throw new Error(payload.message || "无法加载表单视图");
+        const stored: FormView[] = [{ id: "default", name: "全部数据", isDefault: true, config: defaultViewConfig, updatedAt: new Date().toISOString() }, ...payload.data.map((view) => ({ id: `view-${view.viewUuid}`, viewUuid: view.viewUuid, name: view.name, isDefault: false, config: view.config, updatedAt: view.updatedAt }))];
+        setViews(stored);
+        setActiveViewId((current) => stored.some((view) => view.id === current) ? current : "default");
+      }).catch((reason: unknown) => toast.danger(reason instanceof Error ? reason.message : "无法加载表单视图"));
     }, 0);
     return () => window.clearTimeout(timer);
   }, [defaultViewConfig, formUuid, visibleFields.length]);
@@ -284,11 +295,14 @@ export default function FormHome({
     setViewConfigMode(mode);
   }
 
-  function saveViewConfig() {
+  async function saveViewConfig() {
     if (!pendingViewConfig || !activeFormView) return;
-    const nextViews = views.map((view) => view.id === activeFormView.id ? { ...view, config: pendingViewConfig, updatedAt: new Date().toISOString() } : view);
+    if (activeFormView.isDefault || !activeFormView.viewUuid) { toast.danger("默认视图无需保存配置"); return; }
+    const response = await fetch(`/api/forms/${encodeURIComponent(formUuid)}/views/${encodeURIComponent(activeFormView.viewUuid)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: activeFormView.name, config: pendingViewConfig }) });
+    const payload = (await response.json()) as { code: number; data: { updatedAt: string } | null; message: string };
+    if (!response.ok || !payload.data) { toast.danger(payload.message || "保存视图失败"); return; }
+    const nextViews = views.map((view) => view.id === activeFormView.id ? { ...view, config: pendingViewConfig, updatedAt: payload.data!.updatedAt } : view);
     setViews(nextViews);
-    writeFormViews(formUuid, nextViews);
     setPendingViewConfig(null);
     setViewConfigDraft(null);
     toast.success("视图配置已保存");
@@ -301,13 +315,14 @@ export default function FormHome({
     setViewConfigMode(null);
   }
 
-  function createTableView() {
-    const viewUuid = createViewUuid();
-    const nextView: FormView = { id: `view-${viewUuid}`, viewUuid, name: "未命名表格视图", isDefault: false, config: defaultViewConfig, updatedAt: new Date().toISOString() };
+  async function createTableView() {
+    const response = await fetch(`/api/forms/${encodeURIComponent(formUuid)}/views`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "未命名表格视图", config: defaultViewConfig }) });
+    const payload = (await response.json()) as { code: number; data: { viewUuid: string; name: string; config: ViewConfig; updatedAt: string } | null; message: string };
+    if (!response.ok || !payload.data) { toast.danger(payload.message || "创建视图失败"); return; }
+    const nextView: FormView = { id: `view-${payload.data.viewUuid}`, viewUuid: payload.data.viewUuid, name: payload.data.name, isDefault: false, config: payload.data.config, updatedAt: payload.data.updatedAt };
     const nextViews = [...views, nextView];
     setViews(nextViews);
     activateTableView(nextView);
-    writeFormViews(formUuid, nextViews);
   }
 
   function deleteView(viewId: string) {
@@ -316,24 +331,27 @@ export default function FormHome({
     setViewDeleteTarget(view);
   }
 
-  function confirmDeleteView() {
+  async function confirmDeleteView() {
     if (!viewDeleteTarget) return;
+    if (!viewDeleteTarget.viewUuid) return;
+    const response = await fetch(`/api/forms/${encodeURIComponent(formUuid)}/views/${encodeURIComponent(viewDeleteTarget.viewUuid)}`, { method: "DELETE" });
+    if (!response.ok) { const payload = await response.json() as { message?: string }; toast.danger(payload.message || "删除视图失败"); return; }
     const nextViews = views.filter((item) => item.id !== viewDeleteTarget.id);
     setViews(nextViews);
     activateTableView(nextViews.find((item) => item.isDefault) ?? { id: "default", name: "全部数据", isDefault: true, config: defaultViewConfig, updatedAt: new Date().toISOString() });
     setViewDeleteTarget(null);
-    writeFormViews(formUuid, nextViews);
   }
 
-  function duplicateView(viewId: string) {
+  async function duplicateView(viewId: string) {
     const source = views.find((view) => view.id === viewId);
     if (!source) return;
-    const viewUuid = createViewUuid();
-    const copy: FormView = { ...source, id: `view-${viewUuid}`, viewUuid, name: `${source.name} 副本`, isDefault: false, config: JSON.parse(JSON.stringify(source.config)) as ViewConfig, updatedAt: new Date().toISOString() };
+    const response = await fetch(`/api/forms/${encodeURIComponent(formUuid)}/views`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: `${source.name} 副本`, config: source.config }) });
+    const payload = (await response.json()) as { code: number; data: { viewUuid: string; name: string; config: ViewConfig; updatedAt: string } | null; message: string };
+    if (!response.ok || !payload.data) { toast.danger(payload.message || "复制视图失败"); return; }
+    const copy: FormView = { id: `view-${payload.data.viewUuid}`, viewUuid: payload.data.viewUuid, name: payload.data.name, isDefault: false, config: payload.data.config, updatedAt: payload.data.updatedAt };
     const nextViews = [...views, copy];
     setViews(nextViews);
     activateTableView(copy);
-    writeFormViews(formUuid, nextViews);
   }
 
   function openViewMenu(viewId: string) {
@@ -563,10 +581,10 @@ export default function FormHome({
       const response = await fetch(`/api/forms/${formUuid}/records/${recordId}`, {
         method: "DELETE",
       });
-      const payload = (await response.json()) as ApiEnvelope<Record<string, unknown>>;
+      const payload = (await response.json().catch(() => null)) as ApiEnvelope<Record<string, unknown>> | null;
 
-      if (payload.code !== 0) {
-        throw new Error(payload.message || "delete failed");
+      if (!response.ok || payload?.code !== 0) {
+        throw new Error(payload?.message || "delete failed");
       }
 
       await loadRecords();
@@ -969,7 +987,7 @@ export default function FormHome({
               builtinFields={configuredBuiltinFields}
               formName={formMetadataName || schema.formName || formUuid}
               schema={schema}
-              records={displayedRecords.filter((record) => JSON.stringify(record.data).toLowerCase().includes(searchValue.trim().toLowerCase()))}
+              records={searchedRecords}
               loading={loadingRecords}
               submitting={submitting}
               deletingRecordId={deletingRecordId}
@@ -1646,7 +1664,7 @@ function normalizeAgentFieldValue(field: SchemaField, value: unknown): { accepte
   return { accepted: false, value: undefined };
 }
 
-function RuntimeFormPanel({
+const RuntimeFormPanel = memo(function RuntimeFormPanel({
   formId,
   initialValues,
   isReadOnly,
@@ -1686,7 +1704,7 @@ function RuntimeFormPanel({
       onSubmit={onSubmit}
     />
   );
-}
+});
 
 function RecordsTable({
   builtinFields,
@@ -1733,6 +1751,10 @@ function RecordsTable({
     direction: "descending",
   });
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const headerLabelRefs = useRef(new Map<string, HTMLSpanElement>());
+  const columnResizeFrameRef = useRef<number | null>(null);
+  const pendingColumnWidthRef = useRef<{ columnId: string; width: number } | null>(null);
+  const [isDetailContentReady, setIsDetailContentReady] = useState(false);
   const recordDisplayValues = useMemo(() => {
     const values = new Map<string, {
       fields: Record<string, string>;
@@ -1752,16 +1774,27 @@ function RecordsTable({
     () => columns.map((field) => estimateTableColumnWidth([
       field.label,
       ...records.map((record) => recordDisplayValues.get(record.id)?.fields[field.id] ?? ""),
-    ])),
+    ], 24, 320)),
     [columns, recordDisplayValues, records],
   );
+  const builtInColumnMaxWidths = useMemo(
+    () => builtinFields.map((field) => field.id === "instanceTitle" ? 360 : 260),
+    [builtinFields],
+  );
   const builtInColumnWidths = useMemo(
-    () => builtinFields.map((field) => estimateTableColumnWidth([
+    () => builtinFields.map((field, index) => estimateTableColumnWidth([
       field.label,
       ...records.map((record) => recordDisplayValues.get(record.id)?.builtIns[field.id] ?? ""),
-    ], 0, field.id === "instanceTitle" ? 360 : 260)),
-    [builtinFields, recordDisplayValues, records],
+    ], 24, builtInColumnMaxWidths[index])),
+    [builtInColumnMaxWidths, builtinFields, recordDisplayValues, records],
   );
+  const sequenceColumnWidth = useMemo(() => (
+    estimateTableColumnWidth(
+      records.map((_, index) => String(index + 1)),
+      24,
+      160,
+    )
+  ), [records]);
   const sortedRecords = useMemo(() => {
     const direction = sortDescriptor.direction === "ascending" ? 1 : -1;
     const getSortValue = (record: FormRecord) => {
@@ -1788,26 +1821,78 @@ function RecordsTable({
   );
   const allCurrentPageSelected = pageRecords.length > 0 && pageRecords.every((record) => selectedRecordIds.has(record.id));
   const someCurrentPageSelected = pageRecords.some((record) => selectedRecordIds.has(record.id));
-  const getColumnWidth = useCallback((columnId: string, fallback: number) => columnWidths[columnId] ?? fallback, [columnWidths]);
-  const startColumnResize = useCallback((columnId: string, startX: number, startWidth: number, maxWidth: number) => {
+  const getColumnWidth = useCallback((columnId: string, fallback: number, minWidth: number, maxWidth: number) => (
+    Math.min(maxWidth, Math.max(minWidth, columnWidths[columnId] ?? fallback))
+  ), [columnWidths]);
+  const commitPendingColumnWidth = useCallback(() => {
+    const pending = pendingColumnWidthRef.current;
+    pendingColumnWidthRef.current = null;
+    if (!pending) return;
+    setColumnWidths((current) =>
+      current[pending.columnId] === pending.width
+        ? current
+        : { ...current, [pending.columnId]: pending.width },
+    );
+  }, []);
+  const startColumnResize = useCallback((columnId: string, startX: number, startWidth: number, minWidth: number, maxWidth: number) => {
     const handlePointerMove = (event: PointerEvent) => {
-      setColumnWidths((current) => ({
-        ...current,
-        [columnId]: Math.min(maxWidth, Math.max(24, startWidth + event.clientX - startX)),
-      }));
+      pendingColumnWidthRef.current = {
+        columnId,
+        width: Math.min(maxWidth, Math.max(minWidth, startWidth + event.clientX - startX)),
+      };
+      if (columnResizeFrameRef.current !== null) return;
+      columnResizeFrameRef.current = requestAnimationFrame(() => {
+        columnResizeFrameRef.current = null;
+        commitPendingColumnWidth();
+      });
     };
     const stop = () => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", stop);
+      if (columnResizeFrameRef.current !== null) {
+        cancelAnimationFrame(columnResizeFrameRef.current);
+        columnResizeFrameRef.current = null;
+      }
+      commitPendingColumnWidth();
     };
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", stop, { once: true });
+  }, [commitPendingColumnWidth]);
+  useEffect(() => () => {
+    if (columnResizeFrameRef.current !== null) {
+      cancelAnimationFrame(columnResizeFrameRef.current);
+    }
   }, []);
   const tableWidth = useMemo(() => (
-    20 + 180
-    + columns.reduce((total, field, index) => total + getColumnWidth(field.id, businessColumnWidths[index]), 0)
-    + builtinFields.reduce((total, field, index) => total + getColumnWidth(field.id, builtInColumnWidths[index]), 0)
-  ), [builtInColumnWidths, builtinFields, businessColumnWidths, columns, getColumnWidth]);
+    sequenceColumnWidth + 180
+    + columns.reduce((total, field, index) => total + getColumnWidth(field.id, businessColumnWidths[index], 24, 320), 0)
+    + builtinFields.reduce((total, field, index) => total + getColumnWidth(field.id, builtInColumnWidths[index], 24, builtInColumnMaxWidths[index]), 0)
+  ), [builtInColumnMaxWidths, builtInColumnWidths, builtinFields, businessColumnWidths, columns, getColumnWidth, sequenceColumnWidth]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setColumnWidths((current) => {
+        let next = current;
+
+        headerLabelRefs.current.forEach((label, columnId) => {
+          const businessIndex = columns.findIndex((field) => field.id === columnId);
+          const builtinIndex = builtinFields.findIndex((field) => field.id === columnId);
+          const fallback = businessIndex >= 0 ? businessColumnWidths[businessIndex] : builtInColumnWidths[builtinIndex];
+          const maxWidth = businessIndex >= 0 ? 320 : builtInColumnMaxWidths[builtinIndex];
+          const currentWidth = Math.min(maxWidth, Math.max(24, current[columnId] ?? fallback));
+          const overflow = label.scrollWidth - label.clientWidth;
+
+          if (overflow > 0 && currentWidth < maxWidth) {
+            next = { ...next, [columnId]: Math.min(maxWidth, Math.ceil(currentWidth + overflow + 1)) };
+          }
+        });
+
+        return next;
+      });
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [builtInColumnMaxWidths, builtInColumnWidths, builtinFields, businessColumnWidths, columns]);
   const paginationPages = getPaginationPageNumbers(activePage, pageCount);
   const detailRecordIndex = detailRecord
     ? records.findIndex((record) => record.id === detailRecord.id)
@@ -1822,6 +1907,22 @@ function RecordsTable({
     setDetailTab("comments");
     setIsDetailFullscreen(false);
   }
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      setIsDetailContentReady(Boolean(detailRecord));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [detailRecord, isDetailEditing]);
+
+  const handleDetailFormSubmit = useCallback(async (values: Record<string, unknown>) => {
+    if (!isDetailEditing || !detailRecord) return;
+    const updated = await onUpdateRecord(detailRecord.id, values);
+    if (updated) {
+      setDetailRecord(null);
+      setIsDetailEditing(false);
+    }
+  }, [detailRecord, isDetailEditing, onUpdateRecord]);
 
   function showAdjacentRecord(direction: -1 | 1) {
     const nextRecord = records[detailRecordIndex + direction];
@@ -1853,29 +1954,31 @@ function RecordsTable({
         <Table.ScrollContainer className="data-table-horizontal-scroll h-full overflow-auto">
           <Table.Content aria-label="表单提交数据" className="table-fixed border-separate border-spacing-0 text-left text-[12px] text-[var(--color-text-primary)]" style={{ width: tableWidth, minWidth: "100%" }}>
             <Table.Header className="text-[12px] font-medium text-[var(--color-text-secondary)]">
-              <Table.Column id="selection" isRowHeader style={{ width: 20 }} className="sticky top-0 z-20 h-10 border-b border-r border-[var(--color-border)] bg-[var(--color-bg-surface)] p-0 text-center">
+              <Table.Column id="selection" isRowHeader style={{ width: sequenceColumnWidth }} className="sticky top-0 z-20 h-10 border-b border-r border-[var(--color-border)] bg-[var(--color-bg-surface)] p-0 text-center">
                 <TableSelectionCheckbox ariaLabel="全选当前页" isSelected={allCurrentPageSelected} isIndeterminate={someCurrentPageSelected && !allCurrentPageSelected} onChange={toggleCurrentPageSelection} />
               </Table.Column>
               {columns.map((field, index) => {
-                const width = getColumnWidth(field.id, businessColumnWidths[index]);
+                const minWidth = 24;
+                const width = getColumnWidth(field.id, businessColumnWidths[index], minWidth, 320);
                 return (
-                  <Table.Column key={field.id} id={field.id} style={{ width }} className="relative sticky top-0 z-20 h-10 border-b border-r border-[var(--color-border)] bg-[var(--color-bg-surface)] p-0">
-                    <button type="button" onClick={() => setSortDescriptor((current) => ({ column: field.id, direction: current.column === field.id && current.direction === "ascending" ? "descending" : "ascending" }))} className="flex h-full min-w-0 w-full items-center gap-1 px-1 pr-4 text-left hover:text-[var(--color-text-primary)]">
-                      <span className="truncate whitespace-nowrap">{field.label}</span><ArrowUpArrowDown className={sortDescriptor.column === field.id ? "h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" : "h-3.5 w-3.5 shrink-0 text-[var(--color-text-disabled)]"} />
+                  <Table.Column key={field.id} id={field.id} style={{ width, minWidth, maxWidth: 320 }} className="relative sticky top-0 z-20 h-10 border-b border-r border-[var(--color-border)] bg-[var(--color-bg-surface)] p-0">
+                    <button type="button" onClick={() => setSortDescriptor((current) => ({ column: field.id, direction: current.column === field.id && current.direction === "ascending" ? "descending" : "ascending" }))} className="flex h-full min-w-0 w-full items-center gap-1 px-1 text-left hover:text-[var(--color-text-primary)]">
+                      <span ref={(element) => { if (element) headerLabelRefs.current.set(field.id, element); else headerLabelRefs.current.delete(field.id); }} className="truncate whitespace-nowrap">{field.label}</span><ArrowUpArrowDown className={sortDescriptor.column === field.id ? "h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" : "h-3.5 w-3.5 shrink-0 text-[var(--color-text-disabled)]"} />
                     </button>
-                    <div role="separator" aria-label={`调整${field.label}列宽`} onPointerDown={(event) => { event.preventDefault(); startColumnResize(field.id, event.clientX, width, 320); }} className="absolute right-0 top-1/2 z-40 h-6 w-px -translate-y-1/2 cursor-col-resize bg-[var(--color-border)] hover:w-0.5 hover:bg-[var(--color-primary)]" />
+                    <div role="separator" aria-label={`调整${field.label}列宽`} onPointerDown={(event) => { event.preventDefault(); startColumnResize(field.id, event.clientX, width, minWidth, 320); }} className="absolute right-0 top-1/2 z-40 h-6 w-px -translate-y-1/2 cursor-col-resize bg-[var(--color-border)] hover:w-0.5 hover:bg-[var(--color-primary)]" />
                   </Table.Column>
                 );
               })}
               {builtinFields.map((field, index) => {
-                const maxWidth = field.id === "instanceTitle" ? 360 : 260;
-                const width = getColumnWidth(field.id, builtInColumnWidths[index]);
+                const maxWidth = builtInColumnMaxWidths[index];
+                const minWidth = 24;
+                const width = getColumnWidth(field.id, builtInColumnWidths[index], minWidth, maxWidth);
                 return (
-                  <Table.Column key={field.id} id={field.id} style={{ width }} className="relative sticky top-0 z-20 h-10 border-b border-r border-[var(--color-border)] bg-[var(--color-bg-surface)] p-0">
-                    <button type="button" onClick={() => setSortDescriptor((current) => ({ column: field.id, direction: current.column === field.id && current.direction === "ascending" ? "descending" : "ascending" }))} className="flex h-full min-w-0 w-full items-center gap-1 px-1 pr-4 text-left hover:text-[var(--color-text-primary)]">
-                      <span className="truncate whitespace-nowrap">{field.label}</span><ArrowUpArrowDown className={sortDescriptor.column === field.id ? "h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" : "h-3.5 w-3.5 shrink-0 text-[var(--color-text-disabled)]"} />
+                  <Table.Column key={field.id} id={field.id} style={{ width, minWidth, maxWidth }} className="relative sticky top-0 z-20 h-10 border-b border-r border-[var(--color-border)] bg-[var(--color-bg-surface)] p-0">
+                    <button type="button" onClick={() => setSortDescriptor((current) => ({ column: field.id, direction: current.column === field.id && current.direction === "ascending" ? "descending" : "ascending" }))} className="flex h-full min-w-0 w-full items-center gap-1 px-1 text-left hover:text-[var(--color-text-primary)]">
+                      <span ref={(element) => { if (element) headerLabelRefs.current.set(field.id, element); else headerLabelRefs.current.delete(field.id); }} className="truncate whitespace-nowrap">{field.label}</span><ArrowUpArrowDown className={sortDescriptor.column === field.id ? "h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" : "h-3.5 w-3.5 shrink-0 text-[var(--color-text-disabled)]"} />
                     </button>
-                    <div role="separator" aria-label={`调整${field.label}列宽`} onPointerDown={(event) => { event.preventDefault(); startColumnResize(field.id, event.clientX, width, maxWidth); }} className="absolute right-0 top-1/2 z-40 h-6 w-px -translate-y-1/2 cursor-col-resize bg-[var(--color-border)] hover:w-0.5 hover:bg-[var(--color-primary)]" />
+                    <div role="separator" aria-label={`调整${field.label}列宽`} onPointerDown={(event) => { event.preventDefault(); startColumnResize(field.id, event.clientX, width, minWidth, maxWidth); }} className="absolute right-0 top-1/2 z-40 h-6 w-px -translate-y-1/2 cursor-col-resize bg-[var(--color-border)] hover:w-0.5 hover:bg-[var(--color-primary)]" />
                   </Table.Column>
                 );
               })}
@@ -1944,7 +2047,7 @@ function RecordsTable({
         }
       }}
     >
-      <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
+      <Modal.Backdrop className="theme-modal-backdrop record-detail-backdrop" isDismissable>
         <Modal.Container placement="center" scroll="inside" size="cover" className={isDetailFullscreen ? "!inset-0 !h-[100dvh] !w-screen !max-w-none !p-0" : undefined}>
           <Modal.Dialog className={`flex flex-col overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)] ${isDetailFullscreen ? "fixed inset-0 h-[100dvh] w-screen max-h-none max-w-none rounded-none" : "h-[min(860px,88vh)] w-[min(1180px,94vw)] rounded-2xl"}`}>
             <Modal.Header className="flex-col items-stretch gap-4 border-b border-[var(--color-border)] px-6 py-4">
@@ -1965,7 +2068,7 @@ function RecordsTable({
               {detailBuiltIns ? <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-t border-[var(--color-border)] pt-4 text-sm md:grid-cols-4"><DetailBuiltIn label="提交时间" value={detailBuiltIns.createdAt} /><DetailBuiltIn label="发起人" value={detailBuiltIns.submitter} /><DetailBuiltIn label="发起人组织" value={detailBuiltIns.submitterOrganization} /><DetailBuiltIn label="实例 ID" value={detailBuiltIns.instanceId} /></div> : null}
             </Modal.Header>
             <Modal.Body className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-              {detailRecord ? (
+              {detailRecord && isDetailContentReady ? (
                 <RuntimeFormPanel
                   key={`${detailRecord.id}-${isDetailEditing ? "edit" : "view"}`}
                   formId={`record-detail-${detailRecord.id}`}
@@ -1976,16 +2079,9 @@ function RecordsTable({
                   submitLabel="保存修改"
                   submitting={submitting}
                   urlParams={urlParams}
-                  onSubmit={async (values) => {
-                    if (!isDetailEditing) return;
-                    const updated = await onUpdateRecord(detailRecord.id, values);
-                    if (updated) {
-                      setDetailRecord(null);
-                      setIsDetailEditing(false);
-                    }
-                  }}
+                  onSubmit={handleDetailFormSubmit}
                 />
-              ) : null}
+              ) : detailRecord ? <div className="min-h-64 animate-pulse rounded-lg bg-[var(--color-bg-subtle)]" /> : null}
               {detailRecord && !isDetailEditing ? <DetailAuxiliaryPanel activeTab={detailTab} record={detailRecord} onTabChange={setDetailTab} /> : null}
             </Modal.Body>
             <Modal.Footer className="flex shrink-0 justify-end gap-3 border-t border-[var(--color-border)] px-6 py-4">
@@ -2353,45 +2449,6 @@ function writeFormDrafts(formUuid: string, drafts: FormDraft[]) {
   window.localStorage.setItem(getFormDraftStorageKey(formUuid), JSON.stringify(drafts));
 }
 
-function getFormViewStorageKey(formUuid: string) {
-  return `yaya-low-code:form-views:${formUuid}`;
-}
-
-function createViewUuid() {
-  const randomUuid = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-    ? crypto.randomUUID().replaceAll("-", "")
-    : `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
-  return `VIEW-${randomUuid.toUpperCase()}`;
-}
-
-function readFormViews(formUuid: string, defaultConfig: ViewConfig): FormView[] {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(getFormViewStorageKey(formUuid)) ?? "[]") as unknown;
-    if (!Array.isArray(parsed)) return [{ id: "default", name: "全部数据", isDefault: true, config: defaultConfig, updatedAt: new Date().toISOString() }];
-    const valid = parsed.filter((view): view is FormView => Boolean(view && typeof view === "object" && "id" in view && "name" in view && "config" in view));
-    const defaultView = valid.find((view) => view.id === "default") ?? { id: "default", name: "全部数据", isDefault: true, config: defaultConfig, updatedAt: new Date().toISOString() };
-    let didMigrate = false;
-    const migratedViews = valid
-      .filter((view) => view.id !== "default")
-      .map((view) => {
-        if (view.viewUuid) return view;
-        didMigrate = true;
-        return { ...view, viewUuid: createViewUuid() };
-      });
-    const result = [{ ...defaultView, isDefault: true, viewUuid: undefined }, ...migratedViews];
-    if (didMigrate) {
-      writeFormViews(formUuid, result);
-    }
-    return result;
-  } catch {
-    return [{ id: "default", name: "全部数据", isDefault: true, config: defaultConfig, updatedAt: new Date().toISOString() }];
-  }
-}
-
-function writeFormViews(formUuid: string, views: FormView[]) {
-  window.localStorage.setItem(getFormViewStorageKey(formUuid), JSON.stringify(views));
-}
-
 function getViewFieldValue(record: FormRecord, fieldId: string, formName: string, submitterOrganizations: Record<string, string>) {
   if (fieldId in record.data) return formatRecordValue(record.data[fieldId]);
   return getBuiltinRecordValues(record, formName, submitterOrganizations)[fieldId] ?? "";
@@ -2456,13 +2513,18 @@ function estimateTableColumnWidth(
   minWidth = 0,
   maxWidth = 320,
 ) {
-  const widestUnits = values.reduce((widest, value) => {
-    const units = Array.from(value).reduce(
-      (total, character) => total + (/^[\u0000-\u00ff]$/.test(character) ? 0.62 : 1),
-      0,
-    );
-    return Math.max(widest, units);
-  }, 0);
+  const widestTextWidth = values.reduce(
+    (widest, value) => Math.max(widest, estimateTableTextWidth(value)),
+    0,
+  );
 
-  return Math.min(maxWidth, Math.max(minWidth, Math.ceil(widestUnits * 12 + 24)));
+  return Math.min(maxWidth, Math.max(minWidth, Math.ceil(widestTextWidth + 24)));
+}
+
+function estimateTableTextWidth(value: string) {
+  const units = Array.from(value).reduce(
+    (total, character) => total + (/^[\u0000-\u00ff]$/.test(character) ? 0.62 : 1),
+    0,
+  );
+  return units * 12;
 }

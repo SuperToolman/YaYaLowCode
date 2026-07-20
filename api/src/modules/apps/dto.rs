@@ -1,11 +1,12 @@
 //! Application-domain API request and response models.
 
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::infrastructure::entities::app_entity;
 use crate::shared::format_date;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiApp {
     pub(crate) id: String,
@@ -20,13 +21,13 @@ pub(crate) struct ApiApp {
     pub(crate) records: i64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct CreateAppRequest {
     pub(crate) name: Option<String>,
     pub(crate) owner: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct UpdateAppRequest {
     pub(crate) name: Option<String>,
     pub(crate) status: Option<String>,

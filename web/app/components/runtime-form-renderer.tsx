@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, Key } from "react";
 import {
   Avatar,
@@ -277,6 +277,24 @@ export function RuntimeFormRenderer({
     () => compileActionModule(normalizedActionCode),
     [normalizedActionCode],
   );
+  const runtimeContextRef = useRef({
+    actionModule,
+    dataSources,
+    fields,
+    onDebugEvent,
+    urlParams,
+    values,
+  });
+  useLayoutEffect(() => {
+    runtimeContextRef.current = {
+      actionModule,
+      dataSources,
+      fields,
+      onDebugEvent,
+      urlParams,
+      values,
+    };
+  }, [actionModule, dataSources, fields, onDebugEvent, urlParams, values]);
   const didMountExecutionKey = useMemo(
     () =>
       JSON.stringify({
@@ -395,6 +413,26 @@ export function RuntimeFormRenderer({
       ),
     [visibleRootFields],
   );
+  const childFieldsByParent = useMemo(() => {
+    const childrenByParent = new Map<string, RuntimeSchemaField[]>();
+    const fieldsById = new Map(fields.map((field) => [field.id, field]));
+
+    for (const field of fields) {
+      if (!field.parentGroupId || field.props?.isHidden) continue;
+      const children = childrenByParent.get(field.parentGroupId) ?? [];
+      children.push(field);
+      childrenByParent.set(field.parentGroupId, children);
+    }
+
+    for (const [parentId, children] of childrenByParent) {
+      const parent = fieldsById.get(parentId);
+      children.sort((left, right) => parent?.type === "subform"
+        ? left.column - right.column
+        : left.row - right.row || left.column - right.column);
+    }
+
+    return childrenByParent;
+  }, [fields]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -450,11 +488,12 @@ export function RuntimeFormRenderer({
     await onSubmit(payload);
   }
 
-  function setFieldValue(fieldId: string, nextValue: unknown, eventName = "onChange") {
-    const nextValues = { ...values, [fieldId]: nextValue };
-    const nextDataSources = { ...dataSources };
+  const setFieldValue = useCallback((fieldId: string, nextValue: unknown, eventName = "onChange") => {
+    const current = runtimeContextRef.current;
+    const nextValues = { ...current.values, [fieldId]: nextValue };
+    const nextDataSources = { ...current.dataSources };
     runActionHandler({
-      actionModule,
+      actionModule: current.actionModule,
       handlerName: "onFieldEvent",
       fieldId,
       eventName,
@@ -464,7 +503,7 @@ export function RuntimeFormRenderer({
           description: `${fieldId} / ${eventName}: ${message}`,
         }),
       onSuccess: (output) =>
-        onDebugEvent?.({
+        current.onDebugEvent?.({
           id: createRuntimeDebugEventId(),
           type: "field",
           fieldId,
@@ -475,7 +514,7 @@ export function RuntimeFormRenderer({
           createdAt: new Date().toISOString(),
         }),
       onErrorEvent: (message) =>
-        onDebugEvent?.({
+        current.onDebugEvent?.({
           id: createRuntimeDebugEventId(),
           type: "field",
           fieldId,
@@ -484,12 +523,12 @@ export function RuntimeFormRenderer({
           message,
           createdAt: new Date().toISOString(),
         }),
-      urlParams,
+      urlParams: current.urlParams,
       value: nextValue,
       values: nextValues,
     });
 
-    const calculated = calculateFormulaValues(fields, nextValues, {
+    const calculated = calculateFormulaValues(current.fields, nextValues, {
       changedFieldIds: [fieldId],
     });
     setRuntimeState({
@@ -498,7 +537,7 @@ export function RuntimeFormRenderer({
       formulaErrors: calculated.errors,
       debugEvent: undefined,
     });
-  }
+  }, []);
 
   return (
     <form
@@ -529,7 +568,7 @@ export function RuntimeFormRenderer({
             }}
           >
             <RuntimeFieldNode
-              allFields={fields}
+              childFieldsByParent={childFieldsByParent}
               field={field}
               formulaErrors={runtimeState.formulaErrors}
               value={values[field.id]}
@@ -556,14 +595,14 @@ export function RuntimeFormRenderer({
 }
 
 function RuntimeFieldNode({
-  allFields,
+  childFieldsByParent,
   field,
   formulaErrors,
   onFieldAction,
   value,
   values,
 }: {
-  allFields: RuntimeSchemaField[];
+  childFieldsByParent: Map<string, RuntimeSchemaField[]>;
   field: RuntimeSchemaField;
   formulaErrors: Record<string, string>;
   onFieldAction: (fieldId: string, nextValue: unknown, eventName?: string) => void;
@@ -571,16 +610,12 @@ function RuntimeFieldNode({
   values: Record<string, unknown>;
 }) {
   if (field.type === "subform") {
-    const childFields = allFields
-      .filter((item) => item.parentGroupId === field.id && !item.props?.isHidden)
-      .sort((left, right) => left.column - right.column);
+    const childFields = childFieldsByParent.get(field.id) ?? [];
     return <RuntimeSubform field={field} childFields={childFields} value={value} onChange={(nextValue) => onFieldAction(field.id, nextValue, "onChange")} />;
   }
 
   if (field.type === "groupContainer") {
-    const childFields = allFields
-      .filter((item) => item.parentGroupId === field.id && !item.props?.isHidden)
-      .sort((left, right) => left.row - right.row || left.column - right.column);
+    const childFields = childFieldsByParent.get(field.id) ?? [];
 
     return (
       <div className="flex w-full min-w-0 flex-col rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-1">
@@ -606,7 +641,7 @@ function RuntimeFieldNode({
               }}
             >
               <RuntimeFieldNode
-                allFields={allFields}
+                childFieldsByParent={childFieldsByParent}
                 field={child}
                 formulaErrors={formulaErrors}
                 onFieldAction={onFieldAction}
@@ -636,6 +671,12 @@ function RuntimeSubform({ field, childFields, value, onChange }: { field: Runtim
   const maxRows = props.subformMaxRows ?? 500;
   const isReadOnly = Boolean(props.isDisabled || props.isReadOnly);
   const showActions = !isReadOnly;
+  const pageSize = Math.max(1, props.subformPageSize ?? 20);
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const [page, setPage] = useState(1);
+  const activePage = Math.min(page, pageCount);
+  const pageStart = (activePage - 1) * pageSize;
+  const pageRows = rows.slice(pageStart, pageStart + pageSize);
 
   function updateCell(rowIndex: number, fieldId: string, nextValue: unknown) {
     onChange(rows.map((row, index) => index === rowIndex ? { ...row, [fieldId]: nextValue } : row));
@@ -691,17 +732,20 @@ function RuntimeSubform({ field, childFields, value, onChange }: { field: Runtim
         >
           {props.subformShowHeader !== false ? <thead className="bg-[var(--color-bg-subtle)]"><tr>{props.subformShowIndex !== false ? <th className="w-14 px-3 py-2 text-center font-medium">序号</th> : null}{childFields.map((child) => <th key={child.id} className="px-3 py-2 font-medium">{child.label}</th>)}{showActions ? <th className="sticky right-0 z-20 border-l border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2 text-center font-medium shadow-[-6px_0_12px_-10px_rgba(15,23,42,0.7)]" style={{ width: props.subformActionColumnWidth ?? 70, minWidth: props.subformActionColumnWidth ?? 70 }}>操作</th> : null}</tr></thead> : null}
           <tbody>
-            {rows.map((row, rowIndex) => <tr key={rowIndex} className={props.subformTheme === "zebra" && rowIndex % 2 === 1 ? "bg-[var(--color-bg-subtle)]" : "border-t border-[var(--color-border)]"}>{props.subformShowIndex !== false ? <td className="px-3 py-2 text-center text-[var(--color-text-secondary)]">{rowIndex + 1}</td> : null}{childFields.map((child) => <td key={child.id} className="min-w-36 px-2 py-2 align-top"><FormField field={child} value={row[child.id]} showLabel={false} onFieldAction={(_, nextValue) => updateCell(rowIndex, child.id, nextValue)} /></td>)}{showActions ? <td className="sticky right-0 z-10 border-l border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2 py-2 align-middle shadow-[-6px_0_12px_-10px_rgba(15,23,42,0.7)]"><div className="flex items-center justify-center gap-1">{props.subformShowSort ? <><Button isIconOnly size="sm" variant="ghost" aria-label="上移" onPress={() => moveRow(rowIndex, -1)}>↑</Button><Button isIconOnly size="sm" variant="ghost" aria-label="下移" onPress={() => moveRow(rowIndex, 1)}>↓</Button></> : null}{props.subformShowCopyButton ? <Button size="sm" variant="ghost" onPress={() => copyRow(rowIndex)}>复制</Button> : null}{props.subformShowDeleteButton !== false ? <Button isIconOnly size="sm" variant="ghost" className="text-[var(--color-danger)]" aria-label={props.subformDeleteButtonText ?? "删除"} onPress={() => removeRow(rowIndex)}><TrashIcon /></Button> : null}</div></td> : null}</tr>)}
+            {pageRows.map((row, pageRowIndex) => {
+              const rowIndex = pageStart + pageRowIndex;
+              return <tr key={rowIndex} className={props.subformTheme === "zebra" && rowIndex % 2 === 1 ? "bg-[var(--color-bg-subtle)]" : "border-t border-[var(--color-border)]"}>{props.subformShowIndex !== false ? <td className="px-3 py-2 text-center text-[var(--color-text-secondary)]">{rowIndex + 1}</td> : null}{childFields.map((child) => <td key={child.id} className="min-w-36 px-2 py-2 align-top"><FormField field={child} value={row[child.id]} showLabel={false} onFieldAction={(_, nextValue) => updateCell(rowIndex, child.id, nextValue)} /></td>)}{showActions ? <td className="sticky right-0 z-10 border-l border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2 py-2 align-middle shadow-[-6px_0_12px_-10px_rgba(15,23,42,0.7)]"><div className="flex items-center justify-center gap-1">{props.subformShowSort ? <><Button isIconOnly size="sm" variant="ghost" aria-label="上移" onPress={() => moveRow(rowIndex, -1)}>↑</Button><Button isIconOnly size="sm" variant="ghost" aria-label="下移" onPress={() => moveRow(rowIndex, 1)}>↓</Button></> : null}{props.subformShowCopyButton ? <Button size="sm" variant="ghost" onPress={() => copyRow(rowIndex)}>复制</Button> : null}{props.subformShowDeleteButton !== false ? <Button isIconOnly size="sm" variant="ghost" className="text-[var(--color-danger)]" aria-label={props.subformDeleteButtonText ?? "删除"} onPress={() => removeRow(rowIndex)}><TrashIcon /></Button> : null}</div></td> : null}</tr>;
+            })}
             {rows.length === 0 ? <tr><td className="px-4 py-8 text-center text-sm text-[var(--color-text-secondary)]" colSpan={childFields.length + (props.subformShowIndex !== false ? 1 : 0) + (showActions ? 1 : 0)}>暂无子表单数据，点击“{props.subformAddButtonText ?? "新增一项"}”开始填写。</td></tr> : null}
           </tbody>
         </table>
       </div>
-      <div className="flex justify-between text-xs text-[var(--color-text-secondary)]"><span>共 {rows.length} 行</span><span>最多 {maxRows} 行 · 每页 {props.subformPageSize ?? 20} 行</span></div>
+      <div className="flex items-center justify-between gap-3 text-xs text-[var(--color-text-secondary)]"><span>共 {rows.length} 行</span><div className="flex items-center gap-2"><span>第 {activePage}/{pageCount} 页 · 每页 {pageSize} 行</span>{pageCount > 1 ? <><Button size="sm" variant="ghost" isDisabled={activePage === 1} onPress={() => setPage(activePage - 1)}>上一页</Button><Button size="sm" variant="ghost" isDisabled={activePage === pageCount} onPress={() => setPage(activePage + 1)}>下一页</Button></> : null}</div></div>
     </section>
   );
 }
 
-function FormField({
+const FormField = memo(function FormField({
   field,
   formulaError,
   onFieldAction,
@@ -938,7 +982,7 @@ function FormField({
       ) : null}
     </div>
   );
-}
+});
 
 function RuntimeSelect({
   field,
@@ -1001,6 +1045,34 @@ type IdentityRole = {
 
 type IdentityResponse<T> = { code: number; data: T | null };
 
+type RuntimeIdentityCatalog = {
+  roles: IdentityRole[];
+  users: IdentityUser[];
+};
+
+let runtimeIdentityCatalogPromise: Promise<RuntimeIdentityCatalog> | null = null;
+
+function loadRuntimeIdentityCatalog() {
+  if (!runtimeIdentityCatalogPromise) {
+    runtimeIdentityCatalogPromise = Promise.all([
+      fetch("/api/identity/users", { cache: "no-store" })
+        .then((response) => response.json() as Promise<IdentityResponse<IdentityUser[]>>),
+      fetch("/api/identity/roles", { cache: "no-store" })
+        .then((response) => response.json() as Promise<IdentityResponse<IdentityRole[]>>),
+    ])
+      .then(([userResponse, roleResponse]) => ({
+        users: userResponse.code === 0 && userResponse.data ? userResponse.data : [],
+        roles: roleResponse.code === 0 && roleResponse.data ? roleResponse.data : [],
+      }))
+      .catch((error) => {
+        runtimeIdentityCatalogPromise = null;
+        throw error;
+      });
+  }
+
+  return runtimeIdentityCatalogPromise;
+}
+
 function RuntimeMemberSelect({
   field,
   onChange,
@@ -1024,31 +1096,24 @@ function RuntimeMemberSelect({
 
   useEffect(() => {
     let cancelled = false;
-    const timer = window.setTimeout(() => {
-      setLoading(true);
-      Promise.all([
-        fetch("/api/identity/users", { cache: "no-store" }).then((response) => response.json() as Promise<IdentityResponse<IdentityUser[]>>),
-        fetch("/api/identity/roles", { cache: "no-store" }).then((response) => response.json() as Promise<IdentityResponse<IdentityRole[]>>),
-      ])
-        .then(([userResponse, roleResponse]) => {
-          if (cancelled) return;
-          setUsers(userResponse.code === 0 && userResponse.data ? userResponse.data : []);
-          setRoles(roleResponse.code === 0 && roleResponse.data ? roleResponse.data : []);
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setUsers([]);
-            setRoles([]);
-          }
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-    }, 0);
+    void loadRuntimeIdentityCatalog()
+      .then((catalog) => {
+        if (cancelled) return;
+        setUsers(catalog.users);
+        setRoles(catalog.roles);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setUsers([]);
+          setRoles([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
     };
   }, []);
 

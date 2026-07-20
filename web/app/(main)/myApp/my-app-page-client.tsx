@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button, Dropdown, Input } from "@heroui/react";
+import { Button, Card, Dropdown, Input } from "@heroui/react";
 import { AlertDialog } from "@heroui/react/alert-dialog";
 import { Modal } from "@heroui/react/modal";
 import {
@@ -19,6 +19,7 @@ import {
 } from "@gravity-ui/icons";
 import { createApp, listApps, type App as ApiApp } from "../../lib/api-client";
 import { AppIcon } from "../../components/app-icons";
+import { PageHeader } from "../../components/page-header";
 import {
   appColorToneClass,
   appStatusLabel,
@@ -211,17 +212,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
         <section className="min-w-0 space-y-5">
           <section className="">
             <div className="flex flex-col gap-5">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                <div className="min-w-0">
-                  <h1 className="mt-4 text-3xl font-semibold leading-tight text-[var(--color-text-primary)] sm:text-4xl">
-                    应用中心
-                  </h1>
-                  <p className="mt-3 max-w-3xl text-sm leading-6 text-[var(--color-text-secondary)]">
-                    管理企业低代码应用、表单入口、运行状态和数据规模，集中维护你创建和参与的业务系统。
-                  </p>
-                </div>
-
-                <div className="flex shrink-0 flex-wrap gap-3">
+              <PageHeader title="应用中心" description="管理企业低代码应用、表单入口、运行状态和数据规模，集中维护你创建和参与的业务系统。" actions={<>
                   <Button
                     onClick={handleCreateApp}
                     isDisabled={isPending}
@@ -237,11 +228,10 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                     <Rocket className="h-4 w-4" />
                     导入应用
                   </Button>
-                </div>
-              </div>
+                </>} />
 
               <div className="grid gap-3 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.95fr)]">
-                <section className="theme-panel-soft rounded-[18px] p-4">
+                <Card className="theme-panel-soft p-4 shadow-none">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">应用分组</h2>
@@ -305,9 +295,9 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                       />
                     </div>
                   </div>
-                </section>
+                </Card>
 
-                <section className="theme-panel-soft rounded-[18px] p-4">
+                <Card className="theme-panel-soft p-4 shadow-none">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">状态统计</h2>
@@ -339,7 +329,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                       tone="amber"
                     />
                   </div>
-                </section>
+                </Card>
 
 
               </div>
@@ -349,9 +339,9 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
 
           <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
             {sortApps(apps).map((app) => (
-              <article
+              <Card
                 key={app.id}
-                className="group theme-panel-strong flex min-w-0 flex-col rounded-xl border border-[var(--color-border)] p-3.5 shadow-[var(--shadow-xs)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-card-hover)]"
+                className="group theme-panel-strong flex min-w-0 flex-col border border-[var(--color-border)] p-3.5 shadow-[var(--shadow-xs)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-card-hover)]"
               >
                 <div className="flex min-w-0 items-start gap-3">
                   <span
@@ -449,7 +439,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                     <ArrowRight className="h-3.5 w-3.5" />
                   </Link>
                 </div>
-              </article>
+              </Card>
             ))}
           </section>
         </section>
@@ -573,7 +563,7 @@ function MetricCard({
   }[tone];
 
   return (
-    <article className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4">
+    <Card className="border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4 shadow-none">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-[var(--color-text-secondary)]">{label}</p>
@@ -585,7 +575,7 @@ function MetricCard({
           {hint}
         </span>
       </div>
-    </article>
+    </Card>
   );
 }
 

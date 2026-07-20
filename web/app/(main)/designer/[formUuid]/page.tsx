@@ -1,13 +1,12 @@
 "use client";
 
-import { use, useEffect, useRef, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent } from "react";
 import {
   DndContext,
   DragOverlay,
   PointerSensor,
   pointerWithin,
-  rectIntersection,
   useSensor,
   useSensors,
   type CollisionDetection,
@@ -71,11 +70,15 @@ export default function FormDesigner({ params }: FormDesignerProps) {
   const [appName, setAppName] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const resizeStateRef = useRef<ResizeState | null>(null);
+  const resizeFrameRef = useRef<number | null>(null);
+  const pendingResizeRef = useRef<{ deltaColumns: number; deltaRows: number } | null>(null);
   const beforeDesignerActionRef = useRef<(() => boolean) | null>(null);
   const workbenchResizeStateRef = useRef<{
     startX: number;
     startWidth: number;
   } | null>(null);
+  const workbenchResizeFrameRef = useRef<number | null>(null);
+  const pendingWorkbenchWidthRef = useRef<number | null>(null);
   const [formName, setFormName] = useState("New Page");
   const [isEditingFormName, setIsEditingFormName] = useState(false);
   const [fields, setFields] = useState<PlacedField[]>([]);
@@ -87,11 +90,20 @@ export default function FormDesigner({ params }: FormDesignerProps) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
 
-  const rowCount = getRowCount(fields);
+  const rowCount = useMemo(() => getRowCount(fields), [fields]);
   const showMatrix = isDragging || isResizing;
-  const currentSchema = buildSchema(formUuid, formName, fields, pageProps);
-  const selectedField =
-    fields.find((field) => field.id === selectedFieldId) ?? null;
+  const currentSchema = useMemo(
+    () => buildSchema(formUuid, formName, fields, pageProps),
+    [fields, formName, formUuid, pageProps],
+  );
+  const selectedField = useMemo(
+    () => fields.find((field) => field.id === selectedFieldId) ?? null,
+    [fields, selectedFieldId],
+  );
+  const agentAnalysisSourceHash = useMemo(
+    () => getAgentAnalysisSourceHash(currentSchema),
+    [currentSchema],
+  );
   const [saveMessage, setSaveMessage] = useState("");
   const [latestVersion, setLatestVersion] = useState(1);
   const [publishedVersion, setPublishedVersion] = useState(1);
@@ -104,6 +116,8 @@ export default function FormDesigner({ params }: FormDesignerProps) {
   const [activeDragData, setActiveDragData] = useState<DesignerDragData | null>(null);
   const [insertionIndicator, setInsertionIndicator] =
     useState<DesignerInsertionIndicator | null>(null);
+  const insertionIndicatorFrameRef = useRef<number | null>(null);
+  const pendingInsertionIndicatorRef = useRef<DesignerInsertionIndicator | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 },
@@ -282,13 +296,29 @@ export default function FormDesigner({ params }: FormDesignerProps) {
       }
 
       const nextWidth = resizeState.startWidth + (event.clientX - resizeState.startX);
-      setWorkbenchWidth(
-        Math.max(DESIGNER_WORKBENCH_MIN_WIDTH, Math.min(DESIGNER_WORKBENCH_MAX_WIDTH, nextWidth)),
+      pendingWorkbenchWidthRef.current = Math.max(
+        DESIGNER_WORKBENCH_MIN_WIDTH,
+        Math.min(DESIGNER_WORKBENCH_MAX_WIDTH, nextWidth),
       );
+      if (workbenchResizeFrameRef.current !== null) return;
+
+      workbenchResizeFrameRef.current = requestAnimationFrame(() => {
+        workbenchResizeFrameRef.current = null;
+        const pendingWidth = pendingWorkbenchWidthRef.current;
+        pendingWorkbenchWidthRef.current = null;
+        if (pendingWidth !== null) setWorkbenchWidth(pendingWidth);
+      });
     }
 
     function handlePointerUp() {
       workbenchResizeStateRef.current = null;
+      const pendingWidth = pendingWorkbenchWidthRef.current;
+      pendingWorkbenchWidthRef.current = null;
+      if (workbenchResizeFrameRef.current !== null) {
+        cancelAnimationFrame(workbenchResizeFrameRef.current);
+        workbenchResizeFrameRef.current = null;
+      }
+      if (pendingWidth !== null) setWorkbenchWidth(pendingWidth);
     }
 
     window.addEventListener("pointermove", handlePointerMove);
@@ -300,13 +330,45 @@ export default function FormDesigner({ params }: FormDesignerProps) {
     };
   }, []);
 
+  useEffect(() => () => {
+    if (resizeFrameRef.current !== null) cancelAnimationFrame(resizeFrameRef.current);
+    if (workbenchResizeFrameRef.current !== null) {
+      cancelAnimationFrame(workbenchResizeFrameRef.current);
+    }
+    if (insertionIndicatorFrameRef.current !== null) {
+      cancelAnimationFrame(insertionIndicatorFrameRef.current);
+    }
+  }, []);
+
   function endDragging() {
+    if (insertionIndicatorFrameRef.current !== null) {
+      cancelAnimationFrame(insertionIndicatorFrameRef.current);
+      insertionIndicatorFrameRef.current = null;
+    }
+    pendingInsertionIndicatorRef.current = null;
     setIsDragging(false);
     setActiveDragData(null);
   }
 
   function endResizing() {
+    const pendingResize = pendingResizeRef.current;
+    const resizeState = resizeStateRef.current;
     resizeStateRef.current = null;
+    pendingResizeRef.current = null;
+    if (resizeFrameRef.current !== null) {
+      cancelAnimationFrame(resizeFrameRef.current);
+      resizeFrameRef.current = null;
+    }
+    if (pendingResize && resizeState) {
+      setFields((currentFields) =>
+        resizeField(
+          currentFields,
+          resizeState,
+          pendingResize.deltaRows,
+          pendingResize.deltaColumns,
+        ),
+      );
+    }
     setIsResizing(false);
   }
 
@@ -371,11 +433,20 @@ export default function FormDesigner({ params }: FormDesignerProps) {
             direction: dropData.insertionDirection,
           }
         : null;
-    setInsertionIndicator((current) =>
-      JSON.stringify(current) === JSON.stringify(nextIndicator)
-        ? current
-        : nextIndicator,
-    );
+    pendingInsertionIndicatorRef.current = nextIndicator;
+    if (insertionIndicatorFrameRef.current !== null) return;
+
+    insertionIndicatorFrameRef.current = requestAnimationFrame(() => {
+      insertionIndicatorFrameRef.current = null;
+      const pendingIndicator = pendingInsertionIndicatorRef.current;
+      pendingInsertionIndicatorRef.current = null;
+      setInsertionIndicator((current) =>
+        current?.fieldId === pendingIndicator?.fieldId &&
+        current?.direction === pendingIndicator?.direction
+          ? current
+          : pendingIndicator,
+      );
+    });
   }
 
   function handleDesignerDragCancel() {
@@ -516,9 +587,24 @@ export default function FormDesigner({ params }: FormDesignerProps) {
       (event.clientY - resizeState.startY) / rowStep,
     );
 
-    setFields((currentFields) =>
-      resizeField(currentFields, resizeState, deltaRows, deltaColumns),
-    );
+    pendingResizeRef.current = { deltaColumns, deltaRows };
+    if (resizeFrameRef.current !== null) return;
+
+    resizeFrameRef.current = requestAnimationFrame(() => {
+      resizeFrameRef.current = null;
+      const pendingResize = pendingResizeRef.current;
+      const activeResizeState = resizeStateRef.current;
+      pendingResizeRef.current = null;
+      if (!pendingResize || !activeResizeState) return;
+      setFields((currentFields) =>
+        resizeField(
+          currentFields,
+          activeResizeState,
+          pendingResize.deltaRows,
+          pendingResize.deltaColumns,
+        ),
+      );
+    });
   }
 
   function selectField(event: MouseEvent<HTMLDivElement>, fieldId: string) {
@@ -954,13 +1040,17 @@ export default function FormDesigner({ params }: FormDesignerProps) {
     <DndContext
       id={`form-designer-${formUuid}`}
       collisionDetection={designerCollisionDetection}
+      measuring={DESIGNER_DROPPABLE_MEASURING}
       sensors={sensors}
       onDragCancel={handleDesignerDragCancel}
       onDragEnd={handleDesignerDragEnd}
       onDragOver={handleDesignerDragOver}
       onDragStart={handleDesignerDragStart}
     >
-      <div className="designer-theme-root h-dvh min-h-0 w-full max-w-full overflow-hidden p-1">
+      <div className={[
+        "designer-theme-root h-dvh min-h-0 w-full max-w-full overflow-hidden p-1",
+        showMatrix ? "designer-is-interacting" : "",
+      ].join(" ")}>
       <div
         className="grid h-full min-h-0 w-full max-w-full gap-0 overflow-hidden"
         style={{
@@ -969,7 +1059,7 @@ export default function FormDesigner({ params }: FormDesignerProps) {
       >
         <DesignerWorkbenchSidebar
           activePanel={activeDesignerPanel}
-          agentAnalysisStale={pageProps.agent.enabled && pageProps.agent.context.sourceHash !== getAgentAnalysisSourceHash(currentSchema)}
+          agentAnalysisStale={pageProps.agent.enabled && pageProps.agent.context.sourceHash !== agentAnalysisSourceHash}
           debugEvents={debugEvents}
           fields={fields}
           pageProps={pageProps}
@@ -1194,14 +1284,22 @@ function readAgentAnalysisDelta(frame: string) {
 
 const designerCollisionDetection: CollisionDetection = (args) => {
   const collisions = pointerWithin(args);
-  const resolvedCollisions = collisions.length > 0 ? collisions : rectIntersection(args);
+  if (collisions.length < 2) return collisions;
 
-  return [...resolvedCollisions].sort((left, right) => {
-    const leftIsGroupCell = String(left.id).startsWith("group-cell:") || String(left.id).startsWith("subform-cell:");
-    const rightIsGroupCell = String(right.id).startsWith("group-cell:") || String(right.id).startsWith("subform-cell:");
-
-    return Number(rightIsGroupCell) - Number(leftIsGroupCell);
+  const nestedCell = collisions.find((collision) => {
+    const id = String(collision.id);
+    return id.startsWith("group-cell:") || id.startsWith("subform-cell:");
   });
+  return nestedCell ? [nestedCell] : [collisions[0]];
+};
+
+const DESIGNER_DROPPABLE_MEASURING = {
+  droppable: {
+    // Pointer movement does not change grid geometry. Sampling measurements at
+    // 80ms keeps nested drop zones accurate without synchronously measuring
+    // every cell on every pointer event.
+    frequency: 80,
+  },
 };
 
 function resolvePointerInsertionDirection(

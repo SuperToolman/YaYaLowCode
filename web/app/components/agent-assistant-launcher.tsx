@@ -240,14 +240,14 @@ export default function AgentAssistantLauncher() {
       <button
         type="button"
         aria-label="打开 YaYa Agent"
-        className="group flex min-h-[72px] w-full flex-col items-center justify-center gap-2 rounded-2xl border border-transparent bg-transparent px-2 py-3 text-center text-[var(--color-text-secondary)] transition-all duration-200 backdrop-blur-xl hover:border-[var(--sidebar-soft-border)] hover:bg-[var(--sidebar-soft-bg)] hover:text-[var(--color-text-primary)]"
+        className="group flex h-[68px] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border border-transparent bg-transparent px-2 text-center text-[var(--color-text-secondary)] transition-all duration-200 backdrop-blur-xl hover:border-[var(--sidebar-soft-border)] hover:bg-[var(--sidebar-soft-bg)] hover:text-[var(--color-text-primary)]"
         onClick={() => setIsOpen(true)}
       >
         <span className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary)] transition-colors group-hover:bg-[var(--color-control-selected)]">
           <FaceRobot className="h-5 w-5" />
           <span className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--color-bg-canvas)] ${errorMessage ? "bg-[var(--color-danger)]" : "bg-[var(--color-success)]"}`} />
         </span>
-        <span className="text-xs font-medium leading-4">Agent</span>
+        <span className="text-[11px] font-medium leading-4">Agent</span>
       </button>
 
       <Modal isOpen={isOpen} onOpenChange={setIsOpen}>

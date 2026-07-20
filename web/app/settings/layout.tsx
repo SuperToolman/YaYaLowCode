@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Card } from "@heroui/react/card";
+import { PageHeader } from "../components/page-header";
 
 const settingsGroups = [
   {
@@ -37,6 +38,11 @@ const settingsGroups = [
         href: "/settings/users",
         label: "用户管理",
         description: "账号、状态与归属",
+      },
+      {
+        href: "/settings/permissions",
+        label: "权限设置",
+        description: "按角色分配 RBAC 权限",
       },
     ],
   },
@@ -81,17 +87,12 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   const pathname = usePathname();
 
   return (
-    <div className="theme-page-shell h-full min-h-0 overflow-hidden p-6">
+    <div className="theme-page-shell h-full min-h-0 overflow-hidden">
       <main className="mx-auto grid h-full min-h-0 w-full grid-rows-[auto_minmax(0,1fr)]">
-        <section className="flex flex-end items-center theme-panel-strong shrink-0 rounded-[28px] p-4 shadow-[var(--shadow-panel)]">
-          <h1 className=" text-3xl font-semibold text-[var(--color-text-primary)]">设置</h1>
-          <p className="ml-2 max-w-2xl text-sm leading-6 text-[var(--color-text-secondary)]">
-            管理平台基础设施、用户权限与 Agent 能力。每个设置项目拥有独立地址，可以直接访问和分享。
-          </p>
-        </section>
+        <PageHeader title="设置" description="管理平台基础设施、用户权限与 Agent 能力。每个设置项目拥有独立地址，可以直接访问和分享。" />
 
         <div className="mt-5 flex min-h-0 overflow-hidden gap-4">
-          <Card className="theme-panel h-full min-h-0 w-[200px] shrink-0 overflow-hidden rounded-[22px] p-3 shadow-[var(--shadow-card)]">
+          <Card className="theme-panel h-full min-h-0 w-[200px] shrink-0 overflow-hidden p-3 shadow-[var(--shadow-card)]">
             <div className="flex h-full min-h-0 flex-col">
               <div className="shrink-0 px-3 pb-3 pt-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-disabled)]">
                 设置导航

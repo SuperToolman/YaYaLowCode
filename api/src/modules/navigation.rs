@@ -1,9 +1,11 @@
 use crate::platform::prelude::*;
+use crate::platform::authorization;
 use crate::shared::*;
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 
 pub(crate) async fn list_navigation_items(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(app_id): Path<String>,
 ) -> Result<Json<ApiResponse<Vec<ApiNavigationItem>>>, AppError> {
     ensure_system_navigation_for_app(&state.db, &app_id).await?;
@@ -16,10 +18,60 @@ pub(crate) async fn list_navigation_items(
         .all(&state.db)
         .await?;
 
+    let grants = authorization::grants(&headers, &state).await?;
+    let visible_items = filter_navigation_items_by_grants(items, &grants);
+
     Ok(Json(success_response(
         "获取导航成功",
-        items.into_iter().map(ApiNavigationItem::from).collect(),
+        visible_items.into_iter().map(ApiNavigationItem::from).collect(),
     )))
+}
+
+/// Navigation is a discovery surface, so a form must not be returned unless the
+/// current user may display it. Keep groups only when they contain a visible item.
+fn filter_navigation_items_by_grants(
+    items: Vec<app_navigation_entity::Model>,
+    grants: &HashSet<String>,
+) -> Vec<app_navigation_entity::Model> {
+    if grants.contains("*") {
+        return items;
+    }
+
+    let mut visible_ids = items
+        .iter()
+        .filter(|item| match item.item_type.as_str() {
+            "form" => item.target_form_uuid.as_ref().is_some_and(|form_uuid| {
+                grants.contains(&format!("form:{form_uuid}:display"))
+            }),
+            "group" => false,
+            _ => true,
+        })
+        .map(|item| item.id)
+        .collect::<HashSet<_>>();
+
+    // Groups can be nested. Repeatedly retain a parent once it has a visible child.
+    loop {
+        let added = items
+            .iter()
+            .filter(|item| {
+                item.item_type == "group"
+                    && !visible_ids.contains(&item.id)
+                    && items.iter().any(|child| {
+                        child.parent_id == Some(item.id) && visible_ids.contains(&child.id)
+                    })
+            })
+            .map(|item| item.id)
+            .collect::<Vec<_>>();
+        if added.is_empty() {
+            break;
+        }
+        visible_ids.extend(added);
+    }
+
+    items
+        .into_iter()
+        .filter(|item| visible_ids.contains(&item.id))
+        .collect()
 }
 
 pub(crate) async fn create_navigation_group(
@@ -456,6 +508,6 @@ pub(crate) fn collect_navigation_descendants(
 
     result
 }
-mod dto;
+pub(crate) mod dto;
 
-use dto::*;
+pub(crate) use dto::*;

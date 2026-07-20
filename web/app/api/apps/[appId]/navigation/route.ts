@@ -1,61 +1,13 @@
-import { NextResponse } from "next/server";
+import { proxyBackendJson } from "../../../_lib/backend-json-proxy";
 
-const backendBaseUrl =
-  process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8787";
+type Context = { params: Promise<{ appId: string }> };
 
-function buildErrorResponse(message: string, status: number) {
-  return NextResponse.json(
-    {
-      code: status,
-      data: null,
-      message,
-      time: new Date().toISOString(),
-    },
-    { status },
-  );
+export async function GET(request: Request, { params }: Context) {
+  const { appId } = await params;
+  return proxyBackendJson(request, `/api/apps/${encodeURIComponent(appId)}/navigation`);
 }
 
-export async function GET(
-  _request: Request,
-  context: { params: Promise<{ appId: string }> },
-) {
-  const { appId } = await context.params;
-
-  try {
-    const response = await fetch(
-      `${backendBaseUrl}/api/apps/${appId}/navigation`,
-      {
-        cache: "no-store",
-      },
-    );
-    const payload = await response.json();
-
-    return NextResponse.json(payload, { status: response.status });
-  } catch {
-    return buildErrorResponse("backend unavailable", 503);
-  }
-}
-
-export async function PATCH(
-  request: Request,
-  context: { params: Promise<{ appId: string }> },
-) {
-  const { appId } = await context.params;
-
-  try {
-    const body = await request.text();
-    const response = await fetch(`${backendBaseUrl}/api/apps/${appId}/navigation`, {
-      method: "PATCH",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: body || "{}",
-      cache: "no-store",
-    });
-    const payload = await response.json();
-
-    return NextResponse.json(payload, { status: response.status });
-  } catch {
-    return buildErrorResponse("backend unavailable", 503);
-  }
+export async function PATCH(request: Request, { params }: Context) {
+  const { appId } = await params;
+  return proxyBackendJson(request, `/api/apps/${encodeURIComponent(appId)}/navigation`);
 }

@@ -1,3 +1,6 @@
+use axum::extract::{Request, State};
+use axum::middleware::{self, Next};
+use axum::response::Response;
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use serde::Serialize;
@@ -7,7 +10,8 @@ use tower_http::trace::TraceLayer;
 use crate::modules::{
     agent_config, agents, apps, automations, dingtalk, forms, identity, navigation, settings,
 };
-use crate::platform::runtime::AppState;
+use crate::openapi;
+use crate::platform::{authorization, error::AppError, runtime::AppState};
 
 #[derive(Debug, Serialize)]
 struct HealthResponse {
@@ -17,6 +21,7 @@ struct HealthResponse {
 pub(crate) fn build(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(health_check))
+        .route("/openapi.json", get(openapi::openapi_json))
         .route(
             "/api/settings/database",
             get(settings::get_database_settings).put(settings::update_database_settings),
@@ -81,6 +86,14 @@ pub(crate) fn build(state: AppState) -> Router {
                 .put(settings::update_identity_source_settings),
         )
         .route(
+            "/api/internal/identity-source",
+            get(settings::get_internal_identity_source_settings),
+        )
+        .route(
+            "/api/settings/permissions/{role_id}",
+            get(settings::get_role_permissions).put(settings::update_role_permissions),
+        )
+        .route(
             "/api/settings/identity-source/dingtalk/access-token",
             post(dingtalk::refresh_access_token),
         )
@@ -93,11 +106,28 @@ pub(crate) fn build(state: AppState) -> Router {
             post(dingtalk::sync_users),
         )
         .route(
+            "/api/settings/identity-source/dingtalk/clear",
+            post(dingtalk::clear_dingtalk_data),
+        )
+        .route(
             "/api/identity/organization-units",
             get(identity::list_organization_units),
         )
-        .route("/api/identity/users", get(identity::list_users))
-        .route("/api/identity/roles", get(identity::list_roles))
+        .route("/api/identity/users", get(identity::list_users).post(identity::create_local_user))
+        .route("/api/identity/local-login", post(identity::local_login))
+        .route("/api/identity/users/{user_id}", axum::routing::put(identity::update_user).delete(identity::delete_user))
+        .route(
+            "/api/identity/dingtalk/session",
+            post(identity::resolve_dingtalk_login),
+        )
+        .route(
+            "/api/identity/roles",
+            get(identity::list_roles).post(identity::create_local_role),
+        )
+        .route(
+            "/api/identity/roles/{role_id}",
+            axum::routing::put(identity::update_local_role).delete(identity::delete_local_role),
+        )
         .route(
             "/api/agent/sessions",
             get(agents::list_agent_sessions).post(agents::create_agent_session),
@@ -122,6 +152,10 @@ pub(crate) fn build(state: AppState) -> Router {
         .route(
             "/api/apps/{app_id}/forms",
             get(forms::list_forms).post(forms::create_form),
+        )
+        .route(
+            "/api/apps/{app_id}/field-outline",
+            get(forms::get_app_field_outline),
         )
         .route(
             "/api/apps/{app_id}/automations",
@@ -154,6 +188,8 @@ pub(crate) fn build(state: AppState) -> Router {
             post(automations::retry_automation_flow_run_node),
         )
         .route("/api/forms/{form_uuid}/schema", get(forms::get_form_schema))
+        .route("/api/forms/{form_uuid}/views", get(forms::list_form_views).post(forms::create_form_view))
+        .route("/api/forms/{form_uuid}/views/{view_uuid}", axum::routing::put(forms::update_form_view).delete(forms::delete_form_view))
         .route(
             "/api/forms/{form_uuid}/records",
             get(forms::list_form_records).post(forms::create_form_record),
@@ -186,7 +222,8 @@ pub(crate) fn build(state: AppState) -> Router {
             "/api/forms/{form_uuid}",
             get(forms::get_form).delete(forms::delete_form),
         )
-        .with_state(state)
+        .with_state(state.clone())
+        .layer(middleware::from_fn_with_state(state, require_authenticated))
         .layer(TraceLayer::new_for_http())
         .layer(
             CorsLayer::new()
@@ -194,6 +231,28 @@ pub(crate) fn build(state: AppState) -> Router {
                 .allow_methods(Any)
                 .allow_headers(Any),
         )
+}
+
+async fn require_authenticated(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Result<Response, AppError> {
+    match (request.method(), request.uri().path()) {
+        (_, "/healthz")
+        | (_, "/openapi.json")
+        | (_, "/api/identity/local-login")
+        | (_, "/api/identity/dingtalk/session")
+        | (_, "/api/internal/identity-source") => {}
+        _ => authorization::authorize_request(
+            request.headers(),
+            &state,
+            request.method(),
+            request.uri().path(),
+        )
+        .await?,
+    }
+    Ok(next.run(request).await)
 }
 
 async fn health_check() -> Json<HealthResponse> {

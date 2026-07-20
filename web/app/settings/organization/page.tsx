@@ -14,6 +14,7 @@ type OrganizationUnit = {
   memberCount: number;
 };
 type OrganizationNode = OrganizationUnit & { children: OrganizationNode[] };
+type OrganizationSourceTree = { sourceType: string; roots: OrganizationNode[] };
 
 export default function OrganizationSettingsPage() {
   const [units, setUnits] = useState<OrganizationUnit[]>([]);
@@ -31,7 +32,7 @@ export default function OrganizationSettingsPage() {
       const payload = (await response.json()) as ApiEnvelope<OrganizationUnit[]>;
       if (!response.ok || payload.code !== 0 || !payload.data) throw new Error(payload.message || "无法加载组织架构");
       setUnits(payload.data);
-      setExpanded(new Set(payload.data.map((unit) => unit.id)));
+      setExpanded(new Set());
       setSelectedId((current) => current && payload.data!.some((unit) => unit.id === current) ? current : payload.data![0]?.id || null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法加载组织架构");
@@ -76,18 +77,33 @@ export default function OrganizationSettingsPage() {
       <div className="relative min-h-0 flex-1">
         <div className="absolute inset-0 flex overflow-hidden">
           <div className="settings-scroll-area h-full min-h-0 min-w-0 flex-1 overflow-y-scroll border-r border-[var(--color-border)] p-3 overscroll-contain">
-            {tree.map((node) => (
-              <TreeNode
-                key={node.id}
-                node={node}
-                depth={0}
-                expanded={expanded}
-                selectedId={selectedId}
-                query={normalizedQuery}
-                onToggle={toggleNode}
-                onSelect={setSelectedId}
-              />
-            ))}
+            <div className="space-y-3">
+              {tree.map((source) => (
+                <section key={source.sourceType} className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-control-soft)]">
+                  <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <SourceTag source={source.sourceType} />
+                      <span className="text-sm font-semibold text-[var(--color-text-primary)]">{sourceLabel(source.sourceType)}组织架构</span>
+                    </div>
+                    <span className="text-xs text-[var(--color-text-secondary)]">{countNodes(source.roots)} 个节点</span>
+                  </div>
+                  <div className="p-2">
+                    {source.roots.map((node) => (
+                      <TreeNode
+                        key={node.id}
+                        node={node}
+                        depth={0}
+                        expanded={expanded}
+                        selectedId={selectedId}
+                        query={normalizedQuery}
+                        onToggle={toggleNode}
+                        onSelect={setSelectedId}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
             {!loading && tree.length === 0 ? <div className="flex min-h-64 items-center justify-center text-sm text-[var(--color-text-secondary)]">暂无组织数据，请先在身份源设置中执行同步。</div> : null}
           </div>
 
@@ -141,20 +157,38 @@ function TreeNode({ node, depth, expanded, selectedId, query, onToggle, onSelect
   );
 }
 
-function buildOrganizationTree(units: OrganizationUnit[]): OrganizationNode[] {
+function buildOrganizationTree(units: OrganizationUnit[]): OrganizationSourceTree[] {
   const nodeMap = new Map(units.map((unit) => [`${unit.sourceType}:${unit.externalId}`, { ...unit, children: [] as OrganizationNode[] }]));
-  const roots: OrganizationNode[] = [];
+  const rootsBySource = new Map<string, OrganizationNode[]>();
   nodeMap.forEach((node) => {
     const parent = node.parentExternalId ? nodeMap.get(`${node.sourceType}:${node.parentExternalId}`) : null;
-    if (parent) parent.children.push(node); else roots.push(node);
+    if (parent) {
+      parent.children.push(node);
+    } else {
+      const roots = rootsBySource.get(node.sourceType) ?? [];
+      roots.push(node);
+      rootsBySource.set(node.sourceType, roots);
+    }
   });
   const sort = (nodes: OrganizationNode[]) => nodes.sort((a, b) => a.name.localeCompare(b.name, "zh-CN")).forEach((node) => sort(node.children));
-  sort(roots);
-  return roots;
+  return [...rootsBySource.entries()]
+    .map(([sourceType, roots]) => {
+      sort(roots);
+      return { sourceType, roots };
+    })
+    .sort((a, b) => sourceLabel(a.sourceType).localeCompare(sourceLabel(b.sourceType), "zh-CN"));
 }
 
 function treeMatches(node: OrganizationNode, query: string): boolean {
   return !query || node.name.toLocaleLowerCase("zh-CN").includes(query) || node.children.some((child) => treeMatches(child, query));
+}
+
+function countNodes(nodes: OrganizationNode[]): number {
+  return nodes.reduce((total, node) => total + 1 + countNodes(node.children), 0);
+}
+
+function sourceLabel(source: string): string {
+  return source === "dingtalk" ? "钉钉" : "平台";
 }
 
 function SourceTag({ source }: { source: string }) { return source === "dingtalk" ? <span className="shrink-0 rounded-full bg-[#eaf2ff] px-2 py-0.5 text-[10px] font-semibold text-[#1677ff]">钉钉</span> : <span className="shrink-0 rounded-full bg-[var(--color-primary-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-primary)]">平台</span>; }

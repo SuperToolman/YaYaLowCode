@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useRef, useState, type FormEvent } from "react";
 import { Button, Card, Input } from "@heroui/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "../components/auth-provider";
 import { CompactThemeSwitcher } from "../components/theme-switcher-menu";
 
@@ -17,8 +17,16 @@ type LoginResponse = {
   };
 };
 
+const REMEMBERED_CREDENTIALS_KEY = "yaya-remembered-credentials";
+type RememberedCredentials = { username: string; password: string; autoLogin: boolean };
+
 export default function LoginPage() {
+  return <Suspense fallback={null}><LoginScreen /></Suspense>;
+}
+
+function LoginScreen() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { completeLogin, isAuthenticated, isReady } = useAuth();
   const [mode, setMode] = useState<LoginMode>("password");
   const [username, setUsername] = useState("");
@@ -26,10 +34,53 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [rememberPassword, setRememberPassword] = useState(false);
+  const [autoLogin, setAutoLogin] = useState(false);
+  const autoLoginAttempted = useRef(false);
+  const dingtalkError = searchParams.get("dingtalkError") ?? "";
+  const activeMode: LoginMode = dingtalkError ? "dingtalk" : mode;
+  const visibleError = dingtalkError || error;
+
+  async function login(nextUsername: string, nextPassword: string, shouldRememberPassword: boolean, shouldAutoLogin: boolean) {
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: nextUsername, password: nextPassword }),
+    });
+    const payload = (await response.json()) as LoginResponse;
+    if (!response.ok || payload.code !== 0 || !payload.data) {
+      throw new Error(payload.message || "登录失败，请稍后重试");
+    }
+    saveRememberedCredentials(nextUsername, nextPassword, shouldRememberPassword, shouldAutoLogin);
+    completeLogin(payload.data.token, payload.data.user);
+    router.replace(getSafeRedirect());
+  }
 
   useEffect(() => {
     if (isReady && isAuthenticated) router.replace(getSafeRedirect());
   }, [isAuthenticated, isReady, router]);
+
+  useEffect(() => {
+    if (isAuthenticated || searchParams.get("dingtalkComplete") !== "1") return;
+    void fetch("/api/auth/session", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = (await response.json()) as LoginResponse;
+        if (!response.ok || payload.code !== 0 || !payload.data) throw new Error(payload.message || "无法恢复钉钉登录会话");
+        completeLogin(payload.data.token, payload.data.user);
+        router.replace(getSafeRedirect());
+      })
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "无法恢复钉钉登录会话"));
+  }, [completeLogin, isAuthenticated, router, searchParams]);
+
+  useEffect(() => {
+    if (isAuthenticated || autoLoginAttempted.current || searchParams.get("dingtalkComplete") === "1" || dingtalkError) return;
+    autoLoginAttempted.current = true;
+    const remembered = readRememberedCredentials();
+    if (!remembered?.autoLogin) return;
+    void login(remembered.username, remembered.password, true, true);
+  // The login function intentionally reads the latest credentials from this effect invocation.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dingtalkError, isAuthenticated, searchParams]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -38,18 +89,7 @@ export default function LoginPage() {
     setSubmitting(true);
     setError("");
     try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-      const payload = (await response.json()) as LoginResponse;
-      if (!response.ok || payload.code !== 0 || !payload.data) {
-        throw new Error(payload.message || "登录失败，请稍后重试");
-      }
-
-      completeLogin(payload.data.token, payload.data.user);
-      router.replace(getSafeRedirect());
+      await login(username, password, rememberPassword, autoLogin);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "登录失败，请稍后重试");
     } finally {
@@ -106,11 +146,11 @@ export default function LoginPage() {
               </div>
 
               <div className="mt-7 grid grid-cols-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-1" aria-label="登录方式">
-                <ModeButton active={mode === "password"} onPress={() => { setMode("password"); setError(""); }}>账号密码</ModeButton>
-                <ModeButton active={mode === "dingtalk"} onPress={() => { setMode("dingtalk"); setError(""); }}>钉钉扫码</ModeButton>
+                <ModeButton active={activeMode === "password"} onPress={() => { setMode("password"); setError(""); if (dingtalkError) router.replace("/login"); }}>账号密码</ModeButton>
+                <ModeButton active={activeMode === "dingtalk"} onPress={() => { setMode("dingtalk"); setError(""); }}>钉钉扫码</ModeButton>
               </div>
 
-              {mode === "password" ? (
+              {activeMode === "password" ? (
                 <form className="mt-6 space-y-5" onSubmit={handleSubmit}>
                   <label className="block">
                     <span className="mb-2 block text-sm font-medium text-[var(--color-text-primary)]">账号</span>
@@ -146,9 +186,9 @@ export default function LoginPage() {
                     </div>
                   </label>
 
-                  {error ? (
+                  {visibleError ? (
                     <p role="alert" className="rounded-xl border border-[var(--color-danger)]/30 bg-[var(--color-danger-soft)] px-3 py-2.5 text-sm text-[var(--color-danger)]">
-                      {error}
+                      {visibleError}
                     </p>
                   ) : null}
 
@@ -161,6 +201,30 @@ export default function LoginPage() {
                   >
                     {submitting ? "正在登录…" : "登录"}
                   </Button>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--color-text-secondary)]">
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={rememberPassword}
+                        onChange={(event) => {
+                          const checked = event.currentTarget.checked;
+                          setRememberPassword(checked);
+                          if (!checked) setAutoLogin(false);
+                        }}
+                      />
+                      记住密码
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={autoLogin}
+                        disabled={!rememberPassword}
+                        onChange={(event) => setAutoLogin(event.currentTarget.checked)}
+                      />
+                      自动登录
+                    </label>
+                  </div>
 
                   {process.env.NODE_ENV !== "production" ? (
                     <p className="text-center text-xs text-[var(--color-text-disabled)]">
@@ -175,9 +239,23 @@ export default function LoginPage() {
                   </div>
                   <h3 className="mt-5 text-base font-semibold text-[var(--color-text-primary)]">钉钉扫码登录</h3>
                   <p className="mt-2 max-w-xs text-sm leading-6 text-[var(--color-text-secondary)]">
-                    OAuth 回调接入后将在此生成动态二维码，当前不会创建模拟登录状态。
+                    将跳转至钉钉完成扫码授权，并安全返回本平台。
                   </p>
-                  <span className="mt-4 rounded-full bg-[var(--color-warning-soft)] px-3 py-1 text-xs font-medium text-[var(--color-warning)]">等待钉钉 OAuth 配置</span>
+                  {visibleError ? (
+                    <p role="alert" className="mt-4 max-w-xs rounded-xl border border-[var(--color-danger)]/30 bg-[var(--color-danger-soft)] px-3 py-2.5 text-sm text-[var(--color-danger)]">
+                      {visibleError}
+                    </p>
+                  ) : null}
+                  <Button
+                    variant="primary"
+                    className="mt-5"
+                    onPress={() => {
+                      const redirect = getSafeRedirect();
+                      window.location.assign(`/api/auth/dingtalk?redirect=${encodeURIComponent(redirect)}`);
+                    }}
+                  >
+                    使用钉钉扫码
+                  </Button>
                 </div>
               )}
             </Card>
@@ -194,6 +272,31 @@ function getSafeRedirect() {
   if (typeof window === "undefined") return "/";
   const redirect = new URLSearchParams(window.location.search).get("redirect");
   return redirect && redirect.startsWith("/") && !redirect.startsWith("//") && !redirect.startsWith("/login") ? redirect : "/";
+}
+
+function readRememberedCredentials(): RememberedCredentials | null {
+  try {
+    const value = window.localStorage.getItem(REMEMBERED_CREDENTIALS_KEY);
+    if (!value) return null;
+    const parsed = JSON.parse(value) as Partial<RememberedCredentials>;
+    return typeof parsed.username === "string" && typeof parsed.password === "string" && typeof parsed.autoLogin === "boolean"
+      ? { username: parsed.username, password: parsed.password, autoLogin: parsed.autoLogin }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveRememberedCredentials(username: string, password: string, rememberPassword: boolean, autoLogin: boolean) {
+  try {
+    if (!rememberPassword) {
+      window.localStorage.removeItem(REMEMBERED_CREDENTIALS_KEY);
+      return;
+    }
+    window.localStorage.setItem(REMEMBERED_CREDENTIALS_KEY, JSON.stringify({ username, password, autoLogin }));
+  } catch {
+    // Storage can be unavailable in privacy-restricted browser contexts.
+  }
 }
 
 function Brand() {

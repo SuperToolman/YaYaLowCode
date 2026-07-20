@@ -1735,12 +1735,12 @@ fn flow_matches_changed_fields(
         _ => true,
     }
 }
-mod dto;
+pub(crate) mod dto;
 mod expression;
 mod graph;
 mod runtime;
 
-use dto::*;
+pub(crate) use dto::*;
 use expression::*;
 use graph::*;
 use runtime::AutomationExecutionContext;

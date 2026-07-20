@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button, Input, Switch, Tabs } from "@heroui/react";
+import { Button, Input, Modal, Switch, Tabs } from "@heroui/react";
 import { Field } from "../_components/field";
 
 type ProviderTab = "local" | "dingtalk" | "wecom" | "feishu";
@@ -20,14 +20,10 @@ type DingTalkSettings = {
   allowJitProvisioning: boolean;
 };
 type IdentitySourceSettings = {
-  activeProvider: "local" | "dingtalk";
-  localAdminLoginEnabled: boolean;
   dingtalk: DingTalkSettings;
 };
 
 const defaultSettings: IdentitySourceSettings = {
-  activeProvider: "local",
-  localAdminLoginEnabled: true,
   dingtalk: {
     appId: "",
     agentId: "",
@@ -56,8 +52,9 @@ export default function IdentitySourceSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [fetchingToken, setFetchingToken] = useState(false);
-  const [syncingDepartments, setSyncingDepartments] = useState(false);
-  const [syncingUsers, setSyncingUsers] = useState(false);
+  const [syncingDingTalk, setSyncingDingTalk] = useState(false);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [clearingDingTalk, setClearingDingTalk] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -79,7 +76,6 @@ export default function IdentitySourceSettingsPage() {
           throw new Error(payload.message || "无法加载身份源配置");
         }
         setForm(payload.data);
-        setActiveTab(payload.data.activeProvider);
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : "无法加载身份源配置");
       } finally {
@@ -127,52 +123,6 @@ export default function IdentitySourceSettingsPage() {
     }
   }
 
-  async function activateProvider(provider: "local" | "dingtalk") {
-    const nextSettings = { ...form, activeProvider: provider };
-    setSaving(true);
-    setMessage("");
-    setError("");
-    if (provider === "dingtalk") {
-      setSyncingDepartments(true);
-      setSyncingUsers(true);
-    }
-    try {
-      const saveResponse = await fetch("/api/settings/identity-source", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(nextSettings),
-      });
-      const saved = (await saveResponse.json()) as ApiEnvelope<IdentitySourceSettings>;
-      if (!saveResponse.ok || saved.code !== 0 || !saved.data) {
-        throw new Error(saved.message || "设置当前身份源失败");
-      }
-      setForm(saved.data);
-
-      if (provider === "local") {
-        setMessage("平台账号已设置为当前身份源。");
-        return;
-      }
-
-      const departmentResponse = await fetch("/api/settings/identity-source/dingtalk/sync-departments", { method: "POST" });
-      const departments = (await departmentResponse.json()) as ApiEnvelope<{ total: number }>;
-      if (!departmentResponse.ok || departments.code !== 0 || !departments.data) {
-        throw new Error(departments.message || "同步钉钉组织架构失败");
-      }
-      const userResponse = await fetch("/api/settings/identity-source/dingtalk/sync-users", { method: "POST" });
-      const users = (await userResponse.json()) as ApiEnvelope<{ total: number; roles: number; avatars: number }>;
-      if (!userResponse.ok || users.code !== 0 || !users.data) {
-        throw new Error(users.message || "同步钉钉用户失败");
-      }
-      setMessage(`钉钉已设置为当前身份源，并同步 ${departments.data.total} 个部门、${users.data.total} 名用户、${users.data.roles} 个角色和 ${users.data.avatars} 个头像。`);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "设置当前身份源失败");
-    } finally {
-      setSaving(false);
-      setSyncingDepartments(false);
-      setSyncingUsers(false);
-    }
-  }
-
   async function fetchAccessToken() {
     setFetchingToken(true);
     setMessage("");
@@ -207,45 +157,30 @@ export default function IdentitySourceSettingsPage() {
     }
   }
 
-  async function syncDepartments() {
-    setSyncingDepartments(true);
+  async function syncDingTalk() {
+    setSyncingDingTalk(true);
     setMessage("");
     setError("");
     try {
       const saved = await saveSettings();
       if (!saved) return;
-      const response = await fetch("/api/settings/identity-source/dingtalk/sync-departments", {
+      const departmentResponse = await fetch("/api/settings/identity-source/dingtalk/sync-departments", {
         method: "POST",
       });
-      const payload = (await response.json()) as ApiEnvelope<{
+      const departmentPayload = (await departmentResponse.json()) as ApiEnvelope<{
         total: number;
         created: number;
         updated: number;
         disabled: number;
         synchronizedAt: string;
       }>;
-      if (!response.ok || payload.code !== 0 || !payload.data) {
-        throw new Error(payload.message || "同步钉钉组织架构失败");
+      if (!departmentResponse.ok || departmentPayload.code !== 0 || !departmentPayload.data) {
+        throw new Error(departmentPayload.message || "同步钉钉组织架构失败");
       }
-      setMessage(`组织架构同步完成：共 ${payload.data.total} 个部门，新增 ${payload.data.created} 个，更新 ${payload.data.updated} 个，停用 ${payload.data.disabled} 个。`);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "同步钉钉组织架构失败");
-    } finally {
-      setSyncingDepartments(false);
-    }
-  }
-
-  async function syncUsers() {
-    setSyncingUsers(true);
-    setMessage("");
-    setError("");
-    try {
-      const saved = await saveSettings();
-      if (!saved) return;
-      const response = await fetch("/api/settings/identity-source/dingtalk/sync-users", {
+      const userResponse = await fetch("/api/settings/identity-source/dingtalk/sync-users", {
         method: "POST",
       });
-      const payload = (await response.json()) as ApiEnvelope<{
+      const userPayload = (await userResponse.json()) as ApiEnvelope<{
         total: number;
         created: number;
         updated: number;
@@ -256,14 +191,38 @@ export default function IdentitySourceSettingsPage() {
         roleBindings: number;
         synchronizedAt: string;
       }>;
-      if (!response.ok || payload.code !== 0 || !payload.data) {
-        throw new Error(payload.message || "同步钉钉用户失败");
+      if (!userResponse.ok || userPayload.code !== 0 || !userPayload.data) {
+        throw new Error(userPayload.message || "同步钉钉用户失败");
       }
-      setMessage(`用户同步完成：共 ${payload.data.total} 人，新增 ${payload.data.created} 人，更新 ${payload.data.updated} 人，停用 ${payload.data.disabled} 人，头像 ${payload.data.avatars} 个，部门关系 ${payload.data.memberships} 条，角色 ${payload.data.roles} 个。`);
+      setMessage(`钉钉同步完成：部门 ${departmentPayload.data.total} 个（新增 ${departmentPayload.data.created} 个，更新 ${departmentPayload.data.updated} 个），用户 ${userPayload.data.total} 人（新增 ${userPayload.data.created} 人，更新 ${userPayload.data.updated} 人），角色 ${userPayload.data.roles} 个。`);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "同步钉钉用户失败");
+      setError(reason instanceof Error ? reason.message : "同步钉钉数据失败");
     } finally {
-      setSyncingUsers(false);
+      setSyncingDingTalk(false);
+    }
+  }
+
+  async function clearDingTalkData() {
+    setClearingDingTalk(true);
+    setMessage("");
+    setError("");
+    try {
+      const response = await fetch("/api/settings/identity-source/dingtalk/clear", { method: "POST" });
+      const payload = (await response.json()) as ApiEnvelope<{
+        deletedUsers: number;
+        deletedRoles: number;
+        deletedOrganizationUnits: number;
+        deletedRolePermissions: number;
+      }>;
+      if (!response.ok || payload.code !== 0 || !payload.data) {
+        throw new Error(payload.message || "清除钉钉数据失败");
+      }
+      setClearConfirmOpen(false);
+      setMessage(`已清除钉钉数据：${payload.data.deletedOrganizationUnits} 个组织、${payload.data.deletedUsers} 个用户、${payload.data.deletedRoles} 个角色，以及 ${payload.data.deletedRolePermissions} 项角色权限配置。`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "清除钉钉数据失败");
+    } finally {
+      setClearingDingTalk(false);
     }
   }
 
@@ -276,16 +235,11 @@ export default function IdentitySourceSettingsPage() {
         className="flex h-full min-h-0 flex-col"
       >
         <div className="shrink-0 border-b border-[var(--color-border)] px-6 pt-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">身份源设置</h2>
               <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--color-text-secondary)]">
                 配置平台账号或第三方组织身份源。所有配置由后端保存，修改后立即生效。
               </p>
-            </div>
-            <span className="rounded-full bg-[var(--color-success-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--color-success)]">
-              当前：{form.activeProvider === "dingtalk" ? "钉钉" : "平台账号"}
-            </span>
           </div>
 
           <Tabs.ListContainer className="mt-5 overflow-x-auto">
@@ -304,44 +258,21 @@ export default function IdentitySourceSettingsPage() {
           <Tabs.Panel id="local" className="outline-none">
             <div className="space-y-5">
               <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-control-soft)] p-5">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <div className="text-base font-semibold text-[var(--color-text-primary)]">平台用户体系</div>
-                    <p className="mt-1 max-w-xl text-sm leading-6 text-[var(--color-text-secondary)]">用户由管理员创建，组织和角色均在平台内维护，不提供公开注册入口。</p>
-                  </div>
-                  <Button
-                    variant={form.activeProvider === "local" ? "secondary" : "primary"}
-                    isDisabled={loading || saving || form.activeProvider === "local"}
-                    onPress={() => void activateProvider("local")}
-                  >
-                    {form.activeProvider === "local" ? "当前身份源" : "设为当前身份源"}
-                  </Button>
+                <div>
+                  <div className="text-base font-semibold text-[var(--color-text-primary)]">平台用户体系</div>
+                  <p className="mt-1 max-w-xl text-sm leading-6 text-[var(--color-text-secondary)]">用户由管理员创建，组织和角色均在平台内维护，不提供公开注册入口。平台账号与已配置的第三方身份源可以同时登录。</p>
                 </div>
               </div>
-              <ToggleRow
-                label="允许本地管理员登录"
-                description="建议始终保留一个本地超级管理员账号，用于第三方身份源不可用时的紧急访问。"
-                checked={form.localAdminLoginEnabled}
-                disabled={loading || saving}
-                onChange={(checked) => setForm((current) => ({ ...current, localAdminLoginEnabled: checked }))}
-              />
             </div>
           </Tabs.Panel>
 
           <Tabs.Panel id="dingtalk" className="outline-none">
             <div className="space-y-6">
-              <div className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-control-soft)] p-4">
+              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-control-soft)] p-4">
                 <div>
                   <div className="text-sm font-semibold text-[var(--color-text-primary)]">钉钉组织身份源</div>
-                  <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">启用后，用户和部门由钉钉同步，平台继续负责角色映射与权限计算。</p>
+                  <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">配置凭据后，钉钉账号可与平台账号同时登录；用户和部门由钉钉同步，平台继续负责角色映射与权限计算。</p>
                 </div>
-                <Button
-                  variant={form.activeProvider === "dingtalk" ? "secondary" : "primary"}
-                  isDisabled={loading || saving || form.activeProvider === "dingtalk" || !canFetchAccessToken}
-                  onPress={() => void activateProvider("dingtalk")}
-                >
-                  {form.activeProvider === "dingtalk" ? "当前身份源" : "设为当前身份源"}
-                </Button>
               </div>
 
               <div>
@@ -368,17 +299,17 @@ export default function IdentitySourceSettingsPage() {
                   <div className="flex flex-wrap gap-2">
                     <Button
                       variant="secondary"
-                      isDisabled={loading || saving || syncingDepartments || syncingUsers || !canFetchAccessToken}
-                      onPress={() => void syncDepartments()}
+                      isDisabled={loading || saving || syncingDingTalk || clearingDingTalk || !canFetchAccessToken}
+                      onPress={() => void syncDingTalk()}
                     >
-                      {syncingDepartments ? "正在同步…" : "同步组织架构"}
+                      {syncingDingTalk ? "正在同步…" : "同步组织与用户"}
                     </Button>
                     <Button
-                      variant="secondary"
-                      isDisabled={loading || saving || syncingDepartments || syncingUsers || !canFetchAccessToken}
-                      onPress={() => void syncUsers()}
+                      className="bg-[var(--color-danger)] text-white"
+                      isDisabled={loading || saving || syncingDingTalk || clearingDingTalk}
+                      onPress={() => setClearConfirmOpen(true)}
                     >
-                      {syncingUsers ? "正在同步…" : "同步用户"}
+                      清除钉钉数据
                     </Button>
                   </div>
                 </div>
@@ -426,6 +357,34 @@ export default function IdentitySourceSettingsPage() {
           </Button>
         </div>
       </Tabs>
+      <Modal
+        isOpen={clearConfirmOpen}
+        onOpenChange={(open) => !clearingDingTalk && setClearConfirmOpen(open)}
+      >
+        <Modal.Backdrop className="theme-modal-backdrop" isDismissable={!clearingDingTalk}>
+          <Modal.Container placement="center" size="sm">
+            <Modal.Dialog className="rounded-2xl bg-[var(--color-bg-surface)]">
+              <Modal.Header>
+                <Modal.Heading>清除钉钉同步数据</Modal.Heading>
+                <Modal.CloseTrigger aria-label="关闭" isDisabled={clearingDingTalk} />
+              </Modal.Header>
+              <Modal.Body>
+                <p className="text-sm leading-6 text-[var(--color-text-secondary)]">
+                  确认清除所有钉钉来源的组织架构、用户、角色及角色权限配置吗？此操作不可恢复，不会删除钉钉应用凭据。
+                </p>
+              </Modal.Body>
+              <Modal.Footer>
+                <Button variant="ghost" isDisabled={clearingDingTalk} onPress={() => setClearConfirmOpen(false)}>
+                  取消
+                </Button>
+                <Button className="bg-[var(--color-danger)] text-white" isDisabled={clearingDingTalk} onPress={() => void clearDingTalkData()}>
+                  {clearingDingTalk ? "正在清除…" : "确认清除"}
+                </Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
     </section>
   );
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { backendAuthorizationHeaders, proxyBackendJson } from "../../_lib/backend-json-proxy";
 
 const backendBaseUrl =
   process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8787";
@@ -16,13 +17,14 @@ function buildErrorResponse(message: string, status: number) {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ appId: string }> },
 ) {
   const { appId } = await context.params;
 
   try {
     const response = await fetch(`${backendBaseUrl}/api/apps`, {
+      headers: backendAuthorizationHeaders(request),
       cache: "no-store",
     });
     const payload = (await response.json()) as {
@@ -52,40 +54,13 @@ export async function PATCH(
   context: { params: Promise<{ appId: string }> },
 ) {
   const { appId } = await context.params;
-
-  try {
-    const body = await request.text();
-    const response = await fetch(`${backendBaseUrl}/api/apps/${appId}`, {
-      method: "PATCH",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: body || "{}",
-      cache: "no-store",
-    });
-    const payload = await response.json();
-
-    return NextResponse.json(payload, { status: response.status });
-  } catch {
-    return buildErrorResponse("backend unavailable", 503);
-  }
+  return proxyBackendJson(request, `/api/apps/${encodeURIComponent(appId)}`);
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ appId: string }> },
 ) {
   const { appId } = await context.params;
-
-  try {
-    const response = await fetch(`${backendBaseUrl}/api/apps/${appId}`, {
-      method: "DELETE",
-      cache: "no-store",
-    });
-    const payload = await response.json();
-
-    return NextResponse.json(payload, { status: response.status });
-  } catch {
-    return buildErrorResponse("backend unavailable", 503);
-  }
+  return proxyBackendJson(request, `/api/apps/${encodeURIComponent(appId)}`);
 }

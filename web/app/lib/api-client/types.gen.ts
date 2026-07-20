@@ -4,6 +4,1353 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type AccessTokenResponse = {
+    accessToken: string;
+    expiresAt: string;
+    expiresIn: number;
+};
+
+export type AgentConfigProfile = {
+    chatModel: string;
+    contextCompressionPrompt?: string;
+    contextCompressionProviderId?: string | null;
+    contextDiscardTurns?: number;
+    contextKeepRecentRatio?: number;
+    contextMaxTurns?: number;
+    contextOverflowStrategy?: string;
+    embeddingModel: string;
+    id: string;
+    imageCaptionModel?: string;
+    knowledgeBaseIds?: Array<string>;
+    maxContextTokens?: number;
+    maxRetries?: number;
+    maxSteps: number;
+    name: string;
+    personaId?: string;
+    pluginIds?: Array<string>;
+    providerId: string;
+    skillIds?: Array<string>;
+    temperature: number;
+    webSearchEnabled?: boolean;
+};
+
+export type AgentDefinition = {
+    description?: string;
+    enabled: boolean;
+    id: string;
+    isDefault: boolean;
+    knowledgeBaseIds?: Array<string>;
+    name: string;
+    pluginIds?: Array<string>;
+    profileId: string;
+    scopeRefId?: string | null;
+    scopeType: string;
+    skillIds?: Array<string>;
+    systemPrompt: string;
+};
+
+export type AgentKnowledgeBaseDefinition = {
+    description?: string;
+    enabled: boolean;
+    id: string;
+    name: string;
+    retrievalMode: string;
+    sourceIds?: Array<string>;
+};
+
+export type AgentPageContext = {
+    appId?: string | null;
+    automationId?: string | null;
+    businessId?: string | null;
+    formDraftAssist?: boolean | null;
+    formUuid?: string | null;
+    route?: string | null;
+};
+
+export type AgentPluginDefinition = {
+    description?: string;
+    enabled: boolean;
+    entrypoint?: string;
+    id: string;
+    name: string;
+    requiresConfirmation: boolean;
+    version: string;
+};
+
+export type AgentRequest = {
+    description: string;
+    enabled: boolean;
+    isDefault: boolean;
+    knowledgeBaseIds: Array<string>;
+    name: string;
+    pluginIds: Array<string>;
+    profileId: string;
+    scopeRefId?: string | null;
+    scopeType: string;
+    skillIds: Array<string>;
+    systemPrompt: string;
+};
+
+export type AgentSkillDefinition = {
+    allowedTools?: Array<string>;
+    description?: string;
+    enabled: boolean;
+    id: string;
+    name: string;
+    requiresConfirmation: boolean;
+};
+
+export type ApiAgentMessage = {
+    content: string;
+    createdAt: string;
+    id: string;
+    metadata: unknown;
+    role: string;
+};
+
+export type ApiAgentSession = {
+    agentId: string;
+    appId?: string | null;
+    context: unknown;
+    createdAt: string;
+    id: string;
+    status: string;
+    title: string;
+    updatedAt: string;
+};
+
+export type ApiApp = {
+    badge?: string | null;
+    color: string;
+    createdAt: string;
+    desc: string;
+    icon: string;
+    id: string;
+    name: string;
+    owner: string;
+    records: number;
+    status: string;
+};
+
+export type ApiAppFieldOutline = {
+    appId: string;
+    appName: string;
+    forms: Array<ApiFieldOutlineForm>;
+};
+
+export type ApiAutomationFlow = {
+    appId: string;
+    createdAt: string;
+    createdBy: string;
+    currentVersion: number;
+    description?: string | null;
+    id: string;
+    name: string;
+    nodesCount: number;
+    status: string;
+    triggerEvent: string;
+    triggerFormUuid?: string | null;
+    triggerLabel: string;
+    updatedAt: string;
+    updatedBy: string;
+};
+
+export type ApiAutomationFlowDetail = {
+    appId: string;
+    createdAt: string;
+    createdBy: string;
+    currentVersion: number;
+    description?: string | null;
+    edges: unknown;
+    id: string;
+    name: string;
+    nodes: unknown;
+    nodesCount: number;
+    status: string;
+    triggerConfig: unknown;
+    triggerEvent: string;
+    triggerFormUuid?: string | null;
+    triggerLabel: string;
+    updatedAt: string;
+    updatedBy: string;
+};
+
+export type ApiAutomationFlowList = {
+    draft: number;
+    enabled: number;
+    items: Array<ApiAutomationFlow>;
+    paused: number;
+    total: number;
+};
+
+export type ApiAutomationFlowVersionSummary = {
+    changeSummary?: string | null;
+    createdAt: string;
+    createdBy: string;
+    name: string;
+    status: string;
+    version: number;
+};
+
+export type ApiAutomationRun = {
+    durationMs?: number | null;
+    errorMessage?: string | null;
+    finishedAt?: string | null;
+    flowVersion: number;
+    id: string;
+    nodes: Array<ApiAutomationRunNode>;
+    retryNodeKey?: string | null;
+    retryRunUuid?: string | null;
+    retrySource?: string | null;
+    startedAt: string;
+    status: string;
+    triggerEvent: string;
+    triggerPayload: unknown;
+};
+
+export type ApiAutomationRunNode = {
+    durationMs?: number | null;
+    errorMessage?: string | null;
+    finishedAt?: string | null;
+    id: string;
+    input: unknown;
+    nodeKey: string;
+    nodeKind: string;
+    nodeLabel: string;
+    output?: unknown;
+    startedAt: string;
+    status: string;
+};
+
+export type ApiFieldOutlineField = {
+    componentType: string;
+    id: string;
+    label: string;
+    parentGroupId?: string | null;
+};
+
+export type ApiFieldOutlineForm = {
+    compiledSchemaVersion?: number | null;
+    fields: Array<ApiFieldOutlineField>;
+    formUuid: string;
+    name: string;
+    physicalTable?: string | null;
+    schemaVersion: number;
+    status: string;
+};
+
+export type ApiFormRecord = {
+    createdAt: string;
+    createdBy: string;
+    data: unknown;
+    formUuid: string;
+    id: string;
+    schemaVersion: number;
+    updatedAt: string;
+    updatedBy: string;
+};
+
+export type ApiFormRecordList = {
+    items: Array<ApiFormRecord>;
+    page: number;
+    pageSize: number;
+    total: number;
+};
+
+export type ApiFormSummary = {
+    category: string;
+    count?: number | null;
+    createdAt: string;
+    id: string;
+    latestSchemaVersion: number;
+    name: string;
+    status: string;
+};
+
+export type ApiFormVersionSummary = {
+    changeLog?: string | null;
+    createdAt: string;
+    isCurrentDraft: boolean;
+    isCurrentPublished: boolean;
+    published: boolean;
+    version: number;
+};
+
+export type ApiNavigationItem = {
+    id: string;
+    isDefaultEntry: boolean;
+    itemType: string;
+    parentId?: string | null;
+    pathSlug: string;
+    sortOrder: number;
+    targetFormUuid?: string | null;
+    title: string;
+    visibilityRule?: string | null;
+};
+
+export type ApiResponseAccessTokenResponse = {
+    code: number;
+    data?: {
+        accessToken: string;
+        expiresAt: string;
+        expiresIn: number;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseAgentConfigProfile = {
+    code: number;
+    data?: {
+        chatModel: string;
+        contextCompressionPrompt?: string;
+        contextCompressionProviderId?: string | null;
+        contextDiscardTurns?: number;
+        contextKeepRecentRatio?: number;
+        contextMaxTurns?: number;
+        contextOverflowStrategy?: string;
+        embeddingModel: string;
+        id: string;
+        imageCaptionModel?: string;
+        knowledgeBaseIds?: Array<string>;
+        maxContextTokens?: number;
+        maxRetries?: number;
+        maxSteps: number;
+        name: string;
+        personaId?: string;
+        pluginIds?: Array<string>;
+        providerId: string;
+        skillIds?: Array<string>;
+        temperature: number;
+        webSearchEnabled?: boolean;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseAgentDefinition = {
+    code: number;
+    data?: {
+        description?: string;
+        enabled: boolean;
+        id: string;
+        isDefault: boolean;
+        knowledgeBaseIds?: Array<string>;
+        name: string;
+        pluginIds?: Array<string>;
+        profileId: string;
+        scopeRefId?: string | null;
+        scopeType: string;
+        skillIds?: Array<string>;
+        systemPrompt: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseAgentKnowledgeBaseDefinition = {
+    code: number;
+    data?: {
+        description?: string;
+        enabled: boolean;
+        id: string;
+        name: string;
+        retrievalMode: string;
+        sourceIds?: Array<string>;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseAgentPluginDefinition = {
+    code: number;
+    data?: {
+        description?: string;
+        enabled: boolean;
+        entrypoint?: string;
+        id: string;
+        name: string;
+        requiresConfirmation: boolean;
+        version: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseAgentSkillDefinition = {
+    code: number;
+    data?: {
+        allowedTools?: Array<string>;
+        description?: string;
+        enabled: boolean;
+        id: string;
+        name: string;
+        requiresConfirmation: boolean;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseApiAgentSession = {
+    code: number;
+    data?: {
+        agentId: string;
+        appId?: string | null;
+        context: unknown;
+        createdAt: string;
+        id: string;
+        status: string;
+        title: string;
+        updatedAt: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseApiApp = {
+    code: number;
+    data?: {
+        badge?: string | null;
+        color: string;
+        createdAt: string;
+        desc: string;
+        icon: string;
+        id: string;
+        name: string;
+        owner: string;
+        records: number;
+        status: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseApiAppFieldOutline = {
+    code: number;
+    data?: {
+        appId: string;
+        appName: string;
+        forms: Array<ApiFieldOutlineForm>;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseApiAutomationFlow = {
+    code: number;
+    data?: {
+        appId: string;
+        createdAt: string;
+        createdBy: string;
+        currentVersion: number;
+        description?: string | null;
+        id: string;
+        name: string;
+        nodesCount: number;
+        status: string;
+        triggerEvent: string;
+        triggerFormUuid?: string | null;
+        triggerLabel: string;
+        updatedAt: string;
+        updatedBy: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseApiAutomationFlowDetail = {
+    code: number;
+    data?: {
+        appId: string;
+        createdAt: string;
+        createdBy: string;
+        currentVersion: number;
+        description?: string | null;
+        edges: unknown;
+        id: string;
+        name: string;
+        nodes: unknown;
+        nodesCount: number;
+        status: string;
+        triggerConfig: unknown;
+        triggerEvent: string;
+        triggerFormUuid?: string | null;
+        triggerLabel: string;
+        updatedAt: string;
+        updatedBy: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseApiAutomationFlowList = {
+    code: number;
+    data?: {
+        draft: number;
+        enabled: number;
+        items: Array<ApiAutomationFlow>;
+        paused: number;
+        total: number;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseApiFormRecord = {
+    code: number;
+    data?: {
+        createdAt: string;
+        createdBy: string;
+        data: unknown;
+        formUuid: string;
+        id: string;
+        schemaVersion: number;
+        updatedAt: string;
+        updatedBy: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseApiFormRecordList = {
+    code: number;
+    data?: {
+        items: Array<ApiFormRecord>;
+        page: number;
+        pageSize: number;
+        total: number;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseApiFormSummary = {
+    code: number;
+    data?: {
+        category: string;
+        count?: number | null;
+        createdAt: string;
+        id: string;
+        latestSchemaVersion: number;
+        name: string;
+        status: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseApiNavigationItem = {
+    code: number;
+    data?: {
+        id: string;
+        isDefaultEntry: boolean;
+        itemType: string;
+        parentId?: string | null;
+        pathSlug: string;
+        sortOrder: number;
+        targetFormUuid?: string | null;
+        title: string;
+        visibilityRule?: string | null;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseApiSchemaPayload = {
+    code: number;
+    data?: {
+        draftVersion: number;
+        formUuid: string;
+        latestVersion: number;
+        published: boolean;
+        publishedVersion: number;
+        schema: unknown;
+        version: number;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseClearDingTalkDataResponse = {
+    code: number;
+    data?: {
+        deletedOrganizationUnits: number;
+        deletedRolePermissions: number;
+        deletedRoles: number;
+        deletedUsers: number;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseDepartmentSyncResponse = {
+    code: number;
+    data?: {
+        created: number;
+        disabled: number;
+        synchronizedAt: string;
+        total: number;
+        updated: number;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseDingTalkLoginUserResponse = {
+    code: number;
+    data?: {
+        displayName: string;
+        id: string;
+        username: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseFormViewResponse = {
+    code: number;
+    data?: {
+        config: unknown;
+        name: string;
+        updatedAt: string;
+        viewUuid: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseIdentitySourceSettings = {
+    code: number;
+    data?: {
+        dingtalk: DingTalkSettings;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseProviderResponse = {
+    code: number;
+    data?: {
+        apiBaseUrl: string;
+        apiKeyConfigured: boolean;
+        enabled: boolean;
+        id: string;
+        kind: string;
+        name: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseRolePermissionsResponse = {
+    code: number;
+    data?: {
+        grants: Array<string>;
+        roleId: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseRoleResponse = {
+    code: number;
+    data?: {
+        externalId: string;
+        id: string;
+        memberCount: number;
+        name: string;
+        sourceType: string;
+        status: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseUserResponse = {
+    code: number;
+    data?: {
+        avatarUrl?: string | null;
+        departments: Array<string>;
+        displayName: string;
+        email?: string | null;
+        emailAddresses: Array<EmailAddressResponse>;
+        extensionJson: unknown;
+        hiredAt?: string | null;
+        id: string;
+        isAdmin: boolean;
+        isBoss: boolean;
+        jobNumber?: string | null;
+        managerName?: string | null;
+        mobile?: string | null;
+        password?: string | null;
+        primaryDepartment?: string | null;
+        realAuthed: boolean;
+        remark?: string | null;
+        roleIds: Array<string>;
+        roles: Array<string>;
+        senior: boolean;
+        sourceType: string;
+        stateCode?: string | null;
+        status: string;
+        telephone?: string | null;
+        tenureMonths?: number | null;
+        title?: string | null;
+        username?: string | null;
+        workPlace?: string | null;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseUserSyncResponse = {
+    code: number;
+    data?: {
+        avatars: number;
+        created: number;
+        disabled: number;
+        memberships: number;
+        roleBindings: number;
+        roles: number;
+        synchronizedAt: string;
+        total: number;
+        updated: number;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecAgentConfigProfile = {
+    code: number;
+    data?: Array<{
+        chatModel: string;
+        contextCompressionPrompt?: string;
+        contextCompressionProviderId?: string | null;
+        contextDiscardTurns?: number;
+        contextKeepRecentRatio?: number;
+        contextMaxTurns?: number;
+        contextOverflowStrategy?: string;
+        embeddingModel: string;
+        id: string;
+        imageCaptionModel?: string;
+        knowledgeBaseIds?: Array<string>;
+        maxContextTokens?: number;
+        maxRetries?: number;
+        maxSteps: number;
+        name: string;
+        personaId?: string;
+        pluginIds?: Array<string>;
+        providerId: string;
+        skillIds?: Array<string>;
+        temperature: number;
+        webSearchEnabled?: boolean;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecAgentDefinition = {
+    code: number;
+    data?: Array<{
+        description?: string;
+        enabled: boolean;
+        id: string;
+        isDefault: boolean;
+        knowledgeBaseIds?: Array<string>;
+        name: string;
+        pluginIds?: Array<string>;
+        profileId: string;
+        scopeRefId?: string | null;
+        scopeType: string;
+        skillIds?: Array<string>;
+        systemPrompt: string;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecAgentKnowledgeBaseDefinition = {
+    code: number;
+    data?: Array<{
+        description?: string;
+        enabled: boolean;
+        id: string;
+        name: string;
+        retrievalMode: string;
+        sourceIds?: Array<string>;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecAgentPluginDefinition = {
+    code: number;
+    data?: Array<{
+        description?: string;
+        enabled: boolean;
+        entrypoint?: string;
+        id: string;
+        name: string;
+        requiresConfirmation: boolean;
+        version: string;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecAgentSkillDefinition = {
+    code: number;
+    data?: Array<{
+        allowedTools?: Array<string>;
+        description?: string;
+        enabled: boolean;
+        id: string;
+        name: string;
+        requiresConfirmation: boolean;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecApiAgentMessage = {
+    code: number;
+    data?: Array<{
+        content: string;
+        createdAt: string;
+        id: string;
+        metadata: unknown;
+        role: string;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecApiAgentSession = {
+    code: number;
+    data?: Array<{
+        agentId: string;
+        appId?: string | null;
+        context: unknown;
+        createdAt: string;
+        id: string;
+        status: string;
+        title: string;
+        updatedAt: string;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecApiApp = {
+    code: number;
+    data?: Array<{
+        badge?: string | null;
+        color: string;
+        createdAt: string;
+        desc: string;
+        icon: string;
+        id: string;
+        name: string;
+        owner: string;
+        records: number;
+        status: string;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecApiAutomationFlowVersionSummary = {
+    code: number;
+    data?: Array<{
+        changeSummary?: string | null;
+        createdAt: string;
+        createdBy: string;
+        name: string;
+        status: string;
+        version: number;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecApiAutomationRun = {
+    code: number;
+    data?: Array<{
+        durationMs?: number | null;
+        errorMessage?: string | null;
+        finishedAt?: string | null;
+        flowVersion: number;
+        id: string;
+        nodes: Array<ApiAutomationRunNode>;
+        retryNodeKey?: string | null;
+        retryRunUuid?: string | null;
+        retrySource?: string | null;
+        startedAt: string;
+        status: string;
+        triggerEvent: string;
+        triggerPayload: unknown;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecApiFormVersionSummary = {
+    code: number;
+    data?: Array<{
+        changeLog?: string | null;
+        createdAt: string;
+        isCurrentDraft: boolean;
+        isCurrentPublished: boolean;
+        published: boolean;
+        version: number;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecApiNavigationItem = {
+    code: number;
+    data?: Array<{
+        id: string;
+        isDefaultEntry: boolean;
+        itemType: string;
+        parentId?: string | null;
+        pathSlug: string;
+        sortOrder: number;
+        targetFormUuid?: string | null;
+        title: string;
+        visibilityRule?: string | null;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecFormViewResponse = {
+    code: number;
+    data?: Array<{
+        config: unknown;
+        name: string;
+        updatedAt: string;
+        viewUuid: string;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecOrganizationUnitResponse = {
+    code: number;
+    data?: Array<{
+        externalId: string;
+        id: string;
+        memberCount: number;
+        name: string;
+        parentExternalId?: string | null;
+        sourceType: string;
+        status: string;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecProviderResponse = {
+    code: number;
+    data?: Array<{
+        apiBaseUrl: string;
+        apiKeyConfigured: boolean;
+        enabled: boolean;
+        id: string;
+        kind: string;
+        name: string;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecRoleResponse = {
+    code: number;
+    data?: Array<{
+        externalId: string;
+        id: string;
+        memberCount: number;
+        name: string;
+        sourceType: string;
+        status: string;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecUserResponse = {
+    code: number;
+    data?: Array<{
+        avatarUrl?: string | null;
+        departments: Array<string>;
+        displayName: string;
+        email?: string | null;
+        emailAddresses: Array<EmailAddressResponse>;
+        extensionJson: unknown;
+        hiredAt?: string | null;
+        id: string;
+        isAdmin: boolean;
+        isBoss: boolean;
+        jobNumber?: string | null;
+        managerName?: string | null;
+        mobile?: string | null;
+        password?: string | null;
+        primaryDepartment?: string | null;
+        realAuthed: boolean;
+        remark?: string | null;
+        roleIds: Array<string>;
+        roles: Array<string>;
+        senior: boolean;
+        sourceType: string;
+        stateCode?: string | null;
+        status: string;
+        telephone?: string | null;
+        tenureMonths?: number | null;
+        title?: string | null;
+        username?: string | null;
+        workPlace?: string | null;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiSchemaPayload = {
+    draftVersion: number;
+    formUuid: string;
+    latestVersion: number;
+    published: boolean;
+    publishedVersion: number;
+    schema: unknown;
+    version: number;
+};
+
+export type ClearDingTalkDataResponse = {
+    deletedOrganizationUnits: number;
+    deletedRolePermissions: number;
+    deletedRoles: number;
+    deletedUsers: number;
+};
+
+export type CreateAgentSessionRequest = {
+    agentId?: string | null;
+    context?: null | AgentPageContext;
+};
+
+export type CreateAppRequest = {
+    name?: string;
+    owner?: string;
+};
+
+export type CreateAutomationFlowRequest = {
+    name?: string;
+    description?: string;
+    triggerFormUuid?: string;
+    triggerEvent?: 'before_create' | 'after_create' | 'before_update' | 'after_update' | 'before_delete' | 'after_delete';
+    operator?: string;
+};
+
+export type CreateFormRecordRequest = {
+    data: {
+        [key: string]: unknown;
+    };
+    operator?: string;
+};
+
+export type CreateLocalRoleRequest = {
+    name: string;
+};
+
+export type CreateLocalUserRequest = {
+    displayName: string;
+    email?: string | null;
+    mobile?: string | null;
+    password: string;
+    roleIds: Array<string>;
+    title?: string | null;
+    username: string;
+};
+
+export type CreateNavigationGroupRequest = {
+    parent_id?: string | null;
+    title: string;
+};
+
+export type DepartmentSyncResponse = {
+    created: number;
+    disabled: number;
+    synchronizedAt: string;
+    total: number;
+    updated: number;
+};
+
+export type DingTalkLoginRequest = {
+    avatarUrl?: string;
+    email?: string;
+    mobile?: string;
+    nick?: string;
+    openId?: string;
+    unionId?: string;
+};
+
+export type DingTalkLoginUserResponse = {
+    displayName: string;
+    id: string;
+    username: string;
+};
+
+export type DingTalkSettings = {
+    accessToken?: string;
+    accessTokenExpiresAt?: string | null;
+    agentId: string;
+    allowJitProvisioning: boolean;
+    appId?: string;
+    clientId: string;
+    clientSecret: string;
+    disableDepartedUsers: boolean;
+    includeChildDepartments: boolean;
+    syncEnabled: boolean;
+    syncIntervalMinutes: number;
+};
+
+export type EmailAddressRequest = {
+    email: string;
+    label: string;
+};
+
+export type EmailAddressResponse = {
+    email: string;
+    label: string;
+};
+
+export type FormViewResponse = {
+    config: unknown;
+    name: string;
+    updatedAt: string;
+    viewUuid: string;
+};
+
+export type IdentitySourceSettings = {
+    dingtalk: DingTalkSettings;
+};
+
+export type KnowledgeBaseRequest = {
+    description: string;
+    enabled: boolean;
+    name: string;
+    retrievalMode: string;
+    sourceIds: Array<string>;
+};
+
+export type LocalLoginRequest = {
+    password: string;
+    username: string;
+};
+
+export type OrganizationUnitResponse = {
+    externalId: string;
+    id: string;
+    memberCount: number;
+    name: string;
+    parentExternalId?: string | null;
+    sourceType: string;
+    status: string;
+};
+
+export type PluginRequest = {
+    description: string;
+    enabled: boolean;
+    entrypoint: string;
+    name: string;
+    requiresConfirmation: boolean;
+    version: string;
+};
+
+export type ProfileRequest = {
+    chatModel: string;
+    contextCompressionPrompt: string;
+    contextCompressionProviderId?: string | null;
+    contextDiscardTurns: number;
+    contextKeepRecentRatio: number;
+    contextMaxTurns: number;
+    contextOverflowStrategy: string;
+    embeddingModel: string;
+    imageCaptionModel: string;
+    knowledgeBaseIds: Array<string>;
+    maxContextTokens: number;
+    maxRetries: number;
+    maxSteps: number;
+    name: string;
+    personaId: string;
+    pluginIds: Array<string>;
+    providerId: string;
+    skillIds: Array<string>;
+    temperature: number;
+    webSearchEnabled: boolean;
+};
+
+export type ProviderRequest = {
+    apiBaseUrl: string;
+    apiKey?: string | null;
+    enabled: boolean;
+    kind: string;
+    name: string;
+};
+
+export type ProviderResponse = {
+    apiBaseUrl: string;
+    apiKeyConfigured: boolean;
+    enabled: boolean;
+    id: string;
+    kind: string;
+    name: string;
+};
+
+export type ReorderNavigationRequest = {
+    item_id: string;
+    placement: string;
+    target_item_id: string;
+};
+
+export type RestoreVersionRequest = {
+    change_log?: string;
+};
+
+export type RolePermissionsResponse = {
+    grants: Array<string>;
+    roleId: string;
+};
+
+export type RoleResponse = {
+    externalId: string;
+    id: string;
+    memberCount: number;
+    name: string;
+    sourceType: string;
+    status: string;
+};
+
+export type SaveFormViewRequest = {
+    config: unknown;
+    name: string;
+};
+
+export type SaveSchemaRequest = {
+    schema: {
+        [key: string]: unknown;
+    };
+    change_log?: string;
+};
+
+export type SkillRequest = {
+    allowedTools: Array<string>;
+    description: string;
+    enabled: boolean;
+    name: string;
+    requiresConfirmation: boolean;
+};
+
+export type UpdateAppRequest = {
+    name?: string;
+    status?: 'enabled' | 'paused';
+};
+
+export type UpdateAutomationFlowRequest = {
+    name?: string;
+    description?: string;
+    status?: 'enabled' | 'paused' | 'draft';
+    triggerFormUuid?: string;
+    triggerEvent?: 'before_create' | 'after_create' | 'before_update' | 'after_update' | 'before_delete' | 'after_delete';
+    triggerConfig?: {
+        [key: string]: unknown;
+    };
+    nodes?: Array<{
+        [key: string]: unknown;
+    }>;
+    edges?: Array<{
+        [key: string]: unknown;
+    }>;
+    changeSummary?: string;
+    operator?: string;
+};
+
+export type UpdateFormRecordRequest = {
+    data: {
+        [key: string]: unknown;
+    };
+    operator?: string;
+};
+
+export type UpdateIdentitySourceSettingsRequest = {
+    dingtalk: DingTalkSettings;
+};
+
+export type UpdateLocalRoleRequest = {
+    name?: string | null;
+    status?: string | null;
+};
+
+export type UpdateRolePermissionsRequest = {
+    grants: Array<string>;
+};
+
+export type UpdateUserRequest = {
+    displayName?: string | null;
+    email?: string | null;
+    emailAddresses?: Array<EmailAddressRequest> | null;
+    jobNumber?: string | null;
+    mobile?: string | null;
+    remark?: string | null;
+    roleIds?: Array<string> | null;
+    status?: string | null;
+    telephone?: string | null;
+    title?: string | null;
+    workPlace?: string | null;
+};
+
+export type UserResponse = {
+    avatarUrl?: string | null;
+    departments: Array<string>;
+    displayName: string;
+    email?: string | null;
+    emailAddresses: Array<EmailAddressResponse>;
+    extensionJson: unknown;
+    hiredAt?: string | null;
+    id: string;
+    isAdmin: boolean;
+    isBoss: boolean;
+    jobNumber?: string | null;
+    managerName?: string | null;
+    mobile?: string | null;
+    password?: string | null;
+    primaryDepartment?: string | null;
+    realAuthed: boolean;
+    remark?: string | null;
+    roleIds: Array<string>;
+    roles: Array<string>;
+    senior: boolean;
+    sourceType: string;
+    stateCode?: string | null;
+    status: string;
+    telephone?: string | null;
+    tenureMonths?: number | null;
+    title?: string | null;
+    username?: string | null;
+    workPlace?: string | null;
+};
+
+export type UserSyncResponse = {
+    avatars: number;
+    created: number;
+    disabled: number;
+    memberships: number;
+    roleBindings: number;
+    roles: number;
+    synchronizedAt: string;
+    total: number;
+    updated: number;
+};
+
 export type ApiMeta = {
     code: number;
     message: string;
@@ -144,68 +1491,6 @@ export type AutomationFlowVersionSummary = {
     changeSummary?: string | null;
 };
 
-export type CreateAppRequest = {
-    name?: string;
-    owner?: string;
-};
-
-export type UpdateAppRequest = {
-    name?: string;
-    status?: 'enabled' | 'paused';
-};
-
-export type SaveSchemaRequest = {
-    schema: {
-        [key: string]: unknown;
-    };
-    change_log?: string;
-};
-
-export type RestoreVersionRequest = {
-    change_log?: string;
-};
-
-export type CreateFormRecordRequest = {
-    data: {
-        [key: string]: unknown;
-    };
-    operator?: string;
-};
-
-export type UpdateFormRecordRequest = {
-    data: {
-        [key: string]: unknown;
-    };
-    operator?: string;
-};
-
-export type CreateAutomationFlowRequest = {
-    name?: string;
-    description?: string;
-    triggerFormUuid?: string;
-    triggerEvent?: 'before_create' | 'after_create' | 'before_update' | 'after_update' | 'before_delete' | 'after_delete';
-    operator?: string;
-};
-
-export type UpdateAutomationFlowRequest = {
-    name?: string;
-    description?: string;
-    status?: 'enabled' | 'paused' | 'draft';
-    triggerFormUuid?: string;
-    triggerEvent?: 'before_create' | 'after_create' | 'before_update' | 'after_update' | 'before_delete' | 'after_delete';
-    triggerConfig?: {
-        [key: string]: unknown;
-    };
-    nodes?: Array<{
-        [key: string]: unknown;
-    }>;
-    edges?: Array<{
-        [key: string]: unknown;
-    }>;
-    changeSummary?: string;
-    operator?: string;
-};
-
 export type AppResponse = ApiMeta & {
     data: App;
 };
@@ -267,6 +1552,419 @@ export type FormVersionListResponse = ApiMeta & {
 export type ErrorResponse = ApiMeta & {
     data: null;
 };
+
+export type ListConfigProfilesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agent/config-profiles';
+};
+
+export type ListConfigProfilesResponses = {
+    200: ApiResponseVecAgentConfigProfile;
+};
+
+export type ListConfigProfilesResponse = ListConfigProfilesResponses[keyof ListConfigProfilesResponses];
+
+export type CreateConfigProfileData = {
+    body: ProfileRequest;
+    path?: never;
+    query?: never;
+    url: '/api/agent/config-profiles';
+};
+
+export type CreateConfigProfileResponses = {
+    200: ApiResponseAgentConfigProfile;
+};
+
+export type CreateConfigProfileResponse = CreateConfigProfileResponses[keyof CreateConfigProfileResponses];
+
+export type DeleteConfigProfileData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/agent/config-profiles/{id}';
+};
+
+export type DeleteConfigProfileResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type UpdateConfigProfileData = {
+    body: ProfileRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/agent/config-profiles/{id}';
+};
+
+export type UpdateConfigProfileResponses = {
+    200: ApiResponseAgentConfigProfile;
+};
+
+export type UpdateConfigProfileResponse = UpdateConfigProfileResponses[keyof UpdateConfigProfileResponses];
+
+export type ListKnowledgeBasesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agent/knowledge-bases';
+};
+
+export type ListKnowledgeBasesResponses = {
+    200: ApiResponseVecAgentKnowledgeBaseDefinition;
+};
+
+export type ListKnowledgeBasesResponse = ListKnowledgeBasesResponses[keyof ListKnowledgeBasesResponses];
+
+export type CreateKnowledgeBaseData = {
+    body: KnowledgeBaseRequest;
+    path?: never;
+    query?: never;
+    url: '/api/agent/knowledge-bases';
+};
+
+export type CreateKnowledgeBaseResponses = {
+    200: ApiResponseAgentKnowledgeBaseDefinition;
+};
+
+export type CreateKnowledgeBaseResponse = CreateKnowledgeBaseResponses[keyof CreateKnowledgeBaseResponses];
+
+export type DeleteKnowledgeBaseData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/agent/knowledge-bases/{id}';
+};
+
+export type DeleteKnowledgeBaseResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type UpdateKnowledgeBaseData = {
+    body: KnowledgeBaseRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/agent/knowledge-bases/{id}';
+};
+
+export type UpdateKnowledgeBaseResponses = {
+    200: ApiResponseAgentKnowledgeBaseDefinition;
+};
+
+export type UpdateKnowledgeBaseResponse = UpdateKnowledgeBaseResponses[keyof UpdateKnowledgeBaseResponses];
+
+export type ListPersonasData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agent/personas';
+};
+
+export type ListPersonasResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type ListPluginsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agent/plugins';
+};
+
+export type ListPluginsResponses = {
+    200: ApiResponseVecAgentPluginDefinition;
+};
+
+export type ListPluginsResponse = ListPluginsResponses[keyof ListPluginsResponses];
+
+export type CreatePluginData = {
+    body: PluginRequest;
+    path?: never;
+    query?: never;
+    url: '/api/agent/plugins';
+};
+
+export type CreatePluginResponses = {
+    200: ApiResponseAgentPluginDefinition;
+};
+
+export type CreatePluginResponse = CreatePluginResponses[keyof CreatePluginResponses];
+
+export type DeletePluginData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/agent/plugins/{id}';
+};
+
+export type DeletePluginResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type UpdatePluginData = {
+    body: PluginRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/agent/plugins/{id}';
+};
+
+export type UpdatePluginResponses = {
+    200: ApiResponseAgentPluginDefinition;
+};
+
+export type UpdatePluginResponse = UpdatePluginResponses[keyof UpdatePluginResponses];
+
+export type ListProvidersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agent/providers';
+};
+
+export type ListProvidersResponses = {
+    200: ApiResponseVecProviderResponse;
+};
+
+export type ListProvidersResponse = ListProvidersResponses[keyof ListProvidersResponses];
+
+export type CreateProviderData = {
+    body: ProviderRequest;
+    path?: never;
+    query?: never;
+    url: '/api/agent/providers';
+};
+
+export type CreateProviderResponses = {
+    200: ApiResponseProviderResponse;
+};
+
+export type CreateProviderResponse = CreateProviderResponses[keyof CreateProviderResponses];
+
+export type DeleteProviderData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/agent/providers/{id}';
+};
+
+export type DeleteProviderResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type UpdateProviderData = {
+    body: ProviderRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/agent/providers/{id}';
+};
+
+export type UpdateProviderResponses = {
+    200: ApiResponseProviderResponse;
+};
+
+export type UpdateProviderResponse = UpdateProviderResponses[keyof UpdateProviderResponses];
+
+export type ListAgentSessionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agent/sessions';
+};
+
+export type ListAgentSessionsResponses = {
+    200: ApiResponseVecApiAgentSession;
+};
+
+export type ListAgentSessionsResponse = ListAgentSessionsResponses[keyof ListAgentSessionsResponses];
+
+export type CreateAgentSessionData = {
+    body: CreateAgentSessionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/agent/sessions';
+};
+
+export type CreateAgentSessionResponses = {
+    200: ApiResponseApiAgentSession;
+};
+
+export type CreateAgentSessionResponse = CreateAgentSessionResponses[keyof CreateAgentSessionResponses];
+
+export type ListAgentMessagesData = {
+    body?: never;
+    path: {
+        sessionId: string;
+    };
+    query?: never;
+    url: '/api/agent/sessions/{sessionId}/messages';
+};
+
+export type ListAgentMessagesResponses = {
+    200: ApiResponseVecApiAgentMessage;
+};
+
+export type ListAgentMessagesResponse = ListAgentMessagesResponses[keyof ListAgentMessagesResponses];
+
+export type SendAgentMessageData = {
+    body?: never;
+    path: {
+        sessionId: string;
+    };
+    query?: never;
+    url: '/api/agent/sessions/{sessionId}/messages';
+};
+
+export type SendAgentMessageResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type ListSkillsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agent/skills';
+};
+
+export type ListSkillsResponses = {
+    200: ApiResponseVecAgentSkillDefinition;
+};
+
+export type ListSkillsResponse = ListSkillsResponses[keyof ListSkillsResponses];
+
+export type CreateSkillData = {
+    body: SkillRequest;
+    path?: never;
+    query?: never;
+    url: '/api/agent/skills';
+};
+
+export type CreateSkillResponses = {
+    200: ApiResponseAgentSkillDefinition;
+};
+
+export type CreateSkillResponse = CreateSkillResponses[keyof CreateSkillResponses];
+
+export type DeleteSkillData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/agent/skills/{id}';
+};
+
+export type DeleteSkillResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type UpdateSkillData = {
+    body: SkillRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/agent/skills/{id}';
+};
+
+export type UpdateSkillResponses = {
+    200: ApiResponseAgentSkillDefinition;
+};
+
+export type UpdateSkillResponse = UpdateSkillResponses[keyof UpdateSkillResponses];
+
+export type ListAgentsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agents';
+};
+
+export type ListAgentsResponses = {
+    200: ApiResponseVecAgentDefinition;
+};
+
+export type ListAgentsResponse = ListAgentsResponses[keyof ListAgentsResponses];
+
+export type CreateAgentData = {
+    body: AgentRequest;
+    path?: never;
+    query?: never;
+    url: '/api/agents';
+};
+
+export type CreateAgentResponses = {
+    200: ApiResponseAgentDefinition;
+};
+
+export type CreateAgentResponse = CreateAgentResponses[keyof CreateAgentResponses];
+
+export type DeleteAgentData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/agents/{id}';
+};
+
+export type DeleteAgentResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type UpdateAgentData = {
+    body: AgentRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/agents/{id}';
+};
+
+export type UpdateAgentResponses = {
+    200: ApiResponseAgentDefinition;
+};
+
+export type UpdateAgentResponse = UpdateAgentResponses[keyof UpdateAgentResponses];
 
 export type ListAppsData = {
     body?: never;
@@ -380,99 +2078,6 @@ export type UpdateAppResponses = {
 
 export type UpdateAppResponse = UpdateAppResponses[keyof UpdateAppResponses];
 
-export type ListAppNavigationData = {
-    body?: never;
-    path: {
-        appId: string;
-    };
-    query?: never;
-    url: '/api/apps/{appId}/navigation';
-};
-
-export type ListAppNavigationErrors = {
-    /**
-     * Backend error
-     */
-    500: ErrorResponse;
-    /**
-     * Backend unavailable
-     */
-    503: ErrorResponse;
-};
-
-export type ListAppNavigationError = ListAppNavigationErrors[keyof ListAppNavigationErrors];
-
-export type ListAppNavigationResponses = {
-    /**
-     * Wrapped navigation item list
-     */
-    200: NavigationListResponse;
-};
-
-export type ListAppNavigationResponse = ListAppNavigationResponses[keyof ListAppNavigationResponses];
-
-export type ListFormsData = {
-    body?: never;
-    path: {
-        appId: string;
-    };
-    query?: never;
-    url: '/api/apps/{appId}/forms';
-};
-
-export type ListFormsErrors = {
-    /**
-     * Backend error
-     */
-    500: ErrorResponse;
-    /**
-     * Backend unavailable
-     */
-    503: ErrorResponse;
-};
-
-export type ListFormsError = ListFormsErrors[keyof ListFormsErrors];
-
-export type ListFormsResponses = {
-    /**
-     * Wrapped form list
-     */
-    200: FormListResponse;
-};
-
-export type ListFormsResponse = ListFormsResponses[keyof ListFormsResponses];
-
-export type CreateFormData = {
-    body?: never;
-    path: {
-        appId: string;
-    };
-    query?: never;
-    url: '/api/apps/{appId}/forms';
-};
-
-export type CreateFormErrors = {
-    /**
-     * Backend error
-     */
-    500: ErrorResponse;
-    /**
-     * Backend unavailable
-     */
-    503: ErrorResponse;
-};
-
-export type CreateFormError = CreateFormErrors[keyof CreateFormErrors];
-
-export type CreateFormResponses = {
-    /**
-     * Wrapped created form
-     */
-    201: FormResponse;
-};
-
-export type CreateFormResponse = CreateFormResponses[keyof CreateFormResponses];
-
 export type ListAutomationFlowsData = {
     body?: never;
     path: {
@@ -538,6 +2143,129 @@ export type CreateAutomationFlowResponses = {
 };
 
 export type CreateAutomationFlowResponse = CreateAutomationFlowResponses[keyof CreateAutomationFlowResponses];
+
+export type GetAppFieldOutlineData = {
+    body?: never;
+    path: {
+        appId: string;
+    };
+    query?: never;
+    url: '/api/apps/{appId}/field-outline';
+};
+
+export type GetAppFieldOutlineResponses = {
+    200: ApiResponseApiAppFieldOutline;
+};
+
+export type GetAppFieldOutlineResponse = GetAppFieldOutlineResponses[keyof GetAppFieldOutlineResponses];
+
+export type ListFormsData = {
+    body?: never;
+    path: {
+        appId: string;
+    };
+    query?: never;
+    url: '/api/apps/{appId}/forms';
+};
+
+export type ListFormsErrors = {
+    /**
+     * Backend error
+     */
+    500: ErrorResponse;
+    /**
+     * Backend unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type ListFormsError = ListFormsErrors[keyof ListFormsErrors];
+
+export type ListFormsResponses = {
+    /**
+     * Wrapped form list
+     */
+    200: FormListResponse;
+};
+
+export type ListFormsResponse = ListFormsResponses[keyof ListFormsResponses];
+
+export type CreateFormData = {
+    body?: never;
+    path: {
+        appId: string;
+    };
+    query?: never;
+    url: '/api/apps/{appId}/forms';
+};
+
+export type CreateFormErrors = {
+    /**
+     * Backend error
+     */
+    500: ErrorResponse;
+    /**
+     * Backend unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type CreateFormError = CreateFormErrors[keyof CreateFormErrors];
+
+export type CreateFormResponses = {
+    /**
+     * Wrapped created form
+     */
+    201: FormResponse;
+};
+
+export type CreateFormResponse = CreateFormResponses[keyof CreateFormResponses];
+
+export type ListAppNavigationData = {
+    body?: never;
+    path: {
+        appId: string;
+    };
+    query?: never;
+    url: '/api/apps/{appId}/navigation';
+};
+
+export type ListAppNavigationErrors = {
+    /**
+     * Backend error
+     */
+    500: ErrorResponse;
+    /**
+     * Backend unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type ListAppNavigationError = ListAppNavigationErrors[keyof ListAppNavigationErrors];
+
+export type ListAppNavigationResponses = {
+    /**
+     * Wrapped navigation item list
+     */
+    200: NavigationListResponse;
+};
+
+export type ListAppNavigationResponse = ListAppNavigationResponses[keyof ListAppNavigationResponses];
+
+export type CreateNavigationGroupData = {
+    body: CreateNavigationGroupRequest;
+    path: {
+        appId: string;
+    };
+    query?: never;
+    url: '/api/apps/{appId}/navigation/groups';
+};
+
+export type CreateNavigationGroupResponses = {
+    200: ApiResponseApiNavigationItem;
+};
+
+export type CreateNavigationGroupResponse = CreateNavigationGroupResponses[keyof CreateNavigationGroupResponses];
 
 export type DeleteAutomationFlowData = {
     body?: never;
@@ -624,6 +2352,56 @@ export type UpdateAutomationFlowResponses = {
 
 export type UpdateAutomationFlowResponse = UpdateAutomationFlowResponses[keyof UpdateAutomationFlowResponses];
 
+export type ListAutomationFlowRunsData = {
+    body?: never;
+    path: {
+        automationId: string;
+    };
+    query?: never;
+    url: '/api/automations/{automationId}/runs';
+};
+
+export type ListAutomationFlowRunsResponses = {
+    200: ApiResponseVecApiAutomationRun;
+};
+
+export type ListAutomationFlowRunsResponse = ListAutomationFlowRunsResponses[keyof ListAutomationFlowRunsResponses];
+
+export type RetryAutomationFlowRunNodeData = {
+    body?: never;
+    path: {
+        automationId: string;
+        runId: string;
+        nodeKey: string;
+    };
+    query?: never;
+    url: '/api/automations/{automationId}/runs/{runId}/nodes/{nodeKey}/retry';
+};
+
+export type RetryAutomationFlowRunNodeResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type RetryAutomationFlowRunData = {
+    body?: never;
+    path: {
+        automationId: string;
+        runId: string;
+    };
+    query?: never;
+    url: '/api/automations/{automationId}/runs/{runId}/retry';
+};
+
+export type RetryAutomationFlowRunResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
 export type ListAutomationFlowVersionsData = {
     body?: never;
     path: {
@@ -651,39 +2429,79 @@ export type ListAutomationFlowVersionsResponses = {
 
 export type ListAutomationFlowVersionsResponse = ListAutomationFlowVersionsResponses[keyof ListAutomationFlowVersionsResponses];
 
-export type GetFormSchemaData = {
+export type RestoreAutomationFlowVersionData = {
+    body: RestoreVersionRequest;
+    path: {
+        automationId: string;
+        version: number;
+    };
+    query?: never;
+    url: '/api/automations/{automationId}/versions/{version}/restore';
+};
+
+export type RestoreAutomationFlowVersionResponses = {
+    200: ApiResponseApiAutomationFlowDetail;
+};
+
+export type RestoreAutomationFlowVersionResponse = RestoreAutomationFlowVersionResponses[keyof RestoreAutomationFlowVersionResponses];
+
+export type DeleteFormData = {
     body?: never;
     path: {
         formUuid: string;
     };
-    query?: {
-        scope?: 'draft' | 'published' | 'latest';
-        version?: number;
-    };
-    url: '/api/forms/{formUuid}/schema';
+    query?: never;
+    url: '/api/forms/{formUuid}';
 };
 
-export type GetFormSchemaErrors = {
+export type DeleteFormResponses = {
     /**
-     * Schema not found
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type GetFormData = {
+    body?: never;
+    path: {
+        formUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}';
+};
+
+export type GetFormResponses = {
+    200: ApiResponseApiFormSummary;
+};
+
+export type GetFormResponse = GetFormResponses[keyof GetFormResponses];
+
+export type PublishFormSchemaData = {
+    body?: never;
+    path: {
+        formUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/publish';
+};
+
+export type PublishFormSchemaErrors = {
+    /**
+     * Form not found
      */
     404: ErrorResponse;
-    /**
-     * Backend unavailable
-     */
-    503: ErrorResponse;
 };
 
-export type GetFormSchemaError = GetFormSchemaErrors[keyof GetFormSchemaErrors];
+export type PublishFormSchemaError = PublishFormSchemaErrors[keyof PublishFormSchemaErrors];
 
-export type GetFormSchemaResponses = {
+export type PublishFormSchemaResponses = {
     /**
-     * Wrapped schema
+     * Wrapped published schema
      */
     200: FormSchemaResponse;
 };
 
-export type GetFormSchemaResponse = GetFormSchemaResponses[keyof GetFormSchemaResponses];
+export type PublishFormSchemaResponse = PublishFormSchemaResponses[keyof PublishFormSchemaResponses];
 
 export type ListFormRecordsData = {
     body?: never;
@@ -795,6 +2613,71 @@ export type UpdateFormRecordResponses = {
 
 export type UpdateFormRecordResponse = UpdateFormRecordResponses[keyof UpdateFormRecordResponses];
 
+export type GetFormSchemaData = {
+    body?: never;
+    path: {
+        formUuid: string;
+    };
+    query?: {
+        scope?: 'draft' | 'published' | 'latest';
+        version?: number;
+    };
+    url: '/api/forms/{formUuid}/schema';
+};
+
+export type GetFormSchemaErrors = {
+    /**
+     * Schema not found
+     */
+    404: ErrorResponse;
+    /**
+     * Backend unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type GetFormSchemaError = GetFormSchemaErrors[keyof GetFormSchemaErrors];
+
+export type GetFormSchemaResponses = {
+    /**
+     * Wrapped schema
+     */
+    200: FormSchemaResponse;
+};
+
+export type GetFormSchemaResponse = GetFormSchemaResponses[keyof GetFormSchemaResponses];
+
+export type SaveFormSchemaDraftData = {
+    body: SaveSchemaRequest;
+    path: {
+        formUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/schema/draft';
+};
+
+export type SaveFormSchemaDraftErrors = {
+    /**
+     * Form not found
+     */
+    404: ErrorResponse;
+    /**
+     * Backend unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type SaveFormSchemaDraftError = SaveFormSchemaDraftErrors[keyof SaveFormSchemaDraftErrors];
+
+export type SaveFormSchemaDraftResponses = {
+    /**
+     * Wrapped saved schema
+     */
+    200: FormSchemaResponse;
+};
+
+export type SaveFormSchemaDraftResponse = SaveFormSchemaDraftResponses[keyof SaveFormSchemaDraftResponses];
+
 export type ListFormVersionsData = {
     body?: never;
     path: {
@@ -854,33 +2737,6 @@ export type GetFormVersionResponses = {
 
 export type GetFormVersionResponse = GetFormVersionResponses[keyof GetFormVersionResponses];
 
-export type PublishFormSchemaData = {
-    body?: never;
-    path: {
-        formUuid: string;
-    };
-    query?: never;
-    url: '/api/forms/{formUuid}/publish';
-};
-
-export type PublishFormSchemaErrors = {
-    /**
-     * Form not found
-     */
-    404: ErrorResponse;
-};
-
-export type PublishFormSchemaError = PublishFormSchemaErrors[keyof PublishFormSchemaErrors];
-
-export type PublishFormSchemaResponses = {
-    /**
-     * Wrapped published schema
-     */
-    200: FormSchemaResponse;
-};
-
-export type PublishFormSchemaResponse = PublishFormSchemaResponses[keyof PublishFormSchemaResponses];
-
 export type RestoreFormVersionData = {
     body?: RestoreVersionRequest;
     path: {
@@ -909,33 +2765,410 @@ export type RestoreFormVersionResponses = {
 
 export type RestoreFormVersionResponse = RestoreFormVersionResponses[keyof RestoreFormVersionResponses];
 
-export type SaveFormSchemaDraftData = {
-    body: SaveSchemaRequest;
+export type ListFormViewsData = {
+    body?: never;
     path: {
         formUuid: string;
     };
     query?: never;
-    url: '/api/forms/{formUuid}/schema/draft';
+    url: '/api/forms/{formUuid}/views';
 };
 
-export type SaveFormSchemaDraftErrors = {
-    /**
-     * Form not found
-     */
-    404: ErrorResponse;
-    /**
-     * Backend unavailable
-     */
-    503: ErrorResponse;
+export type ListFormViewsResponses = {
+    200: ApiResponseVecFormViewResponse;
 };
 
-export type SaveFormSchemaDraftError = SaveFormSchemaDraftErrors[keyof SaveFormSchemaDraftErrors];
+export type ListFormViewsResponse = ListFormViewsResponses[keyof ListFormViewsResponses];
 
-export type SaveFormSchemaDraftResponses = {
-    /**
-     * Wrapped saved schema
-     */
-    200: FormSchemaResponse;
+export type CreateFormViewData = {
+    body: SaveFormViewRequest;
+    path: {
+        formUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/views';
 };
 
-export type SaveFormSchemaDraftResponse = SaveFormSchemaDraftResponses[keyof SaveFormSchemaDraftResponses];
+export type CreateFormViewResponses = {
+    200: ApiResponseFormViewResponse;
+};
+
+export type CreateFormViewResponse = CreateFormViewResponses[keyof CreateFormViewResponses];
+
+export type DeleteFormViewData = {
+    body?: never;
+    path: {
+        formUuid: string;
+        viewUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/views/{viewUuid}';
+};
+
+export type DeleteFormViewResponses = {
+    /**
+     * Form view deleted
+     */
+    200: unknown;
+};
+
+export type UpdateFormViewData = {
+    body: SaveFormViewRequest;
+    path: {
+        formUuid: string;
+        viewUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/views/{viewUuid}';
+};
+
+export type UpdateFormViewResponses = {
+    200: ApiResponseFormViewResponse;
+};
+
+export type UpdateFormViewResponse = UpdateFormViewResponses[keyof UpdateFormViewResponses];
+
+export type ResolveDingTalkLoginData = {
+    body: DingTalkLoginRequest;
+    path?: never;
+    query?: never;
+    url: '/api/identity/dingtalk/session';
+};
+
+export type ResolveDingTalkLoginResponses = {
+    200: ApiResponseDingTalkLoginUserResponse;
+};
+
+export type ResolveDingTalkLoginResponse = ResolveDingTalkLoginResponses[keyof ResolveDingTalkLoginResponses];
+
+export type LocalLoginData = {
+    body: LocalLoginRequest;
+    path?: never;
+    query?: never;
+    url: '/api/identity/local-login';
+};
+
+export type LocalLoginResponses = {
+    200: ApiResponseDingTalkLoginUserResponse;
+};
+
+export type LocalLoginResponse = LocalLoginResponses[keyof LocalLoginResponses];
+
+export type ListOrganizationUnitsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/identity/organization-units';
+};
+
+export type ListOrganizationUnitsResponses = {
+    200: ApiResponseVecOrganizationUnitResponse;
+};
+
+export type ListOrganizationUnitsResponse = ListOrganizationUnitsResponses[keyof ListOrganizationUnitsResponses];
+
+export type ListRolesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/identity/roles';
+};
+
+export type ListRolesResponses = {
+    200: ApiResponseVecRoleResponse;
+};
+
+export type ListRolesResponse = ListRolesResponses[keyof ListRolesResponses];
+
+export type CreateLocalRoleData = {
+    body: CreateLocalRoleRequest;
+    path?: never;
+    query?: never;
+    url: '/api/identity/roles';
+};
+
+export type CreateLocalRoleResponses = {
+    200: ApiResponseRoleResponse;
+};
+
+export type CreateLocalRoleResponse = CreateLocalRoleResponses[keyof CreateLocalRoleResponses];
+
+export type DeleteLocalRoleData = {
+    body?: never;
+    path: {
+        roleId: string;
+    };
+    query?: never;
+    url: '/api/identity/roles/{roleId}';
+};
+
+export type DeleteLocalRoleResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type UpdateLocalRoleData = {
+    body: UpdateLocalRoleRequest;
+    path: {
+        roleId: string;
+    };
+    query?: never;
+    url: '/api/identity/roles/{roleId}';
+};
+
+export type UpdateLocalRoleResponses = {
+    200: ApiResponseRoleResponse;
+};
+
+export type UpdateLocalRoleResponse = UpdateLocalRoleResponses[keyof UpdateLocalRoleResponses];
+
+export type ListUsersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/identity/users';
+};
+
+export type ListUsersResponses = {
+    200: ApiResponseVecUserResponse;
+};
+
+export type ListUsersResponse = ListUsersResponses[keyof ListUsersResponses];
+
+export type CreateLocalUserData = {
+    body: CreateLocalUserRequest;
+    path?: never;
+    query?: never;
+    url: '/api/identity/users';
+};
+
+export type CreateLocalUserResponses = {
+    200: ApiResponseDingTalkLoginUserResponse;
+};
+
+export type CreateLocalUserResponse = CreateLocalUserResponses[keyof CreateLocalUserResponses];
+
+export type DeleteUserData = {
+    body?: never;
+    path: {
+        userId: string;
+    };
+    query?: never;
+    url: '/api/identity/users/{userId}';
+};
+
+export type DeleteUserResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type UpdateUserData = {
+    body: UpdateUserRequest;
+    path: {
+        userId: string;
+    };
+    query?: never;
+    url: '/api/identity/users/{userId}';
+};
+
+export type UpdateUserResponses = {
+    200: ApiResponseUserResponse;
+};
+
+export type UpdateUserResponse = UpdateUserResponses[keyof UpdateUserResponses];
+
+export type GetInternalIdentitySourceSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/internal/identity-source';
+};
+
+export type GetInternalIdentitySourceSettingsResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type GetAgentSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/agent';
+};
+
+export type GetAgentSettingsResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type UpdateAgentSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/agent';
+};
+
+export type UpdateAgentSettingsResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type GetDatabaseSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/database';
+};
+
+export type GetDatabaseSettingsResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type UpdateDatabaseSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/database';
+};
+
+export type UpdateDatabaseSettingsResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type GetIdentitySourceSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/identity-source';
+};
+
+export type GetIdentitySourceSettingsResponses = {
+    200: ApiResponseIdentitySourceSettings;
+};
+
+export type GetIdentitySourceSettingsResponse = GetIdentitySourceSettingsResponses[keyof GetIdentitySourceSettingsResponses];
+
+export type UpdateIdentitySourceSettingsData = {
+    body: UpdateIdentitySourceSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/settings/identity-source';
+};
+
+export type UpdateIdentitySourceSettingsResponses = {
+    200: ApiResponseIdentitySourceSettings;
+};
+
+export type UpdateIdentitySourceSettingsResponse = UpdateIdentitySourceSettingsResponses[keyof UpdateIdentitySourceSettingsResponses];
+
+export type RefreshDingTalkAccessTokenData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/identity-source/dingtalk/access-token';
+};
+
+export type RefreshDingTalkAccessTokenResponses = {
+    200: ApiResponseAccessTokenResponse;
+};
+
+export type RefreshDingTalkAccessTokenResponse = RefreshDingTalkAccessTokenResponses[keyof RefreshDingTalkAccessTokenResponses];
+
+export type ClearDingTalkDataData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/identity-source/dingtalk/clear';
+};
+
+export type ClearDingTalkDataResponses = {
+    200: ApiResponseClearDingTalkDataResponse;
+};
+
+export type ClearDingTalkDataResponse2 = ClearDingTalkDataResponses[keyof ClearDingTalkDataResponses];
+
+export type SyncDingTalkDepartmentsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/identity-source/dingtalk/sync-departments';
+};
+
+export type SyncDingTalkDepartmentsResponses = {
+    200: ApiResponseDepartmentSyncResponse;
+};
+
+export type SyncDingTalkDepartmentsResponse = SyncDingTalkDepartmentsResponses[keyof SyncDingTalkDepartmentsResponses];
+
+export type SyncDingTalkUsersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/identity-source/dingtalk/sync-users';
+};
+
+export type SyncDingTalkUsersResponses = {
+    200: ApiResponseUserSyncResponse;
+};
+
+export type SyncDingTalkUsersResponse = SyncDingTalkUsersResponses[keyof SyncDingTalkUsersResponses];
+
+export type GetRolePermissionsData = {
+    body?: never;
+    path: {
+        roleId: string;
+    };
+    query?: never;
+    url: '/api/settings/permissions/{roleId}';
+};
+
+export type GetRolePermissionsResponses = {
+    200: ApiResponseRolePermissionsResponse;
+};
+
+export type GetRolePermissionsResponse = GetRolePermissionsResponses[keyof GetRolePermissionsResponses];
+
+export type UpdateRolePermissionsData = {
+    body: UpdateRolePermissionsRequest;
+    path: {
+        roleId: string;
+    };
+    query?: never;
+    url: '/api/settings/permissions/{roleId}';
+};
+
+export type UpdateRolePermissionsResponses = {
+    200: ApiResponseRolePermissionsResponse;
+};
+
+export type UpdateRolePermissionsResponse = UpdateRolePermissionsResponses[keyof UpdateRolePermissionsResponses];
+
+export type HealthCheckData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/healthz';
+};
+
+export type HealthCheckResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};

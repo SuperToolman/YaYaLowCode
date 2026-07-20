@@ -2,13 +2,14 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use utoipa::ToSchema;
 
 use crate::infrastructure::entities::{
     automation_flow_entity, automation_flow_version_entity, automation_run_node_entity,
 };
 use crate::shared::{automation_trigger_label, calculate_duration_ms};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiAutomationFlow {
     pub(crate) id: String,
@@ -27,7 +28,7 @@ pub(crate) struct ApiAutomationFlow {
     pub(crate) updated_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiAutomationFlowDetail {
     pub(crate) id: String,
@@ -49,7 +50,7 @@ pub(crate) struct ApiAutomationFlowDetail {
     pub(crate) updated_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiAutomationFlowVersionSummary {
     pub(crate) version: i32,
@@ -60,7 +61,7 @@ pub(crate) struct ApiAutomationFlowVersionSummary {
     pub(crate) change_summary: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiAutomationFlowList {
     pub(crate) items: Vec<ApiAutomationFlow>,
@@ -70,7 +71,7 @@ pub(crate) struct ApiAutomationFlowList {
     pub(crate) draft: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiAutomationRunNode {
     pub(crate) id: String,
@@ -86,7 +87,7 @@ pub(crate) struct ApiAutomationRunNode {
     pub(crate) duration_ms: Option<i64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiAutomationRun {
     pub(crate) id: String,
@@ -104,7 +105,7 @@ pub(crate) struct ApiAutomationRun {
     pub(crate) nodes: Vec<ApiAutomationRunNode>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CreateAutomationFlowRequest {
     pub(crate) name: Option<String>,
@@ -114,7 +115,7 @@ pub(crate) struct CreateAutomationFlowRequest {
     pub(crate) operator: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct UpdateAutomationFlowRequest {
     pub(crate) name: Option<String>,

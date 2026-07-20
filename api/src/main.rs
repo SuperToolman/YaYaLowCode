@@ -1,6 +1,7 @@
 mod http;
 mod infrastructure;
 mod modules;
+mod openapi;
 mod platform;
 mod shared;
 
@@ -30,6 +31,11 @@ async fn main() -> Result<(), AppError> {
                 .unwrap_or_else(|_| "yaya_api=info,tower_http=info".into()),
         )
         .init();
+
+    if let Some(path) = std::env::var_os("YAYA_EXPORT_OPENAPI_PATH") {
+        openapi::export_to_file(std::path::Path::new(&path)).map_err(AppError::Server)?;
+        return Ok(());
+    }
 
     let config = AppConfig::from_env();
     let db = Database::connect(&config.database_url).await?;

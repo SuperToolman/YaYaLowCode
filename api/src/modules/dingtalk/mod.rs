@@ -2,21 +2,28 @@ mod client;
 mod dto;
 mod sync;
 
+pub(crate) use sync::{DepartmentSyncResponse, UserSyncResponse};
+
 use axum::Json;
 use axum::extract::State;
 use chrono::{Duration, Utc};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 use serde::Serialize;
+use utoipa::ToSchema;
 
-use crate::infrastructure::entities::organization_unit_entity;
+use crate::infrastructure::entities::{
+    iam_external_identity_entity, iam_organization_membership_entity, iam_role_entity,
+    iam_user_entity, iam_user_role_entity, organization_unit_entity,
+};
 use crate::modules::settings::default_identity_source_settings;
 use crate::platform::config::{
-    IdentitySourceSettings, load_identity_source_settings, save_identity_source_settings,
+    IdentitySourceSettings, load_identity_source_settings, load_rbac_permission_settings,
+    save_identity_source_settings, save_rbac_permission_settings,
 };
 use crate::platform::prelude::{ApiResponse, AppError, AppState};
 use crate::shared::success_response;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AccessTokenResponse {
     access_token: String,
@@ -78,6 +85,90 @@ pub(crate) async fn sync_users(
     Ok(Json(success_response(
         "dingtalk users synchronized",
         result,
+    )))
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ClearDingTalkDataResponse {
+    deleted_users: usize,
+    deleted_roles: usize,
+    deleted_organization_units: usize,
+    deleted_role_permissions: usize,
+}
+
+pub(crate) async fn clear_dingtalk_data(
+    State(state): State<AppState>,
+) -> Result<Json<ApiResponse<ClearDingTalkDataResponse>>, AppError> {
+    let transaction = state.db.begin().await?;
+    let identities = iam_external_identity_entity::Entity::find()
+        .filter(iam_external_identity_entity::Column::Provider.eq("dingtalk"))
+        .all(&transaction)
+        .await?;
+    let user_ids = identities.iter().map(|identity| identity.user_id).collect::<Vec<_>>();
+    let roles = iam_role_entity::Entity::find()
+        .filter(iam_role_entity::Column::SourceType.eq("dingtalk"))
+        .all(&transaction)
+        .await?;
+    let role_ids = roles.iter().map(|role| role.id).collect::<Vec<_>>();
+    let units = organization_unit_entity::Entity::find()
+        .filter(organization_unit_entity::Column::SourceType.eq("dingtalk"))
+        .all(&transaction)
+        .await?;
+
+    if !role_ids.is_empty() {
+        iam_user_role_entity::Entity::delete_many()
+            .filter(iam_user_role_entity::Column::RoleId.is_in(role_ids.clone()))
+            .exec(&transaction)
+            .await?;
+    }
+    if !user_ids.is_empty() {
+        iam_user_role_entity::Entity::delete_many()
+            .filter(iam_user_role_entity::Column::UserId.is_in(user_ids.clone()))
+            .exec(&transaction)
+            .await?;
+        iam_organization_membership_entity::Entity::delete_many()
+            .filter(iam_organization_membership_entity::Column::UserId.is_in(user_ids.clone()))
+            .exec(&transaction)
+            .await?;
+        iam_external_identity_entity::Entity::delete_many()
+            .filter(iam_external_identity_entity::Column::Provider.eq("dingtalk"))
+            .exec(&transaction)
+            .await?;
+        iam_user_entity::Entity::delete_many()
+            .filter(iam_user_entity::Column::Id.is_in(user_ids))
+            .exec(&transaction)
+            .await?;
+    }
+    if !role_ids.is_empty() {
+        iam_role_entity::Entity::delete_many()
+            .filter(iam_role_entity::Column::Id.is_in(role_ids))
+            .exec(&transaction)
+            .await?;
+    }
+    organization_unit_entity::Entity::delete_many()
+        .filter(organization_unit_entity::Column::SourceType.eq("dingtalk"))
+        .exec(&transaction)
+        .await?;
+    transaction.commit().await?;
+
+    let mut permissions = load_rbac_permission_settings().unwrap_or_default();
+    let deleted_role_permissions = roles
+        .iter()
+        .filter(|role| permissions.grants.remove(&role.id.to_string()).is_some())
+        .count();
+    if deleted_role_permissions > 0 {
+        save_rbac_permission_settings(&permissions).map_err(AppError::Server)?;
+    }
+
+    Ok(Json(success_response(
+        "dingtalk synchronized data cleared",
+        ClearDingTalkDataResponse {
+            deleted_users: identities.len(),
+            deleted_roles: roles.len(),
+            deleted_organization_units: units.len(),
+            deleted_role_permissions,
+        },
     )))
 }
 
