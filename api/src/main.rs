@@ -8,7 +8,7 @@ mod shared;
 use std::net::SocketAddr;
 
 use modules::navigation;
-use platform::config::AppConfig;
+use platform::config::{AppConfig, ensure_default_agent_resources};
 use platform::error::AppError;
 use platform::form_storage::ensure_all_form_dynamic_storage;
 use platform::runtime::AppState;
@@ -37,6 +37,7 @@ async fn main() -> Result<(), AppError> {
         return Ok(());
     }
 
+    ensure_default_agent_resources().map_err(AppError::Server)?;
     let config = AppConfig::from_env();
     let db = Database::connect(&config.database_url).await?;
 

@@ -22,6 +22,7 @@ pub(crate) fn build(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(health_check))
         .route("/openapi.json", get(openapi::openapi_json))
+        .route("/api/authorization/grants", get(authorization::get_grants))
         .route(
             "/api/settings/database",
             get(settings::get_database_settings).put(settings::update_database_settings),
@@ -48,6 +49,10 @@ pub(crate) fn build(state: AppState) -> Router {
         )
         .route("/api/agent/personas", get(agent_config::list_personas))
         .route(
+            "/api/agent/platform-tools",
+            get(agent_config::list_platform_tools),
+        )
+        .route(
             "/api/agents",
             get(agent_config::list_agents).post(agent_config::create_agent),
         )
@@ -70,6 +75,10 @@ pub(crate) fn build(state: AppState) -> Router {
         .route(
             "/api/agent/skills/{id}",
             axum::routing::put(agent_config::update_skill).delete(agent_config::delete_skill),
+        )
+        .route(
+            "/api/agent/skills/{id}/file",
+            get(agent_config::get_skill_file).put(agent_config::update_skill_file),
         )
         .route(
             "/api/agent/knowledge-bases",
@@ -113,9 +122,15 @@ pub(crate) fn build(state: AppState) -> Router {
             "/api/identity/organization-units",
             get(identity::list_organization_units),
         )
-        .route("/api/identity/users", get(identity::list_users).post(identity::create_local_user))
+        .route(
+            "/api/identity/users",
+            get(identity::list_users).post(identity::create_local_user),
+        )
         .route("/api/identity/local-login", post(identity::local_login))
-        .route("/api/identity/users/{user_id}", axum::routing::put(identity::update_user).delete(identity::delete_user))
+        .route(
+            "/api/identity/users/{user_id}",
+            axum::routing::put(identity::update_user).delete(identity::delete_user),
+        )
         .route(
             "/api/identity/dingtalk/session",
             post(identity::resolve_dingtalk_login),
@@ -144,6 +159,10 @@ pub(crate) fn build(state: AppState) -> Router {
         .route(
             "/api/apps/{app_id}/navigation",
             get(navigation::list_navigation_items).patch(navigation::reorder_navigation_item),
+        )
+        .route(
+            "/api/apps/{app_id}/navigation/default-entry",
+            patch(navigation::set_default_navigation_entry),
         )
         .route(
             "/api/apps/{app_id}/navigation/groups",
@@ -188,8 +207,14 @@ pub(crate) fn build(state: AppState) -> Router {
             post(automations::retry_automation_flow_run_node),
         )
         .route("/api/forms/{form_uuid}/schema", get(forms::get_form_schema))
-        .route("/api/forms/{form_uuid}/views", get(forms::list_form_views).post(forms::create_form_view))
-        .route("/api/forms/{form_uuid}/views/{view_uuid}", axum::routing::put(forms::update_form_view).delete(forms::delete_form_view))
+        .route(
+            "/api/forms/{form_uuid}/views",
+            get(forms::list_form_views).post(forms::create_form_view),
+        )
+        .route(
+            "/api/forms/{form_uuid}/views/{view_uuid}",
+            axum::routing::put(forms::update_form_view).delete(forms::delete_form_view),
+        )
         .route(
             "/api/forms/{form_uuid}/records",
             get(forms::list_form_records).post(forms::create_form_record),
@@ -244,13 +269,15 @@ async fn require_authenticated(
         | (_, "/api/identity/local-login")
         | (_, "/api/identity/dingtalk/session")
         | (_, "/api/internal/identity-source") => {}
-        _ => authorization::authorize_request(
-            request.headers(),
-            &state,
-            request.method(),
-            request.uri().path(),
-        )
-        .await?,
+        _ => {
+            authorization::authorize_request(
+                request.headers(),
+                &state,
+                request.method(),
+                request.uri().path(),
+            )
+            .await?
+        }
     }
     Ok(next.run(request).await)
 }

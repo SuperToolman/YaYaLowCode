@@ -53,6 +53,13 @@ export const DESIGNER_COMPONENTS = [
     group: "advanced",
   },
   {
+    type: "associationFormField",
+    label: "关联表单",
+    placeholder: "请选择关联记录",
+    icon: "关",
+    group: "advanced",
+  },
+  {
     type: "singleLineText",
     label: "单行文本",
     placeholder: "请输入单行文本",
@@ -230,6 +237,23 @@ export type DesignerFieldProps = {
   subformActionColumnWidth?: number;
   subformAllowCustomColumns?: boolean;
   subformEnableTotals?: boolean;
+  associationFormId?: string;
+  associationFormName?: string;
+  associationAppId?: string;
+  associationPrimaryFieldId?: string;
+  associationSecondaryFieldId?: string;
+  associationTableFieldIds?: string[];
+  associationFilters?: Array<{ fieldId: string; operator: string; value: string }>;
+  associationFiltersEnabled?: boolean;
+  associationFills?: Array<{ sourceFieldId: string; targetFieldId: string }>;
+  associationSubformFills?: Array<{
+    sourceSubformId: string;
+    targetSubformId: string;
+    mappings: Array<{ sourceFieldId: string; targetFieldId: string }>;
+  }>;
+  associationFillsEnabled?: boolean;
+  associationSorts?: Array<{ fieldId: string; direction: "asc" | "desc" }>;
+  associationSortsEnabled?: boolean;
   memberOrganizationSource?: "local" | "dingtalk" | "wecom" | "feishu";
   memberSelectableScope?: "all" | "roles" | "members";
   memberRoleIds?: string[];
@@ -340,6 +364,23 @@ export function getDefaultDesignerFieldProps(
       subformActionColumnWidth: 70,
       subformAllowCustomColumns: false,
       subformEnableTotals: false,
+    };
+  }
+
+  if (type === "associationFormField") {
+    return {
+      ...commonProps,
+      defaultValue: "",
+      placeholder: component.placeholder,
+      associationFormId: "",
+      associationAppId: "",
+      associationPrimaryFieldId: "",
+      associationSecondaryFieldId: "",
+      associationTableFieldIds: [],
+      associationFilters: [],
+      associationFills: [],
+      associationSubformFills: [],
+      associationSorts: [],
     };
   }
 
@@ -594,6 +635,10 @@ function ComponentPaletteIcon({
     return <GridIcon />;
   }
 
+  if (type === "associationFormField") {
+    return <FormIcon />;
+  }
+
   if (type === "description") {
     return <MessageIcon />;
   }
@@ -654,7 +699,7 @@ export function FieldPreview({
   return (
     <div
       className={[
-        "w-full min-w-0 flex-1 space-y-2",
+        type === "multiLineText" ? "flex h-full min-w-0 flex-1 flex-col gap-2" : "w-full min-w-0 flex-1 space-y-2",
         fieldProps.isHidden ? "opacity-40" : "",
       ].join(" ")}
     >
@@ -682,6 +727,9 @@ export function FieldPreview({
           <div className="grid grid-cols-3 divide-x divide-[var(--color-border)] text-center text-xs text-[var(--color-text-secondary)]"><span className="p-2">字段列</span><span className="p-2">字段列</span><span className="p-2">操作</span></div>
         </div>
       ) : null}
+      {type === "associationFormField" ? (
+        <div className="flex h-10 w-full items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 text-sm text-[var(--color-text-disabled)]"><span>{fieldProps.associationPrimaryFieldId ? "已配置关联表单" : placeholder}</span><span>⌄</span></div>
+      ) : null}
       {type === "singleLineText" ? (
         <div className="relative">
           <Input
@@ -705,8 +753,8 @@ export function FieldPreview({
         </p>
       ) : null}
       {type === "multiLineText" ? (
-        <div className="relative">
-          <InputGroup fullWidth>
+        <div className="relative min-h-20 flex-1">
+          <InputGroup fullWidth className="h-full">
             <InputGroup.TextArea
               aria-label={label}
               defaultValue={textDefaultValue}
@@ -715,6 +763,7 @@ export function FieldPreview({
               readOnly={fieldProps.isReadOnly}
               required={fieldProps.isRequired}
               rows={fieldProps.rows ?? (compact ? 2 : 3)}
+              className="h-full min-h-0 w-full resize-none"
             />
           </InputGroup>
           {fieldProps.showClearButton ? <ClearButtonPreview /> : null}

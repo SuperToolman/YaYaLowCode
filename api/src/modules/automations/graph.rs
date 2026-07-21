@@ -1,6 +1,6 @@
 //! Structural validation and normalization for low-code automation graphs.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::{Value, json};
 
@@ -132,6 +132,7 @@ pub(super) fn validate_automation_graph(
         ));
     }
 
+    let mut outgoing: HashMap<String, Vec<String>> = HashMap::new();
     for edge in json_array_items(edges_json) {
         let source = read_json_string(edge.get("source")).ok_or_else(|| {
             AppError::BadRequest("automation edge source is required".to_string())
@@ -151,7 +152,70 @@ pub(super) fn validate_automation_graph(
                 "trigger node cannot be target of edge".to_string(),
             ));
         }
+
+        if source == target {
+            return Err(AppError::BadRequest(
+                "automation graph cannot contain a self-referencing edge".to_string(),
+            ));
+        }
+        outgoing.entry(source).or_default().push(target);
+    }
+
+    let mut visiting = HashSet::new();
+    let mut visited = HashSet::new();
+    for node_id in &node_ids {
+        if graph_contains_cycle(node_id, &outgoing, &mut visiting, &mut visited) {
+            return Err(AppError::BadRequest(
+                "automation graph cannot contain a cycle".to_string(),
+            ));
+        }
     }
 
     Ok(())
+}
+
+fn graph_contains_cycle(
+    node_id: &str,
+    outgoing: &HashMap<String, Vec<String>>,
+    visiting: &mut HashSet<String>,
+    visited: &mut HashSet<String>,
+) -> bool {
+    if visited.contains(node_id) {
+        return false;
+    }
+    if !visiting.insert(node_id.to_string()) {
+        return true;
+    }
+
+    let contains_cycle = outgoing
+        .get(node_id)
+        .into_iter()
+        .flatten()
+        .any(|target| graph_contains_cycle(target, outgoing, visiting, visited));
+    visiting.remove(node_id);
+    visited.insert(node_id.to_string());
+    contains_cycle
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::validate_automation_graph;
+
+    #[test]
+    fn rejects_cycles_that_do_not_target_the_trigger() {
+        let nodes = json!([
+            { "id": "trigger-1" },
+            { "id": "a" },
+            { "id": "b" }
+        ]);
+        let edges = json!([
+            { "source": "trigger-1", "target": "a" },
+            { "source": "a", "target": "b" },
+            { "source": "b", "target": "a" }
+        ]);
+
+        assert!(validate_automation_graph(&nodes, &edges).is_err());
+    }
 }

@@ -407,6 +407,39 @@ body::-webkit-scrollbar-thumb,
   background-color: var(--color-bg-surface);
 }
 
+/* Keep automation node configuration dense without changing shared form controls. */
+.automation-property-panel {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.automation-property-panel :where(*) {
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+}
+
+.automation-property-panel :is(input, textarea) {
+  padding: 0.25rem 0.5rem;
+}
+
+.automation-property-panel input,
+.automation-property-panel [data-slot="select-trigger"],
+.automation-property-panel [data-slot="select-value"] {
+  min-width: 0;
+  white-space: nowrap !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.automation-property-panel [data-slot="select-value"] {
+  display: block;
+}
+
+.automation-property-panel .automation-property-title {
+  font-size: 14px !important;
+  line-height: 1.35 !important;
+}
+
 /* Monaco renders and toggles its own scrollbar elements at runtime. */
 .monaco-editor .monaco-scrollable-element > .scrollbar,
 .monaco-scrollable-element > .scrollbar {

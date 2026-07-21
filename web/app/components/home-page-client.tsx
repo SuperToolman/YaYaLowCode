@@ -29,7 +29,8 @@ const workItems = [
 ] as const;
 
 export function HomePageClient() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canManageApps = hasPermission("apps.manage");
   const [apps, setApps] = useState<AppItem[]>([]);
   const [recentIds, setRecentIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -66,7 +67,7 @@ export function HomePageClient() {
   return (
     <div className="theme-page-shell flex h-full min-h-0 overflow-y-auto">
       <main className="mx-auto flex min-h-full w-full flex-col gap-4 xl:min-h-0">
-        <PageHeader title={`你好，${user?.displayName || "管理员"}`} description="集中查看工作事项并继续处理你的低代码应用。" eyebrow={<><CircleCheck className="h-3.5 w-3.5" />工作台</>} actions={<><div className="grid grid-cols-3 gap-5 sm:gap-8"><HeaderMetric label="应用" value={isLoading ? "-" : String(apps.length)} /><HeaderMetric label="运行中" value={isLoading ? "-" : String(enabledApps.length)} /><HeaderMetric label="数据记录" value={isLoading ? "-" : formatCount(apps.reduce((sum, app) => sum + app.records, 0))} /></div><Link href="/myApp" className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-[var(--color-primary)] px-4 text-sm font-medium text-[var(--color-text-on-primary)]"><Plus className="h-4 w-4" />创建应用</Link></>} />
+        <PageHeader title={`你好，${user?.displayName || "管理员"}`} description="集中查看工作事项并继续处理你的低代码应用。" eyebrow={<><CircleCheck className="h-3.5 w-3.5" />工作台</>} actions={<><div className="grid grid-cols-3 gap-5 sm:gap-8"><HeaderMetric label="应用" value={isLoading ? "-" : String(apps.length)} /><HeaderMetric label="运行中" value={isLoading ? "-" : String(enabledApps.length)} /><HeaderMetric label="数据记录" value={isLoading ? "-" : formatCount(apps.reduce((sum, app) => sum + app.records, 0))} /></div>{canManageApps ? <Link href="/myApp" className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-[var(--color-primary)] px-4 text-sm font-medium text-[var(--color-text-on-primary)]"><Plus className="h-4 w-4" />创建应用</Link> : null}</>} />
 
         <section className="grid shrink-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {workItems.map((item) => <WorkItemCard app={taskApp} item={item} key={item.slug} />)}
@@ -75,7 +76,7 @@ export function HomePageClient() {
         <section className="grid min-h-[520px] flex-1 gap-4 xl:min-h-0 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_280px]">
           <AppListCard title="最近创建的应用" description="从最新搭建的业务应用继续工作。" apps={newestApps} emptyMessage="还没有创建应用。" isLoading={isLoading} loadFailed={loadFailed} onVisit={recordVisit} />
           <AppListCard title="最近访问的应用" description="保留你最近打开过的应用入口。" apps={recentApps} emptyMessage="暂无访问记录，打开应用后会显示在这里。" isLoading={isLoading} loadFailed={loadFailed} onVisit={recordVisit} />
-          <Card className="theme-panel-strong flex min-h-0 flex-col p-5 shadow-[var(--shadow-card)]"><div className="flex items-center justify-between"><h2 className="text-base font-semibold text-[var(--color-text-primary)]">常用操作</h2><Rocket className="h-5 w-5 text-[var(--color-primary)]" /></div><div className="mt-3 divide-y divide-[var(--color-border)]"><ActionLink href="/myApp" icon={<FilePlus />} label="新建应用" description="从空白应用开始搭建" /><ActionLink href="/designer" icon={<LayoutHeaderCellsLarge />} label="字段大纲" description="浏览表单与页面结构" /><ActionLink href="/settings" icon={<Gear />} label="系统设置" description="管理用户和平台配置" /></div><div className="mt-auto flex items-center gap-2 border-t border-[var(--color-border)] pt-4 text-xs text-[var(--color-text-secondary)]"><Clock className="h-4 w-4" />应用数据自动同步</div></Card>
+          {canManageApps ? <Card className="theme-panel-strong flex min-h-0 flex-col p-5 shadow-[var(--shadow-card)]"><div className="flex items-center justify-between"><h2 className="text-base font-semibold text-[var(--color-text-primary)]">常用操作</h2><Rocket className="h-5 w-5 text-[var(--color-primary)]" /></div><div className="mt-3 divide-y divide-[var(--color-border)]"><ActionLink href="/myApp" icon={<FilePlus />} label="新建应用" description="从空白应用开始搭建" /><ActionLink href="/designer" icon={<LayoutHeaderCellsLarge />} label="字段大纲" description="浏览表单与页面结构" /><ActionLink href="/settings" icon={<Gear />} label="系统设置" description="管理用户和平台配置" /></div><div className="mt-auto flex items-center gap-2 border-t border-[var(--color-border)] pt-4 text-xs text-[var(--color-text-secondary)]"><Clock className="h-4 w-4" />应用数据自动同步</div></Card> : null}
         </section>
       </main>
     </div>

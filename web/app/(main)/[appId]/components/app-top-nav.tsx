@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAuth } from "../../../components/auth-provider";
 
 type AppTopNavProps = {
   appId: string;
@@ -9,6 +10,7 @@ type AppTopNavProps = {
 
 export function AppTopNav({ appId }: AppTopNavProps) {
   const pathname = usePathname();
+  const { hasPermission } = useAuth();
   if (/\/automations\/[^/]+$/.test(pathname)) {
     return null;
   }
@@ -20,27 +22,31 @@ export function AppTopNav({ appId }: AppTopNavProps) {
       active:
         !pathname.startsWith(`/${appId}/automations`) &&
         !pathname.startsWith(`/${appId}/settings`),
+      permission: undefined,
     },
     {
       label: "集成&自动化",
       href: `/${appId}/automations`,
       active: pathname.startsWith(`/${appId}/automations`),
+      permission: "automation",
     },
     {
       label: "应用设置",
       href: `/${appId}/settings`,
       active: pathname.startsWith(`/${appId}/settings`),
+      permission: "settings",
     },
     {
       label: "应用发布",
       href: "#",
       active: false,
+      permission: "publish",
     },
   ];
 
   return (
     <nav className="order-3 flex w-full items-center gap-1 overflow-x-auto border-t border-[var(--color-border)] pt-2 text-sm text-[var(--color-text-secondary)] lg:order-none lg:w-auto lg:border-t-0 lg:pt-0">
-      {items.map((item) => {
+      {items.filter((item) => !item.permission || hasPermission(`app:${appId}:${item.permission}`)).map((item) => {
         const className = item.active
           ? "rounded-md bg-[var(--color-primary-soft)] px-3 py-2 font-medium text-[var(--color-text-primary)]"
           : "rounded-md px-3 py-2 transition-colors hover:bg-[var(--color-bg-panel-soft)] hover:text-[var(--color-text-primary)]";

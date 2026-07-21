@@ -7,14 +7,14 @@ use sea_orm::Database;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::platform::authorization;
 use crate::platform::config::{
-    AgentSettings, DatabaseSettings, DingTalkSettings, IdentitySourceSettings, RbacPermissionSettings,
-    load_agent_settings, load_database_settings, load_identity_source_settings,
-    load_rbac_permission_settings, save_agent_settings, save_database_settings,
-    save_identity_source_settings, save_rbac_permission_settings,
+    AgentSettings, DatabaseSettings, DingTalkSettings, IdentitySourceSettings,
+    RbacPermissionSettings, load_agent_settings, load_database_settings,
+    load_identity_source_settings, load_rbac_permission_settings, save_agent_settings,
+    save_database_settings, save_identity_source_settings, save_rbac_permission_settings,
 };
 use crate::platform::prelude::{ApiResponse, AppError, AppState};
-use crate::platform::authorization;
 use crate::shared::success_response;
 
 #[derive(Serialize)]
@@ -258,7 +258,9 @@ pub(crate) async fn update_role_permissions(
         return Err(AppError::BadRequest("role id is required".to_string()));
     }
     if role_id == "00000000-0000-4000-8000-000000000002" {
-        return Err(AppError::BadRequest("system administrator permissions cannot be modified".to_string()));
+        return Err(AppError::BadRequest(
+            "system administrator permissions cannot be modified".to_string(),
+        ));
     }
     let mut settings: RbacPermissionSettings = load_rbac_permission_settings().unwrap_or_default();
     let mut grants = payload

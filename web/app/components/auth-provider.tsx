@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   AUTH_TOKEN_STORAGE_KEY,
   AUTH_USER_STORAGE_KEY,
@@ -16,6 +16,10 @@ type AuthContextValue = {
   isReady: boolean;
   token: string | null;
   user: AuthUser | null;
+  permissions: string[];
+  permissionsReady: boolean;
+  hasPermission: (permission: string) => boolean;
+  hasAnyPermission: (permissions: readonly string[]) => boolean;
   completeLogin: (token: string, user: AuthUser) => void;
   logout: () => void;
 };
@@ -43,6 +47,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
   const isReady = useSyncExternalStore(subscribeToAuth, () => true, () => false);
   const user = useMemo(() => (token ? readStoredUser() : null), [token]);
+  const [permissions, setPermissions] = useState<string[]>([]);
+  const [permissionsLoadedFor, setPermissionsLoadedFor] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    void fetch("/api/authorization/grants", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = (await response.json()) as { code: number; data: string[] | null };
+        if (!response.ok || payload.code !== 0 || !payload.data) throw new Error("无法加载权限");
+        if (!cancelled) {
+          setPermissions(payload.data);
+          setPermissionsLoadedFor(token);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPermissions([]);
+          setPermissionsLoadedFor(token);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  const permissionsReady = !token || permissionsLoadedFor === token;
 
   useEffect(() => {
     if (!token) return;
@@ -76,10 +107,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isReady,
       token,
       user,
+      permissions,
+      permissionsReady,
+      hasPermission: (permission) => permissions.includes("*") || permissions.includes(permission),
+      hasAnyPermission: (required) => permissions.includes("*") || required.some((permission) => permissions.includes(permission)),
       completeLogin,
       logout,
     }),
-    [isReady, token, user],
+    [isReady, permissions, permissionsReady, token, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

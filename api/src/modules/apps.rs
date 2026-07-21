@@ -1,11 +1,11 @@
 use crate::modules::navigation::ensure_system_navigation_for_app;
+use crate::platform::authorization;
 use crate::platform::form_storage::delete_storage_definition;
 use crate::platform::prelude::*;
 use crate::platform::records::RecordRepository;
 use crate::shared::*;
-use axum::http::StatusCode;
 use axum::http::HeaderMap;
-use crate::platform::authorization;
+use axum::http::StatusCode;
 
 pub(crate) async fn list_apps(
     State(state): State<AppState>,
@@ -17,10 +17,14 @@ pub(crate) async fn list_apps(
         .await?;
 
     let grants = authorization::grants(&headers, &state).await?;
-    let all = grants.contains("*");
+    let all = grants.contains("*") || grants.contains("apps.manage");
     Ok(Json(success_response(
         "获取应用列表成功",
-        items.into_iter().filter(|app| all || grants.contains(&format!("app:{}:display", app.route_app_id))).map(ApiApp::from).collect(),
+        items
+            .into_iter()
+            .filter(|app| all || grants.contains(&format!("app:{}:display", app.route_app_id)))
+            .map(ApiApp::from)
+            .collect(),
     )))
 }
 

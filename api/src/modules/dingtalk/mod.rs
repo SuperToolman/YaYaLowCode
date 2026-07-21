@@ -105,7 +105,10 @@ pub(crate) async fn clear_dingtalk_data(
         .filter(iam_external_identity_entity::Column::Provider.eq("dingtalk"))
         .all(&transaction)
         .await?;
-    let user_ids = identities.iter().map(|identity| identity.user_id).collect::<Vec<_>>();
+    let user_ids = identities
+        .iter()
+        .map(|identity| identity.user_id)
+        .collect::<Vec<_>>();
     let roles = iam_role_entity::Entity::find()
         .filter(iam_role_entity::Column::SourceType.eq("dingtalk"))
         .all(&transaction)

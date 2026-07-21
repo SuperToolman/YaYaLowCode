@@ -10,17 +10,21 @@ import {
   type SetStateAction,
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { FaceRobot, Gear, PaperPlane, Plus, Sparkles } from "@gravity-ui/icons";
+import { ArrowDown, FaceRobot, Gear, PaperPlane, Plus, Sparkles } from "@gravity-ui/icons";
 import { Button } from "@heroui/react";
-import { Modal } from "@heroui/react/modal";
+import { Drawer } from "@heroui/react/drawer";
 import { AgentMarkdown } from "./agent-markdown";
+import { useAuth } from "./auth-provider";
 
 type AgentMessage = {
   id: string;
   role: "assistant" | "user";
   content: string;
   createdAt?: string;
+  toolActivities?: AgentToolActivity[];
 };
+
+type AgentToolActivity = { id: string; name: string; status: "running" | "completed" };
 
 type AgentSession = {
   id: string;
@@ -60,6 +64,8 @@ const suggestions = [
 export default function AgentAssistantLauncher() {
   const router = useRouter();
   const pathname = usePathname();
+  const { hasPermission } = useAuth();
+  const canConfigureAgents = hasPermission("settings.agent");
   const pageContext = useMemo(() => buildPageContext(pathname), [pathname]);
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState("");
@@ -72,7 +78,31 @@ export default function AgentAssistantLauncher() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [statusText, setStatusText] = useState("准备就绪");
   const [errorMessage, setErrorMessage] = useState("");
+  const [isNearMessagesBottom, setIsNearMessagesBottom] = useState(true);
   const localMessageSequence = useRef(0);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const shouldAutoScrollRef = useRef(true);
+
+  const scrollMessagesToBottom = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    shouldAutoScrollRef.current = true;
+    setIsNearMessagesBottom(true);
+    container.scrollTop = container.scrollHeight;
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    shouldAutoScrollRef.current = true;
+    const frame = window.requestAnimationFrame(scrollMessagesToBottom);
+    return () => window.cancelAnimationFrame(frame);
+  }, [isOpen, scrollMessagesToBottom]);
+
+  useEffect(() => {
+    if (!isOpen || !shouldAutoScrollRef.current) return;
+    const frame = window.requestAnimationFrame(scrollMessagesToBottom);
+    return () => window.cancelAnimationFrame(frame);
+  }, [errorMessage, isOpen, messages, scrollMessagesToBottom]);
 
   const loadMessages = useCallback(async (sessionId: string) => {
     const response = await fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}/messages`, {
@@ -82,6 +112,8 @@ export default function AgentAssistantLauncher() {
     if (!response.ok || payload.code !== 0 || !payload.data) {
       throw new Error(payload.message || "无法加载 Agent 消息");
     }
+    shouldAutoScrollRef.current = true;
+    setIsNearMessagesBottom(true);
     setMessages(payload.data);
   }, []);
 
@@ -94,9 +126,10 @@ export default function AgentAssistantLauncher() {
       if (!response.ok || payload.code !== 0 || !payload.data) {
         throw new Error(payload.message || "无法加载 Agent 会话");
       }
-      const scopedSessions = agentId ? payload.data.filter((item) => item.agentId === agentId) : payload.data;
+      const scopedSessions = (agentId ? payload.data.filter((item) => item.agentId === agentId) : payload.data)
+        .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
       setSessions(scopedSessions);
-      const sessionId = preferredSessionId ?? scopedSessions.find((item) => item.id === activeSessionId)?.id ?? scopedSessions[0]?.id ?? null;
+      const sessionId = preferredSessionId ?? scopedSessions[0]?.id ?? null;
       setActiveSessionId(sessionId);
       if (sessionId) await loadMessages(sessionId);
       else setMessages([]);
@@ -107,23 +140,24 @@ export default function AgentAssistantLauncher() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeSessionId, loadMessages]);
+  }, [loadMessages]);
 
   useEffect(() => {
     if (!isOpen) return;
     const timer = window.setTimeout(() => {
       void (async () => {
-        const response = await fetch("/api/agents", { cache: "no-store" });
-        const payload = (await response.json()) as ApiEnvelope<AgentOption[]>;
-        if (!response.ok || !payload.data) throw new Error(payload.message || "无法加载 Agent");
-        const enabledAgents = payload.data.filter((item) => item.enabled);
-        setAgents(enabledAgents);
+        if (canConfigureAgents) {
+          const response = await fetch("/api/agents", { cache: "no-store" });
+          const payload = (await response.json()) as ApiEnvelope<AgentOption[]>;
+          if (!response.ok || !payload.data) throw new Error(payload.message || "无法加载 Agent");
+          setAgents(payload.data.filter((item) => item.enabled));
+        }
         const agentId = activeAgentId;
         await loadSessions(agentId);
       })().catch((reason) => setErrorMessage(reason instanceof Error ? reason.message : "无法加载 Agent"));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [activeAgentId, isOpen, loadSessions]);
+  }, [activeAgentId, canConfigureAgents, isOpen, loadSessions]);
 
   async function createSession() {
     const response = await fetch("/api/agent/sessions", {
@@ -180,10 +214,12 @@ export default function AgentAssistantLauncher() {
 
     try {
       const sessionId = activeSessionId ?? await createSession();
+      shouldAutoScrollRef.current = true;
+      setIsNearMessagesBottom(true);
       setMessages((current) => [
         ...current,
         { id: `local-user-${messageSequence}`, role: "user", content: normalized },
-        { id: assistantMessageId, role: "assistant", content: "" },
+        { id: assistantMessageId, role: "assistant", content: "", toolActivities: [] },
       ]);
       const response = await fetch(
         `/api/agent/sessions/${encodeURIComponent(sessionId)}/messages`,
@@ -216,7 +252,16 @@ export default function AgentAssistantLauncher() {
           break;
         }
       }
-      await loadSessions(sessionId);
+      setSessions((current) => {
+        const completedSession = current.find((session) => session.id === sessionId);
+        if (!completedSession) return current;
+        const updatedSession = {
+          ...completedSession,
+          title: completedSession.title === "新对话" ? conversationTitle(normalized) : completedSession.title,
+          updatedAt: new Date().toISOString(),
+        };
+        return [updatedSession, ...current.filter((session) => session.id !== sessionId)];
+      });
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : "Agent 请求失败";
       setErrorMessage(message);
@@ -250,16 +295,16 @@ export default function AgentAssistantLauncher() {
         <span className="text-[11px] font-medium leading-4">Agent</span>
       </button>
 
-      <Modal isOpen={isOpen} onOpenChange={setIsOpen}>
-        <Modal.Trigger aria-hidden="true" tabIndex={-1} className="hidden" />
-        <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
-          <Modal.Container placement="center" scroll="inside" size="cover">
-            <Modal.Dialog className="flex h-[min(760px,86vh)] w-[min(960px,90vw)] flex-col overflow-hidden rounded-[24px] border border-[var(--color-border)] bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]">
-              <Modal.Header className="flex min-h-[64px] items-center gap-4 border-b border-[var(--color-border)] px-4 py-3 pr-3 sm:px-5 sm:pr-3">
+      <Drawer isOpen={isOpen} onOpenChange={setIsOpen}>
+        <Drawer.Trigger aria-hidden="true" className="hidden" />
+        <Drawer.Backdrop className="theme-modal-backdrop" isDismissable>
+          <Drawer.Content placement="right">
+            <Drawer.Dialog className="flex h-[100dvh] w-[80vw] max-w-[80vw] flex-col overflow-hidden border-l border-[var(--color-border)] bg-[var(--color-bg-surface)] !p-0 text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]">
+              <Drawer.Header className="flex min-h-[64px] items-center gap-4 border-b border-[var(--color-border)] p-0">
                 <div className="flex min-w-0 flex-1 items-center gap-3">
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]"><FaceRobot className="h-5 w-5" /></span>
                   <div className="min-w-0">
-                    <Modal.Heading className="truncate text-lg font-semibold text-[var(--color-text-primary)]">{activeAgent?.name ?? "自动匹配 Agent"}</Modal.Heading>
+                    <Drawer.Heading className="truncate text-lg font-semibold text-[var(--color-text-primary)]">{activeAgent?.name ?? "自动匹配 Agent"}</Drawer.Heading>
                     <p className="truncate text-xs text-[var(--color-text-secondary)]">{activeSession?.title || "只读分析助手"}</p>
                   </div>
                 </div>
@@ -288,10 +333,10 @@ export default function AgentAssistantLauncher() {
                     <Gear className="h-4 w-4" />配置
                   </Button>
                 </div>
-                <Modal.CloseTrigger aria-label="关闭 Agent" />
-              </Modal.Header>
+                <Drawer.CloseTrigger aria-label="关闭 Agent" />
+              </Drawer.Header>
 
-              <Modal.Body className="min-h-0 flex-1 overflow-hidden p-0">
+              <Drawer.Body className="min-h-0 flex-1 overflow-hidden p-0">
                 <div className="flex h-full min-h-0">
                   <aside className="hidden w-[216px] shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-control-soft)] sm:flex">
                     <div className="p-3">
@@ -323,7 +368,7 @@ export default function AgentAssistantLauncher() {
                   </aside>
 
                   <section className="flex min-w-0 flex-1 flex-col bg-[var(--color-bg-canvas)]">
-                    <div className="border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] px-4 py-3 sm:hidden">
+                    <div className="border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] p-0 sm:hidden">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)]">
                           <span className={`h-2 w-2 rounded-full ${isStreaming ? "animate-pulse bg-[var(--color-primary)]" : errorMessage ? "bg-[var(--color-danger)]" : "bg-[var(--color-success)]"}`} />
@@ -332,7 +377,16 @@ export default function AgentAssistantLauncher() {
                         <Button variant="ghost" className="h-8 rounded-xl px-2.5 text-xs" isDisabled={isStreaming} onClick={() => void startNewSession()}><Plus className="h-4 w-4" />新对话</Button>
                       </div>
                     </div>
-                    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
+                    <div
+                      ref={messagesContainerRef}
+                      className="min-h-0 flex-1 overflow-y-auto p-0"
+                      onScroll={(event) => {
+                        const container = event.currentTarget;
+                        const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= 48;
+                        shouldAutoScrollRef.current = isNearBottom;
+                        setIsNearMessagesBottom(isNearBottom);
+                      }}
+                    >
                       {errorMessage ? <div className="mx-auto mb-5 max-w-2xl rounded-2xl border border-[var(--color-danger)]/20 bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">{errorMessage}</div> : null}
                       {!hasMessages ? (
                         <div className="mx-auto flex min-h-full max-w-2xl flex-col justify-center py-10">
@@ -351,6 +405,7 @@ export default function AgentAssistantLauncher() {
                                 {message.content ? (
                                   message.role === "assistant" ? <AgentMarkdown content={message.content} /> : message.content
                                 ) : <span className="inline-flex items-center gap-2 text-[var(--color-text-secondary)]"><span className="h-2 w-2 animate-pulse rounded-full bg-[var(--color-primary)]" />正在思考…</span>}
+                                {message.role === "assistant" && message.toolActivities?.length ? <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-3">{message.toolActivities.map((tool) => <span key={tool.id} className={tool.status === "completed" ? "inline-flex items-center gap-1.5 rounded-md bg-[var(--color-success-soft)] px-2 py-1 text-[11px] text-[var(--color-success)]" : "inline-flex items-center gap-1.5 rounded-md bg-[var(--color-primary-soft)] px-2 py-1 text-[11px] text-[var(--color-primary)]"}><span className={`h-1.5 w-1.5 rounded-full ${tool.status === "completed" ? "bg-[var(--color-success)]" : "animate-pulse bg-[var(--color-primary)]"}`} />{tool.status === "completed" ? "已查询" : "查询中"} {toolLabel(tool.name)}</span>)}</div> : null}
                               </div>
                             </div>
                           ))}
@@ -358,7 +413,8 @@ export default function AgentAssistantLauncher() {
                       )}
                     </div>
 
-                    <div className="bg-[var(--color-bg-canvas)] px-4 pb-4 pt-2 sm:px-6 lg:px-8">
+                    <div className="relative bg-[var(--color-bg-canvas)] p-0">
+                      {hasMessages && !isNearMessagesBottom ? <Button isIconOnly aria-label="回到最新消息" className="absolute bottom-full right-4 mb-3 h-9 w-9 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-0 text-[var(--color-text-primary)] shadow-[var(--shadow-sm)]" onClick={scrollMessagesToBottom}><ArrowDown className="h-4 w-4" /></Button> : null}
                       <div className="mx-auto flex max-w-2xl items-end gap-2 rounded-[22px] border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-2 shadow-[var(--shadow-sm)] focus-within:border-[var(--color-primary)] focus-within:ring-4 focus-within:ring-[var(--color-primary-soft)]">
                         <textarea aria-label="给 Agent 发送消息" className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-disabled)]" placeholder="询问当前应用、表单或自动化…" rows={1} value={input} disabled={isStreaming} onChange={(event) => setInput(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} />
                         <Button isIconOnly aria-label="发送消息" className="h-10 min-h-10 w-10 min-w-10 rounded-xl bg-[var(--color-primary)] p-0 text-[var(--color-text-on-primary)] disabled:opacity-40" isDisabled={!input.trim() || isStreaming} onClick={() => void sendMessage()}><PaperPlane className="h-4 w-4" /></Button>
@@ -367,11 +423,11 @@ export default function AgentAssistantLauncher() {
                     </div>
                   </section>
                 </div>
-              </Modal.Body>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
+              </Drawer.Body>
+            </Drawer.Dialog>
+          </Drawer.Content>
+        </Drawer.Backdrop>
+      </Drawer>
     </>
   );
 }
@@ -407,9 +463,18 @@ function handleSseFrame(
   if (eventName === "message.delta" && typeof payload.delta === "string") {
     setMessages((current) => current.map((message) => message.id === assistantMessageId ? { ...message, content: message.content + payload.delta } : message));
   } else if (eventName === "tool.started") {
-    setStatusText(`正在读取 ${toolLabel(String(payload.name ?? "工具"))}`);
+    const name = String(payload.name ?? "工具");
+    setStatusText(`正在读取 ${toolLabel(name)}`);
+    setMessages((current) => current.map((message) => message.id === assistantMessageId ? { ...message, toolActivities: [...(message.toolActivities ?? []), { id: `${name}-${Date.now()}`, name, status: "running" }] } : message));
   } else if (eventName === "tool.completed") {
     setStatusText("已读取数据，正在整理回答");
+    setMessages((current) => current.map((message) => {
+      if (message.id !== assistantMessageId || !message.toolActivities?.length) return message;
+      const activities = [...message.toolActivities];
+      const index = activities.findLastIndex((tool) => tool.status === "running");
+      if (index >= 0) activities[index] = { ...activities[index], status: "completed" };
+      return { ...message, toolActivities: activities };
+    }));
   } else if (eventName === "status") {
     setStatusText("正在思考");
   } else if (eventName === "run.completed") {
@@ -422,5 +487,9 @@ function handleSseFrame(
 }
 
 function toolLabel(name: string) {
-  return ({ list_forms: "表单列表", get_form_schema: "表单 Schema", list_automations: "自动化列表", get_automation_graph: "自动化流程" } as Record<string, string>)[name] ?? name;
+  return ({ list_forms: "表单列表", get_form_schema: "表单 Schema", list_automations: "自动化列表", get_automation_graph: "自动化流程", call_plugin_tool: "插件工具" } as Record<string, string>)[name] ?? name;
+}
+
+function conversationTitle(content: string) {
+  return content.replace(/\s+/g, " ").slice(0, 48) || "新对话";
 }

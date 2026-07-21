@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, Input } from "@heroui/react";
+import { Avatar, Button, Input } from "@heroui/react";
 
 type ApiEnvelope<T> = { code: number; message: string; data: T | null };
 type OrganizationUnit = {
@@ -12,6 +12,18 @@ type OrganizationUnit = {
   name: string;
   status: string;
   memberCount: number;
+  members?: OrganizationMember[];
+};
+type OrganizationMember = {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
+  title: string | null;
+  status: string;
+};
+type OrganizationUser = OrganizationMember & {
+  sourceType: string;
+  departments: string[];
 };
 type OrganizationNode = OrganizationUnit & { children: OrganizationNode[] };
 type OrganizationSourceTree = { sourceType: string; roots: OrganizationNode[] };
@@ -28,12 +40,29 @@ export default function OrganizationSettingsPage() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/identity/organization-units", { cache: "no-store" });
+      const [response, usersResponse] = await Promise.all([
+        fetch("/api/identity/organization-units", { cache: "no-store" }),
+        fetch("/api/identity/users", { cache: "no-store" }),
+      ]);
       const payload = (await response.json()) as ApiEnvelope<OrganizationUnit[]>;
       if (!response.ok || payload.code !== 0 || !payload.data) throw new Error(payload.message || "无法加载组织架构");
-      setUnits(payload.data);
+      const usersPayload = usersResponse.ok ? (await usersResponse.json()) as ApiEnvelope<OrganizationUser[]> : null;
+      const membersByDepartment = new Map<string, OrganizationMember[]>();
+      for (const user of usersPayload?.data ?? []) {
+        for (const department of user.departments ?? []) {
+          const key = `${user.sourceType}:${department}`;
+          const members = membersByDepartment.get(key) ?? [];
+          members.push(user);
+          membersByDepartment.set(key, members);
+        }
+      }
+      const populatedUnits = payload.data.map((unit) => ({
+        ...unit,
+        members: unit.members ?? membersByDepartment.get(`${unit.sourceType}:${unit.name}`) ?? [],
+      }));
+      setUnits(populatedUnits);
       setExpanded(new Set());
-      setSelectedId((current) => current && payload.data!.some((unit) => unit.id === current) ? current : payload.data![0]?.id || null);
+      setSelectedId((current) => current && populatedUnits.some((unit) => unit.id === current) ? current : populatedUnits[0]?.id || null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法加载组织架构");
     } finally {
@@ -122,6 +151,10 @@ export default function OrganizationSettingsPage() {
                   <Detail label="外部部门 ID" value={selected.externalId} />
                   <Detail label="上级部门 ID" value={selected.parentExternalId || "根节点"} />
                 </dl>
+                <div className="mt-6 border-t border-[var(--color-border)] pt-4">
+                  <h4 className="text-xs font-semibold text-[var(--color-text-secondary)]">直属成员</h4>
+                  {(selected.members ?? []).length ? <div className="mt-3 space-y-2">{(selected.members ?? []).map((member) => <div key={member.id} className="flex min-w-0 items-center gap-2 rounded-xl bg-[var(--color-bg-surface)] p-2"><Avatar className="h-8 w-8 shrink-0"><Avatar.Image alt="" src={member.avatarUrl ?? undefined} /><Avatar.Fallback>{member.displayName.slice(0, 1)}</Avatar.Fallback></Avatar><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-[var(--color-text-primary)]">{member.displayName}</p><p className="truncate text-[11px] text-[var(--color-text-secondary)]">{member.title || "未设置职务"}</p></div><span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${member.status === "active" ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]"}`}>{member.status === "active" ? "启用" : "停用"}</span></div>)}</div> : <p className="mt-3 text-sm text-[var(--color-text-secondary)]">该组织暂无直属成员。</p>}
+                </div>
               </>
             ) : <div className="text-sm text-[var(--color-text-secondary)]">选择一个组织节点查看详情。</div>}
           </div>
@@ -133,10 +166,14 @@ export default function OrganizationSettingsPage() {
 
 function TreeNode({ node, depth, expanded, selectedId, query, onToggle, onSelect }: { node: OrganizationNode; depth: number; expanded: Set<string>; selectedId: string | null; query: string; onToggle: (id: string) => void; onSelect: (id: string) => void }) {
   const hasChildren = node.children.length > 0;
+  const members = node.members ?? [];
+  const hasMembers = members.length > 0;
+  const hasExpandableContent = hasChildren || hasMembers;
   const isExpanded = expanded.has(node.id);
   const matches = !query || node.name.toLocaleLowerCase("zh-CN").includes(query);
+  const memberMatches = members.some((member) => member.displayName.toLocaleLowerCase("zh-CN").includes(query));
   const descendantMatches = node.children.some((child) => treeMatches(child, query));
-  if (!matches && !descendantMatches) return null;
+  if (!matches && !memberMatches && !descendantMatches) return null;
 
   return (
     <div className={depth > 0 ? "ml-5 border-l border-[var(--color-border)] pl-2" : ""}>
@@ -144,15 +181,16 @@ function TreeNode({ node, depth, expanded, selectedId, query, onToggle, onSelect
         fullWidth
         variant="ghost"
         className={`group mb-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left transition-colors ${selectedId === node.id ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]" : "text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]"}`}
-        onPress={() => { onSelect(node.id); if (hasChildren) onToggle(node.id); }}
+        onPress={() => { onSelect(node.id); if (hasExpandableContent) onToggle(node.id); }}
       >
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center text-xs text-[var(--color-text-secondary)]">{hasChildren ? (isExpanded ? "▾" : "▸") : "•"}</span>
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center text-xs text-[var(--color-text-secondary)]">{hasExpandableContent ? (isExpanded ? "▾" : "▸") : "•"}</span>
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[var(--color-bg-surface)] text-xs font-semibold text-[var(--color-primary)] shadow-[var(--shadow-sm)]">{node.name.slice(0, 1)}</span>
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{node.name}</span>
         <SourceTag source={node.sourceType} />
         <span className="shrink-0 rounded-full bg-[var(--color-bg-surface)] px-2 py-0.5 text-[10px] text-[var(--color-text-secondary)]">{node.memberCount}</span>
       </Button>
       {hasChildren && (isExpanded || query) ? node.children.map((child) => <TreeNode key={child.id} node={child} depth={depth + 1} expanded={expanded} selectedId={selectedId} query={query} onToggle={onToggle} onSelect={onSelect} />) : null}
+      {hasMembers && (isExpanded || query) ? <div className="ml-5 space-y-1 border-l border-[var(--color-border)] pl-2">{members.filter((member) => !query || member.displayName.toLocaleLowerCase("zh-CN").includes(query) || matches).map((member) => <div key={member.id} className="flex min-w-0 items-center gap-2 rounded-xl px-3 py-2"><Avatar className="h-6 w-6 shrink-0"><Avatar.Image alt="" src={member.avatarUrl ?? undefined} /><Avatar.Fallback>{member.displayName.slice(0, 1)}</Avatar.Fallback></Avatar><span className="min-w-0 flex-1 truncate text-xs font-medium text-[var(--color-text-primary)]">{member.displayName}</span><span className="shrink-0 truncate text-[11px] text-[var(--color-text-secondary)]">{member.title || "成员"}</span></div>)}</div> : null}
     </div>
   );
 }
@@ -180,7 +218,7 @@ function buildOrganizationTree(units: OrganizationUnit[]): OrganizationSourceTre
 }
 
 function treeMatches(node: OrganizationNode, query: string): boolean {
-  return !query || node.name.toLocaleLowerCase("zh-CN").includes(query) || node.children.some((child) => treeMatches(child, query));
+  return !query || node.name.toLocaleLowerCase("zh-CN").includes(query) || (node.members ?? []).some((member) => member.displayName.toLocaleLowerCase("zh-CN").includes(query)) || node.children.some((child) => treeMatches(child, query));
 }
 
 function countNodes(nodes: OrganizationNode[]): number {

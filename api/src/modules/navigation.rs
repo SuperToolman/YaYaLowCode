@@ -1,5 +1,5 @@
-use crate::platform::prelude::*;
 use crate::platform::authorization;
+use crate::platform::prelude::*;
 use crate::shared::*;
 use axum::http::{HeaderMap, StatusCode};
 
@@ -23,7 +23,10 @@ pub(crate) async fn list_navigation_items(
 
     Ok(Json(success_response(
         "获取导航成功",
-        visible_items.into_iter().map(ApiNavigationItem::from).collect(),
+        visible_items
+            .into_iter()
+            .map(ApiNavigationItem::from)
+            .collect(),
     )))
 }
 
@@ -40,9 +43,10 @@ fn filter_navigation_items_by_grants(
     let mut visible_ids = items
         .iter()
         .filter(|item| match item.item_type.as_str() {
-            "form" => item.target_form_uuid.as_ref().is_some_and(|form_uuid| {
-                grants.contains(&format!("form:{form_uuid}:display"))
-            }),
+            "form" => item
+                .target_form_uuid
+                .as_ref()
+                .is_some_and(|form_uuid| grants.contains(&format!("form:{form_uuid}:display"))),
             "group" => false,
             _ => true,
         })
@@ -142,6 +146,49 @@ pub(crate) async fn reorder_navigation_item(
     )))
 }
 
+pub(crate) async fn set_default_navigation_entry(
+    State(state): State<AppState>,
+    Path(app_id): Path<String>,
+    Json(payload): Json<SetDefaultNavigationEntryRequest>,
+) -> Result<Json<ApiResponse<ApiNavigationItem>>, AppError> {
+    ensure_system_navigation_for_app(&state.db, &app_id).await?;
+    let form_uuid = payload.form_uuid.trim();
+
+    let target = AppNavigationEntity::find()
+        .filter(app_navigation_entity::Column::AppRouteAppId.eq(app_id.clone()))
+        .filter(app_navigation_entity::Column::ItemType.eq("form"))
+        .filter(app_navigation_entity::Column::TargetFormUuid.eq(Some(form_uuid.to_string())))
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("form navigation item not found".to_string()))?;
+
+    let now = Utc::now();
+    let items = AppNavigationEntity::find()
+        .filter(app_navigation_entity::Column::AppRouteAppId.eq(app_id))
+        .all(&state.db)
+        .await?;
+
+    for item in items {
+        let should_be_default = item.id == target.id;
+        if item.is_default_entry != should_be_default {
+            let mut active_model: app_navigation_entity::ActiveModel = item.into();
+            active_model.is_default_entry = Set(should_be_default);
+            active_model.updated_at = Set(now.into());
+            active_model.update(&state.db).await?;
+        }
+    }
+
+    let mut updated_target: app_navigation_entity::ActiveModel = target.into();
+    updated_target.is_default_entry = Set(true);
+    updated_target.updated_at = Set(now.into());
+    let updated = updated_target.update(&state.db).await?;
+
+    Ok(Json(success_response(
+        "更新默认入口成功",
+        ApiNavigationItem::from(updated),
+    )))
+}
+
 pub(crate) async fn sync_navigation_title(
     db: &DatabaseConnection,
     form_uuid: &str,
@@ -201,7 +248,6 @@ pub(crate) async fn ensure_system_navigation_for_app(
             active_model.item_type = Set("system".to_string());
             active_model.title = Set((*title).to_string());
             active_model.sort_order = Set(index as i32);
-            active_model.is_default_entry = Set(*is_default_entry);
             active_model.updated_at = Set(now.into());
             active_model.update(db).await?;
             continue;

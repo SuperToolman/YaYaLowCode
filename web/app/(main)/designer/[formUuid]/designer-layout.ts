@@ -37,13 +37,14 @@ const COMPONENT_RESIZE_CAPABILITIES: Record<
   checkbox: { columns: true, rows: true },
   groupContainer: { columns: true, rows: true },
   subform: { columns: false, rows: false },
+  associationFormField: { columns: true, rows: false },
   multiLineText: { columns: true, rows: true },
 };
 
 export function getComponentResizeCapabilities(
   type: DesignerComponentType,
 ): ComponentResizeCapabilities {
-  return COMPONENT_RESIZE_CAPABILITIES[type];
+  return COMPONENT_RESIZE_CAPABILITIES[type] ?? { columns: false, rows: false };
 }
 
 export function createDesignerCells(rowCount: number) {
@@ -112,16 +113,23 @@ export function moveField(
     return fields;
   }
 
-  if (
-    (targetField.type === "subform" && nextParentGroupId !== null) ||
-    (nextParent?.type === "subform" && isContainerFieldType(targetField.type))
-  ) {
+  if (nextParent?.type === "subform" && isContainerFieldType(targetField.type)) {
     return fields;
   }
 
   const targetRowSpan = nextParent?.type === "subform" ? 1 : targetField.rowSpan;
-  const targetColSpan = nextParent?.type === "subform" ? 1 : targetField.colSpan;
-  const targetColumn = targetField.type === "subform" ? 0 : column;
+  const targetColSpan = targetField.type === "subform"
+    ? nextParent?.type === "groupContainer"
+      ? nextParent.colSpan
+      : COLUMN_COUNT
+    : nextParent?.type === "subform"
+      ? 1
+      : targetField.colSpan;
+  const targetColumn = targetField.type === "subform"
+    ? nextParent?.type === "groupContainer"
+      ? nextParent.column
+      : 0
+    : column;
 
   if (
     targetField.row === row &&
@@ -210,10 +218,7 @@ export function planFieldInsertion(
     ? fields.find((field) => field.id === parentGroupId)
     : null;
 
-  if (
-    (incoming.type === "subform" && parentGroupId !== null) ||
-    (parentField?.type === "subform" && isContainerFieldType(incoming.type))
-  ) {
+  if (parentField?.type === "subform" && isContainerFieldType(incoming.type)) {
     return invalidInsertionPlan(fields, fallbackTarget, "容器组件不能插入当前容器");
   }
 
@@ -249,7 +254,9 @@ export function planFieldInsertion(
   const workingFields = fields.filter((field) => !ignoredIds.has(field.id));
   const normalizedIncoming = parentField?.type === "subform"
     ? { ...incoming, rowSpan: 1, colSpan: 1 }
-    : incoming;
+    : incoming.type === "subform" && parentField?.type === "groupContainer"
+      ? { ...incoming, rowSpan: 1, colSpan: parentField.colSpan }
+      : incoming;
 
   const planned = direction === "before-row" || direction === "after-row"
     ? planRowInsertion(workingFields, normalizedIncoming, targetField, direction)
@@ -269,8 +276,11 @@ function planRowInsertion(
   direction: Extract<FieldInsertionDirection, "before-row" | "after-row">,
 ): FieldInsertionPlan {
   const parentGroupId = targetField.parentGroupId ?? null;
+  const parentField = parentGroupId
+    ? fields.find((field) => field.id === parentGroupId)
+    : null;
   const targetColumn = incoming.type === "subform"
-    ? 0
+    ? parentField?.type === "groupContainer" ? parentField.column : 0
     : Math.min(targetField.column, COLUMN_COUNT - incoming.colSpan);
   const target = {
     row: direction === "after-row"

@@ -47,6 +47,8 @@ type FormDesignerHeaderProps = {
   onPublish: () => void;
   onRestoreVersionSelect: (version: number) => void;
   onSave: () => void;
+  canEditForm: boolean;
+  canPublish: boolean;
   saveMessage?: string;
 };
 
@@ -67,6 +69,8 @@ export function FormDesignerHeader({
   onPublish,
   onRestoreVersionSelect,
   onSave,
+  canEditForm,
+  canPublish,
   saveMessage,
 }: FormDesignerHeaderProps) {
   const displayedVersions = versions.slice(0, 20);
@@ -141,17 +145,17 @@ export function FormDesignerHeader({
               <PreviewIcon />
               预览
             </Button>
-            <Button
+            {canPublish ? <Button
               className="bg-[var(--color-success-soft)] text-[var(--color-success)]"
               onPress={onPublish}
             >
               <PublishIcon />
               发布
-            </Button>
-            <Button className="bg-[var(--color-primary)] text-[var(--color-text-on-primary)]" onPress={onSave}>
+            </Button> : null}
+            {canEditForm ? <Button className="bg-[var(--color-primary)] text-[var(--color-text-on-primary)]" onPress={onSave}>
               <SaveIcon />
               保存
-            </Button>
+            </Button> : null}
           </div>
         </div>
 

@@ -1,5 +1,7 @@
+use axum::Json;
+use axum::extract::State;
 use axum::http::{HeaderMap, Method};
-use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::Deserialize;
 use std::collections::HashSet;
@@ -9,7 +11,10 @@ use crate::infrastructure::entities::{
     automation_flow_entity, form_definition_entity, iam_role_entity, iam_user_entity,
     iam_user_role_entity,
 };
-use crate::platform::{config::load_rbac_permission_settings, error::AppError, runtime::AppState};
+use crate::platform::{
+    config::load_rbac_permission_settings, error::AppError, prelude::ApiResponse, runtime::AppState,
+};
+use crate::shared::success_response;
 
 #[derive(Deserialize)]
 struct Claims {
@@ -38,7 +43,10 @@ pub(crate) async fn grants(
         .filter(iam_user_role_entity::Column::UserId.eq(user_id))
         .all(&state.db)
         .await?;
-    let role_ids = bindings.into_iter().map(|binding| binding.role_id).collect::<Vec<_>>();
+    let role_ids = bindings
+        .into_iter()
+        .map(|binding| binding.role_id)
+        .collect::<Vec<_>>();
     let roles = iam_role_entity::Entity::find()
         .filter(iam_role_entity::Column::Id.is_in(role_ids))
         .filter(iam_role_entity::Column::Status.eq("active"))
@@ -62,6 +70,21 @@ pub(crate) async fn grants(
     Ok(grants)
 }
 
+pub(crate) async fn get_grants(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<ApiResponse<Vec<String>>>, AppError> {
+    let mut values = grants(&headers, &state)
+        .await?
+        .into_iter()
+        .collect::<Vec<_>>();
+    values.sort();
+    Ok(Json(success_response(
+        "current user permissions loaded",
+        values,
+    )))
+}
+
 pub(crate) fn require_internal(headers: &HeaderMap) -> Result<(), AppError> {
     let provided = headers
         .get("x-yaya-internal-token")
@@ -72,7 +95,9 @@ pub(crate) fn require_internal(headers: &HeaderMap) -> Result<(), AppError> {
     if provided == Some(expected.as_str()) {
         Ok(())
     } else {
-        Err(AppError::Forbidden("internal authentication required".into()))
+        Err(AppError::Forbidden(
+            "internal authentication required".into(),
+        ))
     }
 }
 
@@ -91,7 +116,13 @@ pub(crate) async fn authorize_request(
     let Some(permission) = permission else {
         return Ok(());
     };
-    if !grants.contains(&permission) {
+    let has_permission = grants.contains(&permission)
+        || (permission == "apps.access"
+            && (grants.contains("apps.manage")
+                || grants
+                    .iter()
+                    .any(|grant| grant.starts_with("app:") && grant.ends_with(":display"))));
+    if !has_permission {
         Err(AppError::Forbidden("permission denied".into()))
     } else if let Some(app_display_permission) =
         required_app_display_permission(state, &permission).await?
@@ -99,7 +130,9 @@ pub(crate) async fn authorize_request(
         if grants.contains(&app_display_permission) {
             Ok(())
         } else {
-            Err(AppError::Forbidden("application visibility permission denied".into()))
+            Err(AppError::Forbidden(
+                "application visibility permission denied".into(),
+            ))
         }
     } else {
         Ok(())
@@ -150,9 +183,15 @@ async fn required_permission(
         "/api/identity/roles" | "/api/settings/permissions" => Some("settings.roles"),
         _ if path.starts_with("/api/identity/users/") => Some("settings.users"),
         _ if path.starts_with("/api/identity/roles/")
-            || path.starts_with("/api/settings/permissions/") => Some("settings.roles"),
-        _ if path.starts_with("/api/agent/sessions") => None,
-        _ if path.starts_with("/api/agent/") || path == "/api/agents" || path.starts_with("/api/agents/") => {
+            || path.starts_with("/api/settings/permissions/") =>
+        {
+            Some("settings.roles")
+        }
+        _ if path.starts_with("/api/agent/sessions") => Some("agent.window"),
+        _ if path.starts_with("/api/agent/")
+            || path == "/api/agents"
+            || path.starts_with("/api/agents/") =>
+        {
             Some("settings.agent")
         }
         _ => None,
@@ -163,16 +202,42 @@ async fn required_permission(
 
     let segments = path.trim_matches('/').split('/').collect::<Vec<_>>();
     match segments.as_slice() {
+        ["api", "apps"] if method == Method::GET || method == Method::HEAD => {
+            Ok(Some("apps.access".to_string()))
+        }
         ["api", "apps"] if method == Method::POST => Ok(Some("apps.manage".to_string())),
+        ["api", "apps", app_id] if method == Method::DELETE => Ok(Some("apps.manage".to_string())),
+        ["api", "apps", app_id] if method == Method::PATCH => {
+            Ok(Some(format!("app:{app_id}:edit_info")))
+        }
         ["api", "apps", app_id] => Ok(Some(app_permission(app_id, method))),
-        ["api", "apps", app_id, "navigation"]
-        | ["api", "apps", app_id, "forms"]
-        | ["api", "apps", app_id, "field-outline"]
-        | ["api", "apps", app_id, "automations"] => Ok(Some(app_permission(app_id, method))),
-        ["api", "apps", app_id, "navigation", "groups"] => {
+        ["api", "apps", _app_id, "field-outline"] => Ok(Some("designer.access".to_string())),
+        ["api", "apps", app_id, "forms"] if method == Method::POST => {
+            Ok(Some(format!("app:{app_id}:create_form")))
+        }
+        ["api", "apps", app_id, "navigation", "groups"] if method == Method::POST => {
+            Ok(Some(format!("app:{app_id}:create_group")))
+        }
+        ["api", "apps", app_id, "automations"] => Ok(Some(format!("app:{app_id}:automation"))),
+        ["api", "apps", app_id, "navigation"] | ["api", "apps", app_id, "forms"] => {
             Ok(Some(app_permission(app_id, method)))
         }
+        ["api", "apps", app_id, "navigation", "groups"] => Ok(Some(app_permission(app_id, method))),
+        ["api", "forms", form_uuid, "views", ..]
+            if method != Method::GET && method != Method::HEAD =>
+        {
+            form_development_permission(state, form_uuid, "view_development").await
+        }
         ["api", "forms", form_uuid, ..] => {
+            if method == Method::DELETE && segments.len() == 3 {
+                return form_development_permission(state, form_uuid, "delete_form").await;
+            }
+            if method == Method::POST && segments.get(3) == Some(&"publish") {
+                return form_development_permission(state, form_uuid, "publish").await;
+            }
+            if method == Method::POST && segments.get(3) == Some(&"schema") {
+                return form_development_permission(state, form_uuid, "edit_form").await;
+            }
             let action = form_action(method, segments.get(3).copied());
             Ok(Some(format!("form:{form_uuid}:{action}")))
         }
@@ -182,10 +247,23 @@ async fn required_permission(
                 .one(&state.db)
                 .await?
                 .ok_or_else(|| AppError::NotFound("automation flow not found".to_string()))?;
-            Ok(Some(app_permission(&flow.app_route_app_id, method)))
+            Ok(Some(format!("app:{}:automation", flow.app_route_app_id)))
         }
         _ => Ok(None),
     }
+}
+
+async fn form_development_permission(
+    state: &AppState,
+    form_uuid: &str,
+    action: &str,
+) -> Result<Option<String>, AppError> {
+    let form = form_definition_entity::Entity::find()
+        .filter(form_definition_entity::Column::FormUuid.eq(form_uuid))
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("form not found".to_string()))?;
+    Ok(Some(format!("app:{}:{action}", form.app_route_app_id)))
 }
 
 fn app_permission(app_id: &str, method: &Method) -> String {
@@ -224,5 +302,6 @@ fn authenticated_user_id(headers: &HeaderMap) -> Result<Uuid, AppError> {
     .map_err(|_| AppError::Forbidden("invalid authentication token".into()))?
     .claims;
 
-    Uuid::parse_str(&claims.sub).map_err(|_| AppError::Forbidden("invalid authentication token".into()))
+    Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Forbidden("invalid authentication token".into()))
 }

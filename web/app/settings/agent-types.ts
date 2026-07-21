@@ -36,6 +36,9 @@ export type AgentConfigProfile = {
   imageCaptionModel: string;
   personaId: string;
   webSearchEnabled: boolean;
+  allowCreateApps: boolean;
+  allowCreateForms: boolean;
+  allowCreateAutomations: boolean;
   contextMaxTurns: number;
   contextDiscardTurns: number;
   contextOverflowStrategy: string;
@@ -50,6 +53,6 @@ export type AgentConfigProfile = {
 
 export type AgentPersona = { id: string; name: string; description: string; systemPrompt: string };
 
-export type AgentPlugin = { id: string; name: string; description: string; enabled: boolean; version: string; entrypoint: string; requiresConfirmation: boolean };
-export type AgentSkill = { id: string; name: string; description: string; enabled: boolean; allowedTools: string[]; requiresConfirmation: boolean };
-export type AgentKnowledgeBase = { id: string; name: string; description: string; enabled: boolean; retrievalMode: string; sourceIds: string[] };
+export type AgentPlugin = { id: string; name: string; description: string; enabled: boolean; version: string; entrypoint: string; manifestJson: string; requiresConfirmation: boolean };
+export type AgentSkill = { id: string; name: string; packageName: string; source: string; version: string; packagePath: string; isSystem: boolean; description: string; enabled: boolean; allowedTools: string[]; instructions: string; requiresConfirmation: boolean };
+export type AgentKnowledgeBase = { id: string; name: string; description: string; enabled: boolean; retrievalMode: string; content: string; sourceIds: string[] };

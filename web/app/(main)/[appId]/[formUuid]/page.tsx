@@ -50,6 +50,8 @@ import {
 import { AgentMarkdown } from "../../../components/agent-markdown";
 import { getSystemPageBySlug, isSystemPageSlug } from "../../../lib/system-pages";
 import { getFormComponentAgentCapability } from "../../../lib/form-component-agent-capabilities";
+import { useAuth } from "../../../components/auth-provider";
+import { notifyAppNavigationChanged } from "../components/app-navigation-events";
 
 type SchemaField = RuntimeSchemaField;
 type FormSchema = RuntimeFormSchema;
@@ -176,6 +178,15 @@ export default function FormHome({
   params: Promise<{ appId: string; formUuid: string }>;
 }) {
   const { appId, formUuid } = use(params);
+  const { hasPermission } = useAuth();
+  const canCreateRecord = hasPermission(`form:${formUuid}:create`);
+  const canEditRecord = hasPermission(`form:${formUuid}:edit`);
+  const canDeleteRecord = hasPermission(`form:${formUuid}:delete`);
+  const canUseViewDevelopment = hasPermission(`app:${appId}:view_development`);
+  const canEditForm = hasPermission(`app:${appId}:edit_form`);
+  const canDeleteForm = hasPermission(`app:${appId}:delete_form`);
+  const canImportRecords = canUseViewDevelopment;
+  const canExportRecords = canUseViewDevelopment;
   const router = useRouter();
   const searchParams = useSearchParams();
   const [schema, setSchema] = useState<FormSchema | null>(null);
@@ -619,6 +630,7 @@ export default function FormHome({
       toast.success("表单已删除", {
         description: `表单 ${formUuid} 已移除`,
       });
+      notifyAppNavigationChanged(appId);
       router.replace(`/${appId}`);
     } catch {
       toast.danger("删除表单失败", {
@@ -872,15 +884,15 @@ export default function FormHome({
             <h1 className="mr-1 min-w-0 truncate text-xl font-semibold text-[var(--color-text-primary)]">
               {formMetadataName || schema?.formName || "表单详情"}
             </h1>
-              <Button
+              {canCreateRecord ? <Button
                 isIconOnly
                 aria-label="新增"
                 className="h-9 w-9 rounded-lg bg-[var(--color-primary)] p-0 text-[var(--color-text-on-primary)]"
                 onClick={() => { setDrawerValues({}); setAgentDraftValues({}); setAgentValuePatch(undefined); setDrawerResetKey((current) => current + 1); setDrawerOpen(true); }}
               >
                 <Plus className="h-4 w-4" />
-              </Button>
-              <Button
+              </Button> : null}
+              {canDeleteForm ? <Button
                 isIconOnly
                 aria-label="删除"
                 variant="ghost"
@@ -888,8 +900,8 @@ export default function FormHome({
                 className="h-9 w-9 rounded-lg border border-[var(--color-danger)]/30 bg-[var(--color-bg-panel)] p-0 text-[var(--color-danger)]"
               >
                 <TrashBin className="h-4 w-4" />
-              </Button>
-              <Button
+              </Button> : null}
+              {canImportRecords ? <Button
                 isIconOnly
                 aria-label="导入"
                 variant="ghost"
@@ -897,8 +909,8 @@ export default function FormHome({
                 className="h-9 w-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-0 text-[var(--color-text-primary)]"
               >
                 <ArrowUpFromLine className="h-4 w-4" />
-              </Button>
-              <Button
+              </Button> : null}
+              {canExportRecords ? <Button
                 isIconOnly
                 aria-label="导出"
                 variant="ghost"
@@ -906,8 +918,8 @@ export default function FormHome({
                 className="h-9 w-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-0 text-[var(--color-text-primary)]"
               >
                 <ArrowDownToLine className="h-4 w-4" />
-              </Button>
-            <Dropdown>
+              </Button> : null}
+            {canUseViewDevelopment ? <Dropdown>
                 <Dropdown.Trigger
                   aria-label="更多"
                   className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] text-[var(--color-text-primary)]"
@@ -927,7 +939,7 @@ export default function FormHome({
                   </Dropdown.Item>
                 </Dropdown.Menu>
               </Dropdown.Popover>
-            </Dropdown>
+            </Dropdown> : null}
             <SearchField
               aria-label="搜索数据"
               className="min-w-[220px] flex-1 sm:max-w-[300px]"
@@ -953,7 +965,7 @@ export default function FormHome({
             {views.filter((view) => !view.isDefault).map((view) => (
               <div key={view.id} className={["inline-flex h-9 items-stretch overflow-hidden rounded-lg", activeView === "records" && activeViewId === view.id ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-panel-soft)]"].join(" ")}>
                 <Button variant="ghost" className="h-9 min-w-0 rounded-none bg-transparent px-3 !text-[12px]" onPress={() => activateTableView(view)}><span className="!text-[12px]">{view.name}</span></Button>
-                <Dropdown isOpen={openViewMenuId === view.id} onOpenChange={(open) => setOpenViewMenuId(open ? view.id : null)}>
+                {canUseViewDevelopment ? <Dropdown isOpen={openViewMenuId === view.id} onOpenChange={(open) => setOpenViewMenuId(open ? view.id : null)}>
                   <Dropdown.Trigger onMouseEnter={() => openViewMenu(view.id)} onMouseLeave={scheduleViewMenuClose} aria-label={`${view.name}视图菜单`} className="inline-flex h-9 w-7 items-center justify-center bg-transparent">
                     <ArrowChevronDown className="h-3.5 w-3.5" />
                   </Dropdown.Trigger>
@@ -963,7 +975,7 @@ export default function FormHome({
                     <Dropdown.Item id="copy" onAction={() => duplicateView(view.id)}>复制</Dropdown.Item>
                     <Dropdown.Item id="delete" onAction={() => deleteView(view.id)}>删除</Dropdown.Item>
                   </Dropdown.Menu></Dropdown.Popover>
-                </Dropdown>
+                </Dropdown> : null}
               </div>
             ))}
             <ViewTab
@@ -971,17 +983,15 @@ export default function FormHome({
               label="表单提交"
               onClick={() => { setPendingViewConfig(null); setViewConfigDraft(null); handleViewChange("submit"); }}
             />
-            <IconToolbarButton label="筛选" onPress={() => openViewConfig("filters")}><Funnel className="h-4 w-4" /></IconToolbarButton>
-            <IconToolbarButton label="显示列" onPress={() => openViewConfig("fields")}><Sliders className="h-4 w-4" /></IconToolbarButton>
-            <IconToolbarButton label="排序" onPress={() => openViewConfig("sorts")}><ArrowUpArrowDown className="h-4 w-4" /></IconToolbarButton>
-            <IconToolbarButton label="表单编辑" onPress={() => router.push(`/designer/${formUuid}?appId=${appId}`)}><Pencil className="h-4 w-4" /></IconToolbarButton>
+            {canUseViewDevelopment ? <><IconToolbarButton label="筛选" onPress={() => openViewConfig("filters")}><Funnel className="h-4 w-4" /></IconToolbarButton><IconToolbarButton label="显示列" onPress={() => openViewConfig("fields")}><Sliders className="h-4 w-4" /></IconToolbarButton><IconToolbarButton label="排序" onPress={() => openViewConfig("sorts")}><ArrowUpArrowDown className="h-4 w-4" /></IconToolbarButton></> : null}
+            {canEditForm ? <IconToolbarButton label="表单编辑" onPress={() => router.push(`/designer/${formUuid}?appId=${appId}`)}><Pencil className="h-4 w-4" /></IconToolbarButton> : null}
           </div>
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
           {activeView === "records" ? (
             <>
-            {viewConfigDirty ? <div className="flex shrink-0 items-center justify-between gap-3 rounded-lg border border-[var(--color-primary)]/30 bg-[var(--color-primary-soft)] px-4 py-2 text-sm text-[var(--color-primary)]"><span>你调整了显示配置，是否需要保存配置？</span><Button size="sm" onPress={saveViewConfig}>保存配置</Button></div> : null}
+            {canUseViewDevelopment && viewConfigDirty ? <div className="flex shrink-0 items-center justify-between gap-3 rounded-lg border border-[var(--color-primary)]/30 bg-[var(--color-primary-soft)] px-4 py-2 text-sm text-[var(--color-primary)]"><span>你调整了显示配置，是否需要保存配置？</span><Button size="sm" onPress={saveViewConfig}>保存配置</Button></div> : null}
             <RecordsTable
               fields={configuredFields}
               builtinFields={configuredBuiltinFields}
@@ -995,6 +1005,8 @@ export default function FormHome({
               submitterOrganizations={submitterOrganizations}
               onDeleteRecord={handleDeleteRecord}
               onUpdateRecord={handleUpdateRecord}
+              canEditRecord={canEditRecord}
+              canDeleteRecord={canDeleteRecord}
               urlParams={{ appId, formUuid }}
               onRecordSelectionChange={toggleRecordSelection}
             />
@@ -1719,6 +1731,8 @@ function RecordsTable({
   submitting,
   onDeleteRecord,
   onUpdateRecord,
+  canEditRecord,
+  canDeleteRecord,
   urlParams,
   onRecordSelectionChange,
 }: {
@@ -1734,6 +1748,8 @@ function RecordsTable({
   submitting: boolean;
   onDeleteRecord: (recordId: string) => Promise<boolean>;
   onUpdateRecord: (recordId: string, values: Record<string, unknown>) => Promise<boolean>;
+  canEditRecord: boolean;
+  canDeleteRecord: boolean;
   urlParams: Record<string, string>;
   onRecordSelectionChange: (recordId: string, selected: boolean) => void;
 }) {
@@ -1997,7 +2013,7 @@ function RecordsTable({
                     <Table.Cell className="records-table__action-cell sticky right-0 z-10 h-10 border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] px-1 shadow-[-6px_0_8px_-8px_var(--color-text-secondary)]">
                       <div className="relative z-20 flex w-max items-center gap-1.5">
                         <Button type="button" variant="ghost" className="h-8 gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-text-primary)]" onClick={() => openDetail(record)}><Eye className="h-3.5 w-3.5" />查看</Button>
-                        <Button type="button" variant="ghost" className="h-8 gap-1 rounded-md border border-[var(--color-danger)]/30 bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-danger)]" isDisabled={deletingRecordId === record.id} onClick={() => setDeleteRecordTarget(record)}><TrashBin className="h-3.5 w-3.5" />{deletingRecordId === record.id ? "删除中..." : "删除"}</Button>
+                        {canDeleteRecord ? <Button type="button" variant="ghost" className="h-8 gap-1 rounded-md border border-[var(--color-danger)]/30 bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-danger)]" isDisabled={deletingRecordId === record.id} onClick={() => setDeleteRecordTarget(record)}><TrashBin className="h-3.5 w-3.5" />{deletingRecordId === record.id ? "删除中..." : "删除"}</Button> : null}
                         <details className="relative"><summary aria-label={`记录 ${record.rowNumber} 更多操作`} className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel)] text-[var(--color-text-secondary)] [&::-webkit-details-marker]:hidden"><Ellipsis className="h-3.5 w-3.5" /></summary><div className="absolute right-0 z-50 mt-1 min-w-28 overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg-menu)] py-1 shadow-[var(--shadow-floating)]"><button type="button" className="block w-full px-3 py-2 text-left text-xs hover:bg-[var(--color-bg-panel-soft)]" onClick={() => void navigator.clipboard?.writeText(JSON.stringify(record.data, null, 2))}>复制数据</button><button type="button" disabled className="block w-full cursor-not-allowed px-3 py-2 text-left text-xs text-[var(--color-text-disabled)]">发起流程（开发中）</button></div></details>
                       </div>
                     </Table.Cell>
@@ -2088,15 +2104,15 @@ function RecordsTable({
               {isDetailEditing ? (
                 <Button variant="ghost" isDisabled={submitting} onPress={() => setIsDetailEditing(false)}>取消编辑</Button>
               ) : null}
-              <Button
+              {canDeleteRecord ? <Button
                 variant="ghost"
                 className="border border-[var(--color-danger)]/30 text-[var(--color-danger)]"
                 isDisabled={!detailRecord || deletingRecordId === detailRecord?.id}
                 onPress={() => detailRecord && setDeleteRecordTarget(detailRecord)}
               >
                 {deletingRecordId === detailRecord?.id ? "删除中..." : "删除"}
-              </Button>
-              <Button
+              </Button> : null}
+              {canEditRecord ? <Button
                 isDisabled={!detailRecord || submitting}
                 onPress={() => {
                   if (!detailRecord) return;
@@ -2109,7 +2125,7 @@ function RecordsTable({
                 }}
               >
                 {isDetailEditing ? (submitting ? "保存中..." : "保存") : "编辑"}
-              </Button>
+              </Button> : null}
             </Modal.Footer>
           </Modal.Dialog>
         </Modal.Container>

@@ -32,6 +32,11 @@ pub(crate) struct ReorderNavigationRequest {
     pub(crate) placement: String,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub(crate) struct SetDefaultNavigationEntryRequest {
+    pub(crate) form_uuid: String,
+}
+
 impl From<app_navigation_entity::Model> for ApiNavigationItem {
     fn from(value: app_navigation_entity::Model) -> Self {
         Self {

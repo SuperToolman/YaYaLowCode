@@ -156,11 +156,13 @@ pub(super) async fn save_users(
             .await?;
         let identity = match identity {
             Some(identity) => Some(identity),
-            None if !user.unionid.trim().is_empty() => iam_external_identity_entity::Entity::find()
-                .filter(iam_external_identity_entity::Column::Provider.eq("dingtalk"))
-                .filter(iam_external_identity_entity::Column::UnionId.eq(user.unionid.clone()))
-                .one(db)
-                .await?,
+            None if !user.unionid.trim().is_empty() => {
+                iam_external_identity_entity::Entity::find()
+                    .filter(iam_external_identity_entity::Column::Provider.eq("dingtalk"))
+                    .filter(iam_external_identity_entity::Column::UnionId.eq(user.unionid.clone()))
+                    .one(db)
+                    .await?
+            }
             None => None,
         };
 
@@ -357,16 +359,40 @@ fn apply_user_fields(
     organization_map: &HashMap<String, Uuid>,
     now: chrono::DateTime<Utc>,
 ) {
-    if !user.name.trim().is_empty() { active.display_name = Set(user.name.trim().to_string()); }
-    if let Some(value) = optional_text(&user.mobile) { active.mobile = Set(Some(value)); }
-    if let Some(value) = optional_text(&user.state_code) { active.state_code = Set(Some(value)); }
-    if let Some(value) = optional_text(&user.telephone) { active.telephone = Set(Some(value)); }
-    if let Some(value) = optional_text(if user.email.is_empty() { &user.org_email } else { &user.email }) { active.email = Set(Some(value)); }
-    if let Some(value) = optional_text(&user.avatar) { active.avatar_url = Set(Some(value)); }
-    if let Some(value) = optional_text(&user.job_number) { active.job_number = Set(Some(value)); }
-    if let Some(value) = optional_text(&user.title) { active.title = Set(Some(value)); }
-    if let Some(value) = optional_text(&user.work_place) { active.work_place = Set(Some(value)); }
-    if let Some(value) = optional_text(&user.remark) { active.remark = Set(Some(value)); }
+    if !user.name.trim().is_empty() {
+        active.display_name = Set(user.name.trim().to_string());
+    }
+    if let Some(value) = optional_text(&user.mobile) {
+        active.mobile = Set(Some(value));
+    }
+    if let Some(value) = optional_text(&user.state_code) {
+        active.state_code = Set(Some(value));
+    }
+    if let Some(value) = optional_text(&user.telephone) {
+        active.telephone = Set(Some(value));
+    }
+    if let Some(value) = optional_text(if user.email.is_empty() {
+        &user.org_email
+    } else {
+        &user.email
+    }) {
+        active.email = Set(Some(value));
+    }
+    if let Some(value) = optional_text(&user.avatar) {
+        active.avatar_url = Set(Some(value));
+    }
+    if let Some(value) = optional_text(&user.job_number) {
+        active.job_number = Set(Some(value));
+    }
+    if let Some(value) = optional_text(&user.title) {
+        active.title = Set(Some(value));
+    }
+    if let Some(value) = optional_text(&user.work_place) {
+        active.work_place = Set(Some(value));
+    }
+    if let Some(value) = optional_text(&user.remark) {
+        active.remark = Set(Some(value));
+    }
     active.hired_at = Set((user.hired_date > 0)
         .then(|| chrono::DateTime::<Utc>::from_timestamp_millis(user.hired_date))
         .flatten());

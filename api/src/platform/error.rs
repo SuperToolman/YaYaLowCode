@@ -35,7 +35,9 @@ impl IntoResponse for AppError {
             Self::BadRequest(message) => {
                 (StatusCode::BAD_REQUEST, Json(error_response(400, message))).into_response()
             }
-            Self::Forbidden(message) => (StatusCode::FORBIDDEN, Json(error_response(403, message))).into_response(),
+            Self::Forbidden(message) => {
+                (StatusCode::FORBIDDEN, Json(error_response(403, message))).into_response()
+            }
             Self::Address(err) => {
                 error!("address parse error: {err}");
                 (

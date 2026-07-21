@@ -31,6 +31,7 @@ type NavigationItem = {
 };
 type RolePermissions = { roleId: string; grants: string[] };
 type Tab = "apps" | "platform";
+type RoleSourceFilter = "all" | "local" | "dingtalk";
 
 const formActions = [
   "display",
@@ -46,7 +47,18 @@ const formActions = [
   "batch_print",
   "create_view",
 ] as const;
-const appActions = ["display", "edit"] as const;
+const appActions = [
+  "display",
+  "edit_info",
+  "create_group",
+  "automation",
+  "settings",
+  "publish",
+  "create_form",
+  "edit_form",
+  "delete_form",
+  "view_development",
+] as const;
 const actionLabels: Record<string, string> = {
   display: "查看",
   create: "新增",
@@ -63,31 +75,58 @@ const actionLabels: Record<string, string> = {
 };
 const appActionLabels: Record<(typeof appActions)[number], string> = {
   display: "查看应用",
-  edit: "编辑应用信息",
+  edit_info: "编辑应用信息",
+  create_group: "创建分组",
+  automation: "集成自动化",
+  settings: "应用设置",
+  publish: "应用发布",
+  create_form: "创建表单",
+  edit_form: "编辑表单",
+  delete_form: "删除表单",
+  view_development: "全部表单视图操作",
 };
+const applicationDevelopmentActions = ["edit_info", "create_group", "automation", "settings", "publish"] as const;
+const formDevelopmentActions = ["create_form", "edit_form", "delete_form"] as const;
 const formActionGroups = [
   ["常用操作", ["display", "create", "edit", "delete"]],
   ["详情页操作", ["change_log", "comment"]],
-  [
-    "视图与批量操作",
-    [
-      "import",
-      "export",
-      "bulk_edit",
-      "bulk_delete",
-      "batch_print",
-      "create_view",
-    ],
-  ],
 ] as const;
-const platformPermissions = [
-  ["apps.manage", "应用管理", "创建和删除平台应用"],
-  ["settings.database", "数据库连接", "管理 PostgreSQL 连接配置"],
-  ["settings.agent", "Agent 配置", "管理模型提供商、Agent 与扩展能力"],
-  ["settings.identity-source", "身份源配置", "管理平台账号与身份源"],
-  ["settings.organization", "组织架构", "查看组织与部门结构"],
-  ["settings.roles", "角色管理", "查看角色和成员绑定"],
-  ["settings.users", "用户管理", "查看平台用户与状态"],
+const platformPermissionGroups = [
+  {
+    key: "apps",
+    label: "应用",
+    description: "平台应用工作台及管理入口",
+    items: [
+      ["apps.access", "访问应用", "进入应用工作台并查看已授权应用"],
+      ["apps.manage", "应用管理", "创建和删除平台应用"],
+      ["apps.import", "应用导入", "从导入文件创建平台应用"],
+    ],
+  },
+  {
+    key: "agent-window",
+    label: "Agent 服务窗口",
+    description: "打开 YaYa Agent 并发起服务会话",
+    items: [["agent.window", "访问服务窗口", "查看 Agent 会话并发送消息"]],
+  },
+  {
+    key: "designer",
+    label: "大纲",
+    description: "查看应用的表单与字段大纲",
+    items: [["designer.access", "访问大纲", "查看应用下的表单和字段结构"]],
+  },
+  {
+    key: "settings",
+    label: "设置",
+    description: "设置中心及其页面的访问入口",
+    items: [
+      ["settings.database", "数据库连接", "管理 PostgreSQL 连接配置"],
+      ["settings.agent", "Agent 配置", "管理模型提供商、Agent 与扩展能力"],
+      ["settings.identity-source", "身份源配置", "管理平台账号与身份源"],
+      ["settings.organization", "组织架构", "查看组织与部门结构"],
+      ["settings.roles", "角色管理", "查看角色和成员绑定"],
+      ["settings.users", "用户管理", "查看平台用户与状态"],
+    ],
+  },
 ] as const;
 
 export default function PermissionsSettingsPage() {
@@ -95,6 +134,7 @@ export default function PermissionsSettingsPage() {
   const [apps, setApps] = useState<App[]>([]);
   const [tree, setTree] = useState<Record<string, NavigationItem[]>>({});
   const [roleSearch, setRoleSearch] = useState("");
+  const [roleSourceFilter, setRoleSourceFilter] = useState<RoleSourceFilter>("all");
   const [roleId, setRoleId] = useState("");
   const [tab, setTab] = useState<Tab>("apps");
   const [selectedResource, setSelectedResource] = useState<{
@@ -111,6 +151,7 @@ export default function PermissionsSettingsPage() {
   const isSystemAdministrator =
     activeRole?.externalId === "system-administrator";
   const filteredRoles = roles.filter((role) =>
+    (roleSourceFilter === "all" || role.sourceType === roleSourceFilter) &&
     `${role.name} ${sourceLabel(role.sourceType)}`
       .toLowerCase()
       .includes(roleSearch.trim().toLowerCase()),
@@ -250,6 +291,18 @@ export default function PermissionsSettingsPage() {
             ],
       );
   }
+  function setPlatformGroup(keys: readonly string[], checked: boolean) {
+    if (isSystemAdministrator) return;
+    setGrants((current) => {
+      const next = new Set(current);
+      keys.forEach((key) => {
+        const grant = key;
+        if (checked) next.add(grant);
+        else next.delete(grant);
+      });
+      return [...next];
+    });
+  }
   function setScope(
     prefix: string,
     kind: "data_scope" | "view_scope",
@@ -303,9 +356,30 @@ export default function PermissionsSettingsPage() {
         <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">
           搜索并选择需要配置的角色
         </p>
+        <Tabs
+          variant="secondary"
+          selectedKey={roleSourceFilter}
+          onSelectionChange={(key) => setRoleSourceFilter(key as RoleSourceFilter)}
+          className="mt-4"
+        >
+          <Tabs.List aria-label="角色来源筛选" className="w-full">
+            <Tabs.Tab id="all" className="flex-1 px-2 py-1.5 text-xs">
+              全部
+              <Tabs.Indicator />
+            </Tabs.Tab>
+            <Tabs.Tab id="local" className="flex-1 px-2 py-1.5 text-xs">
+              平台
+              <Tabs.Indicator />
+            </Tabs.Tab>
+            <Tabs.Tab id="dingtalk" className="flex-1 px-2 py-1.5 text-xs">
+              钉钉
+              <Tabs.Indicator />
+            </Tabs.Tab>
+          </Tabs.List>
+        </Tabs>
         <Input
           aria-label="搜索角色"
-          className="mt-4"
+          className="mt-3"
           fullWidth
           placeholder="搜索角色名称或来源"
           value={roleSearch}
@@ -395,7 +469,7 @@ export default function PermissionsSettingsPage() {
           {!activeRole ? (
             <Empty text="选择角色后可设置应用权限和平台权限。" />
           ) : tab === "apps" ? (
-            <div className="grid min-h-[460px] grid-cols-[minmax(260px,0.9fr)_minmax(0,1.4fr)] overflow-hidden rounded-2xl border border-[var(--color-border)]">
+            <div className="grid min-h-[460px] grid-cols-[minmax(220px,0.65fr)_minmax(0,1.4fr)] overflow-hidden rounded-2xl border border-[var(--color-border)]">
               <AppTree
                 apps={apps}
                 tree={tree}
@@ -415,7 +489,11 @@ export default function PermissionsSettingsPage() {
               />
             </div>
           ) : (
-            <PlatformPermissions grants={grantSet} onToggle={toggle} />
+            <PlatformPermissions
+              grants={grantSet}
+              onToggle={toggle}
+              onSetGroup={setPlatformGroup}
+            />
           )}
         </div>
       </div>
@@ -725,16 +803,35 @@ function ResourcePermissions({
         />
       </div>
       {resource.kind === "app" ? (
-        <PermissionPanel title="应用操作权限">
-          <OperationChecks
-            actions={appActions}
-            prefix={prefix}
-            selected={selected}
-            locked={locked}
-            onToggle={onToggle}
-            labels={appActionLabels}
-          />
-        </PermissionPanel>
+        <>
+          <PermissionPanel title="应用访问权限">
+            <OperationChecks
+              actions={["display"]}
+              prefix={prefix}
+              selected={selected}
+              locked={locked}
+              onToggle={onToggle}
+              labels={appActionLabels}
+            />
+          </PermissionPanel>
+          <PermissionPanel title="应用开发">
+            <OperationChecks
+              actions={applicationDevelopmentActions}
+              prefix={prefix}
+              selected={selected}
+              locked={locked}
+              onToggle={onToggle}
+              labels={appActionLabels}
+            />
+          </PermissionPanel>
+          <PermissionPanel title="表单开发">
+            <OperationChecks actions={formDevelopmentActions} prefix={prefix} selected={selected} locked={locked} onToggle={onToggle} labels={appActionLabels} />
+          </PermissionPanel>
+          <PermissionPanel title="视图开发">
+            <p className="mb-3 text-xs text-[var(--color-text-secondary)]">授予此权限后，可操作该应用下所有表单的视图、导入导出及批量功能。</p>
+            <OperationChecks actions={["view_development"]} prefix={prefix} selected={selected} locked={locked} onToggle={onToggle} labels={appActionLabels} />
+          </PermissionPanel>
+        </>
       ) : (
         <>
           <PermissionPanel title="操作权限">
@@ -981,46 +1078,68 @@ function ViewScopePanel({
 function PlatformPermissions({
   grants,
   onToggle,
+  onSetGroup,
 }: {
   grants: Set<string>;
   onToggle: (grant: string) => void;
+  onSetGroup: (keys: readonly string[], checked: boolean) => void;
 }) {
   const locked = grants.has("*");
+  const stateFor = (keys: readonly string[]) => {
+    if (locked || keys.every((key) => grants.has(key))) return "all";
+    return keys.some((key) => grants.has(key)) ? "partial" : "none";
+  };
   return (
     <section className="mx-auto max-w-3xl">
       <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">
         平台权限
       </h2>
       <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-        控制设置中心及其细分页面的访问范围。
+        按平台导航层级配置访问范围；一级菜单可批量设置其全部二级页面。
       </p>
       <div className="mt-5 space-y-3">
-        {platformPermissions.map(([key, label, description]) => {
-          const granted = locked || grants.has(`platform:${key}`);
+        {platformPermissionGroups.map((group) => {
+          const keys = group.items.map(([key]) => key);
+          const status = stateFor(keys);
           return (
-            <Checkbox
-              key={key}
-              isSelected={granted}
-              isDisabled={locked}
-              onChange={() => onToggle(`platform:${key}`)}
-              className="flex items-start justify-between rounded-2xl border border-[var(--color-border)] p-4"
-            >
-              <span className="flex items-start gap-3">
-                <Checkbox.Control className="mt-0.5">
-                  <Checkbox.Indicator />
-                </Checkbox.Control>
-                <Checkbox.Content>
-                  <span className="block text-sm font-medium">{label}</span>
-                  <span className="mt-1 block text-xs text-[var(--color-text-secondary)]">
-                    {description}
-                  </span>
-                </Checkbox.Content>
-              </span>
-              <StatusTag
-                value={granted ? "已授权" : "未授权"}
-                tone={granted ? "all" : "none"}
-              />
-            </Checkbox>
+            <div key={group.key} className="overflow-hidden rounded-xl border border-[var(--color-border)]">
+              <div className="flex items-center gap-3 bg-[var(--color-control-soft)] px-4 py-3">
+                <PermissionCheckbox
+                  label={`授予${group.label}下全部权限`}
+                  state={status}
+                  isDisabled={locked}
+                  onChange={(checked) => onSetGroup(keys, checked)}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-[var(--color-text-primary)]">{group.label}</p>
+                  <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">{group.description}</p>
+                </div>
+                <StatusTag value={status === "all" ? "全部授权" : status === "partial" ? "部分授权" : "未授权"} tone={status} />
+              </div>
+              <div className="divide-y divide-[var(--color-border)]">
+                {group.items.map(([key, label, description]) => {
+                  const granted = locked || grants.has(key);
+                  return (
+                    <Checkbox
+                      key={key}
+                      isSelected={granted}
+                      isDisabled={locked}
+                      onChange={() => onToggle(key)}
+                      className="flex items-start justify-between px-4 py-3 pl-11 hover:bg-[var(--color-bg-hover)]"
+                    >
+                      <span className="flex items-start gap-3">
+                        <Checkbox.Control className="mt-0.5"><Checkbox.Indicator /></Checkbox.Control>
+                        <Checkbox.Content>
+                          <span className="block text-sm font-medium">{label}</span>
+                          <span className="mt-1 block text-xs text-[var(--color-text-secondary)]">{description}</span>
+                        </Checkbox.Content>
+                      </span>
+                      <StatusTag value={granted ? "已授权" : "未授权"} tone={granted ? "all" : "none"} />
+                    </Checkbox>
+                  );
+                })}
+              </div>
+            </div>
           );
         })}
       </div>

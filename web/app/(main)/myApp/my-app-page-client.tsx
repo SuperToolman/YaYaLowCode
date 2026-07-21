@@ -20,6 +20,7 @@ import {
 import { createApp, listApps, type App as ApiApp } from "../../lib/api-client";
 import { AppIcon } from "../../components/app-icons";
 import { PageHeader } from "../../components/page-header";
+import { useAuth } from "../../components/auth-provider";
 import {
   appColorToneClass,
   appStatusLabel,
@@ -44,6 +45,9 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
   const [renameValue, setRenameValue] = useState("");
   const [deleteApp, setDeleteApp] = useState<AppItem | null>(null);
   const router = useRouter();
+  const { hasPermission } = useAuth();
+  const canManageApps = hasPermission("apps.manage");
+  const canImportApps = hasPermission("apps.import");
 
   useEffect(() => {
     let cancelled = false;
@@ -213,6 +217,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
           <section className="">
             <div className="flex flex-col gap-5">
               <PageHeader title="应用中心" description="管理企业低代码应用、表单入口、运行状态和数据规模，集中维护你创建和参与的业务系统。" actions={<>
+                {canManageApps ? (
                   <Button
                     onClick={handleCreateApp}
                     isDisabled={isPending}
@@ -221,6 +226,8 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                     <Plus className="h-4 w-4" />
                     {isPending ? "创建中..." : "创建应用"}
                   </Button>
+                ) : null}
+                {canImportApps ? (
                   <Button
                     variant="ghost"
                     className="theme-panel h-10 gap-2 rounded-lg px-4 text-sm font-medium text-[var(--color-text-primary)]"
@@ -228,7 +235,8 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                     <Rocket className="h-4 w-4" />
                     导入应用
                   </Button>
-                </>} />
+                ) : null}
+              </>} />
 
               <div className="grid gap-3 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.95fr)]">
                 <Card className="theme-panel-soft p-4 shadow-none">
@@ -366,7 +374,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                           {app.desc}
                         </p>
                       </div>
-                      <Dropdown>
+                      {canManageApps || hasPermission(`app:${app.id}:edit_info`) ? <Dropdown>
                         <Dropdown.Trigger
                           aria-label={`${app.name} 更多操作`}
                           className="inline-flex h-7 w-7 min-w-7 shrink-0 items-center justify-center rounded-md p-0 text-[var(--color-text-secondary)] opacity-0 transition-opacity hover:bg-[var(--color-bg-panel-soft)] group-hover:opacity-100 focus:opacity-100"
@@ -378,14 +386,14 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                             aria-label={`${app.name} 操作菜单`}
                             className="min-w-[160px]"
                           >
-                            <Dropdown.Item
+                            {hasPermission(`app:${app.id}:edit_info`) ? <Dropdown.Item
                               id="toggle"
                               isDisabled={busyAppId === app.id}
                               onAction={() => void handleToggleApp(app)}
                             >
                               {app.status === "enabled" ? "关闭" : "启动"}
-                            </Dropdown.Item>
-                            <Dropdown.Item
+                            </Dropdown.Item> : null}
+                            {hasPermission(`app:${app.id}:edit_info`) ? <Dropdown.Item
                               id="rename"
                               isDisabled={busyAppId === app.id}
                               onAction={() => {
@@ -394,21 +402,18 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                               }}
                             >
                               编辑名称
-                            </Dropdown.Item>
-                            <Dropdown.Item id="settings" isDisabled>
-                              应用设置
-                            </Dropdown.Item>
-                            <Dropdown.Item
+                            </Dropdown.Item> : null}
+                            {canManageApps ? <Dropdown.Item
                               id="delete"
                               isDisabled={busyAppId === app.id}
                               className="text-[var(--color-danger)]"
                               onAction={() => setDeleteApp(app)}
                             >
                               删除应用
-                            </Dropdown.Item>
+                            </Dropdown.Item> : null}
                           </Dropdown.Menu>
                         </Dropdown.Popover>
-                      </Dropdown>
+                      </Dropdown> : null}
                     </div>
                   </div>
                 </div>

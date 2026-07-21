@@ -1,4 +1,4 @@
-﻿use axum::Json;
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,8 @@ use uuid::Uuid;
 use crate::platform::config::{
     AgentConfigProfile, AgentDefinition, AgentKnowledgeBaseDefinition, AgentModelProvider,
     AgentPersonaDefinition, AgentPluginDefinition, AgentRegistry, AgentSkillDefinition,
-    load_agent_registry, save_agent_registry,
+    ensure_skill_package, load_agent_registry, read_skill_markdown, save_agent_registry,
+    write_skill_markdown,
 };
 use crate::platform::prelude::{ApiResponse, AppError, AppState};
 use crate::shared::success_response;
@@ -47,6 +48,12 @@ pub(crate) struct ProfileRequest {
     image_caption_model: String,
     persona_id: String,
     web_search_enabled: bool,
+    #[serde(default)]
+    allow_create_apps: bool,
+    #[serde(default)]
+    allow_create_forms: bool,
+    #[serde(default)]
+    allow_create_automations: bool,
     context_max_turns: i32,
     context_discard_turns: usize,
     context_overflow_strategy: String,
@@ -83,6 +90,8 @@ pub(crate) struct PluginRequest {
     enabled: bool,
     version: String,
     entrypoint: String,
+    #[serde(default)]
+    manifest_json: String,
     requires_confirmation: bool,
 }
 
@@ -93,7 +102,23 @@ pub(crate) struct SkillRequest {
     description: String,
     enabled: bool,
     allowed_tools: Vec<String>,
+    #[serde(default)]
+    instructions: String,
     requires_confirmation: bool,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub(crate) struct SkillFileRequest {
+    content: String,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SkillFileResponse {
+    id: String,
+    package_name: String,
+    path: String,
+    content: String,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -103,7 +128,71 @@ pub(crate) struct KnowledgeBaseRequest {
     description: String,
     enabled: bool,
     retrieval_mode: String,
+    #[serde(default)]
+    content: String,
     source_ids: Vec<String>,
+}
+
+#[derive(Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PlatformToolResponse {
+    id: &'static str,
+    name: &'static str,
+    description: &'static str,
+    category: &'static str,
+    risk_level: &'static str,
+}
+
+pub(crate) async fn list_platform_tools(
+    State(_state): State<AppState>,
+) -> Result<Json<ApiResponse<Vec<PlatformToolResponse>>>, AppError> {
+    Ok(Json(success_response(
+        "platform tools loaded",
+        vec![
+            PlatformToolResponse {
+                id: "list_forms",
+                name: "读取表单列表",
+                description: "查询应用内表单元数据。",
+                category: "form",
+                risk_level: "read",
+            },
+            PlatformToolResponse {
+                id: "get_form_schema",
+                name: "读取表单 Schema",
+                description: "读取表单草稿结构和字段。",
+                category: "form",
+                risk_level: "read",
+            },
+            PlatformToolResponse {
+                id: "create_form_draft",
+                name: "创建表单草稿",
+                description: "创建空白表单草稿；还要求 Profile 开启创建表单能力。",
+                category: "form",
+                risk_level: "write",
+            },
+            PlatformToolResponse {
+                id: "list_automations",
+                name: "读取自动化列表",
+                description: "查询应用内集成自动化。",
+                category: "automation",
+                risk_level: "read",
+            },
+            PlatformToolResponse {
+                id: "get_automation_graph",
+                name: "读取自动化流程",
+                description: "读取自动化的触发器、节点和连线。",
+                category: "automation",
+                risk_level: "read",
+            },
+            PlatformToolResponse {
+                id: "call_plugin_tool",
+                name: "调用插件工具",
+                description: "调用当前 Profile 绑定的受控 HTTP 插件。",
+                category: "plugin",
+                risk_level: "external",
+            },
+        ],
+    )))
 }
 
 pub(crate) async fn list_providers(
@@ -366,7 +455,7 @@ pub(crate) async fn create_plugin(
     State(_state): State<AppState>,
     Json(payload): Json<PluginRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<AgentPluginDefinition>>), AppError> {
-    validate_resource_name(&payload.name)?;
+    validate_plugin(&payload)?;
     let mut registry = load_agent_registry();
     let item = AgentPluginDefinition {
         id: format!("plugin-{}", Uuid::new_v4().simple()),
@@ -375,6 +464,7 @@ pub(crate) async fn create_plugin(
         enabled: payload.enabled,
         version: payload.version.trim().to_string(),
         entrypoint: payload.entrypoint.trim().to_string(),
+        manifest_json: payload.manifest_json.trim().to_string(),
         requires_confirmation: payload.requires_confirmation,
     };
     registry.plugins.push(item.clone());
@@ -390,7 +480,7 @@ pub(crate) async fn update_plugin(
     Path(id): Path<String>,
     Json(payload): Json<PluginRequest>,
 ) -> Result<Json<ApiResponse<AgentPluginDefinition>>, AppError> {
-    validate_resource_name(&payload.name)?;
+    validate_plugin(&payload)?;
     let mut registry = load_agent_registry();
     let index = registry
         .plugins
@@ -404,6 +494,7 @@ pub(crate) async fn update_plugin(
         enabled: payload.enabled,
         version: payload.version.trim().to_string(),
         entrypoint: payload.entrypoint.trim().to_string(),
+        manifest_json: payload.manifest_json.trim().to_string(),
         requires_confirmation: payload.requires_confirmation,
     };
     registry.plugins[index] = item.clone();
@@ -446,14 +537,23 @@ pub(crate) async fn create_skill(
 ) -> Result<(StatusCode, Json<ApiResponse<AgentSkillDefinition>>), AppError> {
     validate_resource_name(&payload.name)?;
     let mut registry = load_agent_registry();
-    let item = AgentSkillDefinition {
+    let mut item = AgentSkillDefinition {
         id: format!("skill-{}", Uuid::new_v4().simple()),
         name: payload.name.trim().to_string(),
+        package_name: String::new(),
+        source: "local".to_string(),
+        version: "1.0.0".to_string(),
+        package_path: String::new(),
+        is_system: false,
         description: payload.description.trim().to_string(),
         enabled: payload.enabled,
         allowed_tools: payload.allowed_tools,
+        instructions: payload.instructions.trim().to_string(),
         requires_confirmation: payload.requires_confirmation,
     };
+    ensure_skill_package(&mut item).map_err(AppError::Server)?;
+    let instructions = item.instructions.clone();
+    write_skill_markdown(&mut item, &instructions).map_err(AppError::Server)?;
     registry.skills.push(item.clone());
     save_agent_registry(&registry).map_err(AppError::Server)?;
     Ok((
@@ -473,17 +573,74 @@ pub(crate) async fn update_skill(
         .iter()
         .position(|item| item.id == id)
         .ok_or_else(|| AppError::NotFound("skill not found".to_string()))?;
-    let item = AgentSkillDefinition {
+    let mut item = AgentSkillDefinition {
         id,
         name: payload.name.trim().to_string(),
+        package_name: registry.skills[index].package_name.clone(),
+        source: registry.skills[index].source.clone(),
+        version: registry.skills[index].version.clone(),
+        package_path: registry.skills[index].package_path.clone(),
+        is_system: registry.skills[index].is_system,
         description: payload.description.trim().to_string(),
         enabled: payload.enabled,
         allowed_tools: payload.allowed_tools,
+        instructions: payload.instructions.trim().to_string(),
         requires_confirmation: payload.requires_confirmation,
     };
+    let instructions = item.instructions.clone();
+    write_skill_markdown(&mut item, &instructions).map_err(AppError::Server)?;
     registry.skills[index] = item.clone();
     save_agent_registry(&registry).map_err(AppError::Server)?;
     Ok(Json(success_response("skill updated", item)))
+}
+
+pub(crate) async fn get_skill_file(
+    State(_state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<SkillFileResponse>>, AppError> {
+    let registry = load_agent_registry();
+    let skill = registry
+        .skills
+        .iter()
+        .find(|item| item.id == id)
+        .ok_or_else(|| AppError::NotFound("skill not found".to_string()))?;
+    let content = read_skill_markdown(skill).map_err(AppError::Server)?;
+    Ok(Json(success_response(
+        "skill file loaded",
+        SkillFileResponse {
+            id: skill.id.clone(),
+            package_name: skill.package_name.clone(),
+            path: skill.package_path.clone(),
+            content,
+        },
+    )))
+}
+
+pub(crate) async fn update_skill_file(
+    State(_state): State<AppState>,
+    Path(id): Path<String>,
+    Json(payload): Json<SkillFileRequest>,
+) -> Result<Json<ApiResponse<SkillFileResponse>>, AppError> {
+    if payload.content.len() > 512 * 1024 {
+        return Err(AppError::BadRequest(
+            "SKILL.md must be 512 KB or smaller".to_string(),
+        ));
+    }
+    let mut registry = load_agent_registry();
+    let skill = registry
+        .skills
+        .iter_mut()
+        .find(|item| item.id == id)
+        .ok_or_else(|| AppError::NotFound("skill not found".to_string()))?;
+    write_skill_markdown(skill, &payload.content).map_err(AppError::Server)?;
+    let response = SkillFileResponse {
+        id: skill.id.clone(),
+        package_name: skill.package_name.clone(),
+        path: skill.package_path.clone(),
+        content: skill.instructions.clone(),
+    };
+    save_agent_registry(&registry).map_err(AppError::Server)?;
+    Ok(Json(success_response("skill file updated", response)))
 }
 pub(crate) async fn delete_skill(
     State(_state): State<AppState>,
@@ -526,6 +683,7 @@ pub(crate) async fn create_knowledge_base(
         description: payload.description.trim().to_string(),
         enabled: payload.enabled,
         retrieval_mode: payload.retrieval_mode,
+        content: payload.content.trim().to_string(),
         source_ids: payload.source_ids,
     };
     registry.knowledge_bases.push(item.clone());
@@ -553,6 +711,7 @@ pub(crate) async fn update_knowledge_base(
         description: payload.description.trim().to_string(),
         enabled: payload.enabled,
         retrieval_mode: payload.retrieval_mode,
+        content: payload.content.trim().to_string(),
         source_ids: payload.source_ids,
     };
     registry.knowledge_bases[index] = item.clone();
@@ -588,6 +747,13 @@ fn validate_resource_name(name: &str) -> Result<(), AppError> {
     } else {
         Ok(())
     }
+}
+
+fn validate_plugin(payload: &PluginRequest) -> Result<(), AppError> {
+    validate_resource_name(&payload.name)?;
+    crate::platform::config::parse_plugin_manifest(&payload.manifest_json)
+        .map_err(AppError::BadRequest)?;
+    Ok(())
 }
 
 fn validate_provider(payload: &ProviderRequest) -> Result<(), AppError> {
@@ -658,6 +824,9 @@ fn profile_from_request(id: String, payload: ProfileRequest) -> AgentConfigProfi
         image_caption_model: payload.image_caption_model.trim().to_string(),
         persona_id: payload.persona_id,
         web_search_enabled: payload.web_search_enabled,
+        allow_create_apps: payload.allow_create_apps,
+        allow_create_forms: payload.allow_create_forms,
+        allow_create_automations: payload.allow_create_automations,
         context_max_turns: payload.context_max_turns,
         context_discard_turns: payload.context_discard_turns,
         context_overflow_strategy: payload.context_overflow_strategy,

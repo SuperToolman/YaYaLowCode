@@ -1,4 +1,6 @@
+mod capabilities;
 pub(crate) mod dto;
+mod plugins;
 mod runner;
 mod tools;
 
@@ -13,7 +15,7 @@ use rig_core::completion::Message;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::platform::config::{resolve_agent_settings, resolve_agent_settings_for_scope};
+use crate::platform::config::{resolve_agent_runtime, resolve_agent_runtime_for_scope};
 use crate::platform::prelude::*;
 use crate::shared::success_response;
 
@@ -43,7 +45,7 @@ pub(crate) async fn create_agent_session(
     let payload = payload.map(|Json(value)| value);
     let requested_agent_id = payload.as_ref().and_then(|value| value.agent_id.clone());
     let context = payload.and_then(|value| value.context).unwrap_or_default();
-    let (agent_id, _) = resolve_agent_settings_for_scope(
+    let runtime = resolve_agent_runtime_for_scope(
         requested_agent_id.as_deref(),
         context.app_id.as_deref(),
         context.business_id.as_deref(),
@@ -53,7 +55,7 @@ pub(crate) async fn create_agent_session(
     let session = agent_session_entity::ActiveModel {
         id: Set(Uuid::new_v4()),
         session_uuid: Set(format!("ASESSION-{}", Uuid::new_v4().simple())),
-        agent_id: Set(agent_id),
+        agent_id: Set(runtime.agent_id),
         title: Set("新对话".to_string()),
         app_route_app_id: Set(context.app_id.clone()),
         context_json: Set(serde_json::to_value(context).unwrap_or_else(|_| json!({}))),
@@ -101,10 +103,9 @@ pub(crate) async fn send_agent_message(
         ));
     }
     let session = find_session(&state.db, &session_uuid).await?;
-    let (_, settings) =
-        resolve_agent_settings(Some(&session.agent_id)).map_err(AppError::BadRequest)?;
-    settings.validate().map_err(AppError::BadRequest)?;
-    if !settings.enabled {
+    let runtime = resolve_agent_runtime(Some(&session.agent_id)).map_err(AppError::BadRequest)?;
+    runtime.settings.validate().map_err(AppError::BadRequest)?;
+    if !runtime.settings.enabled {
         return Err(AppError::BadRequest("agent is disabled".to_string()));
     }
 
@@ -144,7 +145,7 @@ pub(crate) async fn send_agent_message(
         run_uuid: Set(format!("ARUN-{}", Uuid::new_v4().simple())),
         session_id: Set(session.id),
         status: Set("running".to_string()),
-        model: Set(settings.chat_model.clone()),
+        model: Set(runtime.settings.chat_model.clone()),
         prompt_tokens: Set(0),
         completion_tokens: Set(0),
         error_message: Set(None),
@@ -173,7 +174,7 @@ pub(crate) async fn send_agent_message(
         match execute_agent_run(
             db.clone(),
             run.id,
-            settings,
+            runtime,
             context,
             content.clone(),
             history,

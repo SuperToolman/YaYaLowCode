@@ -11,6 +11,9 @@ export type AccessTokenResponse = {
 };
 
 export type AgentConfigProfile = {
+    allowCreateApps?: boolean;
+    allowCreateAutomations?: boolean;
+    allowCreateForms?: boolean;
     chatModel: string;
     contextCompressionPrompt?: string;
     contextCompressionProviderId?: string | null;
@@ -50,6 +53,7 @@ export type AgentDefinition = {
 };
 
 export type AgentKnowledgeBaseDefinition = {
+    content?: string;
     description?: string;
     enabled: boolean;
     id: string;
@@ -72,6 +76,7 @@ export type AgentPluginDefinition = {
     enabled: boolean;
     entrypoint?: string;
     id: string;
+    manifestJson?: string;
     name: string;
     requiresConfirmation: boolean;
     version: string;
@@ -96,8 +101,14 @@ export type AgentSkillDefinition = {
     description?: string;
     enabled: boolean;
     id: string;
+    instructions?: string;
+    isSystem?: boolean;
     name: string;
+    packageName?: string;
+    packagePath?: string;
     requiresConfirmation: boolean;
+    source?: string;
+    version?: string;
 };
 
 export type ApiAgentMessage = {
@@ -302,6 +313,9 @@ export type ApiResponseAccessTokenResponse = {
 export type ApiResponseAgentConfigProfile = {
     code: number;
     data?: {
+        allowCreateApps?: boolean;
+        allowCreateAutomations?: boolean;
+        allowCreateForms?: boolean;
         chatModel: string;
         contextCompressionPrompt?: string;
         contextCompressionProviderId?: string | null;
@@ -351,6 +365,7 @@ export type ApiResponseAgentDefinition = {
 export type ApiResponseAgentKnowledgeBaseDefinition = {
     code: number;
     data?: {
+        content?: string;
         description?: string;
         enabled: boolean;
         id: string;
@@ -369,6 +384,7 @@ export type ApiResponseAgentPluginDefinition = {
         enabled: boolean;
         entrypoint?: string;
         id: string;
+        manifestJson?: string;
         name: string;
         requiresConfirmation: boolean;
         version: string;
@@ -384,8 +400,14 @@ export type ApiResponseAgentSkillDefinition = {
         description?: string;
         enabled: boolean;
         id: string;
+        instructions?: string;
+        isSystem?: boolean;
         name: string;
+        packageName?: string;
+        packagePath?: string;
         requiresConfirmation: boolean;
+        source?: string;
+        version?: string;
     };
     message: string;
     time: string;
@@ -666,6 +688,18 @@ export type ApiResponseRoleResponse = {
     time: string;
 };
 
+export type ApiResponseSkillFileResponse = {
+    code: number;
+    data?: {
+        content: string;
+        id: string;
+        packageName: string;
+        path: string;
+    };
+    message: string;
+    time: string;
+};
+
 export type ApiResponseUserResponse = {
     code: number;
     data?: {
@@ -722,6 +756,9 @@ export type ApiResponseUserSyncResponse = {
 export type ApiResponseVecAgentConfigProfile = {
     code: number;
     data?: Array<{
+        allowCreateApps?: boolean;
+        allowCreateAutomations?: boolean;
+        allowCreateForms?: boolean;
         chatModel: string;
         contextCompressionPrompt?: string;
         contextCompressionProviderId?: string | null;
@@ -771,6 +808,7 @@ export type ApiResponseVecAgentDefinition = {
 export type ApiResponseVecAgentKnowledgeBaseDefinition = {
     code: number;
     data?: Array<{
+        content?: string;
         description?: string;
         enabled: boolean;
         id: string;
@@ -789,6 +827,7 @@ export type ApiResponseVecAgentPluginDefinition = {
         enabled: boolean;
         entrypoint?: string;
         id: string;
+        manifestJson?: string;
         name: string;
         requiresConfirmation: boolean;
         version: string;
@@ -804,8 +843,14 @@ export type ApiResponseVecAgentSkillDefinition = {
         description?: string;
         enabled: boolean;
         id: string;
+        instructions?: string;
+        isSystem?: boolean;
         name: string;
+        packageName?: string;
+        packagePath?: string;
         requiresConfirmation: boolean;
+        source?: string;
+        version?: string;
     }>;
     message: string;
     time: string;
@@ -942,10 +987,24 @@ export type ApiResponseVecOrganizationUnitResponse = {
         externalId: string;
         id: string;
         memberCount: number;
+        members: Array<OrganizationMemberResponse>;
         name: string;
         parentExternalId?: string | null;
         sourceType: string;
         status: string;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecPlatformToolResponse = {
+    code: number;
+    data?: Array<{
+        category: string;
+        description: string;
+        id: string;
+        name: string;
+        riskLevel: string;
     }>;
     message: string;
     time: string;
@@ -1135,6 +1194,7 @@ export type IdentitySourceSettings = {
 };
 
 export type KnowledgeBaseRequest = {
+    content?: string;
     description: string;
     enabled: boolean;
     name: string;
@@ -1147,26 +1207,47 @@ export type LocalLoginRequest = {
     username: string;
 };
 
+export type OrganizationMemberResponse = {
+    avatarUrl?: string | null;
+    displayName: string;
+    id: string;
+    status: string;
+    title?: string | null;
+};
+
 export type OrganizationUnitResponse = {
     externalId: string;
     id: string;
     memberCount: number;
+    members: Array<OrganizationMemberResponse>;
     name: string;
     parentExternalId?: string | null;
     sourceType: string;
     status: string;
 };
 
+export type PlatformToolResponse = {
+    category: string;
+    description: string;
+    id: string;
+    name: string;
+    riskLevel: string;
+};
+
 export type PluginRequest = {
     description: string;
     enabled: boolean;
     entrypoint: string;
+    manifestJson?: string;
     name: string;
     requiresConfirmation: boolean;
     version: string;
 };
 
 export type ProfileRequest = {
+    allowCreateApps?: boolean;
+    allowCreateAutomations?: boolean;
+    allowCreateForms?: boolean;
     chatModel: string;
     contextCompressionPrompt: string;
     contextCompressionProviderId?: string | null;
@@ -1242,10 +1323,26 @@ export type SaveSchemaRequest = {
     change_log?: string;
 };
 
+export type SetDefaultNavigationEntryRequest = {
+    form_uuid: string;
+};
+
+export type SkillFileRequest = {
+    content: string;
+};
+
+export type SkillFileResponse = {
+    content: string;
+    id: string;
+    packageName: string;
+    path: string;
+};
+
 export type SkillRequest = {
     allowedTools: Array<string>;
     description: string;
     enabled: boolean;
+    instructions?: string;
     name: string;
     requiresConfirmation: boolean;
 };
@@ -1681,6 +1778,19 @@ export type ListPersonasResponses = {
     200: unknown;
 };
 
+export type ListPlatformToolsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agent/platform-tools';
+};
+
+export type ListPlatformToolsResponses = {
+    200: ApiResponseVecPlatformToolResponse;
+};
+
+export type ListPlatformToolsResponse = ListPlatformToolsResponses[keyof ListPlatformToolsResponses];
+
 export type ListPluginsData = {
     body?: never;
     path?: never;
@@ -1908,6 +2018,36 @@ export type UpdateSkillResponses = {
 };
 
 export type UpdateSkillResponse = UpdateSkillResponses[keyof UpdateSkillResponses];
+
+export type GetSkillFileData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/agent/skills/{id}/file';
+};
+
+export type GetSkillFileResponses = {
+    200: ApiResponseSkillFileResponse;
+};
+
+export type GetSkillFileResponse = GetSkillFileResponses[keyof GetSkillFileResponses];
+
+export type UpdateSkillFileData = {
+    body: SkillFileRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/agent/skills/{id}/file';
+};
+
+export type UpdateSkillFileResponses = {
+    200: ApiResponseSkillFileResponse;
+};
+
+export type UpdateSkillFileResponse = UpdateSkillFileResponses[keyof UpdateSkillFileResponses];
 
 export type ListAgentsData = {
     body?: never;
@@ -2251,6 +2391,21 @@ export type ListAppNavigationResponses = {
 };
 
 export type ListAppNavigationResponse = ListAppNavigationResponses[keyof ListAppNavigationResponses];
+
+export type SetDefaultNavigationEntryData = {
+    body: SetDefaultNavigationEntryRequest;
+    path: {
+        appId: string;
+    };
+    query?: never;
+    url: '/api/apps/{appId}/navigation/default-entry';
+};
+
+export type SetDefaultNavigationEntryResponses = {
+    200: ApiResponseApiNavigationItem;
+};
+
+export type SetDefaultNavigationEntryResponse = SetDefaultNavigationEntryResponses[keyof SetDefaultNavigationEntryResponses];
 
 export type CreateNavigationGroupData = {
     body: CreateNavigationGroupRequest;

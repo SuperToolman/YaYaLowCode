@@ -1,7 +1,7 @@
 "use client";
 
-import { use, useEffect, useState, type ReactNode } from "react";
-import { Button, Input, toast } from "@heroui/react";
+import { use, useEffect, useState, type Key, type ReactNode } from "react";
+import { Button, Card, Input, ListBox, Select, Switch, TextArea, toast } from "@heroui/react";
 import {
   Database,
   FileText,
@@ -49,6 +49,9 @@ export default function AppSettingsPage({
   const { appId } = use(params);
   const [activeSection, setActiveSection] = useState<SettingsSection>("basic");
   const [appName, setAppName] = useState("");
+  const [forms, setForms] = useState<Array<{ id: string; name: string }>>([]);
+  const [defaultFormUuid, setDefaultFormUuid] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,6 +69,73 @@ export default function AppSettingsPage({
       cancelled = true;
     };
   }, [appId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void Promise.all([
+      fetch(`/api/apps/${appId}/forms`, { cache: "no-store" }).then((response) => response.json()),
+      fetch(`/api/apps/${appId}/navigation`, { cache: "no-store" }).then((response) => response.json()),
+    ])
+      .then(([formsPayload, navigationPayload]) => {
+        if (cancelled) return;
+        const nextForms = formsPayload?.code === 0 && Array.isArray(formsPayload.data)
+          ? formsPayload.data.map((form: { id: string; name: string }) => ({ id: form.id, name: form.name }))
+          : [];
+        setForms(nextForms);
+        const defaultEntry = navigationPayload?.data?.find(
+          (item: { itemType: string; isDefaultEntry: boolean }) =>
+            item.itemType === "form" && item.isDefaultEntry,
+        );
+        setDefaultFormUuid(defaultEntry?.targetFormUuid ?? "");
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appId]);
+
+  async function saveBasicSettings() {
+    const nextName = appName.trim();
+    if (!nextName) {
+      toast.danger("请输入应用名称");
+      return;
+    }
+    if (!defaultFormUuid) {
+      toast.danger("请选择默认打开的表单");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const [appResponse, navigationResponse] = await Promise.all([
+        fetch(`/api/apps/${appId}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name: nextName }),
+        }),
+        fetch(`/api/apps/${appId}/navigation/default-entry`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ form_uuid: defaultFormUuid }),
+        }),
+      ]);
+      const [appPayload, navigationPayload] = await Promise.all([
+        appResponse.json(),
+        navigationResponse.json(),
+      ]);
+      if (!appResponse.ok || appPayload.code !== 0 || !navigationResponse.ok || navigationPayload.code !== 0) {
+        throw new Error(appPayload.message || navigationPayload.message || "保存失败");
+      }
+      setAppName(appPayload.data?.name ?? nextName);
+      toast.success("基础设置已保存", { description: "进入应用时将默认打开所选表单。" });
+    } catch (error) {
+      toast.danger("保存失败", { description: error instanceof Error ? error.message : "请稍后重试。" });
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   return (
     <div className="min-h-0 p-3 sm:p-5 lg:p-6">
@@ -124,6 +194,11 @@ export default function AppSettingsPage({
             appId={appId}
             appName={appName}
             onAppNameChange={setAppName}
+            forms={forms}
+            defaultFormUuid={defaultFormUuid}
+            onDefaultFormChange={setDefaultFormUuid}
+            isSaving={isSaving}
+            onSaveBasicSettings={saveBasicSettings}
           />
         </main>
       </div>
@@ -163,12 +238,22 @@ function SettingsContent({
   activeSection,
   appId,
   appName,
+  defaultFormUuid,
+  forms,
+  isSaving,
   onAppNameChange,
+  onDefaultFormChange,
+  onSaveBasicSettings,
 }: {
   activeSection: SettingsSection;
   appId: string;
   appName: string;
+  defaultFormUuid: string;
+  forms: Array<{ id: string; name: string }>;
+  isSaving: boolean;
   onAppNameChange: (value: string) => void;
+  onDefaultFormChange: (value: string) => void;
+  onSaveBasicSettings: () => void;
 }) {
   const meta = {
     basic: { title: "基础设置", description: "维护应用的基础信息和默认展示方式。" },
@@ -179,20 +264,13 @@ function SettingsContent({
   }[activeSection];
 
   return (
-    <div className="mx-auto max-w-[980px]">
+    <div className="w-full">
       <div className="flex flex-col gap-3 border-b border-[var(--color-border)] pb-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-semibold text-[var(--color-text-primary)]">{meta.title}</h2>
           <p className="mt-2 text-sm text-[var(--color-text-secondary)]">{meta.description}</p>
         </div>
-        <Button
-          className="h-9 rounded-lg bg-[var(--color-primary)] px-4 text-sm text-[var(--color-text-on-primary)]"
-          onPress={() =>
-            toast.success("设置已暂存", { description: "当前为纯前端页面，暂未提交到后端。" })
-          }
-        >
-          保存设置
-        </Button>
+        {activeSection === "basic" ? <Button className="h-9 px-4 text-sm" isPending={isSaving} onPress={onSaveBasicSettings}>保存设置</Button> : null}
       </div>
 
       <div className="space-y-5 py-6">
@@ -208,15 +286,17 @@ function SettingsContent({
                 />
                 <Input aria-label="应用标识" value={appId} readOnly />
               </div>
-              <textarea
-                aria-label="应用说明"
-                className="mt-4 min-h-28 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--color-primary)]"
-                defaultValue="用于集中管理业务表单、流程与数据。"
-              />
+              <TextArea aria-label="应用说明" className="mt-4 min-h-28" defaultValue="用于集中管理业务表单、流程与数据。" />
             </SettingsPanel>
             <SettingsPanel title="默认展示" description="控制进入应用后的默认页面与导航行为。">
-              <SettingToggle label="自动进入默认表单" description="访问应用根路径时打开默认导航项。" defaultChecked />
-              <SettingToggle label="显示系统页面" description="在应用导航中展示待办、已处理等系统页面。" defaultChecked />
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-[var(--color-text-primary)]">默认打开的表单</p>
+                <p className="text-xs text-[var(--color-text-secondary)]">成员从应用入口进入时，将直接打开此表单。</p>
+                <Select aria-label="默认打开的表单" fullWidth selectedKey={defaultFormUuid || null} isDisabled={!forms.length} onSelectionChange={(key: Key | null) => onDefaultFormChange(key === null ? "" : String(key))}>
+                  <Select.Trigger><Select.Value>{forms.find((form) => form.id === defaultFormUuid)?.name ?? (forms.length ? "请选择表单" : "当前应用还没有表单")}</Select.Value><Select.Indicator /></Select.Trigger>
+                  <Select.Popover><ListBox>{forms.map((form) => <ListBox.Item key={form.id} id={form.id} textValue={form.name}>{form.name}</ListBox.Item>)}</ListBox></Select.Popover>
+                </Select>
+              </div>
             </SettingsPanel>
           </>
         ) : null}
@@ -288,11 +368,11 @@ function SettingsPanel({
   title: string;
 }) {
   return (
-    <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-5 shadow-[var(--shadow-xs)]">
+    <Card className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-5 shadow-[var(--shadow-xs)]">
       <h3 className="text-base font-semibold text-[var(--color-text-primary)]">{title}</h3>
       <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{description}</p>
       <div className="mt-5">{children}</div>
-    </section>
+    </Card>
   );
 }
 
@@ -311,11 +391,9 @@ function SettingToggle({
         <span className="block text-sm font-medium text-[var(--color-text-primary)]">{label}</span>
         <span className="mt-1 block text-xs text-[var(--color-text-secondary)]">{description}</span>
       </span>
-      <input
-        type="checkbox"
-        defaultChecked={defaultChecked}
-        className="h-4 w-4 accent-[var(--color-primary)]"
-      />
+      <Switch isSelected={defaultChecked} aria-label={label}>
+        <Switch.Control><Switch.Thumb /></Switch.Control>
+      </Switch>
     </label>
   );
 }

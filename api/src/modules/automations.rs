@@ -8,6 +8,8 @@ use crate::platform::prelude::*;
 use crate::platform::records::RecordRepository;
 use crate::shared::*;
 use axum::http::StatusCode;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::time::Duration;
 
 pub(crate) async fn list_automation_flows(
     State(state): State<AppState>,
@@ -435,6 +437,7 @@ pub(crate) async fn execute_automation_flows_for_event(
         .all(db)
         .await?;
 
+    let mut first_error = None;
     for flow in flows {
         if !flow_matches_changed_fields(&flow.trigger_config, changed_fields) {
             continue;
@@ -446,10 +449,19 @@ pub(crate) async fn execute_automation_flows_for_event(
                 "execute automation flow failed, flow={}: {err:?}",
                 flow.flow_uuid
             );
+            if first_error.is_none() {
+                first_error = Some(format!(
+                    "automation flow {} failed: {err:?}",
+                    flow.flow_uuid
+                ));
+            }
         }
     }
 
-    Ok(())
+    match first_error {
+        Some(message) => Err(AppError::BadRequest(message)),
+        None => Ok(()),
+    }
 }
 
 async fn execute_add_data_node(
@@ -658,7 +670,15 @@ async fn execute_http_request_node(
         ));
     }
 
-    let client = reqwest::Client::new();
+    let parsed_url = reqwest::Url::parse(&url)
+        .map_err(|_| AppError::BadRequest("http-request url is invalid".to_string()))?;
+    validate_http_request_url(&parsed_url).await?;
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|err| AppError::BadRequest(format!("http-request client setup failed: {err}")))?;
     let method = reqwest::Method::from_bytes(method.as_bytes())
         .map_err(|_| AppError::BadRequest("invalid http-request method".to_string()))?;
     let mut request = client.request(method, &url);
@@ -686,21 +706,113 @@ async fn execute_http_request_node(
         request = request.body(body_text.clone());
     }
 
-    let response = request
+    let mut response = request
         .send()
         .await
         .map_err(|err| AppError::BadRequest(format!("http-request failed: {err}")))?;
     let status = response.status().as_u16();
-    let text = response
-        .text()
+    const MAX_HTTP_RESPONSE_BYTES: usize = 1_048_576;
+    if response
+        .content_length()
+        .is_some_and(|length| length as usize > MAX_HTTP_RESPONSE_BYTES)
+    {
+        return Err(AppError::BadRequest(
+            "http-request response exceeds the 1 MiB limit".to_string(),
+        ));
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
         .await
-        .map_err(|err| AppError::BadRequest(format!("http-request read failed: {err}")))?;
+        .map_err(|err| AppError::BadRequest(format!("http-request read failed: {err}")))?
+    {
+        if body.len() + chunk.len() > MAX_HTTP_RESPONSE_BYTES {
+            return Err(AppError::BadRequest(
+                "http-request response exceeds the 1 MiB limit".to_string(),
+            ));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    let text = String::from_utf8_lossy(&body).into_owned();
 
     let payload = serde_json::from_str::<Value>(&text).unwrap_or(Value::String(text));
     Ok(json!({
         "status": status,
         "body": payload,
     }))
+}
+
+async fn validate_http_request_url(url: &reqwest::Url) -> Result<(), AppError> {
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(AppError::BadRequest(
+            "http-request url must use http or https".to_string(),
+        ));
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(AppError::BadRequest(
+            "http-request url must not contain credentials".to_string(),
+        ));
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| AppError::BadRequest("http-request url host is required".to_string()))?;
+    let port = url.port_or_known_default().ok_or_else(|| {
+        AppError::BadRequest("http-request url must use a known port".to_string())
+    })?;
+
+    if let Ok(address) = host.parse::<IpAddr>() {
+        return validate_public_http_address(address);
+    }
+    if host.eq_ignore_ascii_case("localhost") || host.ends_with(".localhost") {
+        return Err(AppError::BadRequest(
+            "http-request url must not target localhost".to_string(),
+        ));
+    }
+
+    let addresses = tokio::net::lookup_host((host, port))
+        .await
+        .map_err(|_| AppError::BadRequest("http-request host cannot be resolved".to_string()))?
+        .map(|address| address.ip())
+        .collect::<HashSet<_>>();
+    if addresses.is_empty() {
+        return Err(AppError::BadRequest(
+            "http-request host cannot be resolved".to_string(),
+        ));
+    }
+    for address in addresses {
+        validate_public_http_address(address)?;
+    }
+    Ok(())
+}
+
+fn validate_public_http_address(address: IpAddr) -> Result<(), AppError> {
+    let blocked = match address {
+        IpAddr::V4(address) => {
+            address.is_private()
+                || address.is_loopback()
+                || address.is_link_local()
+                || address.is_broadcast()
+                || address.is_documentation()
+                || address.is_unspecified()
+                || address == Ipv4Addr::new(100, 64, 0, 0)
+                || (address.octets()[0] == 100 && (64..=127).contains(&address.octets()[1]))
+        }
+        IpAddr::V6(address) => {
+            address.is_loopback()
+                || address.is_unspecified()
+                || address.is_multicast()
+                || address.is_unicast_link_local()
+                || address.is_unique_local()
+                || address == Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 0)
+        }
+    };
+    if blocked {
+        Err(AppError::BadRequest(
+            "http-request url resolves to a private or reserved address".to_string(),
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 async fn create_automation_snapshot<C>(
@@ -1733,6 +1845,21 @@ fn flow_matches_changed_fields(
         (Some(field_id), Some(fields)) => fields.contains(field_id),
         (Some(_), None) => false,
         _ => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::IpAddr;
+
+    use super::validate_public_http_address;
+
+    #[test]
+    fn blocks_private_http_targets() {
+        for address in ["127.0.0.1", "10.0.0.1", "169.254.1.1", "::1", "fc00::1"] {
+            assert!(validate_public_http_address(address.parse::<IpAddr>().unwrap()).is_err());
+        }
+        assert!(validate_public_http_address("8.8.8.8".parse::<IpAddr>().unwrap()).is_ok());
     }
 }
 pub(crate) mod dto;

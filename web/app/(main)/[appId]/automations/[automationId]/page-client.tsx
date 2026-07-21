@@ -40,6 +40,7 @@ import {
 } from "@xyflow/react";
 import { Button, Dropdown, Input, ListBox, Select, toast } from "@heroui/react";
 import { Card } from "@heroui/react/card";
+import { Drawer } from "@heroui/react/drawer";
 import { Modal } from "@heroui/react/modal";
 import {
   getAutomationFlow,
@@ -55,6 +56,7 @@ import {
   ArrowDownIcon,
   ArrowLeftIcon,
   ArrowUpIcon,
+  CodeIcon,
   FormIcon,
   TrashIcon,
 } from "../../../../components/app-icons";
@@ -63,6 +65,10 @@ import {
   type AutomationStatus,
   type TriggerEvent,
 } from "../automation-shared";
+import {
+  AutomationFormulaEditorModal,
+  type AutomationFormulaField,
+} from "../automation-formula-editor-modal";
 
 type AutomationEditorPageClientProps = {
   appId: string;
@@ -316,8 +322,7 @@ function AutomationEditorSurface({
   automationId,
 }: AutomationEditorPageClientProps) {
   const router = useRouter();
-  const propertyPanelRef = useRef<HTMLElement | null>(null);
-  const headerDescriptionRef = useRef<HTMLTextAreaElement | null>(null);
+  const headerDescriptionRef = useRef<HTMLInputElement | null>(null);
   const [flowState, setFlowState] = useState<FlowState>({
     name: "",
     description: "",
@@ -334,6 +339,7 @@ function AutomationEditorSurface({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [insertContext, setInsertContext] = useState<InsertContext | null>(null);
   const [isHeaderEditing, setIsHeaderEditing] = useState(false);
+  const [isSchemaModalOpen, setIsSchemaModalOpen] = useState(false);
   const [isVersionModalOpen, setIsVersionModalOpen] = useState(false);
   const [versionItems, setVersionItems] = useState<AutomationFlowVersionSummary[]>([]);
   const [isVersionsLoading, setIsVersionsLoading] = useState(false);
@@ -492,7 +498,7 @@ function AutomationEditorSurface({
           handleInsertRequest,
         ),
       );
-      setSelectedNodeId(nextNodes[0]?.id ?? null);
+      setSelectedNodeId(null);
 
       const schemaTargets = collectSchemaTargets(nextFlowState, nextNodes);
       if (schemaTargets.length > 0) {
@@ -1132,7 +1138,7 @@ function AutomationEditorSurface({
         handleInsertRequest,
       );
     });
-    setSelectedNodeId(nextNode.id);
+    setSelectedNodeId(null);
     setInsertContext(null);
   }
 
@@ -1150,7 +1156,7 @@ function AutomationEditorSurface({
         handleInsertRequest,
       ),
     );
-    setSelectedNodeId("trigger-1");
+    setSelectedNodeId(null);
   }
 
   function handleSaveFlow() {
@@ -1189,6 +1195,27 @@ function AutomationEditorSurface({
     });
   }
 
+  const automationSchema = useMemo(() => {
+    const synchronizedNodes = syncTriggerNode(nodes, flowState, forms);
+    const workflow = serializeWorkflow(synchronizedNodes, edges);
+
+    return JSON.stringify(
+      {
+        automationId,
+        name: flowState.name || buildAutomationName(forms, flowState.triggerFormUuid, flowState.triggerEvent),
+        description: flowState.description || undefined,
+        status: flowState.status,
+        currentVersion: flowState.currentVersion,
+        triggerFormUuid: flowState.triggerFormUuid || undefined,
+        triggerEvent: flowState.triggerEvent,
+        triggerConfig: flowState.triggerConfig,
+        ...workflow,
+      },
+      null,
+      2,
+    );
+  }, [automationId, edges, flowState, forms, nodes]);
+
   if (isLoading) {
     return (
       <div className="flex h-full min-h-0 items-center justify-center px-6 py-10 text-sm text-[var(--color-text-secondary)]">
@@ -1223,81 +1250,97 @@ function AutomationEditorSurface({
             >
               {isHeaderEditing ? (
                 <div
-                  className="space-y-3"
+                  className="flex min-w-0 items-center gap-2"
                   onPointerDown={(event) => event.stopPropagation()}
+                  onBlur={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget)) {
+                      handleHeaderEditFinish();
+                    }
+                  }}
                 >
                   <Input
                     aria-label="工作流名称"
+                    className="h-9 min-h-9 w-[min(280px,40%)] min-w-0"
                     placeholder="工作流名称"
                     value={flowState.name}
                     onChange={(event) =>
                       handleFlowFieldChange("name", event.currentTarget.value)
                     }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") handleHeaderEditFinish();
+                    }}
                   />
-                  <textarea
+                  <Input
                     ref={headerDescriptionRef}
-                    className="min-h-[88px] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition-colors focus:border-[var(--color-primary)]"
+                    aria-label="工作流说明"
+                    className="h-9 min-h-9 min-w-0 flex-1"
                     placeholder="工作流说明"
                     value={flowState.description}
                     onChange={(event) =>
                       handleFlowFieldChange("description", event.currentTarget.value)
                     }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") handleHeaderEditFinish();
+                    }}
                   />
-                  <div className="flex justify-end">
-                    <Button
-                      className="h-9 rounded-md bg-[var(--color-primary)] px-4 text-[var(--color-text-on-primary)]"
-                      onClick={handleHeaderEditFinish}
-                    >
-                      完成
-                    </Button>
-                  </div>
                 </div>
               ) : (
-                <>
-                  <h1 className="truncate text-lg font-semibold text-[var(--color-text-primary)]">
+                <div className="flex min-w-0 items-baseline gap-3">
+                  <h1 className="max-w-[320px] shrink-0 truncate text-lg font-semibold text-[var(--color-text-primary)]">
                     {flowState.name || "未命名工作流"}
                   </h1>
-                  <p className="truncate text-xs text-[var(--color-text-secondary)]">
+                  <p className="min-w-0 flex-1 truncate text-xs text-[var(--color-text-secondary)]">
                     {flowState.description || "双击编辑工作流名称和说明"}
                   </p>
-                </>
+                </div>
               )}
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            <Button
+              isIconOnly
+              aria-label="查看自动化 Schema"
+              title="查看自动化 Schema"
+              variant="ghost"
+              className="!h-9 !min-h-9 !w-9 !min-w-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={() => setIsSchemaModalOpen(true)}
+            >
+              <CodeIcon />
+            </Button>
             <div
-              className="inline-flex rounded-lg border border-[var(--color-border)] bg-[var(--color-control-soft)] p-1"
+              className="inline-flex h-9 items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-control-soft)] p-1"
               onPointerDown={(event) => event.stopPropagation()}
             >
               <Button
                 variant="ghost"
                 className={[
-                  "h-9 rounded-md px-4 text-sm",
+                  "!h-7 !min-h-7 rounded-md px-4 !text-xs",
                   displayStatus === "enabled"
                     ? "bg-[var(--color-primary)] text-[var(--color-text-on-primary)]"
                     : "bg-transparent text-[var(--color-text-secondary)]",
                 ].join(" ")}
                 onClick={() => handleStatusToggle("enabled")}
               >
-                启动
+                启用
               </Button>
               <Button
                 variant="ghost"
                 className={[
-                  "h-9 rounded-md px-4 text-sm",
+                  "!h-7 !min-h-7 rounded-md px-4 !text-xs",
                   displayStatus === "paused"
                     ? "bg-[var(--color-control-selected)] text-[var(--color-text-primary)]"
                     : "bg-transparent text-[var(--color-text-secondary)]",
                 ].join(" ")}
                 onClick={() => handleStatusToggle("paused")}
               >
-                关闭
+                禁用
               </Button>
             </div>
             <Button
               variant="ghost"
-              className="h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 text-[var(--color-text-primary)]"
+              className="!h-9 !min-h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 !text-xs text-[var(--color-text-primary)]"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={() => void openVersionModal()}
             >
@@ -1305,13 +1348,13 @@ function AutomationEditorSurface({
             </Button>
             <Button
               variant="ghost"
-              className="h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 text-[var(--color-text-primary)]"
+              className="!h-9 !min-h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 !text-xs text-[var(--color-text-primary)]"
               onClick={() => router.push(`/${appId}/automations`)}
             >
               返回
             </Button>
             <Button
-              className="h-10 rounded-lg bg-[var(--color-primary)] px-4 text-[var(--color-text-on-primary)] shadow-[var(--shadow-primary)]"
+              className="!h-9 !min-h-9 rounded-lg bg-[var(--color-primary)] px-4 !text-xs text-[var(--color-text-on-primary)] shadow-[var(--shadow-primary)]"
               onClick={handleSaveFlow}
               isDisabled={isSaving}
             >
@@ -1365,45 +1408,49 @@ function AutomationEditorSurface({
             </ReactFlow>
           </WorkflowNodeActionsContext.Provider>
           {selectedNode ? (
-            <aside
-              ref={propertyPanelRef}
-              className="absolute inset-y-5 right-5 z-20 flex w-full max-w-[500px] flex-col overflow-hidden rounded-[22px] border border-[var(--color-border)] bg-[var(--color-bg-surface)] shadow-[var(--shadow-dialog)] backdrop-blur"
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => event.stopPropagation()}
+            <Drawer
+              isOpen
+              onOpenChange={(isOpen) => {
+                if (!isOpen) {
+                  setSelectedNodeId(null);
+                }
+              }}
             >
-              <div className="border-b border-[var(--color-border)] bg-[var(--color-control-soft)] px-5 py-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold text-[var(--color-text-primary)]">
-                      {selectedNode.data.label}
-                    </div>
-                    <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">
-                      {nodeKindLabel(selectedNode.data.kind)}节点参数
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {selectedNode.data.kind !== "trigger" ? (
-                      <IconActionButton
-                        ariaLabel="删除节点"
-                        danger
-                        onClick={handleDeleteSelectedNode}
-                      >
-                        <TrashIcon />
-                      </IconActionButton>
-                    ) : null}
-                    <Button
-                      variant="ghost"
-                      aria-label="关闭属性配置"
-                      className="h-8 min-w-8 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2 text-[var(--color-text-secondary)]"
-                      onClick={() => setSelectedNodeId(null)}
-                    >
-                      ×
-                    </Button>
-                  </div>
-                </div>
-              </div>
+              <Drawer.Backdrop isDismissable>
+                <Drawer.Content placement="right">
+                  <Drawer.Dialog className="automation-property-panel w-[430px] max-w-[85vw] overflow-hidden p-0">
+                    <Drawer.Header className="border-b border-[var(--color-border)] bg-[var(--color-control-soft)] px-3 py-2.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <Drawer.Heading className="automation-property-title font-semibold text-[var(--color-text-primary)]">
+                            {selectedNode.data.label}
+                          </Drawer.Heading>
+                          <p className="mt-0.5 text-[var(--color-text-secondary)]">
+                            {nodeKindLabel(selectedNode.data.kind)}节点参数
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {selectedNode.data.kind !== "trigger" ? (
+                            <IconActionButton
+                              ariaLabel="删除节点"
+                              danger
+                              onClick={handleDeleteSelectedNode}
+                            >
+                              <TrashIcon />
+                            </IconActionButton>
+                          ) : null}
+                          <Drawer.CloseTrigger
+                            aria-label="关闭属性配置"
+                            className="flex h-8 min-w-8 items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2 text-[var(--color-text-secondary)]"
+                          >
+                            ×
+                          </Drawer.CloseTrigger>
+                        </div>
+                      </div>
+                    </Drawer.Header>
 
-              <div className="max-h-[calc(100vh-210px)] space-y-4 overflow-y-auto px-5 py-5">
+                    <Drawer.Body className="min-h-0 flex-1 overflow-y-auto p-2">
+                      <div className="space-y-2">
                 {selectedNode.data.kind === "trigger" ? (
                   <PropertyPanelSection title="触发配置" description="工作流名称和说明在左上角双击编辑。">
                     <PropertyField label="触发表单">
@@ -1484,7 +1531,7 @@ function AutomationEditorSurface({
                     </PropertyField>
                     <PropertyField label="节点说明" alignStart>
                       <textarea
-                        className="min-h-[82px] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition-colors focus:border-[var(--color-primary)]"
+                        className="min-h-[64px] w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2 py-1.5 text-[var(--color-text-primary)] outline-none transition-colors focus:border-[var(--color-primary)]"
                         placeholder="节点说明"
                         value={selectedNode.data.description}
                         onChange={(event) =>
@@ -1524,8 +1571,12 @@ function AutomationEditorSurface({
                   onRemoveMappingRow={handleRemoveMappingRow}
                   onRowChange={handleMappingRowChange}
                 />
-              </div>
-            </aside>
+                      </div>
+                    </Drawer.Body>
+                  </Drawer.Dialog>
+                </Drawer.Content>
+              </Drawer.Backdrop>
+            </Drawer>
           ) : null}
         </section>
       </div>
@@ -1591,6 +1642,32 @@ function AutomationEditorSurface({
         </Modal.Backdrop>
       </Modal>
 
+      <Modal isOpen={isSchemaModalOpen} onOpenChange={setIsSchemaModalOpen}>
+        <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
+          <Modal.Container placement="center" size="cover">
+            <Modal.Dialog className="flex h-[min(720px,86vh)] w-[min(920px,94vw)] flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]">
+              <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
+                <Modal.Heading className="text-lg font-semibold">自动化 Schema</Modal.Heading>
+                <Modal.CloseTrigger aria-label="关闭 Schema 查看器" />
+              </Modal.Header>
+              <Modal.Body className="min-h-0 flex-1 overflow-hidden p-4">
+                <textarea
+                  readOnly
+                  aria-label="自动化 Schema"
+                  className="h-full min-h-0 w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-code-bg)] p-4 font-mono text-xs leading-6 text-[#d9e2f2] outline-none"
+                  value={automationSchema}
+                />
+              </Modal.Body>
+              <Modal.Footer className="border-t border-[var(--color-border)] px-5 py-3">
+                <Button variant="ghost" onPress={() => setIsSchemaModalOpen(false)}>
+                  关闭
+                </Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
+
       <Modal isOpen={isVersionModalOpen} onOpenChange={setIsVersionModalOpen}>
         <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
           <Modal.Container placement="center" size="cover">
@@ -1607,7 +1684,7 @@ function AutomationEditorSurface({
                     v{flowState.currentVersion ?? 1}
                   </div>
                   <div className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                    当前状态：{displayStatus === "enabled" ? "启动" : "关闭"}
+                    当前状态：{displayStatus === "enabled" ? "启用" : "禁用"}
                   </div>
                   <div className="mt-1 text-sm text-[var(--color-text-secondary)]">
                     最新保存时间：{formatDateLabel(flowState.updatedAt)}
@@ -1871,14 +1948,14 @@ function PropertyPanelSection({
   title: string;
 }) {
   return (
-    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-control-soft)]">
-      <div className="border-b border-[var(--color-border)] bg-[var(--color-control-soft)] px-4 py-3">
-        <div className="text-sm font-semibold text-[var(--color-text-primary)]">{title}</div>
+    <section className="rounded-md border border-[var(--color-border)] bg-[var(--color-control-soft)]">
+      <div className="border-b border-[var(--color-border)] bg-[var(--color-control-soft)] px-3 py-2">
+        <div className="automation-property-title font-semibold text-[var(--color-text-primary)]">{title}</div>
         {description ? (
-          <div className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">{description}</div>
+          <div className="mt-0.5 text-[var(--color-text-secondary)]">{description}</div>
         ) : null}
       </div>
-      <div className="space-y-3 px-4 py-4">{children}</div>
+      <div className="space-y-2 px-3 py-2.5">{children}</div>
     </section>
   );
 }
@@ -1895,11 +1972,11 @@ function PropertyField({
   return (
     <div
       className={[
-        "grid gap-3 md:grid-cols-[108px_minmax(0,1fr)]",
+        "grid gap-2 md:grid-cols-[88px_minmax(0,1fr)]",
         alignStart ? "md:items-start" : "md:items-center",
       ].join(" ")}
     >
-      <div className="text-sm font-medium text-[var(--color-text-primary)] md:pt-0.5">{label}</div>
+      <div className="automation-property-label font-medium text-[var(--color-text-primary)] md:pt-0.5">{label}</div>
       <div className="min-w-0">{children}</div>
     </div>
   );
@@ -2476,7 +2553,7 @@ function MappingRowsEditor({
 }: {
   lockRequiredRows?: boolean;
   rows: FieldMappingRow[];
-  sourceFieldChoices: Array<{ key: string; label: string; fieldType: string }>;
+  sourceFieldChoices: AutomationFormulaField[];
   targetFields: FormFieldDescriptor[];
   onAddMappingRow: () => void;
   onRemoveMappingRow: (rowId: string) => void;
@@ -2503,7 +2580,7 @@ function MappingRowsEditor({
 
       {rows.length > 0 ? (
         <div className="space-y-3">
-          <div className="hidden grid-cols-[1.1fr_0.7fr_minmax(0,1.3fr)_72px] gap-3 px-2 text-xs font-medium text-[var(--color-text-secondary)] md:grid">
+          <div className="hidden grid-cols-[92px_64px_minmax(0,1fr)_32px] gap-2 px-1 text-xs font-medium text-[var(--color-text-secondary)] md:grid">
             <div>目标字段</div>
             <div>字段类型</div>
             <div>字段值</div>
@@ -2517,7 +2594,7 @@ function MappingRowsEditor({
             return (
               <div
                 key={row.id}
-                className="grid gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-3 md:grid-cols-[1.1fr_0.7fr_minmax(0,1.3fr)_72px] md:items-start"
+                className="grid gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-1 md:grid-cols-[92px_64px_minmax(0,1fr)_32px] md:items-center"
               >
                 <FieldSelect
                   fields={targetFields}
@@ -2526,6 +2603,8 @@ function MappingRowsEditor({
                 />
                 <Select
                   aria-label="字段值类型"
+                  fullWidth
+                  className="min-w-0"
                   selectedKey={row.valueType}
                   onSelectionChange={(key) =>
                     onRowChange(row.id, "valueType", String(key ?? "value"))
@@ -2549,7 +2628,7 @@ function MappingRowsEditor({
                     </ListBox>
                   </Select.Popover>
                 </Select>
-                <div className="min-w-0">
+                <div className="min-w-0 w-full">
                   {row.valueType === "value" ? (
                     <FieldValueInput
                       field={targetField}
@@ -2566,6 +2645,8 @@ function MappingRowsEditor({
                   ) : null}
                   {row.valueType === "formula" ? (
                     <MappingFormulaInput
+                      fields={sourceFieldChoices}
+                      fieldLabel={targetField?.label ?? "字段值"}
                       value={row.formula ?? ""}
                       onChange={(value) => onRowChange(row.id, "formula", value)}
                     />
@@ -2880,21 +2961,54 @@ function BranchRuleValueInput({
 }
 
 function MappingFormulaInput({
+  fields,
+  fieldLabel,
   value,
   onChange,
 }: {
+  fields: AutomationFormulaField[];
+  fieldLabel: string;
   value: string;
   onChange: (value: string) => void;
 }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [draftValue, setDraftValue] = useState(value);
+
+  function openEditor() {
+    setDraftValue(value);
+    setIsOpen(true);
+  }
+
+  function closeEditor() {
+    setIsOpen(false);
+  }
+
+  function confirmFormula() {
+    onChange(draftValue);
+    closeEditor();
+  }
+
   return (
-    <textarea
-      aria-label="公式值"
-      className="min-h-[88px] w-full resize-y rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-2 font-mono text-sm leading-6 text-[var(--color-text-primary)] outline-none transition-colors focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/10"
-      placeholder="请输入公式，例如 @SUM($amount, 100)"
-      spellCheck={false}
-      value={value}
-      onChange={(event) => onChange(event.currentTarget.value)}
-    />
+    <>
+      <Input
+        readOnly
+        aria-label="公式值"
+        fullWidth
+        className="h-9 min-h-9 w-full min-w-0 cursor-pointer font-mono"
+        placeholder="点击配置公式"
+        value={value}
+        onClick={openEditor}
+      />
+      <AutomationFormulaEditorModal
+        fields={fields}
+        fieldLabel={fieldLabel}
+        isOpen={isOpen}
+        value={draftValue}
+        onChange={setDraftValue}
+        onConfirm={confirmFormula}
+        onOpenChange={(open) => (open ? openEditor() : closeEditor())}
+      />
+    </>
   );
 }
 
@@ -3071,6 +3185,8 @@ function FieldSelect({
   return (
     <Select
       aria-label="字段名"
+      fullWidth
+      className="min-w-0"
       selectedKey={value || "none"}
       onSelectionChange={(key) => onChange(String(key === "none" ? "" : key ?? ""))}
     >
@@ -3108,6 +3224,8 @@ function SourceFieldSelect({
   return (
     <Select
       aria-label="来源字段"
+      fullWidth
+      className="min-w-0"
       selectedKey={value || "none"}
       onSelectionChange={(key) => onChange(String(key === "none" ? "" : key ?? ""))}
     >
@@ -3146,6 +3264,8 @@ function FieldValueInput({
     return (
       <Select
         aria-label={field ? `${field.label}字段值` : "字段值"}
+        fullWidth
+        className="min-w-0"
         selectedKey={value || "none"}
         onSelectionChange={(key) => onChange(String(key === "none" ? "" : key ?? ""))}
       >
@@ -3175,18 +3295,9 @@ function FieldValueInput({
     return (
       <Input
         aria-label="字段值"
+        fullWidth
+        className="h-9 min-h-9 w-full min-w-0"
         placeholder="多个值用逗号分隔"
-        value={value}
-        onChange={(event) => onChange(event.currentTarget.value)}
-      />
-    );
-  }
-
-  if (field?.type === "multiLineText" || field?.type === "description") {
-    return (
-      <textarea
-        className="min-h-[88px] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition-colors focus:border-[var(--color-primary)]"
-        placeholder="字段值"
         value={value}
         onChange={(event) => onChange(event.currentTarget.value)}
       />
@@ -3196,6 +3307,8 @@ function FieldValueInput({
   return (
     <Input
       aria-label="字段值"
+      fullWidth
+      className="h-9 min-h-9 w-full min-w-0"
       placeholder={field ? `${field.label} 的值` : "字段值"}
       value={value}
       onChange={(event) => onChange(event.currentTarget.value)}

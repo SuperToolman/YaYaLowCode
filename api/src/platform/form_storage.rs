@@ -589,7 +589,7 @@ fn child_json_value_expression(field_id: &str, sql_type: &str) -> String {
 
 fn storage_mapping(component_type: &str) -> (StorageTarget, Option<&'static str>) {
     match component_type {
-        "singleLineText" | "multiLineText" | "radio" | "select" | "link" | "member"
+        "singleLineText" | "multiLineText" | "radio" | "select" | "link" | "member" | "associationFormField"
         | "department" => (StorageTarget::Column, Some("TEXT")),
         "number" => (StorageTarget::Column, Some("NUMERIC")),
         "date" => (StorageTarget::Column, Some("DATE")),

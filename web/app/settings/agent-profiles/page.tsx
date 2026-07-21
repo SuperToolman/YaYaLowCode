@@ -25,7 +25,7 @@ The primary goal of this summary is to enable seamless continuation of the work 
 5. Write the summary in the user's language.`;
 
 function createEmpty(providerId = "", personaId = "persona-default"): ProfileForm {
-  return { name: "新配置文件", providerId, chatModel: "gpt-4.1-mini", embeddingModel: "text-embedding-3-small", temperature: "0.2", maxSteps: "8", maxRetries: "3", imageCaptionModel: "", personaId, webSearchEnabled: false, contextMaxTurns: "50", contextDiscardTurns: "10", contextOverflowStrategy: "llm_compress", contextCompressionPrompt: compressionPrompt, contextKeepRecentRatio: "0.15", contextCompressionProviderId: "", maxContextTokens: "128000", pluginIds: [], skillIds: [], knowledgeBaseIds: [] };
+  return { name: "新配置文件", providerId, chatModel: "gpt-4.1-mini", embeddingModel: "text-embedding-3-small", temperature: "0.2", maxSteps: "8", maxRetries: "3", imageCaptionModel: "", personaId, webSearchEnabled: false, allowCreateApps: false, allowCreateForms: false, allowCreateAutomations: false, contextMaxTurns: "50", contextDiscardTurns: "10", contextOverflowStrategy: "llm_compress", contextCompressionPrompt: compressionPrompt, contextKeepRecentRatio: "0.15", contextCompressionProviderId: "", maxContextTokens: "128000", pluginIds: [], skillIds: [], knowledgeBaseIds: [] };
 }
 
 export default function AgentProfilesPage() {
@@ -142,7 +142,39 @@ function AiConfig({ form, setForm, providers, personas }: { form: ProfileForm; s
   </>;
 }
 
-function PlatformConfig({ form, setForm, knowledgeBases }: { form: ProfileForm; setForm: React.Dispatch<React.SetStateAction<ProfileForm>>; knowledgeBases: AgentKnowledgeBase[] }) { return <><Section title="执行参数"><div className="grid gap-4 sm:grid-cols-2"><Field label="Temperature"><Input fullWidth type="number" min="0" max="2" step="0.1" value={form.temperature} onChange={(event) => setForm({ ...form, temperature: event.currentTarget.value })} /></Field><Field label="最大执行步骤"><Input fullWidth type="number" min="1" max="30" value={form.maxSteps} onChange={(event) => setForm({ ...form, maxSteps: event.currentTarget.value })} /></Field></div></Section><BindingConfig title="知识库" items={knowledgeBases} value={form.knowledgeBaseIds} onChange={(knowledgeBaseIds) => setForm({ ...form, knowledgeBaseIds })} /></>; }
+function PlatformConfig({ form, setForm, knowledgeBases }: { form: ProfileForm; setForm: React.Dispatch<React.SetStateAction<ProfileForm>>; knowledgeBases: AgentKnowledgeBase[] }) {
+  return <>
+    <Section title="执行参数">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Temperature">
+          <Input fullWidth type="number" min="0" max="2" step="0.1" value={form.temperature}
+            onChange={(event) => setForm({ ...form, temperature: event.currentTarget.value })} />
+        </Field>
+        <Field label="最大执行步骤">
+          <Input fullWidth type="number" min="1" max="30" value={form.maxSteps}
+            onChange={(event) => setForm({ ...form, maxSteps: event.currentTarget.value })} />
+        </Field>
+      </div>
+    </Section>
+    <Section title="平台能力" description="控制此配置文件所属 Agent 可请求的平台创建能力。能力默认关闭，实际执行仍会经过当前登录用户的权限校验。">
+      <div className="flex flex-col gap-2">
+        <Switch isSelected={form.allowCreateApps} onChange={(allowCreateApps) => setForm({ ...form, allowCreateApps })}>
+          <Switch.Content>允许创建应用</Switch.Content>
+          <Switch.Control><Switch.Thumb /></Switch.Control>
+        </Switch>
+        <Switch isSelected={form.allowCreateForms} onChange={(allowCreateForms) => setForm({ ...form, allowCreateForms })}>
+          <Switch.Content>允许创建表单</Switch.Content>
+          <Switch.Control>
+            <Switch.Thumb />
+          </Switch.Control>
+        </Switch>
+        <Switch isSelected={form.allowCreateAutomations} onChange={(allowCreateAutomations) => setForm({ ...form, allowCreateAutomations })}>
+          <Switch.Content>允许创建集成自动化</Switch.Content>
+          <Switch.Control><Switch.Thumb /></Switch.Control>
+        </Switch>
+      </div>
+      </Section><BindingConfig title="知识库" items={knowledgeBases} value={form.knowledgeBaseIds} onChange={(knowledgeBaseIds) => setForm({ ...form, knowledgeBaseIds })} /></>;
+}
 
 function BindingConfig({ title, items, value, onChange }: { title: string; items: Array<{ id: string; name: string; description: string; enabled: boolean }>; value: string[]; onChange: (value: string[]) => void }) { return <Section title={title} description={`选择此配置文件允许使用的${title}。`}><div className="grid gap-2 sm:grid-cols-2">{items.map((item) => <Checkbox key={item.id} isSelected={value.includes(item.id)} isDisabled={!item.enabled} onChange={(checked) => onChange(checked ? [...value, item.id] : value.filter((id) => id !== item.id))} className="items-start rounded-xl border border-[var(--color-border)] p-3"><Checkbox.Control className="mt-0.5"><Checkbox.Indicator /></Checkbox.Control><Checkbox.Content><span className="block text-sm font-medium">{item.name}</span><span className="mt-1 block text-xs text-[var(--color-text-secondary)]">{item.description || "暂无描述"}</span></Checkbox.Content></Checkbox>)}{items.length === 0 ? <p className="text-sm text-[var(--color-text-secondary)]">暂无可用资源</p> : null}</div></Section>; }
 

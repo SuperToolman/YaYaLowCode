@@ -42,6 +42,7 @@ const DID_MOUNT_DEDUP_WINDOW_MS = 2000;
 export type RuntimeFieldType =
   | "groupContainer"
   | "subform"
+  | "associationFormField"
   | "singleLineText"
   | "description"
   | "multiLineText"
@@ -113,6 +114,19 @@ export type RuntimeFieldProps = {
   subformActionColumnWidth?: number;
   subformAllowCustomColumns?: boolean;
   subformEnableTotals?: boolean;
+  associationFormId?: string;
+  associationAppId?: string;
+  associationPrimaryFieldId?: string;
+  associationSecondaryFieldId?: string;
+  associationTableFieldIds?: string[];
+  associationFilters?: Array<{ fieldId: string; operator: string; value: string }>;
+  associationFills?: Array<{ sourceFieldId: string; targetFieldId: string }>;
+  associationSubformFills?: Array<{
+    sourceSubformId: string;
+    targetSubformId: string;
+    mappings: Array<{ sourceFieldId: string; targetFieldId: string }>;
+  }>;
+  associationSorts?: Array<{ fieldId: string; direction: "asc" | "desc" }>;
   memberOrganizationSource?: "local" | "dingtalk" | "wecom" | "feishu";
   memberSelectableScope?: "all" | "roles" | "members";
   memberRoleIds?: string[];
@@ -531,6 +545,11 @@ export function RuntimeFormRenderer({
     const calculated = calculateFormulaValues(current.fields, nextValues, {
       changedFieldIds: [fieldId],
     });
+    runtimeContextRef.current = {
+      ...current,
+      values: calculated.values,
+      dataSources: nextDataSources,
+    };
     setRuntimeState({
       values: calculated.values,
       dataSources: nextDataSources,
@@ -549,6 +568,7 @@ export function RuntimeFormRenderer({
         className="grid"
         style={{
           gridTemplateColumns: `repeat(${schema.columns}, minmax(0, 1fr))`,
+          gridAutoRows: "minmax(68px, auto)",
           columnGap: DEFAULT_COLUMN_GAP,
           rowGap: DEFAULT_ROW_GAP,
         }}
@@ -558,7 +578,9 @@ export function RuntimeFormRenderer({
             key={field.id}
             className={[
               "flex min-w-0",
-              isTopAlignedRuntimeField(field.type) || descriptionRows.has(field.row)
+              field.type === "multiLineText"
+                ? "items-stretch"
+                : isTopAlignedRuntimeField(field.type) || descriptionRows.has(field.row)
                 ? "items-start"
                 : "items-end",
             ].join(" ")}
@@ -624,6 +646,7 @@ function RuntimeFieldNode({
           className="grid"
           style={{
             gridTemplateColumns: `repeat(${field.colSpan ?? 1}, minmax(0, 1fr))`,
+            gridAutoRows: "minmax(68px, auto)",
             columnGap: 12,
             rowGap: 14,
           }}
@@ -633,7 +656,9 @@ function RuntimeFieldNode({
               key={child.id}
               className={[
                 "flex min-w-0",
-                isTopAlignedRuntimeField(child.type) ? "items-start" : "items-end",
+                child.type === "multiLineText"
+                  ? "items-stretch"
+                  : isTopAlignedRuntimeField(child.type) ? "items-start" : "items-end",
               ].join(" ")}
               style={{
                 gridColumn: `${child.column - field.column + 1} / span ${child.colSpan ?? 1}`,
@@ -655,6 +680,10 @@ function RuntimeFieldNode({
     );
   }
 
+  if (field.type === "associationFormField") {
+    return <RuntimeAssociationField field={field} value={value} onChange={(nextValue) => onFieldAction(field.id, nextValue, "onChange")} onFill={(source) => applyAssociationFillRules(field.props, source, onFieldAction)} />;
+  }
+
   return (
     <FormField
       field={field}
@@ -663,6 +692,76 @@ function RuntimeFieldNode({
       value={value}
     />
   );
+}
+
+type AssociationRecord = { id: string; data: Record<string, unknown> };
+
+function RuntimeAssociationField({ field, onChange, onFill, value }: { field: RuntimeSchemaField; value: unknown; onChange: (value: string) => void; onFill: (source: Record<string, unknown>) => void }) {
+  const props = useMemo(() => field.props ?? {}, [field.props]);
+  const [records, setRecords] = useState<AssociationRecord[]>([]);
+  const [isOpen, setOpen] = useState(false);
+  const selectedId = typeof value === "string" ? value : "";
+
+  useEffect(() => {
+    if (!props.associationFormId) return;
+    let cancelled = false;
+    fetch(`/api/forms/${encodeURIComponent(props.associationFormId)}/records?pageSize=100`, { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload: { code: number; data: { items?: AssociationRecord[] } | null }) => {
+        if (!cancelled && payload.code === 0) setRecords(payload.data?.items ?? []);
+      })
+      .catch(() => { if (!cancelled) setRecords([]); });
+    return () => { cancelled = true; };
+  }, [props.associationFormId]);
+
+  const visibleRecords = useMemo(() => applyAssociationSettings(records, props), [props, records]);
+  const selected = visibleRecords.find((record) => record.id === selectedId);
+  const primary = (record: AssociationRecord) => String(record.data[props.associationPrimaryFieldId ?? ""] ?? record.id);
+  const secondary = (record: AssociationRecord) => String(record.data[props.associationSecondaryFieldId ?? ""] ?? "");
+
+  return <div className="relative w-full min-w-0"><button type="button" disabled={props.isDisabled || props.isReadOnly || !props.associationFormId} onClick={() => setOpen((open) => !open)} className="flex h-10 w-full items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 text-left text-sm disabled:cursor-not-allowed disabled:opacity-60"><span className="min-w-0 truncate">{selected ? primary(selected) : props.associationFormId ? props.placeholder ?? "请选择" : "请先配置关联表单"}</span><span className="shrink-0 text-[var(--color-text-secondary)]">⌄</span></button>{isOpen ? <div className="absolute z-30 mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-1 shadow-[var(--shadow-floating)]">{visibleRecords.length === 0 ? <div className="px-3 py-5 text-center text-sm text-[var(--color-text-secondary)]">暂无可选记录</div> : visibleRecords.map((record) => <button type="button" key={record.id} onClick={() => { onChange(record.id); onFill(record.data); setOpen(false); }} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[var(--color-bg-subtle)]"><span className="block truncate text-sm">{primary(record)}</span>{secondary(record) ? <span className="mt-0.5 block truncate text-xs text-[var(--color-text-secondary)]">{secondary(record)}</span> : null}</button>)}</div> : null}</div>;
+}
+
+function applyAssociationSettings(records: AssociationRecord[], props: RuntimeFieldProps) {
+  const filtered = records.filter((record) => (props.associationFilters ?? []).every((filter) => {
+    const value = String(record.data[filter.fieldId] ?? "");
+    return filter.operator === "contains" ? value.includes(filter.value) : filter.operator === "neq" ? value !== filter.value : value === filter.value;
+  }));
+  return [...filtered].sort((left, right) => {
+    const sort = props.associationSorts?.[0];
+    if (!sort) return 0;
+    const compared = String(left.data[sort.fieldId] ?? "").localeCompare(String(right.data[sort.fieldId] ?? ""));
+    return sort.direction === "desc" ? -compared : compared;
+  });
+}
+
+function applyAssociationFillRules(
+  props: RuntimeFieldProps | undefined,
+  source: Record<string, unknown>,
+  onFieldAction: (fieldId: string, nextValue: unknown, eventName?: string) => void,
+) {
+  for (const fill of props?.associationFills ?? []) {
+    onFieldAction(fill.targetFieldId, source[fill.sourceFieldId] ?? "", "onChange");
+  }
+
+  for (const subformFill of props?.associationSubformFills ?? []) {
+    const sourceSubformValue = source[subformFill.sourceSubformId];
+    const sourceRows = Array.isArray(sourceSubformValue)
+      ? sourceSubformValue.filter(
+          (row): row is Record<string, unknown> =>
+            Boolean(row) && typeof row === "object" && !Array.isArray(row),
+        )
+      : [];
+    const targetRows = sourceRows.map((row) =>
+      Object.fromEntries(
+        subformFill.mappings.map((mapping) => [
+          mapping.targetFieldId,
+          row[mapping.sourceFieldId] ?? "",
+        ]),
+      ),
+    );
+    onFieldAction(subformFill.targetSubformId, targetRows, "onChange");
+  }
 }
 
 function RuntimeSubform({ field, childFields, value, onChange }: { field: RuntimeSchemaField; childFields: RuntimeSchemaField[]; value: unknown; onChange: (value: Array<Record<string, unknown>>) => void }) {
@@ -709,9 +808,9 @@ function RuntimeSubform({ field, childFields, value, onChange }: { field: Runtim
 
   return (
     <section className="w-full min-w-0 space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div><div className="text-sm font-semibold">{field.label}</div>{props.description ? <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{props.description}</p> : null}</div>
-        <div className="flex flex-wrap gap-2">
+        <div className="ml-auto flex flex-wrap justify-end gap-2">
           {props.subformAllowBatchImport ? <Button size="sm" variant="secondary" isDisabled>批量导入</Button> : null}
           {props.subformAllowExcelExport ? <Button size="sm" variant="secondary" isDisabled={rows.length === 0}>导出 Excel</Button> : null}
           {!isReadOnly && props.subformButtonState !== "hidden" ? <Button size="sm" isDisabled={props.subformButtonState === "disabled" || rows.length >= maxRows} onPress={addRow}>{props.subformAddButtonText ?? "新增一项"}</Button> : null}
@@ -734,7 +833,7 @@ function RuntimeSubform({ field, childFields, value, onChange }: { field: Runtim
           <tbody>
             {pageRows.map((row, pageRowIndex) => {
               const rowIndex = pageStart + pageRowIndex;
-              return <tr key={rowIndex} className={props.subformTheme === "zebra" && rowIndex % 2 === 1 ? "bg-[var(--color-bg-subtle)]" : "border-t border-[var(--color-border)]"}>{props.subformShowIndex !== false ? <td className="px-3 py-2 text-center text-[var(--color-text-secondary)]">{rowIndex + 1}</td> : null}{childFields.map((child) => <td key={child.id} className="min-w-36 px-2 py-2 align-top"><FormField field={child} value={row[child.id]} showLabel={false} onFieldAction={(_, nextValue) => updateCell(rowIndex, child.id, nextValue)} /></td>)}{showActions ? <td className="sticky right-0 z-10 border-l border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2 py-2 align-middle shadow-[-6px_0_12px_-10px_rgba(15,23,42,0.7)]"><div className="flex items-center justify-center gap-1">{props.subformShowSort ? <><Button isIconOnly size="sm" variant="ghost" aria-label="上移" onPress={() => moveRow(rowIndex, -1)}>↑</Button><Button isIconOnly size="sm" variant="ghost" aria-label="下移" onPress={() => moveRow(rowIndex, 1)}>↓</Button></> : null}{props.subformShowCopyButton ? <Button size="sm" variant="ghost" onPress={() => copyRow(rowIndex)}>复制</Button> : null}{props.subformShowDeleteButton !== false ? <Button isIconOnly size="sm" variant="ghost" className="text-[var(--color-danger)]" aria-label={props.subformDeleteButtonText ?? "删除"} onPress={() => removeRow(rowIndex)}><TrashIcon /></Button> : null}</div></td> : null}</tr>;
+              return <tr key={rowIndex} className={props.subformTheme === "zebra" && rowIndex % 2 === 1 ? "bg-[var(--color-bg-subtle)]" : "border-t border-[var(--color-border)]"}>{props.subformShowIndex !== false ? <td className="px-3 py-2 text-center text-[var(--color-text-secondary)]">{rowIndex + 1}</td> : null}{childFields.map((child) => <td key={child.id} className="min-w-36 px-2 py-2 align-top">{child.type === "associationFormField" ? <RuntimeAssociationField field={child} value={row[child.id]} onChange={(nextValue) => updateCell(rowIndex, child.id, nextValue)} onFill={(source) => { const nextRow = { ...row }; for (const fill of child.props?.associationFills ?? []) { if (childFields.some((item) => item.id === fill.targetFieldId)) nextRow[fill.targetFieldId] = source[fill.sourceFieldId] ?? ""; } onChange(rows.map((current, index) => index === rowIndex ? nextRow : current)); }} /> : <FormField field={child} value={row[child.id]} showLabel={false} onFieldAction={(_, nextValue) => updateCell(rowIndex, child.id, nextValue)} />}</td>)}{showActions ? <td className="sticky right-0 z-10 border-l border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2 py-2 align-middle shadow-[-6px_0_12px_-10px_rgba(15,23,42,0.7)]"><div className="flex items-center justify-center gap-1">{props.subformShowSort ? <><Button isIconOnly size="sm" variant="ghost" aria-label="上移" onPress={() => moveRow(rowIndex, -1)}>↑</Button><Button isIconOnly size="sm" variant="ghost" aria-label="下移" onPress={() => moveRow(rowIndex, 1)}>↓</Button></> : null}{props.subformShowCopyButton ? <Button size="sm" variant="ghost" onPress={() => copyRow(rowIndex)}>复制</Button> : null}{props.subformShowDeleteButton !== false ? <Button isIconOnly size="sm" variant="ghost" className="text-[var(--color-danger)]" aria-label={props.subformDeleteButtonText ?? "删除"} onPress={() => removeRow(rowIndex)}><TrashIcon /></Button> : null}</div></td> : null}</tr>;
             })}
             {rows.length === 0 ? <tr><td className="px-4 py-8 text-center text-sm text-[var(--color-text-secondary)]" colSpan={childFields.length + (props.subformShowIndex !== false ? 1 : 0) + (showActions ? 1 : 0)}>暂无子表单数据，点击“{props.subformAddButtonText ?? "新增一项"}”开始填写。</td></tr> : null}
           </tbody>
@@ -782,7 +881,7 @@ const FormField = memo(function FormField({
       : (props.orientation ?? "vertical");
 
   return (
-    <div className="w-full min-w-0 flex-1 space-y-2">
+    <div className={field.type === "multiLineText" ? "flex h-full min-w-0 flex-1 flex-col gap-2" : "w-full min-w-0 flex-1 space-y-2"}>
       {showLabel && field.type !== "button" ? (
         <label className="block text-sm font-medium text-[var(--color-text-primary)]" htmlFor={field.id}>
           {field.label}
@@ -818,8 +917,8 @@ const FormField = memo(function FormField({
         </p>
       ) : null}
       {field.type === "multiLineText" ? (
-        <div className="relative">
-          <InputGroup fullWidth>
+        <div className="relative min-h-20 flex-1">
+          <InputGroup fullWidth className="h-full">
             <InputGroup.TextArea
               id={field.id}
               aria-label={field.label}
@@ -828,6 +927,7 @@ const FormField = memo(function FormField({
               readOnly={props.isReadOnly}
               required={props.isRequired}
               rows={props.rows ?? Math.max(2, field.rowSpan ?? 1)}
+              className="h-full min-h-0 w-full resize-none"
               value={textValue}
               onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
                 onFieldAction(field.id, event.currentTarget.value, "onChange")

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Dropdown, Input, ListBox, Select, toast } from "@heroui/react";
+import { Button, Dropdown, Input, ListBox, Select, Tooltip, toast } from "@heroui/react";
 import { AlertDialog } from "@heroui/react/alert-dialog";
 import { Modal } from "@heroui/react/modal";
 import {
@@ -874,12 +874,17 @@ function AutomationRow({
       <td className="px-4 py-4 text-[var(--color-text-secondary)]">{formatDateTime(flow.updatedAt)}</td>
       <td className="px-4 py-4 text-right">
         <Dropdown>
-          <Dropdown.Trigger
-            aria-label={`${flow.name} 更多操作`}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-primary-soft)]"
-          >
-            <MoreIcon />
-          </Dropdown.Trigger>
+          <Tooltip>
+            <Tooltip.Trigger>
+              <Dropdown.Trigger
+                aria-label={`${flow.name} 更多操作`}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-primary-soft)]"
+              >
+                <MoreIcon />
+              </Dropdown.Trigger>
+            </Tooltip.Trigger>
+            <Tooltip.Content>更多操作</Tooltip.Content>
+          </Tooltip>
           <Dropdown.Popover>
             <Dropdown.Menu aria-label={`${flow.name} 操作菜单`} className="min-w-[150px]">
               <Dropdown.Item id="toggle" isDisabled={isBusy} onAction={onToggle}>

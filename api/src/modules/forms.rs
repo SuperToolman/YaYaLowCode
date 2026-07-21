@@ -1,3 +1,5 @@
+use crate::infrastructure::entities::form_storage_definition_entity;
+use crate::infrastructure::entities::form_view_entity;
 use crate::modules::automations;
 use crate::modules::navigation::{
     ensure_system_navigation_for_app, next_navigation_sort_order, normalize_navigation_orders,
@@ -8,38 +10,117 @@ use crate::platform::prelude::*;
 use crate::platform::records::RecordRepository;
 use crate::shared::*;
 use axum::http::StatusCode;
-use crate::infrastructure::entities::form_view_entity;
-use crate::infrastructure::entities::form_storage_definition_entity;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct FormViewResponse { pub(crate) view_uuid: String, pub(crate) name: String, pub(crate) config: Value, pub(crate) updated_at: String }
+pub(crate) struct FormViewResponse {
+    pub(crate) view_uuid: String,
+    pub(crate) name: String,
+    pub(crate) config: Value,
+    pub(crate) updated_at: String,
+}
 #[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SaveFormViewRequest { pub(crate) name: String, pub(crate) config: Value }
+pub(crate) struct SaveFormViewRequest {
+    pub(crate) name: String,
+    pub(crate) config: Value,
+}
 
-pub(crate) async fn list_form_views(State(state): State<AppState>, Path(form_uuid): Path<String>) -> Result<Json<ApiResponse<Vec<FormViewResponse>>>, AppError> {
-    let views = form_view_entity::Entity::find().filter(form_view_entity::Column::FormUuid.eq(form_uuid)).order_by_desc(form_view_entity::Column::UpdatedAt).all(&state.db).await?;
-    Ok(Json(success_response("form views loaded", views.into_iter().map(view_response).collect())))
+pub(crate) async fn list_form_views(
+    State(state): State<AppState>,
+    Path(form_uuid): Path<String>,
+) -> Result<Json<ApiResponse<Vec<FormViewResponse>>>, AppError> {
+    let views = form_view_entity::Entity::find()
+        .filter(form_view_entity::Column::FormUuid.eq(form_uuid))
+        .order_by_desc(form_view_entity::Column::UpdatedAt)
+        .all(&state.db)
+        .await?;
+    Ok(Json(success_response(
+        "form views loaded",
+        views.into_iter().map(view_response).collect(),
+    )))
 }
-pub(crate) async fn create_form_view(State(state): State<AppState>, Path(form_uuid): Path<String>, Json(payload): Json<SaveFormViewRequest>) -> Result<Json<ApiResponse<FormViewResponse>>, AppError> {
-    let name = payload.name.trim(); if name.is_empty() { return Err(AppError::BadRequest("view name is required".to_string())); }
-    let now = Utc::now(); let created = form_view_entity::ActiveModel { id: Set(Uuid::new_v4()), form_uuid: Set(form_uuid), view_uuid: Set(format!("VIEW-{}", Uuid::new_v4().simple().to_string().to_uppercase())), name: Set(name.to_string()), config_json: Set(payload.config), created_at: Set(now.into()), updated_at: Set(now.into()) }.insert(&state.db).await?;
-    Ok(Json(success_response("form view created", view_response(created))))
+pub(crate) async fn create_form_view(
+    State(state): State<AppState>,
+    Path(form_uuid): Path<String>,
+    Json(payload): Json<SaveFormViewRequest>,
+) -> Result<Json<ApiResponse<FormViewResponse>>, AppError> {
+    let name = payload.name.trim();
+    if name.is_empty() {
+        return Err(AppError::BadRequest("view name is required".to_string()));
+    }
+    let now = Utc::now();
+    let created = form_view_entity::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        form_uuid: Set(form_uuid),
+        view_uuid: Set(format!(
+            "VIEW-{}",
+            Uuid::new_v4().simple().to_string().to_uppercase()
+        )),
+        name: Set(name.to_string()),
+        config_json: Set(payload.config),
+        created_at: Set(now.into()),
+        updated_at: Set(now.into()),
+    }
+    .insert(&state.db)
+    .await?;
+    Ok(Json(success_response(
+        "form view created",
+        view_response(created),
+    )))
 }
-pub(crate) async fn update_form_view(State(state): State<AppState>, Path((form_uuid, view_uuid)): Path<(String, String)>, Json(payload): Json<SaveFormViewRequest>) -> Result<Json<ApiResponse<FormViewResponse>>, AppError> {
-    let view = form_view_entity::Entity::find().filter(form_view_entity::Column::FormUuid.eq(form_uuid)).filter(form_view_entity::Column::ViewUuid.eq(view_uuid)).one(&state.db).await?.ok_or_else(|| AppError::NotFound("view not found".to_string()))?;
-    let name = payload.name.trim(); if name.is_empty() { return Err(AppError::BadRequest("view name is required".to_string())); }
-    let mut active: form_view_entity::ActiveModel = view.into(); active.name = Set(name.to_string()); active.config_json = Set(payload.config); active.updated_at = Set(Utc::now().into()); let updated = active.update(&state.db).await?;
-    Ok(Json(success_response("form view updated", view_response(updated))))
+pub(crate) async fn update_form_view(
+    State(state): State<AppState>,
+    Path((form_uuid, view_uuid)): Path<(String, String)>,
+    Json(payload): Json<SaveFormViewRequest>,
+) -> Result<Json<ApiResponse<FormViewResponse>>, AppError> {
+    let view = form_view_entity::Entity::find()
+        .filter(form_view_entity::Column::FormUuid.eq(form_uuid))
+        .filter(form_view_entity::Column::ViewUuid.eq(view_uuid))
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("view not found".to_string()))?;
+    let name = payload.name.trim();
+    if name.is_empty() {
+        return Err(AppError::BadRequest("view name is required".to_string()));
+    }
+    let mut active: form_view_entity::ActiveModel = view.into();
+    active.name = Set(name.to_string());
+    active.config_json = Set(payload.config);
+    active.updated_at = Set(Utc::now().into());
+    let updated = active.update(&state.db).await?;
+    Ok(Json(success_response(
+        "form view updated",
+        view_response(updated),
+    )))
 }
-pub(crate) async fn delete_form_view(State(state): State<AppState>, Path((form_uuid, view_uuid)): Path<(String, String)>) -> Result<Json<ApiResponse<Value>>, AppError> {
-    let result = form_view_entity::Entity::delete_many().filter(form_view_entity::Column::FormUuid.eq(form_uuid)).filter(form_view_entity::Column::ViewUuid.eq(&view_uuid)).exec(&state.db).await?; if result.rows_affected == 0 { return Err(AppError::NotFound("view not found".to_string())); }
-    Ok(Json(success_response("form view deleted", json!({ "viewUuid": view_uuid }))))
+pub(crate) async fn delete_form_view(
+    State(state): State<AppState>,
+    Path((form_uuid, view_uuid)): Path<(String, String)>,
+) -> Result<Json<ApiResponse<Value>>, AppError> {
+    let result = form_view_entity::Entity::delete_many()
+        .filter(form_view_entity::Column::FormUuid.eq(form_uuid))
+        .filter(form_view_entity::Column::ViewUuid.eq(&view_uuid))
+        .exec(&state.db)
+        .await?;
+    if result.rows_affected == 0 {
+        return Err(AppError::NotFound("view not found".to_string()));
+    }
+    Ok(Json(success_response(
+        "form view deleted",
+        json!({ "viewUuid": view_uuid }),
+    )))
 }
-fn view_response(view: form_view_entity::Model) -> FormViewResponse { FormViewResponse { view_uuid: view.view_uuid, name: view.name, config: view.config_json, updated_at: view.updated_at.to_rfc3339() } }
+fn view_response(view: form_view_entity::Model) -> FormViewResponse {
+    FormViewResponse {
+        view_uuid: view.view_uuid,
+        name: view.name,
+        config: view.config_json,
+        updated_at: view.updated_at.to_rfc3339(),
+    }
+}
 
 pub(crate) async fn list_forms(
     State(state): State<AppState>,
@@ -71,14 +152,18 @@ pub(crate) async fn get_app_field_outline(
         .order_by_desc(form_definition_entity::Column::UpdatedAt)
         .all(&state.db)
         .await?;
-    let form_uuids = forms.iter().map(|form| form.form_uuid.clone()).collect::<Vec<_>>();
+    let form_uuids = forms
+        .iter()
+        .map(|form| form.form_uuid.clone())
+        .collect::<Vec<_>>();
     let schemas = FormSchemaEntity::find()
         .filter(form_schema_entity::Column::FormUuid.is_in(form_uuids.clone()))
         .all(&state.db)
         .await?;
-    let schemas_by_key = schemas.into_iter().map(|schema| {
-        ((schema.form_uuid.clone(), schema.version), schema)
-    }).collect::<HashMap<_, _>>();
+    let schemas_by_key = schemas
+        .into_iter()
+        .map(|schema| ((schema.form_uuid.clone(), schema.version), schema))
+        .collect::<HashMap<_, _>>();
     let storage_by_form = form_storage_definition_entity::Entity::find()
         .filter(form_storage_definition_entity::Column::FormUuid.is_in(form_uuids))
         .all(&state.db)
@@ -87,24 +172,27 @@ pub(crate) async fn get_app_field_outline(
         .map(|storage| (storage.form_uuid.clone(), storage))
         .collect::<HashMap<_, _>>();
 
-    let outlined_forms = forms.into_iter().map(|form| {
-        let schema = schemas_by_key.get(&(form.form_uuid.clone(), form.draft_schema_version));
-        let fields = schema
-            .and_then(|item| item.schema_json.get("fields"))
-            .and_then(Value::as_array)
-            .map(|items| items.iter().filter_map(outline_field).collect())
-            .unwrap_or_default();
-        let storage = storage_by_form.get(&form.form_uuid);
-        ApiFieldOutlineForm {
-            form_uuid: form.form_uuid,
-            name: form.name,
-            status: form.status,
-            schema_version: form.draft_schema_version,
-            physical_table: storage.map(|item| item.physical_table.clone()),
-            compiled_schema_version: storage.map(|item| item.compiled_schema_version),
-            fields,
-        }
-    }).collect();
+    let outlined_forms = forms
+        .into_iter()
+        .map(|form| {
+            let schema = schemas_by_key.get(&(form.form_uuid.clone(), form.draft_schema_version));
+            let fields = schema
+                .and_then(|item| item.schema_json.get("fields"))
+                .and_then(Value::as_array)
+                .map(|items| items.iter().filter_map(outline_field).collect())
+                .unwrap_or_default();
+            let storage = storage_by_form.get(&form.form_uuid);
+            ApiFieldOutlineForm {
+                form_uuid: form.form_uuid,
+                name: form.name,
+                status: form.status,
+                schema_version: form.draft_schema_version,
+                physical_table: storage.map(|item| item.physical_table.clone()),
+                compiled_schema_version: storage.map(|item| item.compiled_schema_version),
+                fields,
+            }
+        })
+        .collect();
 
     Ok(Json(success_response(
         "获取应用字段大纲成功",
@@ -131,39 +219,64 @@ fn outline_field(field: &Value) -> Option<ApiFieldOutlineField> {
     Some(ApiFieldOutlineField {
         id: id.to_string(),
         label,
-        component_type: field.get("type").and_then(Value::as_str).unwrap_or("unknown").to_string(),
-        parent_group_id: field.get("parentGroupId").and_then(Value::as_str).map(ToString::to_string),
+        component_type: field
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string(),
+        parent_group_id: field
+            .get("parentGroupId")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
     })
 }
 pub(crate) async fn create_form(
     State(state): State<AppState>,
     Path(app_id): Path<String>,
 ) -> Result<(StatusCode, Json<ApiResponse<ApiFormSummary>>), AppError> {
+    let definition = create_blank_form(&state.db, &app_id, None).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(success_response(
+            "创建表单成功",
+            ApiFormSummary::from(definition),
+        )),
+    ))
+}
+
+pub(crate) async fn create_blank_form(
+    db: &DatabaseConnection,
+    app_id: &str,
+    requested_name: Option<String>,
+) -> Result<form_definition_entity::Model, AppError> {
     let now = Utc::now();
     let form_uuid = generate_form_uuid();
-    let form_name = "未命名表单".to_string();
-    ensure_system_navigation_for_app(&state.db, &app_id).await?;
-    normalize_navigation_orders(&state.db, &app_id).await?;
+    let form_name = requested_name
+        .filter(|name| !name.trim().is_empty())
+        .map(|name| name.trim().to_string())
+        .unwrap_or_else(|| "未命名表单".to_string());
+    ensure_system_navigation_for_app(db, app_id).await?;
+    normalize_navigation_orders(db, app_id).await?;
     let existing_form_count = AppNavigationEntity::find()
-        .filter(app_navigation_entity::Column::AppRouteAppId.eq(app_id.clone()))
+        .filter(app_navigation_entity::Column::AppRouteAppId.eq(app_id))
         .filter(app_navigation_entity::Column::ItemType.eq("form"))
-        .count(&state.db)
+        .count(db)
         .await? as i32;
     let has_default_entry = AppNavigationEntity::find()
-        .filter(app_navigation_entity::Column::AppRouteAppId.eq(app_id.clone()))
+        .filter(app_navigation_entity::Column::AppRouteAppId.eq(app_id))
         .filter(app_navigation_entity::Column::IsDefaultEntry.eq(true))
-        .count(&state.db)
+        .count(db)
         .await?
         > 0;
     let is_default_entry = !has_default_entry;
     let slug = build_form_slug(existing_form_count);
-    let sort_order = next_navigation_sort_order(&state.db, &app_id, None).await?;
+    let sort_order = next_navigation_sort_order(db, app_id, None).await?;
     let initial_schema = build_blank_schema(&form_uuid, &form_name);
 
-    let txn = state.db.begin().await?;
+    let txn = db.begin().await?;
     let definition = form_definition_entity::ActiveModel {
         id: Set(Uuid::new_v4()),
-        app_route_app_id: Set(app_id),
+        app_route_app_id: Set(app_id.to_string()),
         form_uuid: Set(form_uuid.clone()),
         name: Set(form_name),
         slug: Set(slug),
@@ -210,13 +323,7 @@ pub(crate) async fn create_form(
     sync_published_storage_plan(&txn, &form_uuid, 1, &initial_schema).await?;
     txn.commit().await?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(success_response(
-            "创建表单成功",
-            ApiFormSummary::from(definition),
-        )),
-    ))
+    Ok(definition)
 }
 
 pub(crate) async fn get_form(
@@ -366,7 +473,10 @@ pub(crate) async fn list_form_records(
 }
 
 fn normalize_record_pagination(page: Option<u64>, page_size: Option<u64>) -> (u64, u64) {
-    (page.unwrap_or(1).max(1), page_size.unwrap_or(50).clamp(1, 100))
+    (
+        page.unwrap_or(1).max(1),
+        page_size.unwrap_or(50).clamp(1, 100),
+    )
 }
 
 pub(crate) async fn create_form_record(
@@ -379,7 +489,7 @@ pub(crate) async fn create_form_record(
     let operator = normalize_operator(payload.operator);
     let trigger_data = normalize_record_payload(payload.data);
 
-    if let Err(err) = automations::execute_automation_flows_for_event(
+    automations::execute_automation_flows_for_event(
         &state.db,
         &definition,
         "before_create",
@@ -387,10 +497,7 @@ pub(crate) async fn create_form_record(
         &operator,
         None,
     )
-    .await
-    {
-        error!("run automation before create failed: {err:?}");
-    }
+    .await?;
 
     let record = RecordRepository::new(&state.db)
         .insert(&definition, trigger_data, &operator, now)
@@ -430,7 +537,7 @@ pub(crate) async fn update_form_record(
     let next_data = normalize_record_payload(payload.data);
     let changed_fields = collect_changed_fields(&record.record_data, &next_data);
 
-    if let Err(err) = automations::execute_automation_flows_for_event(
+    automations::execute_automation_flows_for_event(
         &state.db,
         &definition,
         "before_update",
@@ -438,10 +545,7 @@ pub(crate) async fn update_form_record(
         &operator,
         Some(&changed_fields),
     )
-    .await
-    {
-        error!("run automation before update failed: {err:?}");
-    }
+    .await?;
 
     let updated = repository
         .update(&record, next_data.clone(), &operator, Utc::now())
@@ -475,7 +579,7 @@ pub(crate) async fn delete_form_record(
     let record = repository.find(&form_uuid, &record_uuid).await?;
     let operator = "管理员".to_string();
 
-    if let Err(err) = automations::execute_automation_flows_for_event(
+    automations::execute_automation_flows_for_event(
         &state.db,
         &definition,
         "before_delete",
@@ -483,10 +587,7 @@ pub(crate) async fn delete_form_record(
         &operator,
         None,
     )
-    .await
-    {
-        error!("run automation before delete failed: {err:?}");
-    }
+    .await?;
 
     repository.delete(&record).await?;
     repository

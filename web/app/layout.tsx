@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import { AppToastProvider } from "./components/app-toast-provider";
 import { AuthenticatedAppShell } from "./components/authenticated-app-shell";
 import { ThemeProvider } from "./components/theme-provider";
@@ -35,9 +34,7 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" className="h-full antialiased" suppressHydrationWarning>
       <head>
-        <Script id="theme-init" strategy="beforeInteractive">
-          {themeInitScript}
-        </Script>
+        <script id="theme-init" dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body className="min-h-full">
         <ThemeProvider>

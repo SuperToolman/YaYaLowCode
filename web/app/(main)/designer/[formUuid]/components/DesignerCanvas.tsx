@@ -307,8 +307,7 @@ function PlacedDesignerField({
       className={[
         "relative flex cursor-grab p-0 transition active:cursor-grabbing",
         isDragging ? "opacity-35" : "",
-        isTopAligned ? "min-h-full" : "h-full",
-        isTopAligned ? "items-start" : "items-end",
+        field.type === "multiLineText" ? "h-full items-stretch" : isTopAligned ? "min-h-full items-start" : "h-full items-end",
         isSelected
           ? "rounded-xl outline outline-1 outline-[var(--color-primary)] outline-offset-2"
           : "",
@@ -398,7 +397,7 @@ function DesignerFieldPreview({ field }: { field: PlacedField }) {
   }
 
   return (
-    <div className="w-full min-w-0 space-y-2">
+    <div className={isMultiline ? "flex h-full w-full min-w-0 flex-col gap-2" : "w-full min-w-0 space-y-2"}>
       <div className="text-sm font-medium text-[var(--color-text-primary)]">{field.label}</div>
       {isChoice ? (
         <div className="flex flex-wrap gap-3 text-sm text-[var(--color-text-secondary)]">
@@ -409,7 +408,7 @@ function DesignerFieldPreview({ field }: { field: PlacedField }) {
       ) : isUpload ? (
         <div className="flex min-h-12 items-center justify-center rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-xs text-[var(--color-text-secondary)]">{props.buttonText || (field.type === "imageUpload" ? "上传图片" : "上传附件")}</div>
       ) : (
-        <div className={["flex w-full items-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 text-sm text-[var(--color-text-disabled)]", isMultiline ? "min-h-16 items-start py-2" : "h-10"].join(" ")}>{placeholder}</div>
+        <div className={["flex w-full items-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 text-sm text-[var(--color-text-disabled)]", isMultiline ? "min-h-16 flex-1 items-start py-2" : "h-10"].join(" ")}>{placeholder}</div>
       )}
       {description ? <div className="text-xs text-[var(--color-text-secondary)]">{description}</div> : null}
     </div>

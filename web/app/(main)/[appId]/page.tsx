@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getFormsByRouteAppId, isRuntimeAppId } from "../../lib/apps";
-import { SYSTEM_PAGES } from "../../lib/system-pages";
 
 type NavigationItem = {
   itemType: string;
@@ -16,9 +15,7 @@ export default async function AppEntryPage({
   params: Promise<{ appId: string }>;
 }) {
   const { appId: routeAppId } = await params;
-  const defaultSystemPage = SYSTEM_PAGES[0]?.slug;
   let defaultForm: string | undefined =
-    defaultSystemPage ??
     getFormsByRouteAppId(routeAppId).find((form) => form.active)?.id ??
     getFormsByRouteAppId(routeAppId)[0]?.id;
 
@@ -35,9 +32,9 @@ export default async function AppEntryPage({
         data: NavigationItem[] | null;
       };
       if (payload.code === 0 && payload.data) {
+        const defaultEntry = payload.data.find((item) => item.isDefaultEntry);
         defaultForm =
-          payload.data.find((item) => item.isDefaultEntry)?.targetFormUuid ??
-          payload.data.find((item) => item.isDefaultEntry)?.pathSlug ??
+          (defaultEntry?.itemType === "form" ? defaultEntry.targetFormUuid : undefined) ??
           payload.data.find((item) => item.itemType === "form")?.targetFormUuid ??
           payload.data[0]?.pathSlug ??
           undefined;

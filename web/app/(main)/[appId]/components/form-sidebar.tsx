@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -36,6 +36,11 @@ import {
   ListIcon,
 } from "../../../components/app-icons";
 import type { AppForm } from "../../../lib/apps";
+import { useAuth } from "../../../components/auth-provider";
+import {
+  APP_NAVIGATION_CHANGED_EVENT,
+  type AppNavigationChangedDetail,
+} from "./app-navigation-events";
 
 type FormSidebarProps = {
   initialForms: AppForm[];
@@ -95,6 +100,9 @@ const ROOT_PARENT_VALUE = "__root__";
 export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const { hasPermission } = useAuth();
+  const canCreateForm = hasPermission(`app:${routeAppId}:create_form`);
+  const canCreateGroup = hasPermission(`app:${routeAppId}:create_group`);
   const [items, setItems] = useState<NavigationItem[]>(() =>
     buildStaticNavigationItems(routeAppId, initialForms),
   );
@@ -152,7 +160,7 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
     };
   }, [routeAppId]);
 
-  function refreshNavigation() {
+  const refreshNavigation = useCallback(() => {
     void (async () => {
       try {
         const response = await fetch(`/api/apps/${routeAppId}/navigation`, {
@@ -176,7 +184,21 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
         setErrorMessage("导航刷新失败，请稍后重试。");
       }
     })();
-  }
+  }, [routeAppId, startTransition]);
+
+  useEffect(() => {
+    function handleNavigationChanged(event: Event) {
+      const detail = (event as CustomEvent<AppNavigationChangedDetail>).detail;
+      if (detail?.appId === routeAppId) {
+        refreshNavigation();
+      }
+    }
+
+    window.addEventListener(APP_NAVIGATION_CHANGED_EVENT, handleNavigationChanged);
+    return () => {
+      window.removeEventListener(APP_NAVIGATION_CHANGED_EVENT, handleNavigationChanged);
+    };
+  }, [refreshNavigation, routeAppId]);
 
   function handleCreateForm() {
     setErrorMessage("");
@@ -343,7 +365,7 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
             <SearchField.ClearButton />
           </SearchField.Group>
         </SearchField>
-        <Dropdown>
+        {canCreateForm || canCreateGroup ? <Dropdown>
           <Dropdown.Trigger
             aria-label="新增导航项"
             className={[
@@ -365,11 +387,11 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
                 }
               }}
             >
-              <Dropdown.Item id="form">创建表单</Dropdown.Item>
-              <Dropdown.Item id="group">创建分组</Dropdown.Item>
+              {canCreateForm ? <Dropdown.Item id="form">创建表单</Dropdown.Item> : null}
+              {canCreateGroup ? <Dropdown.Item id="group">创建分组</Dropdown.Item> : null}
             </Dropdown.Menu>
           </Dropdown.Popover>
-        </Dropdown>
+        </Dropdown> : null}
       </div>
 
       {errorMessage ? (

@@ -98,7 +98,9 @@ where
                 format!("SELECT COUNT(*) AS total FROM \"{}\"", plan.main_table),
             ))
             .await?
-            .ok_or_else(|| AppError::Server(std::io::Error::other("record count query returned no row")))?;
+            .ok_or_else(|| {
+                AppError::Server(std::io::Error::other("record count query returned no row"))
+            })?;
         let total = total_row.try_get("", "total")?;
         let records = rows
             .into_iter()

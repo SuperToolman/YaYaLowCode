@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeftIcon, GearIcon, LogoIcon } from "../../components/app-icons";
+import { ArrowLeftIcon, LogoIcon } from "../../components/app-icons";
 import {
   appStatusLabel,
   appStatusTone,
@@ -63,19 +63,6 @@ export default async function AppLayout({
             </div>
 
             <AppTopNav appId={routeAppId} />
-
-            <div className="ml-auto flex shrink-0 items-center gap-2">
-              <Link
-                href={`/${routeAppId}/settings`}
-                aria-label="应用设置"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-subtle)]"
-              >
-                <GearIcon />
-              </Link>
-              <button type="button" className="h-9 rounded-lg bg-[var(--color-primary)] px-3 text-[var(--color-text-on-primary)] hover:brightness-95">
-                访问
-              </button>
-            </div>
           </div>
         </header>
         <AppMainContent>{children}</AppMainContent>

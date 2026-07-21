@@ -59,6 +59,7 @@ import type {
 import type { RuntimeDebugEvent } from "../../../components/runtime-form-renderer";
 import { getFormulaFieldKey } from "../../../lib/form-formula";
 import { FORM_COMPONENT_AGENT_CAPABILITIES_VERSION, getFormComponentAgentCapability } from "../../../lib/form-component-agent-capabilities";
+import { useAuth } from "../../../components/auth-provider";
 
 export default function FormDesigner({ params }: FormDesignerProps) {
   const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
@@ -67,6 +68,9 @@ export default function FormDesigner({ params }: FormDesignerProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const appId = searchParams.get("appId");
+  const { hasPermission } = useAuth();
+  const canEditForm = Boolean(appId && hasPermission(`app:${appId}:edit_form`));
+  const canPublish = canEditForm && Boolean(appId && hasPermission(`app:${appId}:publish`));
   const [appName, setAppName] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const resizeStateRef = useRef<ResizeState | null>(null);
@@ -503,10 +507,7 @@ export default function FormDesigner({ params }: FormDesignerProps) {
       const parentField = parentGroupId
         ? baseFields.find((field) => field.id === parentGroupId)
         : null;
-      if (
-        (componentType === "subform" && parentGroupId !== null) ||
-        (parentField?.type === "subform" && isContainerFieldType(componentType))
-      ) {
+      if (parentField?.type === "subform" && isContainerFieldType(componentType)) {
         return originFields;
       }
       const nextIndex =
@@ -514,8 +515,12 @@ export default function FormDesigner({ params }: FormDesignerProps) {
       const defaultLayout = getInitialFieldLayout(componentType);
       const initialLayout = parentField?.type === "subform"
         ? { rowSpan: 1, colSpan: 1 }
-        : defaultLayout;
-      const targetColumn = componentType === "subform" ? 0 : column;
+        : componentType === "subform" && parentField?.type === "groupContainer"
+          ? { rowSpan: 1, colSpan: parentField.colSpan }
+          : defaultLayout;
+      const targetColumn = componentType === "subform"
+        ? parentField?.type === "groupContainer" ? parentField.column : 0
+        : column;
 
       if (
         !canPlaceField(
@@ -1036,6 +1041,10 @@ export default function FormDesigner({ params }: FormDesignerProps) {
     };
   }
 
+  if (appId && !canEditForm) {
+    return <main className="grid h-full min-h-0 place-items-center p-6"><div className="max-w-md text-center"><h1 className="text-xl font-semibold text-[var(--color-text-primary)]">无表单开发权限</h1><p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">请联系应用管理员授予“表单开发 - 编辑表单”权限。</p></div></main>;
+  }
+
   return (
     <DndContext
       id={`form-designer-${formUuid}`}
@@ -1102,6 +1111,8 @@ export default function FormDesigner({ params }: FormDesignerProps) {
             onPublish={handlePublish}
             onRestoreVersionSelect={handleRestore}
             onSave={handleSave}
+            canEditForm={canEditForm}
+            canPublish={canPublish}
             saveMessage={saveMessage}
           />
 

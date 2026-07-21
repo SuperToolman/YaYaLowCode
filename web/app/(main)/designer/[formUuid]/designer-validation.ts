@@ -1,7 +1,7 @@
 import type { PlacedField } from "./designer-types";
 
 export type DesignerSchemaValidationIssue = {
-  code: "empty-container";
+  code: "empty-container" | "association-display";
   fieldId: string;
   message: string;
 };
@@ -25,7 +25,17 @@ export function validateDesignerSchema(
       .filter((parentId): parentId is string => Boolean(parentId)),
   );
 
-  return fields.flatMap((field) => {
+  return fields.flatMap<DesignerSchemaValidationIssue>((field) => {
+    if (field.type === "associationFormField") {
+      if (!field.props.associationFormId || !field.props.associationPrimaryFieldId) {
+        return [{
+          code: "association-display" as const,
+          fieldId: field.id,
+          message: `关联表单“${field.label.trim() || "关联表单"}”需要选择关联表单并完成显示设置`,
+        }];
+      }
+      return [];
+    }
     const containerName = CONTAINER_NAMES[field.type];
     if (!containerName || parentIds.has(field.id)) {
       return [];

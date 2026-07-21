@@ -66,7 +66,23 @@ const secondaryNavItems: NavItem[] = [
 export default function HomeSideBar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { logout, user } = useAuth();
+  const { logout, user, permissions, permissionsReady, hasPermission } = useAuth();
+  const canUseApplications =
+    hasPermission("apps.access") ||
+    hasPermission("apps.manage") ||
+    permissions.some((permission) => permission.startsWith("app:") && permission.endsWith(":display"));
+  const visiblePrimaryNavItems = !permissionsReady
+    ? []
+    : primaryNavItems.filter((item) => {
+        if (item.href === "/myApp") return canUseApplications;
+        if (item.href === "/designer") return hasPermission("designer.access");
+        return true;
+      });
+  const canUseSettings =
+    permissions.includes("*") || permissions.some((permission) => permission.startsWith("settings."));
+  const visibleSecondaryNavItems = !permissionsReady || !canUseSettings
+    ? []
+    : secondaryNavItems;
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
@@ -81,12 +97,12 @@ export default function HomeSideBar() {
 
         <div className="flex flex-1 flex-col justify-between">
           <div className="flex flex-col gap-2">
-            <NavGroup items={primaryNavItems} pathname={pathname} />
-            <AgentAssistantLauncher />
+            <NavGroup items={visiblePrimaryNavItems} pathname={pathname} />
+            {permissionsReady && hasPermission("agent.window") ? <AgentAssistantLauncher /> : null}
             <ThemeSwitcherMenu />
           </div>
           <div>
-            <NavGroup items={secondaryNavItems} pathname={pathname} />
+            <NavGroup items={visibleSecondaryNavItems} pathname={pathname} />
           </div>
         </div>
       </div>
