@@ -1,20 +1,21 @@
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "form_definitions")]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "workflow_instances")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    pub app_route_app_id: String,
     #[sea_orm(unique)]
+    pub instance_uuid: String,
     pub form_uuid: String,
-    pub name: String,
-    pub slug: String,
-    pub form_type: String,
+    pub record_uuid: String,
+    pub process_flow_id: Uuid,
+    pub flow_version: i32,
     pub status: String,
-    pub draft_schema_version: i32,
-    pub published_schema_version: i32,
-    pub latest_schema_version: i32,
+    pub current_node_key: Option<String>,
+    pub submitter: String,
+    pub started_at: DateTimeUtc,
+    pub completed_at: Option<DateTimeUtc>,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }

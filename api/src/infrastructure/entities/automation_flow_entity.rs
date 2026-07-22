@@ -12,6 +12,7 @@ pub struct Model {
     pub description: Option<String>,
     pub status: String,
     pub current_version: i32,
+    pub flow_type: String,
     pub trigger_form_uuid: Option<String>,
     pub trigger_event: String,
     pub trigger_config: Json,

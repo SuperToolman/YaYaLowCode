@@ -1,16 +1,19 @@
 use crate::infrastructure::entities::form_storage_definition_entity;
 use crate::infrastructure::entities::form_view_entity;
+use crate::infrastructure::entities::{iam_user_entity, organization_unit_entity};
 use crate::modules::automations;
 use crate::modules::navigation::{
     ensure_system_navigation_for_app, next_navigation_sort_order, normalize_navigation_orders,
     sync_navigation_title,
 };
+use crate::platform::authorization;
 use crate::platform::form_storage::{delete_storage_definition, sync_published_storage_plan};
 use crate::platform::prelude::*;
-use crate::platform::records::RecordRepository;
+use crate::platform::records::{RecordRepository, StoredFormRecord};
 use crate::shared::*;
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use utoipa::ToSchema;
 
 #[derive(Serialize, ToSchema)]
@@ -185,6 +188,7 @@ pub(crate) async fn get_app_field_outline(
             ApiFieldOutlineForm {
                 form_uuid: form.form_uuid,
                 name: form.name,
+                form_type: form.form_type,
                 status: form.status,
                 schema_version: form.draft_schema_version,
                 physical_table: storage.map(|item| item.physical_table.clone()),
@@ -233,8 +237,10 @@ fn outline_field(field: &Value) -> Option<ApiFieldOutlineField> {
 pub(crate) async fn create_form(
     State(state): State<AppState>,
     Path(app_id): Path<String>,
+    Json(payload): Json<CreateFormRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<ApiFormSummary>>), AppError> {
-    let definition = create_blank_form(&state.db, &app_id, None).await?;
+    let form_type = normalize_form_type(payload.form_type.as_deref())?;
+    let definition = create_blank_form(&state.db, &app_id, None, form_type).await?;
     Ok((
         StatusCode::CREATED,
         Json(success_response(
@@ -248,6 +254,7 @@ pub(crate) async fn create_blank_form(
     db: &DatabaseConnection,
     app_id: &str,
     requested_name: Option<String>,
+    form_type: &str,
 ) -> Result<form_definition_entity::Model, AppError> {
     let now = Utc::now();
     let form_uuid = generate_form_uuid();
@@ -280,6 +287,7 @@ pub(crate) async fn create_blank_form(
         form_uuid: Set(form_uuid.clone()),
         name: Set(form_name),
         slug: Set(slug),
+        form_type: Set(form_type.to_string()),
         status: Set("draft".to_string()),
         draft_schema_version: Set(1),
         published_schema_version: Set(1),
@@ -320,10 +328,28 @@ pub(crate) async fn create_blank_form(
     .insert(&txn)
     .await?;
 
+    if form_type == "workflow" {
+        automations::create_process_flow_for_form(
+            &txn,
+            app_id,
+            &definition.form_uuid,
+            &definition.name,
+        )
+        .await?;
+    }
+
     sync_published_storage_plan(&txn, &form_uuid, 1, &initial_schema).await?;
     txn.commit().await?;
 
     Ok(definition)
+}
+
+fn normalize_form_type(form_type: Option<&str>) -> Result<&str, AppError> {
+    match form_type.unwrap_or("normal").trim() {
+        "" | "normal" => Ok("normal"),
+        "workflow" => Ok("workflow"),
+        _ => Err(AppError::BadRequest("unsupported form type".to_string())),
+    }
 }
 
 pub(crate) async fn get_form(
@@ -461,10 +487,19 @@ pub(crate) async fn list_form_records(
         }
     };
 
+    let submitter_profiles = load_submitter_profiles(
+        &state.db,
+        items.iter().map(|record| record.created_by.as_str()),
+    )
+    .await?;
+
     Ok(Json(success_response(
         "获取表单数据成功",
         ApiFormRecordList {
-            items: items.into_iter().map(ApiFormRecord::from).collect(),
+            items: items
+                .into_iter()
+                .map(|record| form_record_response(record, &submitter_profiles))
+                .collect(),
             total,
             page,
             page_size,
@@ -479,15 +514,103 @@ fn normalize_record_pagination(page: Option<u64>, page_size: Option<u64>) -> (u6
     )
 }
 
+#[derive(Clone)]
+struct SubmitterProfile {
+    user_id: String,
+    avatar_url: Option<String>,
+    organization: Option<String>,
+}
+
+async fn load_submitter_profiles<'a>(
+    db: &DatabaseConnection,
+    names: impl IntoIterator<Item = &'a str>,
+) -> Result<HashMap<String, SubmitterProfile>, AppError> {
+    let names = names
+        .into_iter()
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if names.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let users = iam_user_entity::Entity::find()
+        .filter(iam_user_entity::Column::DisplayName.is_in(names))
+        .all(db)
+        .await?;
+    let organization_ids = users
+        .iter()
+        .filter_map(|user| user.primary_organization_unit_id)
+        .collect::<Vec<_>>();
+    let organization_names = organization_unit_entity::Entity::find()
+        .filter(organization_unit_entity::Column::Id.is_in(organization_ids))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|unit| (unit.id, unit.name))
+        .collect::<HashMap<_, _>>();
+
+    Ok(users
+        .into_iter()
+        .map(|user| {
+            let profile = SubmitterProfile {
+                user_id: user.id.to_string(),
+                avatar_url: user.avatar_url,
+                organization: user
+                    .primary_organization_unit_id
+                    .and_then(|id| organization_names.get(&id).cloned()),
+            };
+            (user.display_name, profile)
+        })
+        .collect())
+}
+
+async fn submitter_profile(
+    db: &DatabaseConnection,
+    user: iam_user_entity::Model,
+) -> Result<SubmitterProfile, AppError> {
+    let organization = match user.primary_organization_unit_id {
+        Some(id) => organization_unit_entity::Entity::find_by_id(id)
+            .one(db)
+            .await?
+            .map(|unit| unit.name),
+        None => None,
+    };
+    Ok(SubmitterProfile {
+        user_id: user.id.to_string(),
+        avatar_url: user.avatar_url,
+        organization,
+    })
+}
+
+fn form_record_response(
+    record: StoredFormRecord,
+    profiles: &HashMap<String, SubmitterProfile>,
+) -> ApiFormRecord {
+    let profile = profiles.get(&record.created_by);
+    let mut response = ApiFormRecord::from(record);
+    if let Some(profile) = profile {
+        response.created_by_user_id = Some(profile.user_id.clone());
+        response.created_by_avatar_url = profile.avatar_url.clone();
+        response.submitter_organization = profile.organization.clone();
+    }
+    response
+}
+
 pub(crate) async fn create_form_record(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(form_uuid): Path<String>,
     Json(payload): Json<CreateFormRecordRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<ApiFormRecord>>), AppError> {
     let definition = find_form_definition(&state.db, &form_uuid).await?;
     let now = Utc::now();
-    let operator = normalize_operator(payload.operator);
-    let trigger_data = normalize_record_payload(payload.data);
+    let submitter = authorization::current_user(&headers, &state).await?;
+    let operator = submitter.display_name.clone();
+    let mut trigger_data = normalize_record_payload(payload.data);
+    if definition.form_type == "workflow" {
+        initialize_workflow_record(&mut trigger_data, &submitter.display_name);
+    }
 
     automations::execute_automation_flows_for_event(
         &state.db,
@@ -520,21 +643,33 @@ pub(crate) async fn create_form_record(
         StatusCode::CREATED,
         Json(success_response(
             "提交表单数据成功",
-            ApiFormRecord::from(record),
+            form_record_response(
+                record,
+                &HashMap::from([(
+                    submitter.display_name.clone(),
+                    submitter_profile(&state.db, submitter).await?,
+                )]),
+            ),
         )),
     ))
 }
 
 pub(crate) async fn update_form_record(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path((form_uuid, record_uuid)): Path<(String, String)>,
     Json(payload): Json<UpdateFormRecordRequest>,
 ) -> Result<Json<ApiResponse<ApiFormRecord>>, AppError> {
     let definition = find_form_definition(&state.db, &form_uuid).await?;
     let repository = RecordRepository::new(&state.db);
     let record = repository.find(&form_uuid, &record_uuid).await?;
-    let operator = normalize_operator(payload.operator);
-    let next_data = normalize_record_payload(payload.data);
+    let operator = authorization::current_user(&headers, &state)
+        .await?
+        .display_name;
+    let mut next_data = normalize_record_payload(payload.data);
+    if definition.form_type == "workflow" {
+        preserve_workflow_system_fields(&record.record_data, &mut next_data)?;
+    }
     let changed_fields = collect_changed_fields(&record.record_data, &next_data);
 
     automations::execute_automation_flows_for_event(
@@ -566,8 +701,30 @@ pub(crate) async fn update_form_record(
 
     Ok(Json(success_response(
         "更新表单数据成功",
-        ApiFormRecord::from(updated),
+        form_record_response(
+            updated,
+            &load_submitter_profiles(&state.db, std::iter::once(record.created_by.as_str()))
+                .await?,
+        ),
     )))
+}
+
+fn initialize_workflow_record(data: &mut Value, submitter: &str) {
+    let Some(values) = data.as_object_mut() else { return };
+    values.insert("workflowApprovalStatus".to_string(), json!("saved"));
+    values.insert("workflowInstanceStatus".to_string(), json!("in_progress"));
+    values.insert("workflowCurrentApprovalNode".to_string(), json!("待提交"));
+    values.insert("workflowSubmitter".to_string(), json!(submitter));
+}
+
+fn preserve_workflow_system_fields(current: &Value, next: &mut Value) -> Result<(), AppError> {
+    let Some(values) = next.as_object_mut() else { return Ok(()) };
+    for key in ["workflowApprovalStatus", "workflowInstanceStatus", "workflowCurrentApprovalNode", "workflowSubmitter"] {
+        if let Some(value) = current.get(key) {
+            values.insert(key.to_string(), value.clone());
+        }
+    }
+    Ok(())
 }
 
 pub(crate) async fn delete_form_record(

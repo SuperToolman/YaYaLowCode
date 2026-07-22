@@ -12,6 +12,7 @@ export type AppItem = {
   status: AppStatus;
   createdAt: string;
   owner: string;
+  ownerAvatarUrl?: string | null;
   records: number;
 };
 
@@ -19,6 +20,7 @@ export type AppForm = {
   id: string;
   name: string;
   category: "menu" | "group";
+  formType?: "normal" | "workflow";
   active?: boolean;
   count?: number;
 };

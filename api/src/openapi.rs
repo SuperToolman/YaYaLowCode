@@ -19,8 +19,8 @@ use crate::modules::dingtalk::{
 };
 use crate::modules::forms::{
     ApiAppFieldOutline, ApiFormRecord, ApiFormRecordList, ApiFormSummary, ApiFormVersionSummary,
-    ApiSchemaPayload, CreateFormRecordRequest, FormViewResponse, RestoreVersionRequest,
-    SaveFormViewRequest, SaveSchemaRequest, UpdateFormRecordRequest,
+    ApiSchemaPayload, CreateFormRecordRequest, CreateFormRequest, FormViewResponse,
+    RestoreVersionRequest, SaveFormViewRequest, SaveSchemaRequest, UpdateFormRecordRequest,
 };
 use crate::modules::identity::{
     CreateLocalRoleRequest, CreateLocalUserRequest, DingTalkLoginUserResponse,
@@ -611,12 +611,14 @@ endpoint!(
     "listForms",
     ("appId" = String, Path)
 );
-endpoint!(
+typed_endpoint!(
     create_form,
     post,
     "/api/apps/{appId}/forms",
     "createForm",
-    ("appId" = String, Path)
+    (("appId" = String, Path)),
+    CreateFormRequest,
+    ApiResponse<ApiFormSummary>
 );
 typed_endpoint!(
     list_automation_flows,
@@ -685,22 +687,25 @@ typed_endpoint!(
     (("automationId" = String, Path)),
     ApiResponse<Vec<ApiAutomationRun>>
 );
-endpoint!(
+typed_endpoint!(
     retry_automation_flow_run,
     post,
     "/api/automations/{automationId}/runs/{runId}/retry",
     "retryAutomationFlowRun",
-    ("automationId" = String, Path),
-    ("runId" = String, Path)
+    (("automationId" = String, Path), ("runId" = String, Path)),
+    ApiResponse<Value>
 );
-endpoint!(
+typed_endpoint!(
     retry_automation_flow_run_node,
     post,
     "/api/automations/{automationId}/runs/{runId}/nodes/{nodeKey}/retry",
     "retryAutomationFlowRunNode",
-    ("automationId" = String, Path),
-    ("runId" = String, Path),
-    ("nodeKey" = String, Path)
+    (
+        ("automationId" = String, Path),
+        ("runId" = String, Path),
+        ("nodeKey" = String, Path)
+    ),
+    ApiResponse<Value>
 );
 
 typed_endpoint!(get_form_schema, get, "/api/forms/{formUuid}/schema", "getFormSchema", (("formUuid" = String, Path), ("scope" = Option<String>, Query), ("version" = Option<i32>, Query)), ApiResponse<ApiSchemaPayload>);

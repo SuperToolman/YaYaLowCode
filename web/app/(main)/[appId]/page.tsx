@@ -34,14 +34,17 @@ export default async function AppEntryPage({
       if (payload.code === 0 && payload.data) {
         const defaultEntry = payload.data.find((item) => item.isDefaultEntry);
         defaultForm =
-          (defaultEntry?.itemType === "form" ? defaultEntry.targetFormUuid : undefined) ??
+          (defaultEntry?.itemType === "form"
+            ? defaultEntry.targetFormUuid
+            : defaultEntry?.pathSlug) ??
           payload.data.find((item) => item.itemType === "form")?.targetFormUuid ??
-          payload.data[0]?.pathSlug ??
-          undefined;
+          "todo";
       }
     } catch {
-      defaultForm = undefined;
+      // Runtime applications always provide the built-in todo page as an entry fallback.
     }
+
+    defaultForm ??= "todo";
   }
 
   if (defaultForm) {

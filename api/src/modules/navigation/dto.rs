@@ -34,7 +34,8 @@ pub(crate) struct ReorderNavigationRequest {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct SetDefaultNavigationEntryRequest {
-    pub(crate) form_uuid: String,
+    pub(crate) form_uuid: Option<String>,
+    pub(crate) system_page_slug: Option<String>,
 }
 
 impl From<app_navigation_entity::Model> for ApiNavigationItem {

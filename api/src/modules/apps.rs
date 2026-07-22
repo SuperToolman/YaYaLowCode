@@ -1,3 +1,4 @@
+use crate::infrastructure::entities::iam_user_entity;
 use crate::modules::navigation::ensure_system_navigation_for_app;
 use crate::platform::authorization;
 use crate::platform::form_storage::delete_storage_definition;
@@ -18,36 +19,32 @@ pub(crate) async fn list_apps(
 
     let grants = authorization::grants(&headers, &state).await?;
     let all = grants.contains("*") || grants.contains("apps.manage");
-    Ok(Json(success_response(
-        "获取应用列表成功",
-        items
-            .into_iter()
-            .filter(|app| all || grants.contains(&format!("app:{}:display", app.route_app_id)))
-            .map(ApiApp::from)
-            .collect(),
-    )))
+    let mut responses = Vec::new();
+    for app in items {
+        if all || grants.contains(&format!("app:{}:display", app.route_app_id)) {
+            responses.push(app_response(&state.db, app).await?);
+        }
+    }
+
+    Ok(Json(success_response("获取应用列表成功", responses)))
 }
 
 pub(crate) async fn create_app(
     State(state): State<AppState>,
+    headers: HeaderMap,
     payload: Option<Json<CreateAppRequest>>,
 ) -> Result<(StatusCode, Json<ApiResponse<ApiApp>>), AppError> {
     let payload = payload
         .map(|Json(value)| value)
-        .unwrap_or(CreateAppRequest {
-            name: None,
-            owner: None,
-        });
+        .unwrap_or(CreateAppRequest { name: None });
     let now = Utc::now();
     let route_app_id = generate_route_app_id();
     let app_name = payload
         .name
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| format!("未命名应用 {}", now.format("%m%d%H%M")));
-    let owner_name = payload
-        .owner
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "管理员".to_string());
+    let owner = authorization::current_user(&headers, &state).await?;
+    let owner_name = owner.display_name.clone();
 
     let active_model = app_entity::ActiveModel {
         id: Set(Uuid::new_v4()),
@@ -69,8 +66,27 @@ pub(crate) async fn create_app(
 
     Ok((
         StatusCode::CREATED,
-        Json(success_response("创建应用成功", ApiApp::from(created))),
+        Json(success_response(
+            "创建应用成功",
+            app_response(&state.db, created).await?,
+        )),
     ))
+}
+
+pub(crate) async fn get_app(
+    State(state): State<AppState>,
+    Path(app_id): Path<String>,
+) -> Result<Json<ApiResponse<ApiApp>>, AppError> {
+    let app = AppEntity::find()
+        .filter(app_entity::Column::RouteAppId.eq(app_id))
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("app not found".to_string()))?;
+
+    Ok(Json(success_response(
+        "获取应用成功",
+        app_response(&state.db, app).await?,
+    )))
 }
 
 pub(crate) async fn update_app(
@@ -105,8 +121,19 @@ pub(crate) async fn update_app(
 
     Ok(Json(success_response(
         "更新应用成功",
-        ApiApp::from(updated),
+        app_response(&state.db, updated).await?,
     )))
+}
+
+async fn app_response(db: &DatabaseConnection, app: app_entity::Model) -> Result<ApiApp, AppError> {
+    let owner_avatar_url = iam_user_entity::Entity::find()
+        .filter(iam_user_entity::Column::DisplayName.eq(app.owner_name.clone()))
+        .one(db)
+        .await?
+        .and_then(|user| user.avatar_url);
+    let mut response = ApiApp::from(app);
+    response.owner_avatar_url = owner_avatar_url;
+    Ok(response)
 }
 
 pub(crate) async fn delete_app(

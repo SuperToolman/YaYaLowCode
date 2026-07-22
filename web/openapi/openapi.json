@@ -1159,6 +1159,16 @@
       "post": {
         "operationId": "createForm",
         "summary": "Create blank form",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFormRequest"
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "name": "appId",
@@ -1240,6 +1250,52 @@
           },
           "503": {
             "description": "Backend unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "reorderNavigationItem",
+        "summary": "Reorder app navigation item",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderNavigationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Wrapped navigation item list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NavigationListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid reorder request",
             "content": {
               "application/json": {
                 "schema": {
@@ -1517,7 +1573,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
           }
         }
       }
@@ -1546,7 +1609,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
           }
         }
       }
@@ -1732,6 +1802,27 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 100
             }
           }
         ],
@@ -3357,6 +3448,12 @@
           "owner": {
             "type": "string"
           },
+          "ownerAvatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "records": {
             "type": "integer",
             "format": "int64"
@@ -3757,6 +3854,7 @@
         "required": [
           "formUuid",
           "name",
+          "formType",
           "status",
           "schemaVersion",
           "fields"
@@ -3774,6 +3872,9 @@
             "items": {
               "$ref": "#/components/schemas/ApiFieldOutlineField"
             }
+          },
+          "formType": {
+            "type": "string"
           },
           "formUuid": {
             "type": "string"
@@ -3815,6 +3916,18 @@
           "createdBy": {
             "type": "string"
           },
+          "createdByAvatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdByUserId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "data": {},
           "formUuid": {
             "type": "string"
@@ -3825,6 +3938,12 @@
           "schemaVersion": {
             "type": "integer",
             "format": "int32"
+          },
+          "submitterOrganization": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "updatedAt": {
             "type": "string"
@@ -3870,6 +3989,7 @@
         "required": [
           "id",
           "name",
+          "formType",
           "category",
           "status",
           "latestSchemaVersion",
@@ -3887,6 +4007,9 @@
             "format": "int32"
           },
           "createdAt": {
+            "type": "string"
+          },
+          "formType": {
             "type": "string"
           },
           "id": {
@@ -4529,6 +4652,12 @@
               "owner": {
                 "type": "string"
               },
+              "ownerAvatarUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "records": {
                 "type": "integer",
                 "format": "int64"
@@ -4857,6 +4986,18 @@
               "createdBy": {
                 "type": "string"
               },
+              "createdByAvatarUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdByUserId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "data": {},
               "formUuid": {
                 "type": "string"
@@ -4867,6 +5008,12 @@
               "schemaVersion": {
                 "type": "integer",
                 "format": "int32"
+              },
+              "submitterOrganization": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "updatedAt": {
                 "type": "string"
@@ -4952,6 +5099,7 @@
             "required": [
               "id",
               "name",
+              "formType",
               "category",
               "status",
               "latestSchemaVersion",
@@ -4969,6 +5117,9 @@
                 "format": "int32"
               },
               "createdAt": {
+                "type": "string"
+              },
+              "formType": {
                 "type": "string"
               },
               "id": {
@@ -5765,6 +5916,27 @@
           }
         }
       },
+      "ApiResponse_Value": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {},
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
       "ApiResponse_Vec_AgentConfigProfile": {
         "type": "object",
         "required": [
@@ -6332,6 +6504,12 @@
                 },
                 "owner": {
                   "type": "string"
+                },
+                "ownerAvatarUrl": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "records": {
                   "type": "integer",
@@ -7228,6 +7406,18 @@
           }
         }
       },
+      "CreateFormRequest": {
+        "type": "object",
+        "properties": {
+          "formType": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "workflow"
+            ]
+          }
+        }
+      },
       "CreateLocalRoleRequest": {
         "type": "object",
         "required": [
@@ -7858,11 +8048,16 @@
           "item_id": {
             "type": "string"
           },
-          "placement": {
-            "type": "string"
-          },
           "target_item_id": {
             "type": "string"
+          },
+          "placement": {
+            "type": "string",
+            "enum": [
+              "before",
+              "after",
+              "inside"
+            ]
           }
         }
       },
@@ -7954,12 +8149,18 @@
       },
       "SetDefaultNavigationEntryRequest": {
         "type": "object",
-        "required": [
-          "form_uuid"
-        ],
         "properties": {
           "form_uuid": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "system_page_slug": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -8526,6 +8727,7 @@
         "required": [
           "id",
           "name",
+          "formType",
           "category",
           "status",
           "latestSchemaVersion",
@@ -8537,6 +8739,13 @@
           },
           "name": {
             "type": "string"
+          },
+          "formType": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "workflow"
+            ]
           },
           "category": {
             "type": "string"

@@ -7,6 +7,7 @@ import {
   Badge,
   Button,
   Checkbox,
+  CheckboxGroup,
   Dropdown,
   Input,
   ListBox,
@@ -50,18 +51,28 @@ import {
 import { AgentMarkdown } from "../../../components/agent-markdown";
 import { getSystemPageBySlug, isSystemPageSlug } from "../../../lib/system-pages";
 import { getFormComponentAgentCapability } from "../../../lib/form-component-agent-capabilities";
+import {
+  createFormRecord,
+  createAgentSession,
+  deleteForm,
+  deleteFormRecord,
+  getForm,
+  getFormSchema,
+  listFormRecords,
+  updateFormRecord,
+} from "../../../lib/api-client";
+import { getAppNavigation, getAppResource } from "../../../lib/app-resources";
 import { useAuth } from "../../../components/auth-provider";
 import { notifyAppNavigationChanged } from "../components/app-navigation-events";
+import {
+  useFormViews,
+  type FormView,
+  type ViewConfig,
+  type ViewFilterOperator,
+} from "./use-form-views";
 
 type SchemaField = RuntimeSchemaField;
 type FormSchema = RuntimeFormSchema;
-
-type NavigationItem = {
-  itemType: string;
-  targetFormUuid?: string | null;
-  title: string;
-  pathSlug: string;
-};
 
 type ApiEnvelope<T> = {
   code: number;
@@ -76,6 +87,9 @@ type FormRecord = {
   schemaVersion: number;
   data: Record<string, unknown>;
   createdBy: string;
+  createdByUserId?: string | null;
+  createdByAvatarUrl?: string | null;
+  submitterOrganization?: string | null;
   updatedBy: string;
   createdAt: string;
   updatedAt: string;
@@ -89,31 +103,11 @@ type RecordTableRow = FormRecord & {
   };
 };
 
-type FormRecordList = {
-  items: FormRecord[];
-  total: number;
-};
-
-type FormMetadata = {
-  id: string;
-  name: string;
-};
-
 type ViewKey = "records" | "submit";
-type ViewFilterOperator = "contains" | "equals" | "notEquals" | "greaterThan" | "lessThan";
-type ViewFilterRule = { id: string; fieldId: string; operator: ViewFilterOperator; value: string };
-type ViewSortRule = { id: string; fieldId: string; direction: "asc" | "desc" };
-type ViewConfig = { visibleFieldIds: string[]; filters: ViewFilterRule[]; sorts: ViewSortRule[] };
-type FormView = { id: string; viewUuid?: string; name: string; isDefault: boolean; config: ViewConfig; updatedAt: string };
-
 type FormAgentMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
-};
-
-type FormAgentSession = {
-  id: string;
 };
 
 type ImportWorkbookState = {
@@ -155,6 +149,13 @@ const BUILTIN_RECORD_FIELDS = [
   { id: "updatedAt", label: "修改时间" },
 ] as const;
 
+const WORKFLOW_BUILTIN_RECORD_FIELDS = [
+  { id: "workflowApprovalStatus", label: "审批状态" },
+  { id: "workflowInstanceStatus", label: "实例状态" },
+  { id: "workflowCurrentApprovalNode", label: "当前审批节点" },
+  { id: "workflowSubmitter", label: "提交人" },
+] as const;
+
 const BUILTIN_RECORD_FIELD_LABELS = new Set<string>(
   BUILTIN_RECORD_FIELDS.map((field) => field.label),
 );
@@ -191,6 +192,7 @@ export default function FormHome({
   const searchParams = useSearchParams();
   const [schema, setSchema] = useState<FormSchema | null>(null);
   const [formMetadataName, setFormMetadataName] = useState("");
+  const [formType, setFormType] = useState<"normal" | "workflow">("normal");
   const [systemPageTitle, setSystemPageTitle] = useState<string | null>(
     isSystemPageSlug(formUuid) ? (getSystemPageBySlug(formUuid)?.title ?? null) : null,
   );
@@ -215,18 +217,9 @@ export default function FormHome({
   const [importState, setImportState] = useState<ImportWorkbookState>(
     EMPTY_IMPORT_STATE,
   );
-  const [submitterOrganizations, setSubmitterOrganizations] = useState<
-    Record<string, string>
-  >({});
   const [agentDraftValues, setAgentDraftValues] = useState<Record<string, unknown>>({});
   const [agentValuePatch, setAgentValuePatch] = useState<{ id: number; values: Record<string, unknown> }>();
-  const [views, setViews] = useState<FormView[]>([]);
-  const [activeViewId, setActiveViewId] = useState("default");
-  const [viewConfigMode, setViewConfigMode] = useState<"filters" | "fields" | "sorts" | null>(null);
-  const [viewConfigDraft, setViewConfigDraft] = useState<ViewConfig | null>(null);
-  const [pendingViewConfig, setPendingViewConfig] = useState<ViewConfig | null>(null);
   const [openViewMenuId, setOpenViewMenuId] = useState<string | null>(null);
-  const [viewDeleteTarget, setViewDeleteTarget] = useState<FormView | null>(null);
   const viewMenuCloseTimerRef = useRef<number | null>(null);
   const viewUrlTransitionRef = useRef<{ viewUuid: string | null } | null>(null);
 
@@ -238,26 +231,56 @@ export default function FormHome({
     () => getVisibleDataFields(schema?.fields ?? []),
     [schema?.fields],
   );
+  const builtinRecordFields = useMemo(
+    () => formType === "workflow"
+      ? [...WORKFLOW_BUILTIN_RECORD_FIELDS, ...BUILTIN_RECORD_FIELDS]
+      : BUILTIN_RECORD_FIELDS,
+    [formType],
+  );
   const allViewFields = useMemo(
-    () => [...visibleFields.map((field) => ({ id: field.id, label: field.label })), ...BUILTIN_RECORD_FIELDS],
-    [visibleFields],
+    () => [...visibleFields.map((field) => ({ id: field.id, label: field.label })), ...builtinRecordFields],
+    [builtinRecordFields, visibleFields],
   );
   const defaultViewConfig = useMemo<ViewConfig>(() => ({
     visibleFieldIds: allViewFields.map((field) => field.id),
     filters: [],
     sorts: [],
   }), [allViewFields]);
-  const activeFormView = views.find((view) => view.id === activeViewId) ?? views[0];
-  const effectiveViewConfig = pendingViewConfig ?? activeFormView?.config ?? defaultViewConfig;
+  const formViews = useFormViews({ formUuid, defaultViewConfig, enabled: visibleFields.length > 0 });
+  const {
+    activeViewId,
+    applyViewConfigDraft,
+    closeViewConfig,
+    confirmDeleteView,
+    createTableView,
+    deleteView,
+    effectiveViewConfig,
+    openViewConfig,
+    saveViewConfig,
+    setActiveViewId,
+    setPendingViewConfig,
+    setViewConfigDraft,
+    setViewDeleteTarget,
+    viewConfigDirty,
+    viewConfigDraft,
+    viewConfigMode,
+    viewDeleteTarget,
+    views,
+    duplicateView,
+  } = formViews;
   const configuredFields = useMemo(
     () => visibleFields.filter((field) => effectiveViewConfig.visibleFieldIds.includes(field.id)),
     [effectiveViewConfig.visibleFieldIds, visibleFields],
   );
   const configuredBuiltinFields = useMemo(
-    () => BUILTIN_RECORD_FIELDS.filter((field) => effectiveViewConfig.visibleFieldIds.includes(field.id)),
-    [effectiveViewConfig.visibleFieldIds],
+    () => builtinRecordFields.filter((field) => effectiveViewConfig.visibleFieldIds.includes(field.id)),
+    [builtinRecordFields, effectiveViewConfig.visibleFieldIds],
   );
-  const displayedRecords = useMemo(() => applyViewConfig(records, effectiveViewConfig, formMetadataName || schema?.formName || formUuid, submitterOrganizations), [effectiveViewConfig, formMetadataName, formUuid, records, schema?.formName, submitterOrganizations]);
+  const sortableFieldIds = useMemo(
+    () => schema?.pageProps?.table?.sortableFieldIds ?? [...visibleFields.map((field) => field.id), ...builtinRecordFields.map((field) => field.id)],
+    [builtinRecordFields, schema?.pageProps?.table?.sortableFieldIds, visibleFields],
+  );
+  const displayedRecords = useMemo(() => applyViewConfig(records, effectiveViewConfig, formMetadataName || schema?.formName || formUuid), [effectiveViewConfig, formMetadataName, formUuid, records, schema?.formName]);
   const searchedRecords = useMemo(() => {
     const query = searchValue.trim().toLowerCase();
     if (!query) return displayedRecords;
@@ -265,22 +288,6 @@ export default function FormHome({
       JSON.stringify(record.data).toLowerCase().includes(query),
     );
   }, [displayedRecords, searchValue]);
-  const viewConfigDirty = Boolean(pendingViewConfig && JSON.stringify(pendingViewConfig) !== JSON.stringify(activeFormView?.config ?? defaultViewConfig));
-
-  useEffect(() => {
-    if (!visibleFields.length) return;
-    const timer = window.setTimeout(() => {
-      void fetch(`/api/forms/${encodeURIComponent(formUuid)}/views`, { cache: "no-store" }).then(async (response) => {
-        const payload = (await response.json()) as { code: number; data: Array<{ viewUuid: string; name: string; config: ViewConfig; updatedAt: string }> | null; message: string };
-        if (!response.ok || !payload.data) throw new Error(payload.message || "无法加载表单视图");
-        const stored: FormView[] = [{ id: "default", name: "全部数据", isDefault: true, config: defaultViewConfig, updatedAt: new Date().toISOString() }, ...payload.data.map((view) => ({ id: `view-${view.viewUuid}`, viewUuid: view.viewUuid, name: view.name, isDefault: false, config: view.config, updatedAt: view.updatedAt }))];
-        setViews(stored);
-        setActiveViewId((current) => stored.some((view) => view.id === current) ? current : "default");
-      }).catch((reason: unknown) => toast.danger(reason instanceof Error ? reason.message : "无法加载表单视图"));
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [defaultViewConfig, formUuid, visibleFields.length]);
-
   useEffect(() => {
     if (!views.length || activeView !== "records") return;
     const requestedViewUuid = searchParams.get("viewUuid");
@@ -299,70 +306,21 @@ export default function FormHome({
       return () => window.clearTimeout(timer);
     }
     viewUrlTransitionRef.current = null;
-  }, [activeView, activeViewId, searchParams, views]);
+  }, [activeView, activeViewId, searchParams, setActiveViewId, setPendingViewConfig, setViewConfigDraft, views]);
 
-  function openViewConfig(mode: "filters" | "fields" | "sorts") {
-    setViewConfigDraft(JSON.parse(JSON.stringify(effectiveViewConfig)) as ViewConfig);
-    setViewConfigMode(mode);
+  async function handleCreateTableView() {
+    const view = await createTableView();
+    if (view) activateTableView(view);
   }
 
-  async function saveViewConfig() {
-    if (!pendingViewConfig || !activeFormView) return;
-    if (activeFormView.isDefault || !activeFormView.viewUuid) { toast.danger("默认视图无需保存配置"); return; }
-    const response = await fetch(`/api/forms/${encodeURIComponent(formUuid)}/views/${encodeURIComponent(activeFormView.viewUuid)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: activeFormView.name, config: pendingViewConfig }) });
-    const payload = (await response.json()) as { code: number; data: { updatedAt: string } | null; message: string };
-    if (!response.ok || !payload.data) { toast.danger(payload.message || "保存视图失败"); return; }
-    const nextViews = views.map((view) => view.id === activeFormView.id ? { ...view, config: pendingViewConfig, updatedAt: payload.data!.updatedAt } : view);
-    setViews(nextViews);
-    setPendingViewConfig(null);
-    setViewConfigDraft(null);
-    toast.success("视图配置已保存");
+  async function handleDuplicateView(viewId: string) {
+    const view = await duplicateView(viewId);
+    if (view) activateTableView(view);
   }
 
-  function applyViewConfigDraft() {
-    if (!viewConfigDraft) return;
-    setPendingViewConfig(JSON.parse(JSON.stringify(viewConfigDraft)) as ViewConfig);
-    setViewConfigDraft(null);
-    setViewConfigMode(null);
-  }
-
-  async function createTableView() {
-    const response = await fetch(`/api/forms/${encodeURIComponent(formUuid)}/views`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "未命名表格视图", config: defaultViewConfig }) });
-    const payload = (await response.json()) as { code: number; data: { viewUuid: string; name: string; config: ViewConfig; updatedAt: string } | null; message: string };
-    if (!response.ok || !payload.data) { toast.danger(payload.message || "创建视图失败"); return; }
-    const nextView: FormView = { id: `view-${payload.data.viewUuid}`, viewUuid: payload.data.viewUuid, name: payload.data.name, isDefault: false, config: payload.data.config, updatedAt: payload.data.updatedAt };
-    const nextViews = [...views, nextView];
-    setViews(nextViews);
-    activateTableView(nextView);
-  }
-
-  function deleteView(viewId: string) {
-    const view = views.find((item) => item.id === viewId);
-    if (!view || view.isDefault) return;
-    setViewDeleteTarget(view);
-  }
-
-  async function confirmDeleteView() {
-    if (!viewDeleteTarget) return;
-    if (!viewDeleteTarget.viewUuid) return;
-    const response = await fetch(`/api/forms/${encodeURIComponent(formUuid)}/views/${encodeURIComponent(viewDeleteTarget.viewUuid)}`, { method: "DELETE" });
-    if (!response.ok) { const payload = await response.json() as { message?: string }; toast.danger(payload.message || "删除视图失败"); return; }
-    const nextViews = views.filter((item) => item.id !== viewDeleteTarget.id);
-    setViews(nextViews);
-    activateTableView(nextViews.find((item) => item.isDefault) ?? { id: "default", name: "全部数据", isDefault: true, config: defaultViewConfig, updatedAt: new Date().toISOString() });
-    setViewDeleteTarget(null);
-  }
-
-  async function duplicateView(viewId: string) {
-    const source = views.find((view) => view.id === viewId);
-    if (!source) return;
-    const response = await fetch(`/api/forms/${encodeURIComponent(formUuid)}/views`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: `${source.name} 副本`, config: source.config }) });
-    const payload = (await response.json()) as { code: number; data: { viewUuid: string; name: string; config: ViewConfig; updatedAt: string } | null; message: string };
-    if (!response.ok || !payload.data) { toast.danger(payload.message || "复制视图失败"); return; }
-    const copy: FormView = { id: `view-${payload.data.viewUuid}`, viewUuid: payload.data.viewUuid, name: payload.data.name, isDefault: false, config: payload.data.config, updatedAt: payload.data.updatedAt };
-    const nextViews = [...views, copy];
-    setViews(nextViews);
-    activateTableView(copy);
+  async function handleConfirmDeleteView() {
+    const view = await confirmDeleteView();
+    if (view) activateTableView(view);
   }
 
   function openViewMenu(viewId: string) {
@@ -400,13 +358,12 @@ export default function FormHome({
     setLoadingRecords(true);
 
     try {
-      const response = await fetch(`/api/forms/${formUuid}/records`, {
-        cache: "no-store",
+      const { data, error } = await listFormRecords({
+        path: { formUuid },
+        responseStyle: "fields",
       });
-      const payload = (await response.json()) as ApiEnvelope<FormRecordList>;
-
-      if (payload.code === 0 && payload.data) {
-        setRecords(payload.data.items);
+      if (!error && data?.code === 0 && data.data) {
+        setRecords(data.data.items as FormRecord[]);
       }
     } finally {
       setLoadingRecords(false);
@@ -425,15 +382,10 @@ export default function FormHome({
       }
 
       try {
-        const navigationResponse = await fetch(`/api/apps/${appId}/navigation`, {
-          cache: "no-store",
-        });
-        const navigationPayload = (await navigationResponse.json()) as ApiEnvelope<
-          NavigationItem[]
-        >;
+        const navigationItems = await getAppNavigation(appId);
 
-        if (!cancelled && navigationPayload.code === 0 && navigationPayload.data) {
-          const matchedItem = navigationPayload.data.find(
+        if (!cancelled) {
+          const matchedItem = navigationItems.find(
             (item) => item.pathSlug === formUuid || item.targetFormUuid === formUuid,
           );
 
@@ -443,21 +395,20 @@ export default function FormHome({
           }
         }
 
-        const [metadataResponse, response] = await Promise.all([
-          fetch(`/api/forms/${formUuid}`, { cache: "no-store" }),
-          fetch(`/api/forms/${formUuid}/schema?scope=published`, { cache: "no-store" }),
+        const [metadataResult, schemaResult] = await Promise.all([
+          getForm({ path: { formUuid }, responseStyle: "fields" }),
+          getFormSchema({ path: { formUuid }, query: { scope: "published" }, responseStyle: "fields" }),
         ]);
-        const metadataPayload = (await metadataResponse.json()) as ApiEnvelope<FormMetadata>;
-        const payload = (await response.json()) as ApiEnvelope<{
-          schema: FormSchema;
-        }>;
+        const metadataPayload = metadataResult.data;
+        const payload = schemaResult.data;
 
-        if (!cancelled && metadataPayload.code === 0 && metadataPayload.data) {
+        if (!cancelled && !metadataResult.error && metadataPayload?.code === 0 && metadataPayload.data) {
           setFormMetadataName(metadataPayload.data.name);
+          setFormType(metadataPayload.data.formType === "workflow" ? "workflow" : "normal");
         }
-        if (!cancelled && payload.code === 0 && payload.data?.schema) {
+        if (!cancelled && !schemaResult.error && payload?.code === 0 && payload.data?.schema) {
           setSystemPageTitle(null);
-          setSchema(payload.data.schema);
+          setSchema(payload.data.schema as FormSchema);
         }
       } catch {
         // Keep local fallback schema for static demo forms.
@@ -470,25 +421,6 @@ export default function FormHome({
       cancelled = true;
     };
   }, [appId, formUuid]);
-
-  useEffect(() => {
-    if (isSystemPageSlug(formUuid)) return;
-    let cancelled = false;
-    void fetch("/api/identity/users", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((payload: ApiEnvelope<Array<{ displayName: string; primaryDepartment: string | null }>>) => {
-        if (cancelled || payload.code !== 0 || !payload.data) return;
-        setSubmitterOrganizations(
-          Object.fromEntries(
-            payload.data.map((user) => [user.displayName, user.primaryDepartment || "-"]),
-          ),
-        );
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [formUuid]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -507,20 +439,13 @@ export default function FormHome({
     setSubmitting(true);
 
     try {
-      const response = await fetch(`/api/forms/${formUuid}/records`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          data: values,
-          operator: "管理员",
-        }),
+      const { data, error } = await createFormRecord({
+        path: { formUuid },
+        body: { data: values },
+        responseStyle: "fields",
       });
-      const payload = (await response.json()) as ApiEnvelope<FormRecord>;
-
-      if (payload.code !== 0 || !payload.data) {
-        throw new Error(payload.message || "submit failed");
+      if (error || !data || data.code !== 0 || !data.data) {
+        throw new Error(data?.message || "submit failed");
       }
 
       await loadRecords();
@@ -554,20 +479,13 @@ export default function FormHome({
     setSubmitting(true);
 
     try {
-      const response = await fetch(`/api/forms/${formUuid}/records/${recordId}`, {
-        method: "PATCH",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          data: values,
-          operator: "管理员",
-        }),
+      const { data, error } = await updateFormRecord({
+        path: { formUuid, recordUuid: recordId },
+        body: { data: values },
+        responseStyle: "fields",
       });
-      const payload = (await response.json()) as ApiEnvelope<FormRecord>;
-
-      if (payload.code !== 0 || !payload.data) {
-        throw new Error(payload.message || "update failed");
+      if (error || !data || data.code !== 0 || !data.data) {
+        throw new Error(data?.message || "update failed");
       }
 
       await loadRecords();
@@ -585,17 +503,28 @@ export default function FormHome({
     }
   }
 
+  async function handleWorkflowAction(record: FormRecord, action: "submit" | "reverse") {
+    try {
+      const response = await fetch(`/api/forms/${encodeURIComponent(formUuid)}/records/${encodeURIComponent(record.id)}/workflow/${action === "submit" ? "submit" : "reverse"}`, { method: "POST" });
+      const result = await response.json() as ApiEnvelope<unknown>;
+      if (!response.ok || result.code !== 0) throw new Error(result.message);
+      await loadRecords();
+      toast.success(action === "submit" ? "流程已提交" : "反审成功");
+    } catch (error) {
+      toast.danger(action === "submit" ? "提交流程失败" : "反审失败", { description: error instanceof Error ? error.message : "请稍后重试" });
+    }
+  }
+
   async function handleDeleteRecord(recordId: string): Promise<boolean> {
     setDeletingRecordId(recordId);
 
     try {
-      const response = await fetch(`/api/forms/${formUuid}/records/${recordId}`, {
-        method: "DELETE",
+      const { data, error } = await deleteFormRecord({
+        path: { formUuid, recordUuid: recordId },
+        responseStyle: "fields",
       });
-      const payload = (await response.json().catch(() => null)) as ApiEnvelope<Record<string, unknown>> | null;
-
-      if (!response.ok || payload?.code !== 0) {
-        throw new Error(payload?.message || "delete failed");
+      if (error || !data || data.code !== 0) {
+        throw new Error(data?.message || "delete failed");
       }
 
       await loadRecords();
@@ -617,13 +546,9 @@ export default function FormHome({
     setDeleting(true);
 
     try {
-      const response = await fetch(`/api/forms/${formUuid}`, {
-        method: "DELETE",
-      });
-      const payload = (await response.json()) as ApiEnvelope<Record<string, unknown>>;
-
-      if (payload.code !== 0) {
-        throw new Error(payload.message || "delete failed");
+      const { error } = await deleteForm({ path: { formUuid }, responseStyle: "fields" });
+      if (error) {
+        throw new Error("delete failed");
       }
 
       setDeleteOpen(false);
@@ -732,7 +657,7 @@ export default function FormHome({
         ...BUILTIN_RECORD_FIELDS.map((field) => field.label),
       ],
       ...selectedRecords.map((record) => {
-        const builtIns = getBuiltinRecordValues(record, resolvedFormName, submitterOrganizations);
+        const builtIns = getBuiltinRecordValues(record, resolvedFormName);
         return [
           ...columns.map((column) => serializeExcelValue(record.data[column.field.id])),
           ...BUILTIN_RECORD_FIELDS.map((field) => builtIns[field.id]),
@@ -815,13 +740,12 @@ export default function FormHome({
         if (value !== undefined) data[fieldId] = value;
       }
       try {
-        const response = await fetch(`/api/forms/${formUuid}/records`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ data, operator: "管理员" }),
+        const { data: responseData, error } = await createFormRecord({
+          path: { formUuid },
+          body: { data },
+          responseStyle: "fields",
         });
-        const payload = (await response.json()) as ApiEnvelope<FormRecord>;
-        if (!response.ok || payload.code !== 0) throw new Error(payload.message || "导入失败");
+        if (error || !responseData || responseData.code !== 0) throw new Error(responseData?.message || "导入失败");
         successCount += 1;
       } catch {
         failureCount += 1;
@@ -928,7 +852,7 @@ export default function FormHome({
                 </Dropdown.Trigger>
               <Dropdown.Popover>
                 <Dropdown.Menu aria-label="更多表格操作">
-                  <Dropdown.Item id="create-table-view" onAction={createTableView}>
+                  <Dropdown.Item id="create-table-view" onAction={handleCreateTableView}>
                     新增表格视图
                   </Dropdown.Item>
                   <Dropdown.Item id="drafts" onAction={() => setIsDraftsOpen(true)}>
@@ -972,7 +896,7 @@ export default function FormHome({
                   <Dropdown.Popover onMouseEnter={() => openViewMenu(view.id)} onMouseLeave={scheduleViewMenuClose}><Dropdown.Menu aria-label={`${view.name}操作`}>
                     <Dropdown.Item id="settings" isDisabled>表格设置（开发中）</Dropdown.Item>
                     <Dropdown.Item id="hide" isDisabled>隐藏（开发中）</Dropdown.Item>
-                    <Dropdown.Item id="copy" onAction={() => duplicateView(view.id)}>复制</Dropdown.Item>
+                    <Dropdown.Item id="copy" onAction={() => handleDuplicateView(view.id)}>复制</Dropdown.Item>
                     <Dropdown.Item id="delete" onAction={() => deleteView(view.id)}>删除</Dropdown.Item>
                   </Dropdown.Menu></Dropdown.Popover>
                 </Dropdown> : null}
@@ -995,6 +919,8 @@ export default function FormHome({
             <RecordsTable
               fields={configuredFields}
               builtinFields={configuredBuiltinFields}
+              formType={formType}
+              sortableFieldIds={sortableFieldIds}
               formName={formMetadataName || schema.formName || formUuid}
               schema={schema}
               records={searchedRecords}
@@ -1002,9 +928,9 @@ export default function FormHome({
               submitting={submitting}
               deletingRecordId={deletingRecordId}
               selectedRecordIds={selectedRecordIds}
-              submitterOrganizations={submitterOrganizations}
               onDeleteRecord={handleDeleteRecord}
               onUpdateRecord={handleUpdateRecord}
+              onWorkflowAction={handleWorkflowAction}
               canEditRecord={canEditRecord}
               canDeleteRecord={canDeleteRecord}
               urlParams={{ appId, formUuid }}
@@ -1122,7 +1048,7 @@ export default function FormHome({
         </Modal.Backdrop>
       </Modal>
 
-      <Modal isOpen={viewConfigMode !== null} onOpenChange={(open) => { if (!open) { setViewConfigDraft(null); setViewConfigMode(null); } }}>
+      <Modal isOpen={viewConfigMode !== null} onOpenChange={(open) => { if (!open) closeViewConfig(); }}>
         <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
           <Modal.Container placement="center" scroll="inside" size="lg">
             <Modal.Dialog className="theme-menu-surface flex max-h-[82vh] w-[min(720px,94vw)] flex-col overflow-hidden rounded-2xl shadow-[var(--shadow-dialog)]">
@@ -1132,7 +1058,7 @@ export default function FormHome({
                 </Modal.Heading>
                 <Modal.CloseTrigger aria-label="关闭配置" />
               </Modal.Header>
-              <Modal.Body className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              <Modal.Body className="min-h-0 flex-1 overflow-y-auto">
                 {viewConfigDraft && viewConfigMode === "filters" ? (
                   <div className="space-y-3">
                     {viewConfigDraft.filters.map((rule) => (
@@ -1153,7 +1079,28 @@ export default function FormHome({
                 {viewConfigDraft && viewConfigMode === "fields" ? (
                   <div className="space-y-2">
                     <div className="mb-3 text-sm text-[var(--color-text-secondary)]">选择需要在当前视图中显示的字段</div>
-                    {allViewFields.map((field) => <label key={field.id} className="flex items-center gap-3 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm"><Checkbox isSelected={viewConfigDraft.visibleFieldIds.includes(field.id)} onChange={(selected) => setViewConfigDraft((current) => current ? { ...current, visibleFieldIds: selected ? [...current.visibleFieldIds, field.id] : current.visibleFieldIds.filter((id) => id !== field.id) } : current)}><Checkbox.Control><Checkbox.Indicator /></Checkbox.Control></Checkbox><span>{field.label}</span></label>)}
+                    <Card className="max-h-[52vh] overflow-y-auto border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-1 shadow-none">
+                      <CheckboxGroup
+                        aria-label="选择需要在当前视图中显示的字段"
+                        className="gap-0"
+                        value={viewConfigDraft.visibleFieldIds}
+                        onChange={(visibleFieldIds) => setViewConfigDraft((current) => current ? { ...current, visibleFieldIds: visibleFieldIds.map(String) } : current)}
+                      >
+                        {allViewFields.map((field) => (
+                          <Checkbox
+                            key={field.id}
+                            value={field.id}
+                            className="rounded-md px-2 py-1 hover:bg-[var(--color-bg-subtle)]"
+                          >
+                            <Checkbox.Control><Checkbox.Indicator /></Checkbox.Control>
+                            <Checkbox.Content>
+                              <span className="block text-sm text-[var(--color-text-primary)]">{field.label}</span>
+                              <span className="mt-0.5 block font-mono text-xs text-[var(--color-text-secondary)]">{field.id}</span>
+                            </Checkbox.Content>
+                          </Checkbox>
+                        ))}
+                      </CheckboxGroup>
+                    </Card>
                   </div>
                 ) : null}
                 {viewConfigDraft && viewConfigMode === "sorts" ? (
@@ -1163,7 +1110,7 @@ export default function FormHome({
                   </div>
                 ) : null}
               </Modal.Body>
-              <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-4"><Button variant="ghost" onPress={() => { setViewConfigDraft(null); setViewConfigMode(null); }}>取消</Button><Button onPress={applyViewConfigDraft}>应用调整</Button></Modal.Footer>
+              <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-4"><Button variant="ghost" onPress={closeViewConfig}>取消</Button><Button onPress={applyViewConfigDraft}>应用调整</Button></Modal.Footer>
             </Modal.Dialog>
           </Modal.Container>
         </Modal.Backdrop>
@@ -1399,7 +1346,7 @@ export default function FormHome({
                 <Button
                   isDisabled={viewDeleteTarget === null}
                   className="bg-[var(--color-danger)] text-[var(--color-text-on-primary)]"
-                  onPress={confirmDeleteView}
+                  onPress={handleConfirmDeleteView}
                 >
                   确认删除
                 </Button>
@@ -1463,15 +1410,13 @@ function FormAgentPanel({ agentId, analysis, appId, currentValues, fields, formN
 
   async function createSession() {
     if (!agentId) throw new Error("当前表单尚未选择机器人");
-    const response = await fetch("/api/agent/sessions", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ agentId, context }),
+    const { data, error } = await createAgentSession({
+      body: { agentId, context },
+      responseStyle: "fields",
     });
-    const payload = (await response.json()) as ApiEnvelope<FormAgentSession>;
-    if (!response.ok || payload.code !== 0 || !payload.data) throw new Error(payload.message || "无法创建 Agent 会话");
-    setSessionId(payload.data.id);
-    return payload.data.id;
+    if (error || !data || data.code !== 0 || !data.data) throw new Error(data?.message || "无法创建 Agent 会话");
+    setSessionId(data.data.id);
+    return data.data.id;
   }
 
   async function sendMessage(content = input) {
@@ -1720,41 +1665,45 @@ const RuntimeFormPanel = memo(function RuntimeFormPanel({
 
 function RecordsTable({
   builtinFields,
+  sortableFieldIds,
   deletingRecordId,
   fields,
+  formType,
   formName,
   schema,
   records,
   selectedRecordIds,
-  submitterOrganizations,
   loading,
   submitting,
   onDeleteRecord,
   onUpdateRecord,
+  onWorkflowAction,
   canEditRecord,
   canDeleteRecord,
   urlParams,
   onRecordSelectionChange,
 }: {
   builtinFields: readonly { id: string; label: string }[];
+  sortableFieldIds: string[];
   deletingRecordId: string | null;
   fields: SchemaField[];
+  formType: "normal" | "workflow";
   formName: string;
   schema: FormSchema;
   records: FormRecord[];
   selectedRecordIds: Set<string>;
-  submitterOrganizations: Record<string, string>;
   loading: boolean;
   submitting: boolean;
   onDeleteRecord: (recordId: string) => Promise<boolean>;
   onUpdateRecord: (recordId: string, values: Record<string, unknown>) => Promise<boolean>;
+  onWorkflowAction: (record: FormRecord, action: "submit" | "reverse") => Promise<boolean>;
   canEditRecord: boolean;
   canDeleteRecord: boolean;
   urlParams: Record<string, string>;
   onRecordSelectionChange: (recordId: string, selected: boolean) => void;
 }) {
   const pageSizeOptions = [10, 20, 30, 40, 50];
-  const columns = useMemo(() => fields.slice(0, 6), [fields]);
+  const columns = fields;
   const [detailRecord, setDetailRecord] = useState<FormRecord | null>(null);
   const [isDetailEditing, setIsDetailEditing] = useState(false);
   const [detailTab, setDetailTab] = useState<"comments" | "history">("comments");
@@ -1780,12 +1729,12 @@ function RecordsTable({
     records.forEach((record) => {
       values.set(record.id, {
         fields: Object.fromEntries(columns.map((field) => [field.id, formatRecordValue(record.data[field.id])])),
-        builtIns: getBuiltinRecordValues(record, formName, submitterOrganizations),
+        builtIns: getBuiltinRecordValues(record, formName, formType === "workflow"),
       });
     });
 
     return values;
-  }, [columns, formName, records, submitterOrganizations]);
+  }, [columns, formName, formType, records]);
   const businessColumnWidths = useMemo(
     () => columns.map((field) => estimateTableColumnWidth([
       field.label,
@@ -1914,7 +1863,7 @@ function RecordsTable({
     ? records.findIndex((record) => record.id === detailRecord.id)
     : -1;
   const detailBuiltIns = detailRecord
-    ? getBuiltinRecordValues(detailRecord, formName, submitterOrganizations)
+    ? getBuiltinRecordValues(detailRecord, formName, formType === "workflow")
     : null;
 
   function openDetail(record: FormRecord, editing = false) {
@@ -1978,9 +1927,11 @@ function RecordsTable({
                 const width = getColumnWidth(field.id, businessColumnWidths[index], minWidth, 320);
                 return (
                   <Table.Column key={field.id} id={field.id} style={{ width, minWidth, maxWidth: 320 }} className="relative sticky top-0 z-20 h-10 border-b border-r border-[var(--color-border)] bg-[var(--color-bg-surface)] p-0">
-                    <button type="button" onClick={() => setSortDescriptor((current) => ({ column: field.id, direction: current.column === field.id && current.direction === "ascending" ? "descending" : "ascending" }))} className="flex h-full min-w-0 w-full items-center gap-1 px-1 text-left hover:text-[var(--color-text-primary)]">
-                      <span ref={(element) => { if (element) headerLabelRefs.current.set(field.id, element); else headerLabelRefs.current.delete(field.id); }} className="truncate whitespace-nowrap">{field.label}</span><ArrowUpArrowDown className={sortDescriptor.column === field.id ? "h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" : "h-3.5 w-3.5 shrink-0 text-[var(--color-text-disabled)]"} />
-                    </button>
+                    {sortableFieldIds.includes(field.id) ? (
+                      <button type="button" onClick={() => setSortDescriptor((current) => ({ column: field.id, direction: current.column === field.id && current.direction === "ascending" ? "descending" : "ascending" }))} className="flex h-full min-w-0 w-full items-center gap-1 px-1 text-left hover:text-[var(--color-text-primary)]">
+                        <span ref={(element) => { if (element) headerLabelRefs.current.set(field.id, element); else headerLabelRefs.current.delete(field.id); }} className="truncate whitespace-nowrap">{field.label}</span><ArrowUpArrowDown className={sortDescriptor.column === field.id ? "h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" : "h-3.5 w-3.5 shrink-0 text-[var(--color-text-disabled)]"} />
+                      </button>
+                    ) : <span ref={(element) => { if (element) headerLabelRefs.current.set(field.id, element); else headerLabelRefs.current.delete(field.id); }} className="flex h-full min-w-0 items-center px-1 truncate whitespace-nowrap">{field.label}</span>}
                     <div role="separator" aria-label={`调整${field.label}列宽`} onPointerDown={(event) => { event.preventDefault(); startColumnResize(field.id, event.clientX, width, minWidth, 320); }} className="absolute right-0 top-1/2 z-40 h-6 w-px -translate-y-1/2 cursor-col-resize bg-[var(--color-border)] hover:w-0.5 hover:bg-[var(--color-primary)]" />
                   </Table.Column>
                 );
@@ -1991,9 +1942,7 @@ function RecordsTable({
                 const width = getColumnWidth(field.id, builtInColumnWidths[index], minWidth, maxWidth);
                 return (
                   <Table.Column key={field.id} id={field.id} style={{ width, minWidth, maxWidth }} className="relative sticky top-0 z-20 h-10 border-b border-r border-[var(--color-border)] bg-[var(--color-bg-surface)] p-0">
-                    <button type="button" onClick={() => setSortDescriptor((current) => ({ column: field.id, direction: current.column === field.id && current.direction === "ascending" ? "descending" : "ascending" }))} className="flex h-full min-w-0 w-full items-center gap-1 px-1 text-left hover:text-[var(--color-text-primary)]">
-                      <span ref={(element) => { if (element) headerLabelRefs.current.set(field.id, element); else headerLabelRefs.current.delete(field.id); }} className="truncate whitespace-nowrap">{field.label}</span><ArrowUpArrowDown className={sortDescriptor.column === field.id ? "h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" : "h-3.5 w-3.5 shrink-0 text-[var(--color-text-disabled)]"} />
-                    </button>
+                    {sortableFieldIds.includes(field.id) ? <button type="button" onClick={() => setSortDescriptor((current) => ({ column: field.id, direction: current.column === field.id && current.direction === "ascending" ? "descending" : "ascending" }))} className="flex h-full min-w-0 w-full items-center gap-1 px-1 text-left hover:text-[var(--color-text-primary)]"><span ref={(element) => { if (element) headerLabelRefs.current.set(field.id, element); else headerLabelRefs.current.delete(field.id); }} className="truncate whitespace-nowrap">{field.label}</span><ArrowUpArrowDown className={sortDescriptor.column === field.id ? "h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" : "h-3.5 w-3.5 shrink-0 text-[var(--color-text-disabled)]"} /></button> : <span ref={(element) => { if (element) headerLabelRefs.current.set(field.id, element); else headerLabelRefs.current.delete(field.id); }} className="flex h-full min-w-0 items-center px-1 truncate whitespace-nowrap">{field.label}</span>}
                     <div role="separator" aria-label={`调整${field.label}列宽`} onPointerDown={(event) => { event.preventDefault(); startColumnResize(field.id, event.clientX, width, minWidth, maxWidth); }} className="absolute right-0 top-1/2 z-40 h-6 w-px -translate-y-1/2 cursor-col-resize bg-[var(--color-border)] hover:w-0.5 hover:bg-[var(--color-primary)]" />
                   </Table.Column>
                 );
@@ -2013,6 +1962,8 @@ function RecordsTable({
                     <Table.Cell className="records-table__action-cell sticky right-0 z-10 h-10 border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] px-1 shadow-[-6px_0_8px_-8px_var(--color-text-secondary)]">
                       <div className="relative z-20 flex w-max items-center gap-1.5">
                         <Button type="button" variant="ghost" className="h-8 gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-text-primary)]" onClick={() => openDetail(record)}><Eye className="h-3.5 w-3.5" />查看</Button>
+                        {formType === "workflow" ? <Button type="button" variant="ghost" className="h-8 rounded-md border border-[var(--color-primary)]/30 bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-primary)]" isDisabled={submitting || record.data.workflowApprovalStatus !== "saved"} onClick={() => void onWorkflowAction(record, "submit")}>提交</Button> : null}
+                        {formType === "workflow" ? <Button type="button" variant="ghost" className="h-8 rounded-md border border-[var(--color-warning)]/30 bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-warning)]" isDisabled={submitting || record.data.workflowApprovalStatus !== "approved"} onClick={() => void onWorkflowAction(record, "reverse")}>反审</Button> : null}
                         {canDeleteRecord ? <Button type="button" variant="ghost" className="h-8 gap-1 rounded-md border border-[var(--color-danger)]/30 bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-danger)]" isDisabled={deletingRecordId === record.id} onClick={() => setDeleteRecordTarget(record)}><TrashBin className="h-3.5 w-3.5" />{deletingRecordId === record.id ? "删除中..." : "删除"}</Button> : null}
                         <details className="relative"><summary aria-label={`记录 ${record.rowNumber} 更多操作`} className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel)] text-[var(--color-text-secondary)] [&::-webkit-details-marker]:hidden"><Ellipsis className="h-3.5 w-3.5" /></summary><div className="absolute right-0 z-50 mt-1 min-w-28 overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg-menu)] py-1 shadow-[var(--shadow-floating)]"><button type="button" className="block w-full px-3 py-2 text-left text-xs hover:bg-[var(--color-bg-panel-soft)]" onClick={() => void navigator.clipboard?.writeText(JSON.stringify(record.data, null, 2))}>复制数据</button><button type="button" disabled className="block w-full cursor-not-allowed px-3 py-2 text-left text-xs text-[var(--color-text-disabled)]">发起流程（开发中）</button></div></details>
                       </div>
@@ -2303,7 +2254,24 @@ function SystemPageView({
   pageSlug: string;
   pageTitle: string;
 }) {
-  const rows = buildSystemRows(appId, pageSlug);
+  const [appName, setAppName] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void getAppResource(appId)
+      .then((app) => {
+        if (!cancelled) setAppName(app.name);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appId]);
+
+  const displayAppName = appName || "当前应用";
+  const rows = buildSystemRows(displayAppName, pageSlug);
 
   return (
     <div className="h-full min-h-0 overflow-auto">
@@ -2312,7 +2280,7 @@ function SystemPageView({
           <div>
             <h1 className="mt-1 text-2xl font-semibold text-[var(--color-text-primary)]">{pageTitle}</h1>
             <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-              应用 {appId} 的内置工作台页面，当前路由为 {pageSlug}。
+              {displayAppName}的内置工作台页面，当前路由为 {pageSlug}。
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -2352,13 +2320,13 @@ function SystemPageView({
   );
 }
 
-function buildSystemRows(appId: string, pageSlug: string) {
+function buildSystemRows(appName: string, pageSlug: string) {
   const pageTitle = getSystemPageBySlug(pageSlug)?.title ?? pageSlug;
 
   return Array.from({ length: 5 }, (_, index) => ({
     id: `${pageSlug}-${index + 1}`,
     title: `${pageTitle}事项 ${index + 1}`,
-    description: `来自应用 ${appId} 的内置页面示例数据，后续可替换为真实待办查询。`,
+    description: `来自${appName}的内置页面示例数据，后续可替换为真实待办查询。`,
     status: index % 2 === 0 ? "处理中" : "待确认",
     owner: ["张三", "李四", "王五", "赵六", "陈七"][index] ?? "系统",
     updatedAt: `2026-06-${String(index + 10).padStart(2, "0")} 09:30`,
@@ -2465,14 +2433,14 @@ function writeFormDrafts(formUuid: string, drafts: FormDraft[]) {
   window.localStorage.setItem(getFormDraftStorageKey(formUuid), JSON.stringify(drafts));
 }
 
-function getViewFieldValue(record: FormRecord, fieldId: string, formName: string, submitterOrganizations: Record<string, string>) {
+function getViewFieldValue(record: FormRecord, fieldId: string, formName: string) {
   if (fieldId in record.data) return formatRecordValue(record.data[fieldId]);
-  return getBuiltinRecordValues(record, formName, submitterOrganizations)[fieldId] ?? "";
+  return getBuiltinRecordValues(record, formName)[fieldId] ?? "";
 }
 
-function applyViewConfig(records: FormRecord[], config: ViewConfig, formName: string, submitterOrganizations: Record<string, string>) {
+function applyViewConfig(records: FormRecord[], config: ViewConfig, formName: string) {
   const filtered = records.filter((record) => config.filters.every((rule) => {
-    const actual = getViewFieldValue(record, rule.fieldId, formName, submitterOrganizations).toLowerCase();
+    const actual = getViewFieldValue(record, rule.fieldId, formName).toLowerCase();
     const expected = rule.value.trim().toLowerCase();
     if (!expected) return true;
     if (rule.operator === "equals") return actual === expected;
@@ -2484,7 +2452,7 @@ function applyViewConfig(records: FormRecord[], config: ViewConfig, formName: st
   if (!config.sorts.length) return filtered;
   return [...filtered].sort((left, right) => {
     for (const rule of config.sorts) {
-      const comparison = getViewFieldValue(left, rule.fieldId, formName, submitterOrganizations).localeCompare(getViewFieldValue(right, rule.fieldId, formName, submitterOrganizations), undefined, { numeric: true, sensitivity: "base" });
+      const comparison = getViewFieldValue(left, rule.fieldId, formName).localeCompare(getViewFieldValue(right, rule.fieldId, formName), undefined, { numeric: true, sensitivity: "base" });
       if (comparison !== 0) return rule.direction === "asc" ? comparison : -comparison;
     }
     return 0;
@@ -2494,16 +2462,32 @@ function applyViewConfig(records: FormRecord[], config: ViewConfig, formName: st
 function getBuiltinRecordValues(
   record: FormRecord,
   formName: string,
-  submitterOrganizations: Record<string, string>,
+  isWorkflow = false,
 ): Record<string, string> {
-  return {
+  const values = {
     instanceId: record.id,
     instanceTitle: `${record.createdBy}发起的${formName}`,
     submitter: record.createdBy,
-    submitterOrganization: submitterOrganizations[record.createdBy] ?? "-",
+    submitterOrganization: record.submitterOrganization ?? "",
     createdAt: formatDateTime(record.createdAt),
     updatedAt: formatDateTime(record.updatedAt),
   };
+  if (!isWorkflow) return values;
+  return {
+    ...values,
+    workflowApprovalStatus: workflowApprovalStatusLabel(record.data.workflowApprovalStatus),
+    workflowInstanceStatus: workflowInstanceStatusLabel(record.data.workflowInstanceStatus),
+    workflowCurrentApprovalNode: formatRecordValue(record.data.workflowCurrentApprovalNode),
+    workflowSubmitter: formatRecordValue(record.data.workflowSubmitter) || record.createdBy,
+  };
+}
+
+function workflowApprovalStatusLabel(value: unknown) {
+  return ({ saved: "保存", reviewing: "审核中", approved: "审核通过", rejected: "拒绝" } as Record<string, string>)[String(value)] ?? "保存";
+}
+
+function workflowInstanceStatusLabel(value: unknown) {
+  return ({ in_progress: "进行中", completed: "已完成", failed: "失败" } as Record<string, string>)[String(value)] ?? "进行中";
 }
 
 function formatDateTime(value: string) {

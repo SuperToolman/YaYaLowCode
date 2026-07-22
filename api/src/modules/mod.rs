@@ -12,3 +12,4 @@ pub mod forms;
 pub mod identity;
 pub mod navigation;
 pub mod settings;
+pub mod workflows;

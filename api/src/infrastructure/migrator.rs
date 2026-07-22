@@ -28,7 +28,151 @@ impl MigratorTrait for Migrator {
             Box::new(m20260720_000020_remove_role_groups::Migration),
             Box::new(m20260720_000021_create_user_email_addresses::Migration),
             Box::new(m20260720_000022_create_local_credentials::Migration),
+            Box::new(m20260722_000023_add_form_type::Migration),
+            Box::new(m20260722_000024_add_automation_flow_type::Migration),
+            Box::new(m20260722_000025_create_workflow_runtime_tables::Migration),
+            Box::new(m20260722_000026_add_workflow_task_assignee_user::Migration),
         ]
+    }
+}
+mod m20260722_000026_add_workflow_task_assignee_user {
+    use sea_orm_migration::prelude::*;
+    #[derive(DeriveMigrationName)] pub struct Migration;
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> { manager.get_connection().execute_unprepared("ALTER TABLE workflow_tasks ADD COLUMN IF NOT EXISTS assignee_user_id UUID REFERENCES iam_users(id) ON DELETE SET NULL; CREATE INDEX IF NOT EXISTS idx_workflow_tasks_assignee_user_status ON workflow_tasks (assignee_user_id, status, created_at DESC);").await?; Ok(()) }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> { manager.get_connection().execute_unprepared("DROP INDEX IF EXISTS idx_workflow_tasks_assignee_user_status; ALTER TABLE workflow_tasks DROP COLUMN IF EXISTS assignee_user_id;").await?; Ok(()) }
+    }
+}
+mod m20260722_000023_add_form_type {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "ALTER TABLE form_definitions ADD COLUMN IF NOT EXISTS form_type VARCHAR(24) NOT NULL DEFAULT 'normal';",
+                )
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("ALTER TABLE form_definitions DROP COLUMN IF EXISTS form_type;")
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260722_000024_add_automation_flow_type {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "ALTER TABLE automation_flows ADD COLUMN IF NOT EXISTS flow_type VARCHAR(24) NOT NULL DEFAULT 'trigger';",
+                )
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("ALTER TABLE automation_flows DROP COLUMN IF EXISTS flow_type;")
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260722_000025_create_workflow_runtime_tables {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(
+                r#"
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_process_flow_per_form
+                    ON automation_flows (trigger_form_uuid)
+                    WHERE flow_type = 'process';
+
+                CREATE TABLE IF NOT EXISTS workflow_instances (
+                    id UUID PRIMARY KEY,
+                    instance_uuid VARCHAR(64) NOT NULL UNIQUE,
+                    form_uuid VARCHAR(64) NOT NULL,
+                    record_uuid VARCHAR(64) NOT NULL,
+                    process_flow_id UUID NOT NULL REFERENCES automation_flows(id) ON DELETE RESTRICT,
+                    flow_version INTEGER NOT NULL,
+                    status VARCHAR(24) NOT NULL,
+                    current_node_key VARCHAR(96),
+                    submitter VARCHAR(120) NOT NULL,
+                    started_at TIMESTAMPTZ NOT NULL,
+                    completed_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_workflow_instances_record
+                    ON workflow_instances (form_uuid, record_uuid, started_at DESC);
+
+                CREATE TABLE IF NOT EXISTS workflow_tasks (
+                    id UUID PRIMARY KEY,
+                    task_uuid VARCHAR(64) NOT NULL UNIQUE,
+                    instance_id UUID NOT NULL REFERENCES workflow_instances(id) ON DELETE CASCADE,
+                    node_key VARCHAR(96) NOT NULL,
+                    node_label VARCHAR(160) NOT NULL,
+                    task_type VARCHAR(24) NOT NULL,
+                    assignee VARCHAR(120) NOT NULL,
+                    status VARCHAR(24) NOT NULL,
+                    comment TEXT,
+                    completed_by VARCHAR(120),
+                    completed_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_workflow_tasks_assignee_status
+                    ON workflow_tasks (assignee, status, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS workflow_actions (
+                    id UUID PRIMARY KEY,
+                    instance_id UUID NOT NULL REFERENCES workflow_instances(id) ON DELETE CASCADE,
+                    task_id UUID REFERENCES workflow_tasks(id) ON DELETE SET NULL,
+                    action VARCHAR(32) NOT NULL,
+                    operator VARCHAR(120) NOT NULL,
+                    comment TEXT,
+                    created_at TIMESTAMPTZ NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_workflow_actions_instance
+                    ON workflow_actions (instance_id, created_at ASC);
+                "#,
+            ).await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(
+                "DROP TABLE IF EXISTS workflow_actions; DROP TABLE IF EXISTS workflow_tasks; DROP TABLE IF EXISTS workflow_instances; DROP INDEX IF EXISTS uq_process_flow_per_form;",
+            ).await?;
+            Ok(())
+        }
     }
 }
 mod m20260720_000022_create_local_credentials {

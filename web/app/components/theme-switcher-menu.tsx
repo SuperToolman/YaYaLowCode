@@ -23,7 +23,6 @@ export default function ThemeSwitcherMenu() {
     <Dropdown>
       <Dropdown.Trigger
         aria-label={`切换主题，当前${activeOption.label}`}
-        title={`主题：${activeOption.label}`}
         className="group flex h-[68px] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border border-transparent bg-transparent px-2 text-center text-[var(--color-text-secondary)] transition-all duration-200 backdrop-blur-xl hover:border-[var(--sidebar-soft-border)] hover:bg-[var(--sidebar-soft-bg)] hover:text-[var(--color-text-primary)]"
       >
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-control-soft)] transition-colors group-hover:bg-[var(--color-control-soft-hover)]">

@@ -10,6 +10,7 @@ import {
   type AppItem,
 } from "../../lib/apps";
 import { AppMainContent, AppShell } from "./components/app-shell";
+import { AppHeaderTitle } from "./components/app-header-title";
 import { AppTopNav } from "./components/app-top-nav";
 import { FormSidebar } from "./components/form-sidebar";
 
@@ -51,7 +52,7 @@ export default async function AppLayout({
               </div>
               <div className="min-w-0">
                 <div className="truncate text-base font-semibold text-[var(--color-text-primary)] sm:text-lg">
-                  {app.name}
+                  <AppHeaderTitle appId={routeAppId} initialName={app.name} />
                 </div>
                 <p className="hidden truncate text-xs text-[var(--color-text-secondary)] sm:block">应用工作台</p>
               </div>
@@ -82,16 +83,16 @@ async function loadApp(routeAppId: string): Promise<AppItem | undefined> {
     process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8787";
 
   try {
-    const response = await fetch(`${backendBaseUrl}/api/apps`, {
+    const response = await fetch(`${backendBaseUrl}/api/apps/${routeAppId}`, {
       cache: "no-store",
     });
     const payload = (await response.json()) as {
       code: number;
-      data: AppItem[] | null;
+      data: AppItem | null;
     };
-    const runtimeApp = payload.data?.find((item) => item.id === routeAppId);
+    const runtimeApp = payload.data;
 
-    if (response.ok && payload.code === 0 && runtimeApp) {
+    if (response.ok && payload.code === 0 && runtimeApp?.id === routeAppId) {
       return {
         ...runtimeApp,
         color: normalizeAppColorTone(runtimeApp.color),

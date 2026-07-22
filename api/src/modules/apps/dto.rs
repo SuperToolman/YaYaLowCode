@@ -18,13 +18,13 @@ pub(crate) struct ApiApp {
     pub(crate) status: String,
     pub(crate) created_at: String,
     pub(crate) owner: String,
+    pub(crate) owner_avatar_url: Option<String>,
     pub(crate) records: i64,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct CreateAppRequest {
     pub(crate) name: Option<String>,
-    pub(crate) owner: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -45,6 +45,7 @@ impl From<app_entity::Model> for ApiApp {
             status: value.status,
             created_at: format_date(value.created_at),
             owner: value.owner_name,
+            owner_avatar_url: None,
             records: value.records_count,
         }
     }

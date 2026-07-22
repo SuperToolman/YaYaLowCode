@@ -152,15 +152,47 @@ pub(crate) async fn set_default_navigation_entry(
     Json(payload): Json<SetDefaultNavigationEntryRequest>,
 ) -> Result<Json<ApiResponse<ApiNavigationItem>>, AppError> {
     ensure_system_navigation_for_app(&state.db, &app_id).await?;
-    let form_uuid = payload.form_uuid.trim();
+    let form_uuid = payload
+        .form_uuid
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let system_page_slug = payload
+        .system_page_slug
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
 
-    let target = AppNavigationEntity::find()
-        .filter(app_navigation_entity::Column::AppRouteAppId.eq(app_id.clone()))
-        .filter(app_navigation_entity::Column::ItemType.eq("form"))
-        .filter(app_navigation_entity::Column::TargetFormUuid.eq(Some(form_uuid.to_string())))
-        .one(&state.db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("form navigation item not found".to_string()))?;
+    let target = match (form_uuid, system_page_slug) {
+        (Some(_), Some(_)) => {
+            return Err(AppError::NotFound(
+                "only one default navigation target may be specified".to_string(),
+            ));
+        }
+        (Some(form_uuid), None) => AppNavigationEntity::find()
+            .filter(app_navigation_entity::Column::AppRouteAppId.eq(app_id.clone()))
+            .filter(app_navigation_entity::Column::ItemType.eq("form"))
+            .filter(app_navigation_entity::Column::TargetFormUuid.eq(Some(form_uuid.to_string())))
+            .one(&state.db)
+            .await?
+            .ok_or_else(|| AppError::NotFound("form navigation item not found".to_string()))?,
+        (None, Some(system_page_slug)) => AppNavigationEntity::find()
+            .filter(app_navigation_entity::Column::AppRouteAppId.eq(app_id.clone()))
+            .filter(app_navigation_entity::Column::ItemType.eq("system"))
+            .filter(app_navigation_entity::Column::PathSlug.eq(system_page_slug))
+            .one(&state.db)
+            .await?
+            .ok_or_else(|| AppError::NotFound("system navigation item not found".to_string()))?,
+        (None, None) => AppNavigationEntity::find()
+            .filter(app_navigation_entity::Column::AppRouteAppId.eq(app_id.clone()))
+            .filter(app_navigation_entity::Column::ItemType.eq("system"))
+            .filter(app_navigation_entity::Column::PathSlug.eq("todo"))
+            .one(&state.db)
+            .await?
+            .ok_or_else(|| {
+                AppError::NotFound("system todo navigation item not found".to_string())
+            })?,
+    };
 
     let now = Utc::now();
     let items = AppNavigationEntity::find()

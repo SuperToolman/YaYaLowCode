@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button, Card, Dropdown, Input } from "@heroui/react";
+import { Avatar, Button, Card, Dropdown, Input } from "@heroui/react";
 import { AlertDialog } from "@heroui/react/alert-dialog";
 import { Modal } from "@heroui/react/modal";
 import {
@@ -430,9 +430,10 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
 
                 <div className="mt-3 flex items-center justify-between border-t border-[var(--color-border)] pt-3">
                   <div className="flex min-w-0 items-center gap-2 text-xs text-[var(--color-text-secondary)]">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-text-primary)] text-[10px] font-semibold text-[var(--color-bg-panel)]">
-                      {app.owner.slice(0, 1)}
-                    </span>
+                    <Avatar className="h-6 w-6 shrink-0 text-[10px]">
+                      {app.ownerAvatarUrl ? <Avatar.Image src={app.ownerAvatarUrl} alt="" /> : null}
+                      <Avatar.Fallback>{app.owner.slice(0, 1)}</Avatar.Fallback>
+                    </Avatar>
                     <span className="truncate">{app.owner}</span>
                   </div>
                   <Link

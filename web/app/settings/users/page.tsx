@@ -2,13 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Avatar, Button, Checkbox, Input, Modal } from "@heroui/react";
+import {
+  createLocalUser,
+  deleteUser,
+  listRoles,
+  listUsers,
+  updateUser,
+  type UpdateUserRequest,
+  type UserResponse,
+} from "../../lib/api-client";
 
-type ApiEnvelope<T> = { code: number; message: string; data: T | null };
 type EmailAddressItem = { label: string; email: string };
 type RoleItem = {
   id: string;
-  username: string | null;
-  password: string | null;
   name: string;
   sourceType: string;
   status: string;
@@ -46,6 +52,27 @@ type UserItem = {
 type SourceFilter = "all" | "local" | "dingtalk";
 type StatusFilter = "all" | "active" | "inactive";
 
+function normalizeUser(user: UserResponse): UserItem {
+  return {
+    ...user,
+    avatarUrl: user.avatarUrl ?? null,
+    email: user.email ?? null,
+    hiredAt: user.hiredAt ?? null,
+    jobNumber: user.jobNumber ?? null,
+    managerName: user.managerName ?? null,
+    mobile: user.mobile ?? null,
+    password: user.password ?? null,
+    primaryDepartment: user.primaryDepartment ?? null,
+    remark: user.remark ?? null,
+    stateCode: user.stateCode ?? null,
+    telephone: user.telephone ?? null,
+    tenureMonths: user.tenureMonths ?? null,
+    title: user.title ?? null,
+    username: user.username ?? null,
+    workPlace: user.workPlace ?? null,
+  };
+}
+
 export default function UsersSettingsPage() {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [roles, setRoles] = useState<RoleItem[]>([]);
@@ -79,24 +106,23 @@ export default function UsersSettingsPage() {
     setLoading(true);
     setError("");
     try {
-      const [response, rolesResponse] = await Promise.all([
-        fetch("/api/identity/users", { cache: "no-store" }),
-        fetch("/api/identity/roles", { cache: "no-store" }),
+      const [usersResult, rolesResult] = await Promise.all([
+        listUsers({ responseStyle: "fields" }),
+        listRoles({ responseStyle: "fields" }),
       ]);
-      const payload = (await response.json()) as ApiEnvelope<UserItem[]>;
-      const rolesPayload = (await rolesResponse.json()) as ApiEnvelope<
-        RoleItem[]
-      >;
-      if (!response.ok || payload.code !== 0 || !payload.data)
-        throw new Error(payload.message || "无法加载用户");
-      if (!rolesResponse.ok || rolesPayload.code !== 0 || !rolesPayload.data)
-        throw new Error(rolesPayload.message || "无法加载角色");
-      setUsers(payload.data);
-      setRoles(rolesPayload.data.filter((role) => role.status === "active"));
+      const usersData = usersResult.data;
+      const rolesData = rolesResult.data;
+      if (usersResult.error || !usersData || usersData.code !== 0 || !usersData.data)
+        throw new Error(usersData?.message || "无法加载用户");
+      if (rolesResult.error || !rolesData || rolesData.code !== 0 || !rolesData.data)
+        throw new Error(rolesData?.message || "无法加载角色");
+      const nextUsers = usersData.data.map(normalizeUser);
+      setUsers(nextUsers);
+      setRoles(rolesData.data.filter((role) => role.status === "active"));
       setSelectedId((current) =>
-        current && payload.data!.some((user) => user.id === current)
+        current && nextUsers.some((user) => user.id === current)
           ? current
-          : payload.data![0]?.id || null,
+          : nextUsers[0]?.id || null,
       );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法加载用户");
@@ -150,18 +176,14 @@ export default function UsersSettingsPage() {
       ),
     );
   }
-  async function update(user: UserItem, payload: object) {
+  async function update(user: UserItem, payload: UpdateUserRequest) {
     try {
-      const response = await fetch(
-        `/api/identity/users/${encodeURIComponent(user.id)}`,
-        {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      );
-      const body = (await response.json()) as ApiEnvelope<unknown>;
-      if (!response.ok) throw new Error(body.message || "更新用户失败");
+      const { data, error } = await updateUser({
+        path: { userId: user.id },
+        body: payload,
+        responseStyle: "fields",
+      });
+      if (error || !data || data.code !== 0) throw new Error(data?.message || "更新用户失败");
       await loadUsers();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "更新用户失败");
@@ -192,12 +214,8 @@ export default function UsersSettingsPage() {
   }
   async function remove(user: UserItem) {
     try {
-      const response = await fetch(
-        `/api/identity/users/${encodeURIComponent(user.id)}`,
-        { method: "DELETE" },
-      );
-      const body = (await response.json()) as ApiEnvelope<unknown>;
-      if (!response.ok) throw new Error(body.message || "删除用户失败");
+      const { error } = await deleteUser({ path: { userId: user.id }, responseStyle: "fields" });
+      if (error) throw new Error("删除用户失败");
       await loadUsers();
       setDeleting(null);
     } catch (reason) {
@@ -210,18 +228,16 @@ export default function UsersSettingsPage() {
       return;
     }
     try {
-      const response = await fetch("/api/identity/users", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      const { data, error } = await createLocalUser({
+        body: {
           username: newUsername,
           password: newPassword,
           displayName: newName,
           roleIds: newRoleIds,
-        }),
+        },
+        responseStyle: "fields",
       });
-      const body = (await response.json()) as ApiEnvelope<unknown>;
-      if (!response.ok) throw new Error(body.message || "创建用户失败");
+      if (error || !data || data.code !== 0) throw new Error(data?.message || "创建用户失败");
       setCreating(false);
       setNewUsername("");
       setNewPassword("");

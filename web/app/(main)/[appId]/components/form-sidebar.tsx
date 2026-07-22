@@ -32,10 +32,24 @@ import {
   FolderIcon,
   FolderOpenIcon,
   FormIcon,
+  WorkflowFormIcon,
   LinkIcon,
-  ListIcon,
+  CopiedIcon,
+  CreatedIcon,
+  ProcessedIcon,
+  TodoIcon,
 } from "../../../components/app-icons";
 import type { AppForm } from "../../../lib/apps";
+import {
+  createForm,
+  createNavigationGroup,
+  reorderNavigationItem,
+} from "../../../lib/api-client";
+import {
+  getAppNavigation,
+  getAppForms,
+  invalidateAppResources,
+} from "../../../lib/app-resources";
 import { useAuth } from "../../../components/auth-provider";
 import {
   APP_NAVIGATION_CHANGED_EVENT,
@@ -47,14 +61,6 @@ type FormSidebarProps = {
   routeAppId: string;
 };
 
-type FormSummary = {
-  id: string;
-  name: string;
-  category: string;
-  count?: number | null;
-  status: string;
-};
-
 type NavigationItem = {
   id: string;
   itemType: "form" | "system" | "group" | "link";
@@ -64,6 +70,7 @@ type NavigationItem = {
   sortOrder: number;
   isDefaultEntry: boolean;
   parentId?: string | null;
+  formType?: "normal" | "workflow";
 };
 
 type SidebarNode = {
@@ -74,14 +81,9 @@ type SidebarNode = {
   parentId?: string | null;
   sortOrder: number;
   targetFormUuid?: string | null;
+  pathSlug: string;
+  formType?: "normal" | "workflow";
   children: SidebarNode[];
-};
-
-type ApiEnvelope<T> = {
-  code: number;
-  data: T | null;
-  message: string;
-  time: string;
 };
 
 type NavigationDragData = {
@@ -131,18 +133,12 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
 
     void (async () => {
       try {
-        const response = await fetch(`/api/apps/${routeAppId}/navigation`, {
-          cache: "no-store",
-        });
-        const payload = (await response.json()) as ApiEnvelope<NavigationItem[]>;
-
-        if (!cancelled && response.status === 403) {
-          setItems([]);
-          setExpandedGroups({});
-          return;
-        }
-        if (!cancelled && payload.code === 0 && payload.data) {
-          const nextItems = payload.data;
+        const [navigation, forms] = await Promise.all([
+          getAppNavigation(routeAppId),
+          getAppForms(routeAppId),
+        ]);
+        const nextItems = applyFormTypes(navigation, forms);
+        if (!cancelled) {
           startTransition(() => {
             setItems(nextItems);
             setExpandedGroups((current) => expandGroupsFromItems(nextItems, current));
@@ -163,23 +159,15 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
   const refreshNavigation = useCallback(() => {
     void (async () => {
       try {
-        const response = await fetch(`/api/apps/${routeAppId}/navigation`, {
-          cache: "no-store",
+        const [navigation, forms] = await Promise.all([
+          getAppNavigation(routeAppId, true),
+          getAppForms(routeAppId, true),
+        ]);
+        const nextItems = applyFormTypes(navigation, forms);
+        startTransition(() => {
+          setItems(nextItems);
+          setExpandedGroups((current) => expandGroupsFromItems(nextItems, current));
         });
-        const payload = (await response.json()) as ApiEnvelope<NavigationItem[]>;
-
-        if (response.status === 403) {
-          setItems([]);
-          setExpandedGroups({});
-          return;
-        }
-        if (payload.code === 0 && payload.data) {
-          const nextItems = payload.data;
-          startTransition(() => {
-            setItems(nextItems);
-            setExpandedGroups((current) => expandGroupsFromItems(nextItems, current));
-          });
-        }
       } catch {
         setErrorMessage("导航刷新失败，请稍后重试。");
       }
@@ -200,23 +188,24 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
     };
   }, [refreshNavigation, routeAppId]);
 
-  function handleCreateForm() {
+  function handleCreateForm(formType: "normal" | "workflow" = "normal") {
     setErrorMessage("");
 
     void (async () => {
       try {
-        const response = await fetch(`/api/apps/${routeAppId}/forms`, {
-          method: "POST",
+        const { data, error } = await createForm({
+          path: { appId: routeAppId },
+          body: { formType },
+          responseStyle: "fields",
         });
-        const payload = (await response.json()) as ApiEnvelope<FormSummary>;
-
-        if (payload.code !== 0 || !payload.data) {
-          setErrorMessage(payload.message || "创建表单失败。");
+        if (error || !data || data.code !== 0 || !data.data) {
+          setErrorMessage(data?.message || "创建表单失败。");
           return;
         }
 
+        invalidateAppResources(routeAppId, ["forms", "navigation"]);
         refreshNavigation();
-        router.push(`/designer/${payload.data.id}?appId=${routeAppId}`);
+        router.push(`/designer/${data.data.id}?appId=${routeAppId}`);
       } catch {
         setErrorMessage("创建表单失败，请稍后重试。");
       }
@@ -234,26 +223,23 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
 
     void (async () => {
       try {
-        const response = await fetch(`/api/apps/${routeAppId}/navigation/groups`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
+        const { data, error } = await createNavigationGroup({
+          path: { appId: routeAppId },
+          body: {
             title: nextTitle,
             parent_id: groupParentId === ROOT_PARENT_VALUE ? null : groupParentId,
-          }),
+          },
+          responseStyle: "fields",
         });
-        const payload = (await response.json()) as ApiEnvelope<NavigationItem>;
-
-        if (payload.code !== 0) {
-          setErrorMessage(payload.message || "创建分组失败。");
+        if (error || !data || data.code !== 0) {
+          setErrorMessage(data?.message || "创建分组失败。");
           return;
         }
 
         setGroupName("");
         setGroupParentId(ROOT_PARENT_VALUE);
         setCreateGroupOpen(false);
+        invalidateAppResources(routeAppId, ["navigation"]);
         refreshNavigation();
       } catch {
         setErrorMessage("创建分组失败，请稍后重试。");
@@ -312,27 +298,24 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
 
     void (async () => {
       try {
-        const response = await fetch(`/api/apps/${routeAppId}/navigation`, {
-          method: "PATCH",
-          headers: {
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
+        const { data, error } = await reorderNavigationItem({
+          path: { appId: routeAppId },
+          body: {
             item_id: dragData.itemId,
             target_item_id: dropData.targetId,
             placement: dropData.placement,
-          }),
+          },
+          responseStyle: "fields",
         });
-        const payload = (await response.json()) as ApiEnvelope<NavigationItem[]>;
-
-        if (payload.code === 0 && payload.data) {
-          const nextItems = payload.data;
+        if (!error && data?.code === 0 && data.data) {
+          const nextItems = data.data;
+          invalidateAppResources(routeAppId, ["navigation"]);
           startTransition(() => {
             setItems(nextItems);
             setExpandedGroups((current) => expandGroupsFromItems(nextItems, current));
           });
         } else {
-          setErrorMessage(payload.message || "更新导航顺序失败。");
+          setErrorMessage(data?.message || "更新导航顺序失败。");
         }
       } catch {
         setErrorMessage("更新导航顺序失败，请稍后重试。");
@@ -380,14 +363,32 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
               aria-label="新增导航项"
               onAction={(key) => {
                 if (key === "form") {
-                  handleCreateForm();
+                  handleCreateForm("normal");
+                }
+                if (key === "workflow-form") {
+                  handleCreateForm("workflow");
                 }
                 if (key === "group") {
                   setCreateGroupOpen(true);
                 }
               }}
             >
-              {canCreateForm ? <Dropdown.Item id="form">创建表单</Dropdown.Item> : null}
+              {canCreateForm ? (
+                <Dropdown.Item id="form" textValue="创建普通表单">
+                  <span className="flex items-center gap-2">
+                    <FormIcon />
+                    创建普通表单
+                  </span>
+                </Dropdown.Item>
+              ) : null}
+              {canCreateForm ? (
+                <Dropdown.Item id="workflow-form" textValue="新增流程表单">
+                  <span className="flex items-center gap-2">
+                    <WorkflowFormIcon />
+                    新增流程表单
+                  </span>
+                </Dropdown.Item>
+              ) : null}
               {canCreateGroup ? <Dropdown.Item id="group">创建分组</Dropdown.Item> : null}
             </Dropdown.Menu>
           </Dropdown.Popover>
@@ -526,8 +527,8 @@ function SidebarTreeItem({
   const isDropTarget = dragState?.targetId === node.id;
   const showChildren = node.itemType !== "group" || isExpanded;
   const paddingLeft = 10 + level * 14;
-  const nodeIcon = getSidebarNodeIcon(node.itemType, isExpanded);
-  const nodeIconColor = getSidebarNodeIconColor(node.itemType);
+  const nodeIcon = getSidebarNodeIcon(node.itemType, node.pathSlug, isExpanded, node.formType);
+  const nodeIconColor = getSidebarNodeIconColor(node.itemType, node.formType);
   const isDraggable = node.itemType !== "system";
   const { attributes, isDragging, listeners, setNodeRef } = useDraggable({
     id: `navigation-item:${node.id}`,
@@ -765,6 +766,8 @@ function buildNavigationTree(routeAppId: string, items: NavigationItem[]) {
       parentId: item.parentId ?? null,
       sortOrder: item.sortOrder,
       targetFormUuid: item.targetFormUuid,
+      pathSlug: item.pathSlug,
+      formType: item.formType,
       children: [],
     });
   }
@@ -797,27 +800,45 @@ function buildNavigationTree(routeAppId: string, items: NavigationItem[]) {
 
 function getSidebarNodeIcon(
   itemType: NavigationItem["itemType"],
+  pathSlug: string,
   isExpanded = false,
+  formType: "normal" | "workflow" | undefined,
 ) {
   switch (itemType) {
     case "group":
       return isExpanded ? <FolderOpenIcon /> : <FolderIcon />;
     case "system":
-      return <ListIcon />;
+      switch (pathSlug) {
+        case "processed":
+          return <ProcessedIcon />;
+        case "created":
+          return <CreatedIcon />;
+        case "copied":
+          return <CopiedIcon />;
+        case "todo":
+        default:
+          return <TodoIcon />;
+      }
     case "link":
       return <LinkIcon />;
     case "form":
+      return formType === "workflow" ? <WorkflowFormIcon /> : <FormIcon />;
     default:
       return <FormIcon />;
   }
 }
 
-function getSidebarNodeIconColor(itemType: NavigationItem["itemType"]) {
+function getSidebarNodeIconColor(
+  itemType: NavigationItem["itemType"],
+  formType?: "normal" | "workflow",
+) {
   switch (itemType) {
     case "group":
       return "text-[var(--nav-group-icon)]";
     case "form":
-      return "text-[var(--nav-form-icon)]";
+      return formType === "workflow"
+        ? "text-[var(--color-secondary)]"
+        : "text-[var(--nav-form-icon)]";
     case "link":
       return "text-[var(--nav-link-icon)]";
     case "system":
@@ -902,6 +923,20 @@ function buildStaticNavigationItems(routeAppId: string, forms: AppForm[]): Navig
       sortOrder: 100 + index,
       isDefaultEntry: false,
       parentId: null,
+      formType: form.formType ?? "normal",
     })),
   ];
+}
+
+function applyFormTypes(
+  navigation: NavigationItem[],
+  forms: Array<{ id: string; formType?: string }>,
+): NavigationItem[] {
+  const typesById = new Map(
+    forms.map((form) => [form.id, form.formType === "workflow" ? "workflow" as const : "normal" as const]),
+  );
+  return navigation.map((item) => ({
+    ...item,
+    formType: item.targetFormUuid ? typesById.get(item.targetFormUuid) : undefined,
+  }));
 }

@@ -12,7 +12,8 @@ export async function GET(request: Request, { params }: Context) {
 
 export async function POST(request: Request, { params }: Context) {
   const { appId } = await params;
+  const body = await request.json().catch(() => undefined);
   return sdkJsonResponse(
-    createForm({ client: createBackendSdkClient(request), path: { appId } }),
+    createForm({ client: createBackendSdkClient(request), path: { appId }, body }),
   );
 }

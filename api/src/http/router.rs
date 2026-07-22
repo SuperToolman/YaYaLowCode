@@ -8,7 +8,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use crate::modules::{
-    agent_config, agents, apps, automations, dingtalk, forms, identity, navigation, settings,
+    agent_config, agents, apps, automations, dingtalk, forms, identity, navigation, settings, workflows,
 };
 use crate::openapi;
 use crate::platform::{authorization, error::AppError, runtime::AppState};
@@ -154,7 +154,9 @@ pub(crate) fn build(state: AppState) -> Router {
         .route("/api/apps", get(apps::list_apps).post(apps::create_app))
         .route(
             "/api/apps/{app_id}",
-            patch(apps::update_app).delete(apps::delete_app),
+            get(apps::get_app)
+                .patch(apps::update_app)
+                .delete(apps::delete_app),
         )
         .route(
             "/api/apps/{app_id}/navigation",
@@ -207,6 +209,11 @@ pub(crate) fn build(state: AppState) -> Router {
             post(automations::retry_automation_flow_run_node),
         )
         .route("/api/forms/{form_uuid}/schema", get(forms::get_form_schema))
+        .route("/api/forms/{form_uuid}/records/{record_uuid}/workflow", get(workflows::get_workflow_record_runtime))
+        .route("/api/forms/{form_uuid}/records/{record_uuid}/workflow/submit", post(workflows::submit_workflow_record))
+        .route("/api/forms/{form_uuid}/records/{record_uuid}/workflow/reverse", post(workflows::reverse_workflow_record))
+        .route("/api/workflow/tasks/{task_uuid}/approve", post(workflows::approve_workflow_task))
+        .route("/api/workflow/tasks/{task_uuid}/reject", post(workflows::reject_workflow_task))
         .route(
             "/api/forms/{form_uuid}/views",
             get(forms::list_form_views).post(forms::create_form_view),

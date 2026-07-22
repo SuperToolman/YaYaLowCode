@@ -3,7 +3,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, Key } from "react";
 import {
-  Avatar,
   Button,
   DateRangePicker,
   Input,
@@ -23,6 +22,9 @@ import { parseDate } from "@internationalized/date";
 import { normalizeActionPanelCode } from "../lib/action-panel-code";
 import { calculateFormulaValues } from "../lib/form-formula";
 import { TrashIcon } from "./app-icons";
+import { RuntimeAssociationField } from "./runtime-association-field";
+import { RuntimeMemberSelect } from "./runtime-member-select";
+import { RuntimeSubformTable } from "./runtime-subform-table";
 
 const DEFAULT_COLUMN_GAP = 16;
 const DEFAULT_ROW_GAP = 20;
@@ -171,6 +173,9 @@ export type RuntimeActionPanelState = {
 
 export type RuntimePageProps = {
   submitButtonText?: string;
+  table?: {
+    sortableFieldIds?: string[];
+  };
   dataSources?: RuntimeDataSource[];
   actionPanel?: Partial<RuntimeActionPanelState>;
   agent?: {
@@ -633,7 +638,7 @@ function RuntimeFieldNode({
 }) {
   if (field.type === "subform") {
     const childFields = childFieldsByParent.get(field.id) ?? [];
-    return <RuntimeSubform field={field} childFields={childFields} value={value} onChange={(nextValue) => onFieldAction(field.id, nextValue, "onChange")} />;
+    return <RuntimeSubform field={field} childFields={childFields} value={value} onChange={(nextValue) => onFieldAction(field.id, nextValue, "onChange")} isGrouped={Boolean(field.parentGroupId)} />;
   }
 
   if (field.type === "groupContainer") {
@@ -647,8 +652,8 @@ function RuntimeFieldNode({
           style={{
             gridTemplateColumns: `repeat(${field.colSpan ?? 1}, minmax(0, 1fr))`,
             gridAutoRows: "minmax(68px, auto)",
-            columnGap: 12,
-            rowGap: 14,
+            columnGap: DEFAULT_COLUMN_GAP,
+            rowGap: DEFAULT_ROW_GAP,
           }}
         >
           {childFields.map((child) => (
@@ -694,47 +699,6 @@ function RuntimeFieldNode({
   );
 }
 
-type AssociationRecord = { id: string; data: Record<string, unknown> };
-
-function RuntimeAssociationField({ field, onChange, onFill, value }: { field: RuntimeSchemaField; value: unknown; onChange: (value: string) => void; onFill: (source: Record<string, unknown>) => void }) {
-  const props = useMemo(() => field.props ?? {}, [field.props]);
-  const [records, setRecords] = useState<AssociationRecord[]>([]);
-  const [isOpen, setOpen] = useState(false);
-  const selectedId = typeof value === "string" ? value : "";
-
-  useEffect(() => {
-    if (!props.associationFormId) return;
-    let cancelled = false;
-    fetch(`/api/forms/${encodeURIComponent(props.associationFormId)}/records?pageSize=100`, { cache: "no-store" })
-      .then((response) => response.json())
-      .then((payload: { code: number; data: { items?: AssociationRecord[] } | null }) => {
-        if (!cancelled && payload.code === 0) setRecords(payload.data?.items ?? []);
-      })
-      .catch(() => { if (!cancelled) setRecords([]); });
-    return () => { cancelled = true; };
-  }, [props.associationFormId]);
-
-  const visibleRecords = useMemo(() => applyAssociationSettings(records, props), [props, records]);
-  const selected = visibleRecords.find((record) => record.id === selectedId);
-  const primary = (record: AssociationRecord) => String(record.data[props.associationPrimaryFieldId ?? ""] ?? record.id);
-  const secondary = (record: AssociationRecord) => String(record.data[props.associationSecondaryFieldId ?? ""] ?? "");
-
-  return <div className="relative w-full min-w-0"><button type="button" disabled={props.isDisabled || props.isReadOnly || !props.associationFormId} onClick={() => setOpen((open) => !open)} className="flex h-10 w-full items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 text-left text-sm disabled:cursor-not-allowed disabled:opacity-60"><span className="min-w-0 truncate">{selected ? primary(selected) : props.associationFormId ? props.placeholder ?? "请选择" : "请先配置关联表单"}</span><span className="shrink-0 text-[var(--color-text-secondary)]">⌄</span></button>{isOpen ? <div className="absolute z-30 mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-1 shadow-[var(--shadow-floating)]">{visibleRecords.length === 0 ? <div className="px-3 py-5 text-center text-sm text-[var(--color-text-secondary)]">暂无可选记录</div> : visibleRecords.map((record) => <button type="button" key={record.id} onClick={() => { onChange(record.id); onFill(record.data); setOpen(false); }} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-[var(--color-bg-subtle)]"><span className="block truncate text-sm">{primary(record)}</span>{secondary(record) ? <span className="mt-0.5 block truncate text-xs text-[var(--color-text-secondary)]">{secondary(record)}</span> : null}</button>)}</div> : null}</div>;
-}
-
-function applyAssociationSettings(records: AssociationRecord[], props: RuntimeFieldProps) {
-  const filtered = records.filter((record) => (props.associationFilters ?? []).every((filter) => {
-    const value = String(record.data[filter.fieldId] ?? "");
-    return filter.operator === "contains" ? value.includes(filter.value) : filter.operator === "neq" ? value !== filter.value : value === filter.value;
-  }));
-  return [...filtered].sort((left, right) => {
-    const sort = props.associationSorts?.[0];
-    if (!sort) return 0;
-    const compared = String(left.data[sort.fieldId] ?? "").localeCompare(String(right.data[sort.fieldId] ?? ""));
-    return sort.direction === "desc" ? -compared : compared;
-  });
-}
-
 function applyAssociationFillRules(
   props: RuntimeFieldProps | undefined,
   source: Record<string, unknown>,
@@ -764,18 +728,15 @@ function applyAssociationFillRules(
   }
 }
 
-function RuntimeSubform({ field, childFields, value, onChange }: { field: RuntimeSchemaField; childFields: RuntimeSchemaField[]; value: unknown; onChange: (value: Array<Record<string, unknown>>) => void }) {
+function RuntimeSubform({ field, childFields, value, onChange, isGrouped = false }: { field: RuntimeSchemaField; childFields: RuntimeSchemaField[]; value: unknown; onChange: (value: Array<Record<string, unknown>>) => void; isGrouped?: boolean }) {
   const props = field.props ?? {};
+  const description = props.description?.trim() === "可拖入普通字段作为表格列。"
+    ? ""
+    : props.description?.trim();
   const rows = Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item)) : [];
   const maxRows = props.subformMaxRows ?? 500;
   const isReadOnly = Boolean(props.isDisabled || props.isReadOnly);
   const showActions = !isReadOnly;
-  const pageSize = Math.max(1, props.subformPageSize ?? 20);
-  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
-  const [page, setPage] = useState(1);
-  const activePage = Math.min(page, pageCount);
-  const pageStart = (activePage - 1) * pageSize;
-  const pageRows = rows.slice(pageStart, pageStart + pageSize);
 
   function updateCell(rowIndex: number, fieldId: string, nextValue: unknown) {
     onChange(rows.map((row, index) => index === rowIndex ? { ...row, [fieldId]: nextValue } : row));
@@ -807,39 +768,43 @@ function RuntimeSubform({ field, childFields, value, onChange }: { field: Runtim
   }
 
   return (
-    <section className="w-full min-w-0 space-y-3">
+    <section className={isGrouped ? "w-full min-w-0 space-y-3 rounded-lg bg-[var(--color-bg-surface)] p-3" : "w-full min-w-0 space-y-3"}>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><div className="text-sm font-semibold">{field.label}</div>{props.description ? <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{props.description}</p> : null}</div>
+        <div><div className="text-sm font-semibold">{field.label}</div>{description ? <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{description}</p> : null}</div>
         <div className="ml-auto flex flex-wrap justify-end gap-2">
           {props.subformAllowBatchImport ? <Button size="sm" variant="secondary" isDisabled>批量导入</Button> : null}
           {props.subformAllowExcelExport ? <Button size="sm" variant="secondary" isDisabled={rows.length === 0}>导出 Excel</Button> : null}
           {!isReadOnly && props.subformButtonState !== "hidden" ? <Button size="sm" isDisabled={props.subformButtonState === "disabled" || rows.length >= maxRows} onPress={addRow}>{props.subformAddButtonText ?? "新增一项"}</Button> : null}
         </div>
       </div>
-      <div className={`subform-horizontal-scroll overflow-x-auto rounded-xl border border-[var(--color-border)] ${props.subformTheme === "border" ? "divide-y divide-[var(--color-border)]" : ""}`}>
-        <table
-          className="w-full border-collapse text-left text-sm"
-          style={{
-            tableLayout: props.subformLayoutMode === "auto" ? "auto" : "fixed",
-            minWidth: Math.max(
-              720,
-              childFields.length * 180 +
-                (props.subformShowIndex !== false ? 56 : 0) +
-                (showActions ? props.subformActionColumnWidth ?? 70 : 0),
-            ),
-          }}
-        >
-          {props.subformShowHeader !== false ? <thead className="bg-[var(--color-bg-subtle)]"><tr>{props.subformShowIndex !== false ? <th className="w-14 px-3 py-2 text-center font-medium">序号</th> : null}{childFields.map((child) => <th key={child.id} className="px-3 py-2 font-medium">{child.label}</th>)}{showActions ? <th className="sticky right-0 z-20 border-l border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2 text-center font-medium shadow-[-6px_0_12px_-10px_rgba(15,23,42,0.7)]" style={{ width: props.subformActionColumnWidth ?? 70, minWidth: props.subformActionColumnWidth ?? 70 }}>操作</th> : null}</tr></thead> : null}
-          <tbody>
-            {pageRows.map((row, pageRowIndex) => {
-              const rowIndex = pageStart + pageRowIndex;
-              return <tr key={rowIndex} className={props.subformTheme === "zebra" && rowIndex % 2 === 1 ? "bg-[var(--color-bg-subtle)]" : "border-t border-[var(--color-border)]"}>{props.subformShowIndex !== false ? <td className="px-3 py-2 text-center text-[var(--color-text-secondary)]">{rowIndex + 1}</td> : null}{childFields.map((child) => <td key={child.id} className="min-w-36 px-2 py-2 align-top">{child.type === "associationFormField" ? <RuntimeAssociationField field={child} value={row[child.id]} onChange={(nextValue) => updateCell(rowIndex, child.id, nextValue)} onFill={(source) => { const nextRow = { ...row }; for (const fill of child.props?.associationFills ?? []) { if (childFields.some((item) => item.id === fill.targetFieldId)) nextRow[fill.targetFieldId] = source[fill.sourceFieldId] ?? ""; } onChange(rows.map((current, index) => index === rowIndex ? nextRow : current)); }} /> : <FormField field={child} value={row[child.id]} showLabel={false} onFieldAction={(_, nextValue) => updateCell(rowIndex, child.id, nextValue)} />}</td>)}{showActions ? <td className="sticky right-0 z-10 border-l border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2 py-2 align-middle shadow-[-6px_0_12px_-10px_rgba(15,23,42,0.7)]"><div className="flex items-center justify-center gap-1">{props.subformShowSort ? <><Button isIconOnly size="sm" variant="ghost" aria-label="上移" onPress={() => moveRow(rowIndex, -1)}>↑</Button><Button isIconOnly size="sm" variant="ghost" aria-label="下移" onPress={() => moveRow(rowIndex, 1)}>↓</Button></> : null}{props.subformShowCopyButton ? <Button size="sm" variant="ghost" onPress={() => copyRow(rowIndex)}>复制</Button> : null}{props.subformShowDeleteButton !== false ? <Button isIconOnly size="sm" variant="ghost" className="text-[var(--color-danger)]" aria-label={props.subformDeleteButtonText ?? "删除"} onPress={() => removeRow(rowIndex)}><TrashIcon /></Button> : null}</div></td> : null}</tr>;
-            })}
-            {rows.length === 0 ? <tr><td className="px-4 py-8 text-center text-sm text-[var(--color-text-secondary)]" colSpan={childFields.length + (props.subformShowIndex !== false ? 1 : 0) + (showActions ? 1 : 0)}>暂无子表单数据，点击“{props.subformAddButtonText ?? "新增一项"}”开始填写。</td></tr> : null}
-          </tbody>
-        </table>
-      </div>
-      <div className="flex items-center justify-between gap-3 text-xs text-[var(--color-text-secondary)]"><span>共 {rows.length} 行</span><div className="flex items-center gap-2"><span>第 {activePage}/{pageCount} 页 · 每页 {pageSize} 行</span>{pageCount > 1 ? <><Button size="sm" variant="ghost" isDisabled={activePage === 1} onPress={() => setPage(activePage - 1)}>上一页</Button><Button size="sm" variant="ghost" isDisabled={activePage === pageCount} onPress={() => setPage(activePage + 1)}>下一页</Button></> : null}</div></div>
+      <RuntimeSubformTable
+        childFields={childFields}
+        props={props}
+        rows={rows}
+        showActions={showActions}
+        renderCell={(child, row, rowIndex) => child.type === "associationFormField" ? (
+          <RuntimeAssociationField
+            field={child}
+            value={row[child.id]}
+            showLabel={false}
+            onChange={(nextValue) => updateCell(rowIndex, child.id, nextValue)}
+            onFill={(source) => {
+              const nextRow = { ...row };
+              for (const fill of child.props?.associationFills ?? []) {
+                if (childFields.some((item) => item.id === fill.targetFieldId)) nextRow[fill.targetFieldId] = source[fill.sourceFieldId] ?? "";
+              }
+              onChange(rows.map((current, index) => index === rowIndex ? nextRow : current));
+            }}
+          />
+        ) : <FormField field={child} value={row[child.id]} showLabel={false} onFieldAction={(_, nextValue) => updateCell(rowIndex, child.id, nextValue)} />}
+        renderActions={(rowIndex) => (
+          <div className="flex items-center justify-center gap-1">
+            {props.subformShowSort ? <><Button isIconOnly size="sm" variant="ghost" aria-label="上移" onPress={() => moveRow(rowIndex, -1)}>↑</Button><Button isIconOnly size="sm" variant="ghost" aria-label="下移" onPress={() => moveRow(rowIndex, 1)}>↓</Button></> : null}
+            {props.subformShowCopyButton ? <Button size="sm" variant="ghost" onPress={() => copyRow(rowIndex)}>复制</Button> : null}
+            {props.subformShowDeleteButton !== false ? <Button isIconOnly size="sm" variant="ghost" className="text-[var(--color-danger)]" aria-label={props.subformDeleteButtonText ?? "删除"} onPress={() => removeRow(rowIndex)}><TrashIcon /></Button> : null}
+          </div>
+        )}
+      />
     </section>
   );
 }
@@ -1124,229 +1089,6 @@ function RuntimeSelect({
       </Select.Popover>
     </Select>
   );
-}
-
-type IdentityUser = {
-  avatarUrl: string | null;
-  id: string;
-  displayName: string;
-  jobNumber: string | null;
-  sourceType: string;
-  status: string;
-  roles: string[];
-};
-
-type IdentityRole = {
-  id: string;
-  name: string;
-  sourceType: string;
-  status: string;
-};
-
-type IdentityResponse<T> = { code: number; data: T | null };
-
-type RuntimeIdentityCatalog = {
-  roles: IdentityRole[];
-  users: IdentityUser[];
-};
-
-let runtimeIdentityCatalogPromise: Promise<RuntimeIdentityCatalog> | null = null;
-
-function loadRuntimeIdentityCatalog() {
-  if (!runtimeIdentityCatalogPromise) {
-    runtimeIdentityCatalogPromise = Promise.all([
-      fetch("/api/identity/users", { cache: "no-store" })
-        .then((response) => response.json() as Promise<IdentityResponse<IdentityUser[]>>),
-      fetch("/api/identity/roles", { cache: "no-store" })
-        .then((response) => response.json() as Promise<IdentityResponse<IdentityRole[]>>),
-    ])
-      .then(([userResponse, roleResponse]) => ({
-        users: userResponse.code === 0 && userResponse.data ? userResponse.data : [],
-        roles: roleResponse.code === 0 && roleResponse.data ? roleResponse.data : [],
-      }))
-      .catch((error) => {
-        runtimeIdentityCatalogPromise = null;
-        throw error;
-      });
-  }
-
-  return runtimeIdentityCatalogPromise;
-}
-
-function RuntimeMemberSelect({
-  field,
-  onChange,
-  placeholder,
-  props,
-  value,
-}: {
-  field: RuntimeSchemaField;
-  onChange: (value: string | string[]) => void;
-  placeholder: string;
-  props: RuntimeFieldProps;
-  value: string | string[];
-}) {
-  const [users, setUsers] = useState<IdentityUser[]>([]);
-  const [roles, setRoles] = useState<IdentityRole[]>([]);
-  const [isLoading, setLoading] = useState(true);
-  const source = props.memberOrganizationSource ?? "local";
-  const scope = props.memberSelectableScope ?? "all";
-  const displayFormat = props.memberDisplayFormat ?? "name";
-  const isMultiple = Boolean(props.memberMultiple);
-
-  useEffect(() => {
-    let cancelled = false;
-    void loadRuntimeIdentityCatalog()
-      .then((catalog) => {
-        if (cancelled) return;
-        setUsers(catalog.users);
-        setRoles(catalog.roles);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setUsers([]);
-          setRoles([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const candidates = useMemo(() => {
-    const sourceUsers = users.filter((user) => user.sourceType === source && user.status === "active");
-    const selectedRoleNames = new Set(
-      roles
-        .filter((role) => (props.memberRoleIds ?? []).includes(role.id))
-        .map((role) => role.name),
-    );
-    const candidates =
-      scope === "members"
-        ? sourceUsers.filter((user) => (props.memberUserIds ?? []).includes(user.id))
-        : scope === "roles"
-          ? sourceUsers.filter((user) => user.roles.some((roleName) => selectedRoleNames.has(roleName)))
-          : sourceUsers;
-
-    return candidates;
-  }, [props.memberRoleIds, props.memberUserIds, roles, scope, source, users]);
-
-  const options = useMemo(() => {
-    return candidates.map((user) => ({
-      value: user.id,
-      label:
-        displayFormat === "nameJobNumber"
-          ? `${user.displayName}(${user.jobNumber || "-"})`
-          : displayFormat === "nameUserId"
-            ? `${user.displayName}(${user.id})`
-            : user.displayName,
-    }));
-  }, [candidates, displayFormat]);
-
-  if (isMultiple) {
-    const selectedValues = Array.isArray(value) ? value : [];
-    const selectedUsers = selectedValues
-      .map((selectedValue) => candidates.find((user) => user.id === selectedValue))
-      .filter((user): user is IdentityUser => Boolean(user));
-    const maxVisibleNames = Math.max(1, field.colSpan ?? 1);
-    const visibleUsers = selectedUsers.slice(0, maxVisibleNames);
-    const overflowCount = selectedUsers.length - visibleUsers.length;
-    return (
-      <Select
-        aria-label={field.label}
-        className="low-code-select-field"
-        selectionMode="multiple"
-        value={selectedValues}
-        onChange={(keys) => onChange(keys.map(String))}
-        shouldCloseOnSelect={false}
-        isDisabled={Boolean(props.isDisabled || props.isReadOnly || isLoading)}
-        isRequired={props.isRequired}
-        fullWidth
-      >
-        <Select.Trigger className="min-w-0">
-          <Select.Value className="min-w-0 flex-1 overflow-hidden whitespace-nowrap">
-            {isLoading ? "正在加载成员…" : selectedUsers.length > 0 ? (
-              <span className="flex w-full min-w-0 items-center gap-1.5 overflow-hidden">
-                <span className="flex shrink-0 -space-x-1.5">{selectedUsers.slice(0, 3).map((user) => <MemberAvatar key={user.id} user={user} />)}</span>
-                <span className="min-w-0 flex-1 truncate">{visibleUsers.map((user) => getMemberLabel(user, displayFormat)).join("、")}{overflowCount > 0 ? `、等${overflowCount}位成员…` : ""}</span>
-              </span>
-            ) : placeholder}
-          </Select.Value>
-          <Select.Indicator />
-        </Select.Trigger>
-        <Select.Popover>
-          <ListBox selectionMode="multiple" selectedKeys={new Set(selectedValues)} onSelectionChange={(keys) => onChange(keys === "all" ? options.map((option) => option.value) : Array.from(keys).map(String))} renderEmptyState={() => "暂无可选成员"}>
-            {options.map((option) => (
-              <ListBox.Item key={option.value} id={option.value} textValue={option.label} className={selectedValues.includes(option.value) ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]" : undefined}>
-                <span className="flex min-w-0 items-center gap-2">
-                  <MemberOption user={candidates.find((user) => user.id === option.value)!} label={option.label} />
-                  {selectedValues.includes(option.value) ? <span className="ml-auto shrink-0 text-[var(--color-primary)]" aria-label="已选">✓</span> : null}
-                </span>
-              </ListBox.Item>
-            ))}
-          </ListBox>
-        </Select.Popover>
-      </Select>
-    );
-  }
-
-  const selectedValue = typeof value === "string" ? value : "";
-
-  return (
-    <Select
-      aria-label={field.label}
-      className="low-code-select-field"
-      selectedKey={selectedValue || null}
-      onSelectionChange={(key: Key | null) => onChange(key === null ? "" : String(key))}
-      isDisabled={Boolean(props.isDisabled || props.isReadOnly || isLoading)}
-      isRequired={props.isRequired}
-      fullWidth
-    >
-      <Select.Trigger>
-        <Select.Value>
-          {isLoading ? "正在加载成员…" : candidates.find((user) => user.id === selectedValue) ? (
-            <MemberOption user={candidates.find((user) => user.id === selectedValue)!} label={getOptionLabel(options, selectedValue)} />
-          ) : placeholder}
-        </Select.Value>
-        <Select.Indicator />
-      </Select.Trigger>
-      <Select.Popover>
-        <ListBox renderEmptyState={() => "暂无可选成员"}>
-          {options.map((option) => (
-            <ListBox.Item key={option.value} id={option.value} textValue={option.label}>
-              <MemberOption user={candidates.find((user) => user.id === option.value)!} label={option.label} />
-            </ListBox.Item>
-          ))}
-        </ListBox>
-      </Select.Popover>
-    </Select>
-  );
-}
-
-function getMemberLabel(user: IdentityUser, displayFormat: NonNullable<RuntimeFieldProps["memberDisplayFormat"]>) {
-  if (displayFormat === "nameJobNumber") return `${user.displayName}(${user.jobNumber || "-"})`;
-  if (displayFormat === "nameUserId") return `${user.displayName}(${user.id})`;
-  return user.displayName;
-}
-
-function MemberAvatar({ user }: { user: IdentityUser }) {
-  return (
-    <Avatar size="sm" className="h-5 w-5 shrink-0 border border-[var(--color-bg-surface)] text-[9px]">
-      {user.avatarUrl ? <Avatar.Image src={user.avatarUrl} alt="" /> : null}
-      <Avatar.Fallback>{getAvatarFallbackText(user.displayName)}</Avatar.Fallback>
-    </Avatar>
-  );
-}
-
-function MemberOption({ label, user }: { label: string; user: IdentityUser }) {
-  return <span className="flex min-w-0 items-center gap-2"><MemberAvatar user={user} /><span className="truncate">{label}</span></span>;
-}
-
-function getAvatarFallbackText(displayName: string) {
-  return Array.from(displayName.trim())[0] || "?";
 }
 
 function RuntimeCheckboxOptions({

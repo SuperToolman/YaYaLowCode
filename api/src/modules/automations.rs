@@ -64,6 +64,11 @@ pub(crate) async fn create_automation_flow(
     let trigger_event = normalize_automation_trigger_event(
         payload.trigger_event.as_deref().unwrap_or("after_create"),
     )?;
+    if trigger_event == "form_submit" {
+        return Err(AppError::BadRequest(
+            "process flows are created only with workflow forms".to_string(),
+        ));
+    }
 
     if let Some(form_uuid) = trigger_form_uuid.as_deref() {
         ensure_form_belongs_to_app(&state.db, &app_id, form_uuid).await?;
@@ -79,6 +84,7 @@ pub(crate) async fn create_automation_flow(
         description: Set(normalize_optional_text(payload.description)),
         status: Set("draft".to_string()),
         current_version: Set(1),
+        flow_type: Set("trigger".to_string()),
         trigger_form_uuid: Set(trigger_form_uuid),
         trigger_event: Set(trigger_event),
         trigger_config: Set(json!({})),
@@ -102,6 +108,40 @@ pub(crate) async fn create_automation_flow(
             ApiAutomationFlow::from(flow),
         )),
     ))
+}
+
+pub(crate) async fn create_process_flow_for_form<C>(
+    db: &C,
+    app_id: &str,
+    form_uuid: &str,
+    form_name: &str,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let now = Utc::now();
+    let flow = automation_flow_entity::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        flow_uuid: Set(generate_automation_flow_uuid()),
+        app_route_app_id: Set(app_id.to_string()),
+        name: Set(format!("{}审批流程", form_name)),
+        description: Set(Some("流程表单内置审批流程".to_string())),
+        status: Set("draft".to_string()),
+        current_version: Set(1),
+        flow_type: Set("process".to_string()),
+        trigger_form_uuid: Set(Some(form_uuid.to_string())),
+        trigger_event: Set("form_submit".to_string()),
+        trigger_config: Set(json!({ "rootLabel": "表单提交时" })),
+        nodes_json: Set(json!([])),
+        edges_json: Set(json!([])),
+        created_by: Set("管理员".to_string()),
+        updated_by: Set("管理员".to_string()),
+        created_at: Set(now.into()),
+        updated_at: Set(now.into()),
+    }
+    .insert(db)
+    .await?;
+    create_automation_snapshot(db, &flow, Some("流程表单创建时自动生成".to_string())).await
 }
 
 pub(crate) async fn get_automation_flow(
@@ -281,6 +321,8 @@ pub(crate) async fn update_automation_flow(
         .ok_or_else(|| AppError::NotFound("automation flow not found".to_string()))?;
     let now = Utc::now();
     let app_id = flow.app_route_app_id.clone();
+    let is_process_flow = flow.flow_type == "process";
+    let process_form_uuid = flow.trigger_form_uuid.clone();
     let flow_id = flow.id;
     let next_version = flow.current_version + 1;
     let existing_nodes_json = flow.nodes_json.clone();
@@ -311,12 +353,23 @@ pub(crate) async fn update_automation_flow(
     }
 
     if let Some(trigger_event) = payload.trigger_event {
-        active_model.trigger_event = Set(normalize_automation_trigger_event(&trigger_event)?);
+        let trigger_event = normalize_automation_trigger_event(&trigger_event)?;
+        if is_process_flow && trigger_event != "form_submit" {
+            return Err(AppError::BadRequest(
+                "process flow trigger is fixed to form_submit".to_string(),
+            ));
+        }
+        active_model.trigger_event = Set(trigger_event);
         should_create_version = true;
     }
 
     if payload.trigger_form_uuid.is_some() {
         let trigger_form_uuid = normalize_optional_text(payload.trigger_form_uuid);
+        if is_process_flow && trigger_form_uuid != process_form_uuid {
+            return Err(AppError::BadRequest(
+                "process flow is bound to its workflow form".to_string(),
+            ));
+        }
         if let Some(form_uuid) = trigger_form_uuid.as_deref() {
             ensure_form_belongs_to_app(&state.db, &app_id, form_uuid).await?;
         }
@@ -342,6 +395,7 @@ pub(crate) async fn update_automation_flow(
     }
 
     validate_automation_graph(&next_nodes_json, &next_edges_json)?;
+    validate_flow_node_kinds(&next_nodes_json, if is_process_flow { "process" } else { "trigger" })?;
     ensure_automation_node_forms_belong_to_app(&state.db, &app_id, &next_nodes_json).await?;
 
     if nodes_updated {
@@ -433,6 +487,7 @@ pub(crate) async fn execute_automation_flows_for_event(
             automation_flow_entity::Column::TriggerFormUuid.eq(Some(definition.form_uuid.clone())),
         )
         .filter(automation_flow_entity::Column::TriggerEvent.eq(event))
+        .filter(automation_flow_entity::Column::FlowType.eq("trigger"))
         .filter(automation_flow_entity::Column::Status.eq("enabled"))
         .all(db)
         .await?;
@@ -742,6 +797,36 @@ async fn execute_http_request_node(
     }))
 }
 
+/// Executes an automation data or connector node from a process flow.
+/// Process flows keep their own human-task traversal, but share the same
+/// implementation for nodes that operate on form data or external services.
+pub(crate) async fn execute_process_automation_node(
+    db: &DatabaseConnection,
+    flow: &automation_flow_entity::Model,
+    node_id: &str,
+    kind: &str,
+    config: &Value,
+    outputs: &mut HashMap<String, Value>,
+    operator: &str,
+) -> Result<(), AppError> {
+    let context = AutomationExecutionContext {
+        outputs: outputs.clone(),
+        operator: operator.to_string(),
+        run_id: None,
+    };
+    let output = match kind {
+        "add-data" => execute_add_data_node(db, flow, config, &context).await?,
+        "get-one" => execute_get_one_node(db, config, &context).await?,
+        "get-many" => execute_get_many_node(db, config, &context).await?,
+        "update-data" => execute_update_data_node(db, flow, config, &context).await?,
+        "delete-data" => execute_delete_data_node(db, flow, config, &context).await?,
+        "http-request" => execute_http_request_node(config, &context).await?,
+        _ => return Err(AppError::BadRequest("unsupported process automation node kind".to_string())),
+    };
+    outputs.insert(node_id.to_string(), output);
+    Ok(())
+}
+
 async fn validate_http_request_url(url: &reqwest::Url) -> Result<(), AppError> {
     if !matches!(url.scheme(), "http" | "https") {
         return Err(AppError::BadRequest(
@@ -991,6 +1076,10 @@ fn normalize_automation_node_kind(kind: &str) -> Result<String, AppError> {
             | "get-many"
             | "delete-data"
             | "http-request"
+            | "approval"
+            | "copy"
+            | "executor"
+            | "end"
     ) {
         Ok(normalized.to_string())
     } else {
@@ -998,6 +1087,23 @@ fn normalize_automation_node_kind(kind: &str) -> Result<String, AppError> {
             "invalid automation node kind".to_string(),
         ))
     }
+}
+
+fn validate_flow_node_kinds(nodes: &Value, flow_type: &str) -> Result<(), AppError> {
+    let allowed: &[&str] = if flow_type == "process" {
+        // Process flows use the automation nodes as well as their human-task nodes.
+        // `end` remains accepted only so existing process definitions stay editable.
+        &["trigger", "condition", "add-data", "update-data", "get-one", "get-many", "delete-data", "http-request", "approval", "copy", "executor", "end"]
+    } else {
+        &["trigger", "condition", "add-data", "update-data", "get-one", "get-many", "delete-data", "http-request"]
+    };
+    for node in json_array_items(nodes) {
+        let kind = node.pointer("/data/kind").and_then(Value::as_str).unwrap_or_default();
+        if !allowed.contains(&kind) {
+            return Err(AppError::BadRequest("node kind is not available for this automation type".to_string()));
+        }
+    }
+    Ok(())
 }
 
 fn normalize_automation_node_config(kind: &str, config: Value) -> Result<Value, AppError> {
@@ -1056,6 +1162,14 @@ fn normalize_automation_node_config(kind: &str, config: Value) -> Result<Value, 
             "url": read_json_string(object.get("url")),
             "headersText": read_json_string(object.get("headersText")),
         }),
+        "approval" | "executor" => json!({
+            "assigneeIds": object.get("assigneeIds").or_else(|| object.get("assignees")).and_then(Value::as_array).map(|items| items.iter().filter_map(Value::as_str).map(str::trim).filter(|value| !value.is_empty()).collect::<Vec<_>>()).unwrap_or_default(),
+            "approvalMode": if object.get("approvalMode").and_then(Value::as_str) == Some("any") { "any" } else { "all" },
+        }),
+        "copy" => json!({
+            "recipientIds": object.get("recipientIds").or_else(|| object.get("recipients")).and_then(Value::as_array).map(|items| items.iter().filter_map(Value::as_str).map(str::trim).filter(|value| !value.is_empty()).collect::<Vec<_>>()).unwrap_or_default(),
+        }),
+        "end" => json!({}),
         _ => json!({}),
     };
 
@@ -1232,6 +1346,10 @@ fn default_node_label(kind: &str) -> &'static str {
         "get-many" => "获取多条数据",
         "delete-data" => "删除数据",
         "http-request" => "连接器",
+        "approval" => "审批人",
+        "copy" => "抄送人",
+        "executor" => "执行人",
+        "end" => "结束",
         _ => "未命名节点",
     }
 }
@@ -1246,6 +1364,10 @@ fn default_node_description(kind: &str) -> &'static str {
         "get-many" => "从表单、数据节点或关联表单中获取多条数据",
         "delete-data" => "根据匹配条件删除目标表单记录",
         "http-request" => "调用外部接口或 Webhook",
+        "approval" => "等待审批人同意或拒绝",
+        "copy" => "通知抄送人后自动继续",
+        "executor" => "等待执行人完成处理",
+        "end" => "结束审批流程",
         _ => "",
     }
 }

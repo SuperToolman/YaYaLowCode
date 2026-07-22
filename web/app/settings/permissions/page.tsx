@@ -11,8 +11,15 @@ import {
   Tabs,
 } from "@heroui/react";
 import { Tree, type NodeRendererProps } from "react-arborist";
+import {
+  getRolePermissions,
+  listAppNavigation,
+  listApps,
+  listRoles,
+  updateRolePermissions,
+} from "../../lib/api-client";
+import { mapWithConcurrency } from "../../lib/async";
 
-type Envelope<T> = { code: number; message: string; data: T | null };
 type Role = {
   id: string;
   name: string;
@@ -29,7 +36,6 @@ type NavigationItem = {
   title: string;
   parentId: string | null;
 };
-type RolePermissions = { roleId: string; grants: string[] };
 type Tab = "apps" | "platform";
 type RoleSourceFilter = "all" | "local" | "dingtalk";
 
@@ -173,35 +179,49 @@ export default function PermissionsSettingsPage() {
     setLoading(true);
     setError("");
     try {
-      const [rolesResponse, appsResponse] = await Promise.all([
-        fetch("/api/identity/roles", { cache: "no-store" }),
-        fetch("/api/apps", { cache: "no-store" }),
+      const [rolesResult, appsResult] = await Promise.all([
+        listRoles({ responseStyle: "fields" }),
+        listApps({ responseStyle: "fields" }),
       ]);
-      const rolesPayload = (await rolesResponse.json()) as Envelope<Role[]>;
-      const appsPayload = (await appsResponse.json()) as Envelope<App[]>;
-      if (!rolesResponse.ok || !rolesPayload.data)
-        throw new Error(rolesPayload.message || "无法加载角色");
-      if (!appsResponse.ok || !appsPayload.data)
-        throw new Error(appsPayload.message || "无法加载应用");
-      const nextRoles = rolesPayload.data.filter(
+      const rolesData = rolesResult.data;
+      const appsData = appsResult.data;
+      if (
+        rolesResult.error ||
+        !rolesData ||
+        rolesData.code !== 0 ||
+        !rolesData.data ||
+        appsResult.error ||
+        !appsData ||
+        appsData.code !== 0 ||
+        !appsData.data
+      ) {
+        throw new Error("无法加载权限资源");
+      }
+      const nextRoles = rolesData.data.filter(
         (role) => role.status === "active",
       );
-      const nextApps = appsPayload.data;
+      const nextApps = appsData.data;
       setRoles(nextRoles);
       setApps(nextApps);
-      const navigation = await Promise.all(
-        nextApps.map(async (app) => {
-          const response = await fetch(
-            `/api/apps/${encodeURIComponent(app.id)}/navigation`,
-            { cache: "no-store" },
-          );
-          const payload = (await response.json()) as Envelope<NavigationItem[]>;
-          return [
-            app.id,
-            response.ok && payload.data ? payload.data : [],
-          ] as const;
-        }),
-      );
+      const navigation = await mapWithConcurrency(nextApps, 6, async (app) => {
+          try {
+            const { data, error } = await listAppNavigation({
+              path: { appId: app.id },
+              responseStyle: "fields",
+            });
+            if (error || !data || data.code !== 0 || !data.data) {
+              return [app.id, []] as const;
+            }
+            const items = data.data.map((item) => ({
+              ...item,
+              parentId: item.parentId ?? null,
+              targetFormUuid: item.targetFormUuid ?? null,
+            }));
+            return [app.id, items] as const;
+          } catch {
+            return [app.id, []] as const;
+          }
+        });
       setTree(Object.fromEntries(navigation));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法加载权限资源");
@@ -213,14 +233,14 @@ export default function PermissionsSettingsPage() {
     if (!nextRoleId) return;
     setError("");
     try {
-      const response = await fetch(
-        `/api/settings/permissions/${encodeURIComponent(nextRoleId)}`,
-        { cache: "no-store" },
-      );
-      const payload = (await response.json()) as Envelope<RolePermissions>;
-      if (!response.ok || !payload.data)
-        throw new Error(payload.message || "无法加载角色权限");
-      setGrants(payload.data.grants);
+      const { data, error } = await getRolePermissions({
+        path: { roleId: nextRoleId },
+        responseStyle: "fields",
+      });
+      if (error || !data || data.code !== 0 || !data.data) {
+        throw new Error(data?.message || "无法加载角色权限");
+      }
+      setGrants(data.data.grants);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法加载角色权限");
     }
@@ -327,18 +347,15 @@ export default function PermissionsSettingsPage() {
     setError("");
     setMessage("");
     try {
-      const response = await fetch(
-        `/api/settings/permissions/${encodeURIComponent(roleId)}`,
-        {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ grants }),
-        },
-      );
-      const payload = (await response.json()) as Envelope<RolePermissions>;
-      if (!response.ok || !payload.data)
-        throw new Error(payload.message || "保存权限失败");
-      setGrants(payload.data.grants);
+      const { data, error } = await updateRolePermissions({
+        body: { grants },
+        path: { roleId },
+        responseStyle: "fields",
+      });
+      if (error || !data || data.code !== 0 || !data.data) {
+        throw new Error(data?.message || "保存权限失败");
+      }
+      setGrants(data.data.grants);
       setMessage("权限配置已保存");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "保存权限失败");

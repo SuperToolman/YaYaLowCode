@@ -139,6 +139,7 @@ export type ApiApp = {
     id: string;
     name: string;
     owner: string;
+    ownerAvatarUrl?: string | null;
     records: number;
     status: string;
 };
@@ -154,6 +155,7 @@ export type ApiAutomationFlow = {
     createdAt: string;
     createdBy: string;
     currentVersion: number;
+    flowType: 'trigger' | 'process';
     description?: string | null;
     id: string;
     name: string;
@@ -171,6 +173,7 @@ export type ApiAutomationFlowDetail = {
     createdAt: string;
     createdBy: string;
     currentVersion: number;
+    flowType: 'trigger' | 'process';
     description?: string | null;
     edges: unknown;
     id: string;
@@ -243,6 +246,7 @@ export type ApiFieldOutlineField = {
 export type ApiFieldOutlineForm = {
     compiledSchemaVersion?: number | null;
     fields: Array<ApiFieldOutlineField>;
+    formType: string;
     formUuid: string;
     name: string;
     physicalTable?: string | null;
@@ -253,10 +257,13 @@ export type ApiFieldOutlineForm = {
 export type ApiFormRecord = {
     createdAt: string;
     createdBy: string;
+    createdByAvatarUrl?: string | null;
+    createdByUserId?: string | null;
     data: unknown;
     formUuid: string;
     id: string;
     schemaVersion: number;
+    submitterOrganization?: string | null;
     updatedAt: string;
     updatedBy: string;
 };
@@ -272,6 +279,7 @@ export type ApiFormSummary = {
     category: string;
     count?: number | null;
     createdAt: string;
+    formType: string;
     id: string;
     latestSchemaVersion: number;
     name: string;
@@ -440,6 +448,7 @@ export type ApiResponseApiApp = {
         id: string;
         name: string;
         owner: string;
+        ownerAvatarUrl?: string | null;
         records: number;
         status: string;
     };
@@ -523,10 +532,13 @@ export type ApiResponseApiFormRecord = {
     data?: {
         createdAt: string;
         createdBy: string;
+        createdByAvatarUrl?: string | null;
+        createdByUserId?: string | null;
         data: unknown;
         formUuid: string;
         id: string;
         schemaVersion: number;
+        submitterOrganization?: string | null;
         updatedAt: string;
         updatedBy: string;
     };
@@ -552,6 +564,7 @@ export type ApiResponseApiFormSummary = {
         category: string;
         count?: number | null;
         createdAt: string;
+        formType: string;
         id: string;
         latestSchemaVersion: number;
         name: string;
@@ -753,6 +766,13 @@ export type ApiResponseUserSyncResponse = {
     time: string;
 };
 
+export type ApiResponseValue = {
+    code: number;
+    data?: unknown;
+    message: string;
+    time: string;
+};
+
 export type ApiResponseVecAgentConfigProfile = {
     code: number;
     data?: Array<{
@@ -896,6 +916,7 @@ export type ApiResponseVecApiApp = {
         id: string;
         name: string;
         owner: string;
+        ownerAvatarUrl?: string | null;
         records: number;
         status: string;
     }>;
@@ -1116,6 +1137,10 @@ export type CreateFormRecordRequest = {
     operator?: string;
 };
 
+export type CreateFormRequest = {
+    formType?: 'normal' | 'workflow';
+};
+
 export type CreateLocalRoleRequest = {
     name: string;
 };
@@ -1289,8 +1314,8 @@ export type ProviderResponse = {
 
 export type ReorderNavigationRequest = {
     item_id: string;
-    placement: string;
     target_item_id: string;
+    placement: 'before' | 'after' | 'inside';
 };
 
 export type RestoreVersionRequest = {
@@ -1324,7 +1349,8 @@ export type SaveSchemaRequest = {
 };
 
 export type SetDefaultNavigationEntryRequest = {
-    form_uuid: string;
+    form_uuid?: string | null;
+    system_page_slug?: string | null;
 };
 
 export type SkillFileRequest = {
@@ -1357,7 +1383,7 @@ export type UpdateAutomationFlowRequest = {
     description?: string;
     status?: 'enabled' | 'paused' | 'draft';
     triggerFormUuid?: string;
-    triggerEvent?: 'before_create' | 'after_create' | 'before_update' | 'after_update' | 'before_delete' | 'after_delete';
+    triggerEvent?: 'before_create' | 'after_create' | 'before_update' | 'after_update' | 'before_delete' | 'after_delete' | 'form_submit';
     triggerConfig?: {
         [key: string]: unknown;
     };
@@ -1470,6 +1496,7 @@ export type App = {
 export type FormSummary = {
     id: string;
     name: string;
+    formType: 'normal' | 'workflow';
     category: string;
     count?: number | null;
     status: string;
@@ -1526,8 +1553,9 @@ export type AutomationFlow = {
     description?: string | null;
     status: 'enabled' | 'paused' | 'draft';
     currentVersion: number;
+    flowType: 'trigger' | 'process';
     triggerFormUuid?: string | null;
-    triggerEvent: 'before_create' | 'after_create' | 'before_update' | 'after_update' | 'before_delete' | 'after_delete';
+    triggerEvent: 'before_create' | 'after_create' | 'before_update' | 'after_update' | 'before_delete' | 'after_delete' | 'form_submit';
     triggerLabel: string;
     nodesCount: number;
     createdBy: string;
@@ -1551,8 +1579,9 @@ export type AutomationFlowDetail = {
     description?: string | null;
     status: 'enabled' | 'paused' | 'draft';
     currentVersion: number;
+    flowType: 'trigger' | 'process';
     triggerFormUuid?: string | null;
-    triggerEvent: 'before_create' | 'after_create' | 'before_update' | 'after_update' | 'before_delete' | 'after_delete';
+    triggerEvent: 'before_create' | 'after_create' | 'before_update' | 'after_update' | 'before_delete' | 'after_delete' | 'form_submit';
     triggerLabel: string;
     triggerConfig: {
         [key: string]: unknown;
@@ -2331,7 +2360,7 @@ export type ListFormsResponses = {
 export type ListFormsResponse = ListFormsResponses[keyof ListFormsResponses];
 
 export type CreateFormData = {
-    body?: never;
+    body?: CreateFormRequest;
     path: {
         appId: string;
     };
@@ -2391,6 +2420,33 @@ export type ListAppNavigationResponses = {
 };
 
 export type ListAppNavigationResponse = ListAppNavigationResponses[keyof ListAppNavigationResponses];
+
+export type ReorderNavigationItemData = {
+    body: ReorderNavigationRequest;
+    path: {
+        appId: string;
+    };
+    query?: never;
+    url: '/api/apps/{appId}/navigation';
+};
+
+export type ReorderNavigationItemErrors = {
+    /**
+     * Invalid reorder request
+     */
+    400: ErrorResponse;
+};
+
+export type ReorderNavigationItemError = ReorderNavigationItemErrors[keyof ReorderNavigationItemErrors];
+
+export type ReorderNavigationItemResponses = {
+    /**
+     * Wrapped navigation item list
+     */
+    200: NavigationListResponse;
+};
+
+export type ReorderNavigationItemResponse = ReorderNavigationItemResponses[keyof ReorderNavigationItemResponses];
 
 export type SetDefaultNavigationEntryData = {
     body: SetDefaultNavigationEntryRequest;
@@ -2534,11 +2590,10 @@ export type RetryAutomationFlowRunNodeData = {
 };
 
 export type RetryAutomationFlowRunNodeResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+    200: ApiResponseValue;
 };
+
+export type RetryAutomationFlowRunNodeResponse = RetryAutomationFlowRunNodeResponses[keyof RetryAutomationFlowRunNodeResponses];
 
 export type RetryAutomationFlowRunData = {
     body?: never;
@@ -2551,11 +2606,10 @@ export type RetryAutomationFlowRunData = {
 };
 
 export type RetryAutomationFlowRunResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+    200: ApiResponseValue;
 };
+
+export type RetryAutomationFlowRunResponse = RetryAutomationFlowRunResponses[keyof RetryAutomationFlowRunResponses];
 
 export type ListAutomationFlowVersionsData = {
     body?: never;
@@ -2663,7 +2717,10 @@ export type ListFormRecordsData = {
     path: {
         formUuid: string;
     };
-    query?: never;
+    query?: {
+        page?: number;
+        pageSize?: number;
+    };
     url: '/api/forms/{formUuid}/records';
 };
 

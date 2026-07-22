@@ -13,6 +13,7 @@ use crate::shared::format_date;
 pub(crate) struct ApiFormSummary {
     pub(crate) id: String,
     pub(crate) name: String,
+    pub(crate) form_type: String,
     pub(crate) category: String,
     pub(crate) count: Option<i32>,
     pub(crate) status: String,
@@ -51,6 +52,9 @@ pub(crate) struct ApiFormRecord {
     pub(crate) schema_version: i32,
     pub(crate) data: Value,
     pub(crate) created_by: String,
+    pub(crate) created_by_user_id: Option<String>,
+    pub(crate) created_by_avatar_url: Option<String>,
+    pub(crate) submitter_organization: Option<String>,
     pub(crate) updated_by: String,
     pub(crate) created_at: String,
     pub(crate) updated_at: String,
@@ -79,11 +83,18 @@ pub(crate) struct ApiFieldOutlineField {
 pub(crate) struct ApiFieldOutlineForm {
     pub(crate) form_uuid: String,
     pub(crate) name: String,
+    pub(crate) form_type: String,
     pub(crate) status: String,
     pub(crate) schema_version: i32,
     pub(crate) physical_table: Option<String>,
     pub(crate) compiled_schema_version: Option<i32>,
     pub(crate) fields: Vec<ApiFieldOutlineField>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CreateFormRequest {
+    pub(crate) form_type: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -115,13 +126,11 @@ pub(crate) struct RestoreVersionRequest {
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct CreateFormRecordRequest {
     pub(crate) data: Value,
-    pub(crate) operator: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct UpdateFormRecordRequest {
     pub(crate) data: Value,
-    pub(crate) operator: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -135,6 +144,7 @@ impl From<form_definition_entity::Model> for ApiFormSummary {
         Self {
             id: value.form_uuid,
             name: value.name,
+            form_type: value.form_type,
             category: "group".to_string(),
             count: None,
             status: value.status,
@@ -152,6 +162,9 @@ impl From<StoredFormRecord> for ApiFormRecord {
             schema_version: value.schema_version,
             data: value.record_data,
             created_by: value.created_by,
+            created_by_user_id: None,
+            created_by_avatar_url: None,
+            submitter_organization: None,
             updated_by: value.updated_by,
             created_at: value.created_at.to_rfc3339(),
             updated_at: value.updated_at.to_rfc3339(),

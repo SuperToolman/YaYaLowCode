@@ -84,6 +84,7 @@ export default function FormDesigner({ params }: FormDesignerProps) {
   const workbenchResizeFrameRef = useRef<number | null>(null);
   const pendingWorkbenchWidthRef = useRef<number | null>(null);
   const [formName, setFormName] = useState("New Page");
+  const [formType, setFormType] = useState<"normal" | "workflow">("normal");
   const [isEditingFormName, setIsEditingFormName] = useState(false);
   const [fields, setFields] = useState<PlacedField[]>([]);
   const [pageProps, setPageProps] = useState<PageDesignerProps>(() =>
@@ -153,6 +154,23 @@ export default function FormDesigner({ params }: FormDesignerProps) {
       cancelled = true;
     };
   }, [appId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetch(`/api/forms/${formUuid}`, { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload: { code: number; data: { formType?: string } | null }) => {
+        if (!cancelled && payload.code === 0 && payload.data?.formType === "workflow") {
+          setFormType("workflow");
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [formUuid]);
 
   useEffect(() => {
     if (dragOriginFieldsRef.current) return;
@@ -1033,6 +1051,19 @@ export default function FormDesigner({ params }: FormDesignerProps) {
     router.push("/myApp");
   }
 
+  async function handleWorkflowDesign() {
+    if (!appId) return;
+    try {
+      const response = await fetch(`/api/apps/${appId}/automations`, { cache: "no-store" });
+      const payload = await response.json() as { code: number; data?: { items?: Array<{ id: string; flowType?: string; triggerFormUuid?: string | null }> } };
+      const workflow = payload.data?.items?.find((item) => item.flowType === "process" && item.triggerFormUuid === formUuid);
+      if (!workflow) throw new Error("workflow automation not found");
+      router.push(`/${appId}/automations/${workflow.id}`);
+    } catch {
+      toast.danger("流程设计暂不可用", { description: "未找到当前流程表单绑定的流程自动化。" });
+    }
+  }
+
   function handleWorkbenchResizeStart(event: PointerEvent<HTMLButtonElement>) {
     event.preventDefault();
     workbenchResizeStateRef.current = {
@@ -1098,6 +1129,7 @@ export default function FormDesigner({ params }: FormDesignerProps) {
             appName={appName}
             fieldsCount={fields.length}
             formName={formName}
+            formType={formType}
             formUuid={formUuid}
             isEditingFormName={isEditingFormName}
             latestVersion={latestVersion}
@@ -1111,6 +1143,7 @@ export default function FormDesigner({ params }: FormDesignerProps) {
             onPublish={handlePublish}
             onRestoreVersionSelect={handleRestore}
             onSave={handleSave}
+            onWorkflowDesign={formType === "workflow" ? () => void handleWorkflowDesign() : undefined}
             canEditForm={canEditForm}
             canPublish={canPublish}
             saveMessage={saveMessage}

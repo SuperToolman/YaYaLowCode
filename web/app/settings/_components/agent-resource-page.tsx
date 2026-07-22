@@ -124,8 +124,8 @@ export function AgentResourcePage({ kind }: { kind: Kind }) {
   }
 
   if (kind === "skill") {
-    return <section className="h-full min-h-0 overflow-y-auto px-1 py-2 sm:px-3">
-      <header className="mx-auto max-w-6xl border-b border-[var(--color-border)] pb-5">
+    return <section className="h-full min-h-0 overflow-y-auto p-1">
+      <header className="mx-auto border-b border-[var(--color-border)]">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div><h2 className="text-xl font-semibold text-[var(--color-text-primary)]">Skills</h2><p className="mt-2 max-w-4xl text-sm leading-6 text-[var(--color-text-secondary)]">本地 Skill 配置会作为 Agent 的可复用工作流加载。Skill 只能调用管理员批准的平台工具；外部执行能力仍须通过受控插件提供。</p></div>
           <Button onPress={create}>新建 Skill</Button>
@@ -133,7 +133,7 @@ export function AgentResourcePage({ kind }: { kind: Kind }) {
         <Input aria-label="搜索 Skills" className="mt-4 max-w-sm" placeholder="搜索名称或描述" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
       </header>
       {message ? <p className="mx-auto mt-4 max-w-6xl rounded-md bg-[var(--color-bg-subtle)] p-3 text-sm text-[var(--color-text-primary)]">{message}</p> : null}
-      <div className="mx-auto max-w-6xl py-5">
+      <div className="mx-auto mt-4">
         <div className="space-y-3">
           {visibleItems.map((item) => <SkillPackageCard key={item.id} item={item} selected={item.id === selectedId} onSelect={() => select(item)} onToggle={(enabled) => void setSkillEnabled(item, enabled)} onDelete={() => void remove(item.id)} />)}
           {!visibleItems.length ? <p className="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-10 text-center text-sm text-[var(--color-text-secondary)]">{items.length ? "没有匹配的 Skill" : "尚未安装 Skill"}</p> : null}

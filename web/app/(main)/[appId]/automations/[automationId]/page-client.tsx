@@ -18,21 +18,16 @@ import {
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
-  Background,
   BaseEdge,
   EdgeLabelRenderer,
   getBezierPath,
   Handle,
   MarkerType,
-  MiniMap,
   Position,
-  ReactFlow,
   ReactFlowProvider,
   type Connection,
-  type Edge,
   type EdgeChange,
   type EdgeProps,
-  type Node,
   type NodeChange,
   type NodeProps,
   type OnConnect,
@@ -40,13 +35,14 @@ import {
 } from "@xyflow/react";
 import { Button, Dropdown, Input, ListBox, Select, toast } from "@heroui/react";
 import { Card } from "@heroui/react/card";
-import { Drawer } from "@heroui/react/drawer";
 import { Modal } from "@heroui/react/modal";
 import {
   getAutomationFlow,
   getFormSchema,
   listAutomationFlowVersions,
   listForms,
+  listUsers,
+  restoreAutomationFlowVersion,
   updateAutomationFlow,
   type AutomationFlowVersionSummary,
   type FormSummary,
@@ -69,6 +65,22 @@ import {
   AutomationFormulaEditorModal,
   type AutomationFormulaField,
 } from "../automation-formula-editor-modal";
+import {
+  automationWorkflowNodeRegistry,
+  automationWorkflowPaletteGroups,
+  processWorkflowNodeRegistry,
+  processWorkflowPaletteGroups,
+} from "../automation-workflow-node-registry";
+import {
+  serializeWorkflowGraph,
+  validateWorkflowGraph,
+  validateWorkflowNodeConfigs,
+  type WorkflowGraphEdge,
+  type WorkflowGraphNode,
+  type WorkflowNodeData as WorkflowNodeDataBase,
+} from "../../../../components/workflow-editor/workflow-core";
+import { WorkflowCanvas } from "../../../../components/workflow-editor/workflow-canvas";
+import { WorkflowNodeConfigDrawer } from "../../../../components/workflow-editor/workflow-node-config-drawer";
 
 type AutomationEditorPageClientProps = {
   appId: string;
@@ -83,7 +95,11 @@ type WorkflowNodeKind =
   | "get-one"
   | "get-many"
   | "delete-data"
-  | "http-request";
+  | "http-request"
+  | "approval"
+  | "copy"
+  | "executor"
+  | "end";
 
 type FieldValueType = "value" | "field" | "formula";
 type DataSourceMode = "form" | "data-node" | "related-form";
@@ -190,33 +206,40 @@ type ActionConfig = {
   headersText?: string;
 };
 
+type AssigneeConfig = { assigneeIds?: string[]; assignees?: string[]; approvalMode?: "all" | "any" };
+type CopyConfig = { recipientIds?: string[]; recipients?: string[] };
+type MemberOption = { id: string; displayName: string; status: string };
+
 type WorkflowNodeConfig =
   | TriggerConfig
   | ConditionConfig
   | GetDataConfig
   | AddDataConfig
-  | ActionConfig;
+  | ActionConfig
+  | AssigneeConfig
+  | CopyConfig;
 
-type WorkflowNodeData = {
-  kind: WorkflowNodeKind;
-  label: string;
-  description: string;
-  config: WorkflowNodeConfig;
-};
+type WorkflowNodeData = WorkflowNodeDataBase<
+  WorkflowNodeKind,
+  WorkflowNodeConfig
+>;
 
-type WorkflowNode = Node<WorkflowNodeData>;
+type WorkflowNode = WorkflowGraphNode<WorkflowNodeKind, WorkflowNodeConfig>;
 type PaletteNodeKind = Exclude<WorkflowNodeKind, "trigger">;
 type NodeMenuItem = {
   kind: PaletteNodeKind;
   label: string;
   description: string;
+  group: string;
 };
 type WorkflowEdgeData = {
   onInsert?: (sourceId: string, targetId: string, edgeId: string) => void;
+  [key: string]: unknown;
 };
-type WorkflowEdge = Edge<WorkflowEdgeData>;
+type WorkflowEdge = WorkflowGraphEdge<WorkflowEdgeData>;
 
 type FlowState = {
+  flowType: "trigger" | "process";
   name: string;
   description: string;
   status: AutomationStatus;
@@ -254,26 +277,19 @@ const WorkflowNodeActionsContext = createContext<WorkflowNodeActions>({
   removeConditionBranch: () => undefined,
 });
 
-const dataNodeMenu: Array<{ group: string; items: NodeMenuItem[] }> = [
-  {
-    group: "数据节点",
-    items: [
-      { kind: "add-data" as const, label: "新增数据", description: "写入目标表单的新数据" },
-      { kind: "update-data" as const, label: "更新数据", description: "更新目标表单已有数据" },
-      { kind: "get-one" as const, label: "获取单条数据", description: "按条件查询一条记录" },
-      { kind: "get-many" as const, label: "获取多条数据", description: "按条件查询多条记录" },
-      { kind: "delete-data" as const, label: "删除数据", description: "按条件删除目标表单记录" },
-    ],
-  },
-  {
-    group: "连接器",
-    items: [{ kind: "http-request" as const, label: "连接器", description: "调用外部接口或 Webhook" }],
-  },
-  {
-    group: "分支节点",
-    items: [{ kind: "condition" as const, label: "条件分支", description: "根据表达式判断后续流转" }],
-  },
-];
+const triggerDataNodeMenu: Array<{ group: string; items: NodeMenuItem[] }> =
+  automationWorkflowPaletteGroups.map((group) => ({
+    group: group.group,
+    items: group.items.filter(
+      (item): item is NodeMenuItem => item.kind !== "trigger",
+    ),
+  }));
+
+const processDataNodeMenu: Array<{ group: string; items: NodeMenuItem[] }> =
+  processWorkflowPaletteGroups.map((group) => ({
+    group: group.group,
+    items: group.items.filter((item): item is NodeMenuItem => item.kind !== "trigger"),
+  }));
 
 const placeholderNodeGroups = [
   {
@@ -304,6 +320,10 @@ const nodeTone: Record<WorkflowNodeKind, string> = {
   "get-many": "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]",
   "delete-data": "border-[var(--color-danger)] bg-[var(--color-danger-soft)] text-[var(--color-danger)]",
   "http-request": "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]",
+  approval: "border-[var(--color-warning)] bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
+  copy: "border-[var(--color-info)] bg-[var(--color-info-soft)] text-[var(--color-info)]",
+  executor: "border-[var(--color-success)] bg-[var(--color-success-soft)] text-[var(--color-success)]",
+  end: "border-[var(--color-danger)] bg-[var(--color-danger-soft)] text-[var(--color-danger)]",
 };
 
 export function AutomationEditorPageClient({
@@ -324,6 +344,7 @@ function AutomationEditorSurface({
   const router = useRouter();
   const headerDescriptionRef = useRef<HTMLInputElement | null>(null);
   const [flowState, setFlowState] = useState<FlowState>({
+    flowType: "trigger",
     name: "",
     description: "",
     status: "draft",
@@ -332,6 +353,9 @@ function AutomationEditorSurface({
     triggerEvent: "after_create",
     triggerConfig: {},
   });
+  const [members, setMembers] = useState<MemberOption[]>([]);
+  useEffect(() => { void listUsers({ responseStyle: "fields" }).then((result) => { if (result.data?.code === 0 && result.data.data) setMembers(result.data.data.filter((user) => user.status === "active").map((user) => ({ id: user.id, displayName: user.displayName, status: user.status }))); }); }, []);
+  const dataNodeMenu = flowState.flowType === "process" ? processDataNodeMenu : triggerDataNodeMenu;
   const [forms, setForms] = useState<FormSummary[]>([]);
   const [formSchemas, setFormSchemas] = useState<Record<string, FormSchemaDescriptor>>({});
   const [nodes, setNodes] = useState<WorkflowNode[]>([]);
@@ -473,6 +497,7 @@ function AutomationEditorSurface({
 
       const detail = detailResult.data.data;
       const nextFlowState: FlowState = {
+        flowType: detail.flowType,
         name: detail.name,
         description: detail.description ?? "",
         status: detail.status,
@@ -682,18 +707,15 @@ function AutomationEditorSurface({
     setRestoringVersion(version);
 
     try {
-      const response = await fetch(`/api/automations/${automationId}/versions/${version}/restore`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
+      const { data, error } = await restoreAutomationFlowVersion({
+        path: { automationId, version },
+        body: {
           change_log: `restored from v${version}`,
-        }),
+        },
+        responseStyle: "fields",
       });
-      const payload = await response.json();
 
-      if (!response.ok || payload?.code !== 0 || !payload?.data) {
+      if (error || !data || data.code !== 0 || !data.data) {
         throw new Error("restore automation version failed");
       }
 
@@ -758,11 +780,23 @@ function AutomationEditorSurface({
       handleTriggerConfigChange(key as keyof TriggerConfig, value);
       return;
     }
+    if (key === "assigneesText" && (selectedNode.data.kind === "approval" || selectedNode.data.kind === "executor")) {
+      updateSelectedNodeConfig((config) => ({ ...normalizeAssigneeConfig(config), assignees: value.split(/[，,\n]/).map((item) => item.trim()).filter(Boolean) }));
+      return;
+    }
+    if (key === "recipientsText" && selectedNode.data.kind === "copy") {
+      updateSelectedNodeConfig((config) => ({ ...normalizeCopyConfig(config), recipients: value.split(/[，,\n]/).map((item) => item.trim()).filter(Boolean) }));
+      return;
+    }
 
     updateSelectedNodeConfig((config) => ({
       ...config,
       [key]: value,
     }));
+  }
+
+  function handleProcessMemberIdsChange(key: "assigneeIds" | "recipientIds", ids: string[]) {
+    updateSelectedNodeConfig((config) => ({ ...config, [key]: ids }));
   }
 
   function handleGetNodeSourceModeChange(value: DataSourceMode) {
@@ -1165,6 +1199,34 @@ function AutomationEditorSurface({
     startTransition(async () => {
       try {
         const synchronizedNodes = syncTriggerNode(nodes, flowState, forms);
+        const validationIssues = validateWorkflowGraph(synchronizedNodes, edges, {
+          rootKinds: (flowState.flowType === "process" ? processWorkflowNodeRegistry : automationWorkflowNodeRegistry)
+            .filter((definition) => definition.isRoot)
+            .map((definition) => definition.kind),
+        });
+        if (validationIssues.some((issue) => issue.severity === "error")) {
+          setErrorMessage("工作流存在无效入口、失效连线或循环依赖，无法保存。");
+          return;
+        }
+        const configIssues = validateWorkflowNodeConfigs(
+          synchronizedNodes,
+          flowState.flowType === "process" ? processWorkflowNodeRegistry : automationWorkflowNodeRegistry,
+        );
+        if (flowState.status === "enabled" && !flowState.triggerFormUuid) {
+          configIssues.push({
+            code: "missing-trigger-form",
+            message: "请先选择触发表单",
+            severity: "error",
+            nodeId: "trigger-1",
+          });
+        }
+        if (
+          flowState.status === "enabled" &&
+          configIssues.some((issue) => issue.severity === "error")
+        ) {
+          setErrorMessage(configIssues.find((issue) => issue.severity === "error")?.message ?? "节点配置不完整，无法启用。");
+          return;
+        }
         const payload = serializeWorkflow(synchronizedNodes, edges);
         const { data, error } = await updateAutomationFlow({
           path: { automationId },
@@ -1301,7 +1363,6 @@ function AutomationEditorSurface({
             <Button
               isIconOnly
               aria-label="查看自动化 Schema"
-              title="查看自动化 Schema"
               variant="ghost"
               className="!h-9 !min-h-9 !w-9 !min-w-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
               onPointerDown={(event) => event.stopPropagation()}
@@ -1372,8 +1433,7 @@ function AutomationEditorSurface({
             </div>
           ) : null}
           <WorkflowNodeActionsContext.Provider value={workflowNodeActions}>
-            <ReactFlow<WorkflowNode, WorkflowEdge>
-              fitView
+            <WorkflowCanvas<WorkflowNode, WorkflowEdge>
               nodes={nodes}
               edges={edges}
               edgeTypes={edgeTypes}
@@ -1382,77 +1442,35 @@ function AutomationEditorSurface({
               onConnectEnd={handleConnectEnd}
               onEdgesChange={onEdgesChange}
               onNodesChange={onNodesChange}
-              onNodeClick={(_event, node) => setSelectedNodeId(node.id)}
+              onNodeSelect={(node) => setSelectedNodeId(node.id)}
               onPaneClick={() => setSelectedNodeId(null)}
-              defaultEdgeOptions={{
-                type: "insertable",
-                markerEnd: {
-                  type: MarkerType.ArrowClosed,
-                },
-                style: {
-                  stroke: "var(--color-primary)",
-                  strokeWidth: 1.4,
-                },
-              }}
-              proOptions={{ hideAttribution: true }}
-              className="h-full w-full"
-            >
-              <MiniMap
-                pannable
-                zoomable
-                position="bottom-left"
-                nodeBorderRadius={8}
-                maskColor="var(--color-flow-mask)"
-              />
-              <Background gap={18} size={1} color="var(--color-flow-grid)" />
-            </ReactFlow>
+            />
           </WorkflowNodeActionsContext.Provider>
           {selectedNode ? (
-            <Drawer
+            <WorkflowNodeConfigDrawer
               isOpen
               onOpenChange={(isOpen) => {
                 if (!isOpen) {
                   setSelectedNodeId(null);
                 }
               }}
+              title={selectedNode.data.label}
+              subtitle={`${nodeKindLabel(selectedNode.data.kind)}节点参数`}
+              headerActions={
+                selectedNode.data.kind !== "trigger" ? (
+                  <IconActionButton
+                    ariaLabel="删除节点"
+                    danger
+                    onClick={handleDeleteSelectedNode}
+                  >
+                    <TrashIcon />
+                  </IconActionButton>
+                ) : null
+              }
             >
-              <Drawer.Backdrop isDismissable>
-                <Drawer.Content placement="right">
-                  <Drawer.Dialog className="automation-property-panel w-[430px] max-w-[85vw] overflow-hidden p-0">
-                    <Drawer.Header className="border-b border-[var(--color-border)] bg-[var(--color-control-soft)] px-3 py-2.5">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <Drawer.Heading className="automation-property-title font-semibold text-[var(--color-text-primary)]">
-                            {selectedNode.data.label}
-                          </Drawer.Heading>
-                          <p className="mt-0.5 text-[var(--color-text-secondary)]">
-                            {nodeKindLabel(selectedNode.data.kind)}节点参数
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {selectedNode.data.kind !== "trigger" ? (
-                            <IconActionButton
-                              ariaLabel="删除节点"
-                              danger
-                              onClick={handleDeleteSelectedNode}
-                            >
-                              <TrashIcon />
-                            </IconActionButton>
-                          ) : null}
-                          <Drawer.CloseTrigger
-                            aria-label="关闭属性配置"
-                            className="flex h-8 min-w-8 items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2 text-[var(--color-text-secondary)]"
-                          >
-                            ×
-                          </Drawer.CloseTrigger>
-                        </div>
-                      </div>
-                    </Drawer.Header>
-
-                    <Drawer.Body className="min-h-0 flex-1 overflow-y-auto p-2">
-                      <div className="space-y-2">
                 {selectedNode.data.kind === "trigger" ? (
-                  <PropertyPanelSection title="触发配置" description="工作流名称和说明在左上角双击编辑。">
+                  <PropertyPanelSection title={flowState.flowType === "process" ? "流程起点" : "触发配置"} description="工作流名称和说明在左上角双击编辑。">
+                    {flowState.flowType === "process" ? <div className="rounded-lg bg-[var(--color-bg-subtle)] px-3 py-2 text-sm text-[var(--color-text-primary)]">表单提交时</div> : <>
                     <PropertyField label="触发表单">
                       <Select
                         aria-label="触发表单"
@@ -1514,6 +1532,7 @@ function AutomationEditorSurface({
                         </Select.Popover>
                       </Select>
                     </PropertyField>
+                    </>}
                   </PropertyPanelSection>
                 ) : null}
 
@@ -1551,10 +1570,12 @@ function AutomationEditorSurface({
                   sourceFieldChoices={sourceFieldChoices}
                   triggerEvent={flowState.triggerEvent}
                   triggerFieldOptions={triggerFieldOptions}
+                  members={members}
                   onActionTargetFormChange={handleActionTargetFormChange}
                   onAddDataConfigChange={handleAddDataConfigChange}
                   onAddMappingRow={handleAddMappingRow}
                   onBasicChange={handleBasicNodeConfigChange}
+                  onProcessMemberIdsChange={handleProcessMemberIdsChange}
                   onConditionBranchChange={handleConditionBranchChange}
                   onConditionModeChange={handleConditionModeChange}
                   onMoveConditionBranch={handleMoveConditionBranch}
@@ -1571,12 +1592,7 @@ function AutomationEditorSurface({
                   onRemoveMappingRow={handleRemoveMappingRow}
                   onRowChange={handleMappingRowChange}
                 />
-                      </div>
-                    </Drawer.Body>
-                  </Drawer.Dialog>
-                </Drawer.Content>
-              </Drawer.Backdrop>
-            </Drawer>
+            </WorkflowNodeConfigDrawer>
           ) : null}
         </section>
       </div>
@@ -1984,6 +2000,7 @@ function PropertyField({
 
 function NodeConfigFields({
   forms,
+  members,
   getManySourceOptions,
   multipleSourceFieldChoices,
   node,
@@ -1995,6 +2012,7 @@ function NodeConfigFields({
   onAddDataConfigChange,
   onAddMappingRow,
   onBasicChange,
+  onProcessMemberIdsChange,
   onConditionBranchChange,
   onConditionModeChange,
   onMoveConditionBranch,
@@ -2010,6 +2028,7 @@ function NodeConfigFields({
   onRowChange,
 }: {
   forms: FormSummary[];
+  members: MemberOption[];
   getManySourceOptions: Array<{ id: string; label: string; description: string }>;
   multipleSourceFieldChoices: SourceFieldChoice[];
   node: WorkflowNode;
@@ -2021,6 +2040,7 @@ function NodeConfigFields({
   onAddDataConfigChange: <K extends keyof AddDataConfig>(key: K, value: AddDataConfig[K]) => void;
   onAddMappingRow: () => void;
   onBasicChange: (key: string, value: string) => void;
+  onProcessMemberIdsChange: (key: "assigneeIds" | "recipientIds", ids: string[]) => void;
   onConditionBranchChange: (
     branchId: string,
     key: "name" | "hitLabel" | "expression",
@@ -2048,6 +2068,16 @@ function NodeConfigFields({
   onRowChange: (rowId: string, key: keyof FieldMappingRow, value: string) => void;
 }) {
   const [editingConditionBranchId, setEditingConditionBranchId] = useState<string | null>(null);
+
+  if (node.data.kind === "approval" || node.data.kind === "executor") {
+    const config = normalizeAssigneeConfig(node.data.config);
+    return <PropertyPanelSection title={node.data.kind === "approval" ? "审批配置" : "执行配置"} description="选择系统成员，配置保存为稳定用户 ID。"><PropertyField label={node.data.kind === "approval" ? "审批人" : "执行人"}><Select selectionMode="multiple" value={config.assigneeIds ?? config.assignees ?? []} onChange={(keys) => onProcessMemberIdsChange("assigneeIds", keys.map(String))} shouldCloseOnSelect={false}><Select.Trigger><Select.Value /></Select.Trigger><Select.Popover><ListBox>{members.map((member) => <ListBox.Item key={member.id} id={member.id} textValue={member.displayName}>{member.displayName}</ListBox.Item>)}</ListBox></Select.Popover></Select></PropertyField>{node.data.kind === "approval" ? <PropertyField label="多人处理"><Select selectedKey={config.approvalMode ?? "all"} onSelectionChange={(key) => onBasicChange("approvalMode", String(key))}><Select.Trigger><Select.Value /></Select.Trigger><Select.Popover><ListBox><ListBox.Item id="all" textValue="全部同意">全部同意</ListBox.Item><ListBox.Item id="any" textValue="任一同意">任一同意</ListBox.Item></ListBox></Select.Popover></Select></PropertyField> : null}</PropertyPanelSection>;
+  }
+  if (node.data.kind === "copy") {
+    const config = normalizeCopyConfig(node.data.config);
+    return <PropertyPanelSection title="抄送配置" description="流程经过此节点时会通知指定人员。"><PropertyField label="抄送人"><Select selectionMode="multiple" value={config.recipientIds ?? config.recipients ?? []} onChange={(keys) => onProcessMemberIdsChange("recipientIds", keys.map(String))} shouldCloseOnSelect={false}><Select.Trigger><Select.Value /></Select.Trigger><Select.Popover><ListBox>{members.map((member) => <ListBox.Item key={member.id} id={member.id} textValue={member.displayName}>{member.displayName}</ListBox.Item>)}</ListBox></Select.Popover></Select></PropertyField></PropertyPanelSection>;
+  }
+  if (node.data.kind === "end") return <PropertyPanelSection title="流程结束" description="流程到达此节点后，审批状态将更新为审核通过。" />;
 
   if (node.data.kind === "trigger") {
     const config = normalizeTriggerConfig(node.data.config);
@@ -3422,6 +3452,14 @@ function defaultNodeTemplate(kind: WorkflowNodeKind): WorkflowNodeData {
           bodyTemplate: "",
         } satisfies ActionConfig,
       };
+    case "approval":
+      return { kind, label: "审批人", description: "等待审批人同意或拒绝", config: { assigneeIds: [], approvalMode: "all" } satisfies AssigneeConfig };
+    case "copy":
+      return { kind, label: "抄送人", description: "通知抄送人后自动继续", config: { recipientIds: [] } satisfies CopyConfig };
+    case "executor":
+      return { kind, label: "执行人", description: "等待执行人完成处理", config: { assigneeIds: [] } satisfies AssigneeConfig };
+    case "end":
+      return { kind, label: "结束", description: "完成审批流程", config: {} };
   }
 }
 
@@ -3583,12 +3621,14 @@ function syncTriggerNode(nodes: WorkflowNode[], flowState: FlowState, forms: For
 function buildTriggerNodeData(flowState: FlowState, forms: FormSummary[]): WorkflowNodeData {
   const formName =
     forms.find((form) => form.id === flowState.triggerFormUuid)?.name ?? "未配置表单";
-  const eventLabel =
+  const eventLabel = flowState.flowType === "process"
+    ? "表单提交时"
+    :
     triggerEvents.find((item) => item.id === flowState.triggerEvent)?.label ?? "创建成功后";
 
   return {
     kind: "trigger",
-    label: "表单事件触发",
+    label: flowState.flowType === "process" ? "表单提交时" : "表单事件触发",
     description: `${formName} / ${eventLabel}`,
     config: {
       changedFieldsText: flowState.triggerConfig.changedFieldsText ?? "",
@@ -3609,21 +3649,7 @@ function buildAutomationName(
 }
 
 function serializeWorkflow(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
-  return {
-    nodes: nodes.map((node) => ({
-      id: node.id,
-      type: node.type,
-      position: node.position,
-      data: node.data,
-    })),
-    edges: edges.map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      sourceHandle: edge.sourceHandle,
-      targetHandle: edge.targetHandle,
-    })),
-  };
+  return serializeWorkflowGraph(nodes, edges);
 }
 
 function normalizeFormSchema(schema: Record<string, unknown>): FormSchemaDescriptor {
@@ -3882,6 +3908,10 @@ function normalizeNodeKind(value: unknown): WorkflowNodeKind | "create-record" |
     value === "get-many" ||
     value === "delete-data" ||
     value === "http-request" ||
+    value === "approval" ||
+    value === "copy" ||
+    value === "executor" ||
+    value === "end" ||
     value === "create-record" ||
     value === "update-record" ||
     value === "delete-record"
@@ -3906,6 +3936,13 @@ function normalizeNodeConfigByKind(kind: WorkflowNodeKind, value: unknown): Work
     case "delete-data":
     case "http-request":
       return normalizeActionConfig(value);
+    case "approval":
+    case "executor":
+      return normalizeAssigneeConfig(value);
+    case "copy":
+      return normalizeCopyConfig(value);
+    case "end":
+      return {};
   }
 }
 
@@ -4029,6 +4066,19 @@ function normalizeActionConfig(value: unknown): ActionConfig {
   };
 }
 
+function normalizeAssigneeConfig(value: unknown): AssigneeConfig {
+  const current = isRecord(value) ? value : {};
+  return {
+    assigneeIds: Array.isArray(current.assigneeIds) ? current.assigneeIds.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : Array.isArray(current.assignees) ? current.assignees.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [],
+    approvalMode: current.approvalMode === "any" ? "any" : "all",
+  };
+}
+
+function normalizeCopyConfig(value: unknown): CopyConfig {
+  const current = isRecord(value) ? value : {};
+  return { recipientIds: Array.isArray(current.recipientIds) ? current.recipientIds.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : Array.isArray(current.recipients) ? current.recipients.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [] };
+}
+
 function normalizeFieldMappingRow(value: unknown): FieldMappingRow | null {
   if (!isRecord(value)) {
     return null;
@@ -4099,6 +4149,14 @@ function nodeKindLabel(kind: WorkflowNodeKind) {
       return "删除数据";
     case "http-request":
       return "连接器";
+    case "approval":
+      return "审批人";
+    case "copy":
+      return "抄送人";
+    case "executor":
+      return "执行人";
+    case "end":
+      return "结束";
   }
 }
 

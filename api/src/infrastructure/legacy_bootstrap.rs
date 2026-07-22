@@ -16,6 +16,7 @@ pub(crate) async fn ensure_form_tables(db: &DatabaseConnection) -> Result<(), Ap
           form_uuid varchar(40) NOT NULL UNIQUE,
           name varchar(120) NOT NULL,
           slug varchar(80) NOT NULL,
+          form_type varchar(24) NOT NULL DEFAULT 'normal',
           status varchar(24) NOT NULL,
           draft_schema_version integer NOT NULL DEFAULT 1,
           published_schema_version integer NOT NULL DEFAULT 1,
@@ -27,6 +28,8 @@ pub(crate) async fn ensure_form_tables(db: &DatabaseConnection) -> Result<(), Ap
           ADD COLUMN IF NOT EXISTS draft_schema_version integer NOT NULL DEFAULT 1;
         ALTER TABLE form_definitions
           ADD COLUMN IF NOT EXISTS published_schema_version integer NOT NULL DEFAULT 1;
+        ALTER TABLE form_definitions
+          ADD COLUMN IF NOT EXISTS form_type varchar(24) NOT NULL DEFAULT 'normal';
         UPDATE form_definitions
           SET draft_schema_version = latest_schema_version
           WHERE draft_schema_version IS NULL;
@@ -154,6 +157,10 @@ pub(crate) async fn ensure_automation_tables(db: &DatabaseConnection) -> Result<
           ON automation_flows (trigger_form_uuid, trigger_event);
         ALTER TABLE automation_flows
           ADD COLUMN IF NOT EXISTS current_version integer NOT NULL DEFAULT 1;
+        -- Some development databases recorded the migration before this metadata change.
+        -- Keep startup recovery idempotent until those databases have been upgraded.
+        ALTER TABLE automation_flows
+          ADD COLUMN IF NOT EXISTS flow_type varchar(24) NOT NULL DEFAULT 'trigger';
 
         CREATE TABLE IF NOT EXISTS automation_flow_versions (
           id uuid PRIMARY KEY,

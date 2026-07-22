@@ -25,3 +25,6 @@ pub mod iam_user_email_address_entity;
 pub mod iam_user_entity;
 pub mod iam_user_role_entity;
 pub mod organization_unit_entity;
+pub mod workflow_action_entity;
+pub mod workflow_instance_entity;
+pub mod workflow_task_entity;

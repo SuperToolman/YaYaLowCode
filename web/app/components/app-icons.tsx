@@ -113,6 +113,45 @@ export function ListIcon() {
   );
 }
 
+export function TodoIcon() {
+  return (
+    <IconBase className="h-4 w-4">
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 7.5v4.8l3 1.8" />
+    </IconBase>
+  );
+}
+
+export function ProcessedIcon() {
+  return (
+    <IconBase className="h-4 w-4">
+      <circle cx="9" cy="8" r="2.5" />
+      <path d="M4.5 18c.5-3 2.2-4.5 4.5-4.5 1.2 0 2.2.4 3 1.1" />
+      <path d="m14.5 17 1.7 1.7 3.3-3.7" />
+    </IconBase>
+  );
+}
+
+export function CreatedIcon() {
+  return (
+    <IconBase className="h-4 w-4">
+      <circle cx="9" cy="8" r="2.5" />
+      <path d="M4.5 18c.5-3 2.2-4.5 4.5-4.5s4 1.5 4.5 4.5" />
+      <path d="M16 8h4" />
+      <path d="M18 6v4" />
+    </IconBase>
+  );
+}
+
+export function CopiedIcon() {
+  return (
+    <IconBase className="h-4 w-4">
+      <path d="m4 11.5 15-6-5.8 13-2.3-5.2L4 11.5Z" />
+      <path d="m11 13.3 2.5-2.5" />
+    </IconBase>
+  );
+}
+
 export function GridIcon() {
   return (
     <IconBase className="h-4 w-4">
@@ -278,6 +317,17 @@ export function FormIcon() {
       <path d="M8 8h8" />
       <path d="M8 12h8" />
       <path d="M8 16h5" />
+    </IconBase>
+  );
+}
+
+export function WorkflowFormIcon() {
+  return (
+    <IconBase className="h-4 w-4">
+      <rect x="4" y="4" width="5" height="5" rx="1" />
+      <rect x="15" y="15" width="5" height="5" rx="1" />
+      <path d="M9 6.5h3a3 3 0 0 1 3 3v5.5" />
+      <path d="m13.2 12.8 1.8 2.2 2.2-1.8" />
     </IconBase>
   );
 }

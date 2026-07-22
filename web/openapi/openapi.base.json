@@ -224,6 +224,52 @@
             }
           }
         }
+      },
+      "patch": {
+        "operationId": "reorderNavigationItem",
+        "summary": "Reorder app navigation item",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderNavigationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Wrapped navigation item list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NavigationListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid reorder request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/apps/{appId}/forms": {
@@ -276,6 +322,16 @@
       "post": {
         "operationId": "createForm",
         "summary": "Create blank form",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFormRequest"
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "name": "appId",
@@ -678,6 +734,27 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 100
             }
           }
         ],
@@ -1174,11 +1251,24 @@
           }
         }
       },
+      "CreateFormRequest": {
+        "type": "object",
+        "properties": {
+          "formType": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "workflow"
+            ]
+          }
+        }
+      },
       "FormSummary": {
         "type": "object",
         "required": [
           "id",
           "name",
+          "formType",
           "category",
           "status",
           "latestSchemaVersion",
@@ -1190,6 +1280,13 @@
           },
           "name": {
             "type": "string"
+          },
+          "formType": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "workflow"
+            ]
           },
           "category": {
             "type": "string"
@@ -1993,6 +2090,18 @@
             }
           }
         ]
+      },
+      "ReorderNavigationRequest": {
+        "type": "object",
+        "required": ["item_id", "target_item_id", "placement"],
+        "properties": {
+          "item_id": { "type": "string" },
+          "target_item_id": { "type": "string" },
+          "placement": {
+            "type": "string",
+            "enum": ["before", "after", "inside"]
+          }
+        }
       },
       "ErrorResponse": {
         "allOf": [

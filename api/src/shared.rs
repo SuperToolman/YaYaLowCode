@@ -157,6 +157,7 @@ pub(crate) fn normalize_automation_trigger_event(event: &str) -> Result<String, 
             | "after_update"
             | "before_delete"
             | "after_delete"
+            | "form_submit"
     ) {
         Ok(normalized.to_string())
     } else {
@@ -174,6 +175,7 @@ pub(crate) fn automation_trigger_label(event: &str) -> &'static str {
         "after_update" => "编辑成功后",
         "before_delete" => "删除成功前",
         "after_delete" => "删除成功后",
+        "form_submit" => "表单提交时",
         _ => "未配置",
     }
 }

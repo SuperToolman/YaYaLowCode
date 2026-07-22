@@ -22,6 +22,14 @@ import type {
   FieldPropsChangeHandler,
   PlacedField,
 } from "../../designer-types";
+import {
+  getFormSchema,
+  listApps,
+  listRoles,
+  listUsers,
+} from "../../../../../lib/api-client";
+import { getAppForms } from "../../../../../lib/app-resources";
+import { mapWithConcurrency } from "../../../../../lib/async";
 import { DefaultValueEditor } from "./DefaultValueEditor";
 import { OptionsEditor } from "./OptionsEditor";
 import {
@@ -376,49 +384,59 @@ function AssociationFormProperties({
 
   useEffect(() => {
     if (!isFormPickerOpen || !appId) return;
-    fetch(`/api/apps/${encodeURIComponent(appId)}/forms`, { cache: "no-store" })
-      .then((response) => response.json())
-      .then(
-        (payload: { code: number; data: AssociationFormSummary[] | null }) =>
-          setForms(
-            payload.code === 0
-              ? (payload.data ?? []).filter((form) => form.id !== field.id)
-              : [],
-          ),
-      )
-      .catch(() => setForms([]));
-    if (scope === "cross")
-      fetch("/api/apps", { cache: "no-store" })
-        .then((response) => response.json())
-        .then((payload: { code: number; data: AssociationApp[] | null }) =>
+    let cancelled = false;
+
+    void getAppForms(appId)
+      .then((nextForms) => {
+        if (!cancelled) {
+          setForms(nextForms.filter((form) => form.id !== field.id));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setForms([]);
+      });
+
+    if (scope === "cross") {
+      void listApps({ responseStyle: "fields" })
+        .then(({ data, error }) => {
+          if (cancelled) return;
           setApps(
-            payload.code === 0
-              ? (payload.data ?? []).filter((app) => app.id !== appId)
+            !error && data?.code === 0 && data.data
+              ? data.data.filter((app) => app.id !== appId)
               : [],
-          ),
-        )
-        .catch(() => setApps([]));
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setApps([]);
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
   }, [appId, field.id, isFormPickerOpen, scope]);
 
   useEffect(() => {
     const formId = field.props.associationFormId;
-    Promise.resolve().then(() => {
-      if (!formId) return setSchemaFields([]);
-      return fetch(`/api/forms/${encodeURIComponent(formId)}/schema`, {
-        cache: "no-store",
+    let cancelled = false;
+    if (!formId) {
+      void Promise.resolve().then(() => {
+        if (!cancelled) setSchemaFields([]);
+      });
+    } else void getFormSchema({ path: { formUuid: formId }, responseStyle: "fields" })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        const schema = data?.data?.schema as
+          | { fields?: AssociationSchemaField[] }
+          | undefined;
+        setSchemaFields(!error && data?.code === 0 ? (schema?.fields ?? []) : []);
       })
-        .then((response) => response.json())
-        .then(
-          (payload: {
-            code: number;
-            data: { schema?: { fields?: AssociationSchemaField[] } } | null;
-          }) =>
-            setSchemaFields(
-              payload.code === 0 ? (payload.data?.schema?.fields ?? []) : [],
-            ),
-        )
-        .catch(() => setSchemaFields([]));
-    });
+      .catch(() => {
+        if (!cancelled) setSchemaFields([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [field.props.associationFormId]);
 
   useEffect(() => {
@@ -426,20 +444,16 @@ function AssociationFormProperties({
     const selectedAppId = field.props.associationAppId ?? appId;
     if (!formId || !selectedAppId || field.props.associationFormName) return;
 
-    fetch(`/api/apps/${encodeURIComponent(selectedAppId)}/forms`, {
-      cache: "no-store",
-    })
-      .then((response) => response.json())
-      .then(
-        (payload: { code: number; data: AssociationFormSummary[] | null }) => {
-          const name =
-            payload.code === 0
-              ? payload.data?.find((form) => form.id === formId)?.name
-              : undefined;
-          if (name) setSelectedFormName(name);
-        },
-      )
+    let cancelled = false;
+    void getAppForms(selectedAppId)
+      .then((nextForms) => {
+        const name = nextForms.find((form) => form.id === formId)?.name;
+        if (!cancelled && name) setSelectedFormName(name);
+      })
       .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, [
     appId,
     field.props.associationAppId,
@@ -672,22 +686,20 @@ function CrossAppFormList({
     Record<string, AssociationFormSummary[]>
   >({});
   useEffect(() => {
-    apps.forEach((app) => {
-      if (loaded[app.id]) return;
-      fetch(`/api/apps/${encodeURIComponent(app.id)}/forms`, {
-        cache: "no-store",
-      })
-        .then((response) => response.json())
-        .then(
-          (payload: { code: number; data: AssociationFormSummary[] | null }) =>
-            setLoaded((current) => ({
-              ...current,
-              [app.id]: payload.code === 0 ? (payload.data ?? []) : [],
-            })),
-        )
-        .catch(() => setLoaded((current) => ({ ...current, [app.id]: [] })));
+    let cancelled = false;
+    void mapWithConcurrency(apps, 6, async (app) => {
+      try {
+        return [app.id, await getAppForms(app.id)] as const;
+      } catch {
+        return [app.id, []] as const;
+      }
+    }).then((entries) => {
+      if (!cancelled) setLoaded(Object.fromEntries(entries));
     });
-  }, [apps, loaded]);
+    return () => {
+      cancelled = true;
+    };
+  }, [apps]);
   return (
     <div className="space-y-4">
       {apps.map((app) => (
@@ -1571,8 +1583,6 @@ type IdentityRole = {
   sourceType: string;
   status: string;
 };
-type IdentityResponse<T> = { code: number; data: T | null; message: string };
-
 const MEMBER_SOURCES = [
   { value: "local", label: "本地" },
   { value: "dingtalk", label: "钉钉" },
@@ -1605,25 +1615,29 @@ function MemberProperties({
     const timer = window.setTimeout(() => {
       setLoading(true);
       Promise.all([
-        fetch("/api/identity/users", { cache: "no-store" }).then(
-          async (response) =>
-            (await response.json()) as IdentityResponse<IdentityUser[]>,
-        ),
-        fetch("/api/identity/roles", { cache: "no-store" }).then(
-          async (response) =>
-            (await response.json()) as IdentityResponse<IdentityRole[]>,
-        ),
+        listUsers({ responseStyle: "fields" }),
+        listRoles({ responseStyle: "fields" }),
       ])
         .then(([userResponse, roleResponse]) => {
           if (cancelled) return;
           setUsers(
-            userResponse.code === 0 && userResponse.data
-              ? userResponse.data
+            !userResponse.error &&
+              userResponse.data?.code === 0 &&
+              userResponse.data.data
+              ? userResponse.data.data.map((user) => ({
+                  id: user.id,
+                  displayName: user.displayName,
+                  jobNumber: user.jobNumber ?? null,
+                  sourceType: user.sourceType,
+                  status: user.status,
+                }))
               : [],
           );
           setRoles(
-            roleResponse.code === 0 && roleResponse.data
-              ? roleResponse.data
+            !roleResponse.error &&
+              roleResponse.data?.code === 0 &&
+              roleResponse.data.data
+              ? roleResponse.data.data
               : [],
           );
         })

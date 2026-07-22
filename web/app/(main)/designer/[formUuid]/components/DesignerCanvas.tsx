@@ -435,7 +435,7 @@ function SubformFieldCanvas({ allFields, field, selectedFieldId, onFieldSelect, 
       <div className="flex min-w-0">
         <div className="subform-horizontal-scroll min-w-0 flex-1 overflow-x-auto">
           <div
-            className="grid min-h-[92px] divide-x divide-[var(--color-border)]"
+            className="grid min-h-[68px] divide-x divide-[var(--color-border)]"
             style={{
               gridTemplateColumns: `repeat(${columnCount}, minmax(160px, 1fr))`,
               minWidth: `${columnCount * 160}px`,
@@ -459,7 +459,7 @@ function SubformFieldCanvas({ allFields, field, selectedFieldId, onFieldSelect, 
                 >
                   {nestedField ? (
                     <PlacedDesignerField allFields={allFields} field={nestedField} isSelected={selectedFieldId === nestedField.id} selectedFieldId={selectedFieldId} isTopAligned onResizePointerDown={onResizePointerDown} onResizePointerMove={onResizePointerMove} onResizePointerUp={onResizePointerUp} onSelect={onFieldSelect} />
-                  ) : <div className="flex h-full min-h-20 items-center justify-center text-[10px] text-[var(--color-text-disabled)]">拖入字段</div>}
+                  ) : <div className="flex h-full min-h-[68px] items-center justify-center text-[10px] text-[var(--color-text-disabled)]">拖入字段</div>}
                 </DesignerDropCell>
               );
             })}
@@ -516,7 +516,7 @@ function GroupedFieldCanvas({
   );
 
   return (
-    <div className="flex min-h-full w-full min-w-0 flex-col rounded-lg bg-[var(--color-bg-subtle)] p-1">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col rounded-lg bg-[var(--color-bg-subtle)] p-1">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="min-w-0 truncate text-sm font-semibold text-[var(--color-text-primary)]">
           {field.label}
@@ -528,11 +528,12 @@ function GroupedFieldCanvas({
         ) : null}
       </div>
       <div
-        className="grid min-h-[120px] flex-1 content-start rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-1"
+        className="grid min-h-0 flex-1 content-start rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-1"
         style={{
           gridTemplateColumns: `repeat(${field.colSpan}, minmax(0, 1fr))`,
-          gridAutoRows: "minmax(56px, auto)",
-          gap: 6,
+          gridAutoRows: `minmax(${CELL_MIN_HEIGHT}px, auto)`,
+          columnGap: GRID_COLUMN_GAP,
+          rowGap: GRID_ROW_GAP,
         }}
       >
         {nestedCells.map(({ row, column }) => {

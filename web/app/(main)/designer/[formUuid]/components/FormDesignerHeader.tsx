@@ -22,9 +22,8 @@ export type FormVersionSummary = {
   createdAt: string;
 };
 
-const designerViews = [
+const normalDesignerViews = [
   "表单设计",
-  "流程设计",
   "页面设置",
   "页面发布",
   "数据管理",
@@ -34,6 +33,7 @@ type FormDesignerHeaderProps = {
   appName?: string | null;
   fieldsCount: number;
   formName: string;
+  formType: "normal" | "workflow";
   formUuid: string;
   isEditingFormName: boolean;
   latestVersion: number;
@@ -47,6 +47,7 @@ type FormDesignerHeaderProps = {
   onPublish: () => void;
   onRestoreVersionSelect: (version: number) => void;
   onSave: () => void;
+  onWorkflowDesign?: () => void;
   canEditForm: boolean;
   canPublish: boolean;
   saveMessage?: string;
@@ -56,6 +57,7 @@ export function FormDesignerHeader({
   appName,
   fieldsCount,
   formName,
+  formType,
   formUuid,
   isEditingFormName,
   latestVersion,
@@ -69,11 +71,15 @@ export function FormDesignerHeader({
   onPublish,
   onRestoreVersionSelect,
   onSave,
+  onWorkflowDesign,
   canEditForm,
   canPublish,
   saveMessage,
 }: FormDesignerHeaderProps) {
   const displayedVersions = versions.slice(0, 20);
+  const designerViews = formType === "workflow"
+    ? ["表单设计", "流程设计", ...normalDesignerViews.slice(1)]
+    : normalDesignerViews;
 
   return (
     <Card className="mb-2 shrink-0 border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-5 shadow-[var(--shadow-designer)] backdrop-blur">
@@ -194,6 +200,7 @@ export function FormDesignerHeader({
               <button
                 key={view}
                 type="button"
+                onClick={view === "流程设计" ? onWorkflowDesign : undefined}
                 className={[
                   "h-8 rounded-lg px-3 text-xs transition-colors",
                   index === 0

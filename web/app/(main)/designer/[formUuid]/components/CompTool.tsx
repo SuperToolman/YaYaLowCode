@@ -338,7 +338,6 @@ export function getDefaultDesignerFieldProps(
     return {
       ...commonProps,
       defaultValue: [],
-      description: "可拖入普通字段作为表格列。",
       subformAddButtonText: "新增一项",
       subformButtonState: "normal",
       subformAllowBatchImport: true,

@@ -22,15 +22,22 @@ struct Claims {
 }
 
 pub(crate) async fn authenticate(headers: &HeaderMap, state: &AppState) -> Result<(), AppError> {
-    let user_id = authenticated_user_id(headers)?;
-    let user = iam_user_entity::Entity::find_by_id(user_id)
-        .one(&state.db)
-        .await?
-        .ok_or_else(|| AppError::Forbidden("authentication required".into()))?;
+    let user = current_user(headers, state).await?;
     if user.status != "active" {
         return Err(AppError::Forbidden("user account is disabled".into()));
     }
     Ok(())
+}
+
+pub(crate) async fn current_user(
+    headers: &HeaderMap,
+    state: &AppState,
+) -> Result<iam_user_entity::Model, AppError> {
+    let user_id = authenticated_user_id(headers)?;
+    iam_user_entity::Entity::find_by_id(user_id)
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::Forbidden("authentication required".into()))
 }
 
 pub(crate) async fn grants(

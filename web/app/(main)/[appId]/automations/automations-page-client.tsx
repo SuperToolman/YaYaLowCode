@@ -2,15 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Dropdown, Input, ListBox, Select, Tooltip, toast } from "@heroui/react";
+import { Button, Dropdown, Input, ListBox, Select, Tabs, Tooltip, toast } from "@heroui/react";
 import { AlertDialog } from "@heroui/react/alert-dialog";
 import { Modal } from "@heroui/react/modal";
 import {
   createAutomationFlow,
   deleteAutomationFlow,
+  listAutomationFlowRuns,
   listAutomationFlows,
   listForms,
+  retryAutomationFlowRun,
+  retryAutomationFlowRunNode,
   updateAutomationFlow,
+  type ApiAutomationRun,
+  type ApiAutomationRunNode,
   type AutomationFlow,
   type AutomationFlowList,
   type FormSummary,
@@ -20,44 +25,15 @@ import {
   statusMeta,
   triggerEvents,
   type AutomationStatus,
-  type TriggerEvent,
+  type ManualTriggerEvent,
 } from "./automation-shared";
 
 type AutomationsPageClientProps = {
   appId: string;
 };
 
-type AutomationRunNode = {
-  id: string;
-  nodeKey: string;
-  nodeKind: string;
-  nodeLabel: string;
-  status: string;
-  input: Record<string, unknown> | unknown[] | null;
-  output?: Record<string, unknown> | unknown[] | string | number | boolean | null;
-  errorMessage?: string | null;
-  startedAt: string;
-  finishedAt?: string | null;
-  durationMs?: number | null;
-};
-
-type AutomationRun = {
-  id: string;
-  flowVersion: number;
-  triggerEvent: string;
-  triggerPayload: Record<string, unknown> | null;
-  status: string;
-  retrySource?: string | null;
-  retryRunUuid?: string | null;
-  retryNodeKey?: string | null;
-  errorMessage?: string | null;
-  startedAt: string;
-  finishedAt?: string | null;
-  durationMs?: number | null;
-  nodes: AutomationRunNode[];
-};
-
 type RunLogFilter = "all" | "failed" | "success" | "running";
+type AutomationTypeFilter = "all" | "trigger" | "process";
 
 const emptyAutomationList: AutomationFlowList = {
   items: [],
@@ -73,15 +49,16 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
     useState<AutomationFlowList>(emptyAutomationList);
   const [forms, setForms] = useState<FormSummary[]>([]);
   const [keyword, setKeyword] = useState("");
+  const [typeFilter, setTypeFilter] = useState<AutomationTypeFilter>("all");
   const [errorMessage, setErrorMessage] = useState("");
   const [busyAutomationId, setBusyAutomationId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AutomationFlow | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createFormUuid, setCreateFormUuid] = useState("");
   const [createTriggerEvent, setCreateTriggerEvent] =
-    useState<TriggerEvent>("after_create");
+    useState<ManualTriggerEvent>("after_create");
   const [logsTarget, setLogsTarget] = useState<AutomationFlow | null>(null);
-  const [runLogs, setRunLogs] = useState<AutomationRun[]>([]);
+  const [runLogs, setRunLogs] = useState<ApiAutomationRun[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsFilter, setLogsFilter] = useState<RunLogFilter>("all");
   const [visibleRunCount, setVisibleRunCount] = useState(10);
@@ -158,12 +135,9 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
 
   const filteredAutomations = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase();
-
-    if (!normalizedKeyword) {
-      return automationList.items;
-    }
-
     return automationList.items.filter((flow) => {
+      if (typeFilter !== "all" && flow.flowType !== typeFilter) return false;
+      if (!normalizedKeyword) return true;
       const triggerFormName = flow.triggerFormUuid
         ? formNameByUuid.get(flow.triggerFormUuid)
         : "";
@@ -178,7 +152,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
         .toLowerCase()
         .includes(normalizedKeyword);
     });
-  }, [automationList.items, formNameByUuid, keyword]);
+  }, [automationList.items, formNameByUuid, keyword, typeFilter]);
 
   function openCreateModal() {
     setCreateFormUuid(forms[0]?.id ?? "");
@@ -287,17 +261,14 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
     setVisibleRunCount(10);
     setExpandedJsonKeys({});
     try {
-      const response = await fetch(`/api/automations/${flow.id}/runs`, {
-        cache: "no-store",
+      const { data, error } = await listAutomationFlowRuns({
+        path: { automationId: flow.id },
+        responseStyle: "fields",
       });
-      const payload = await response.json() as {
-        code: number;
-        data: AutomationRun[] | null;
-      };
-      if (!response.ok || payload.code !== 0 || !payload.data) {
+      if (error || !data || data.code !== 0 || !data.data) {
         throw new Error("load automation runs failed");
       }
-      setRunLogs(payload.data);
+      setRunLogs(data.data);
     } catch {
       setRunLogs([]);
       toast.danger("运行日志加载失败");
@@ -309,11 +280,11 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
   async function handleRetryRun(flowId: string, runId: string) {
     setRetryingKey(`run:${runId}`);
     try {
-      const response = await fetch(`/api/automations/${flowId}/runs/${runId}/retry`, {
-        method: "POST",
+      const { data, error } = await retryAutomationFlowRun({
+        path: { automationId: flowId, runId },
+        responseStyle: "fields",
       });
-      const payload = await response.json() as { code: number };
-      if (!response.ok || payload.code !== 0) {
+      if (error || !data || data.code !== 0) {
         throw new Error("retry run failed");
       }
       toast.success("已重新触发自动化");
@@ -330,14 +301,11 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
   async function handleRetryNode(flowId: string, runId: string, nodeKey: string) {
     setRetryingKey(`node:${runId}:${nodeKey}`);
     try {
-      const response = await fetch(
-        `/api/automations/${flowId}/runs/${runId}/nodes/${encodeURIComponent(nodeKey)}/retry`,
-        {
-          method: "POST",
-        },
-      );
-      const payload = await response.json() as { code: number };
-      if (!response.ok || payload.code !== 0) {
+      const { data, error } = await retryAutomationFlowRunNode({
+        path: { automationId: flowId, runId, nodeKey },
+        responseStyle: "fields",
+      });
+      if (error || !data || data.code !== 0) {
         throw new Error("retry node failed");
       }
       toast.success("已发起错误节点重试");
@@ -370,7 +338,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
     [filteredRunLogs, visibleRunCount],
   );
 
-  function sortRunNodes(nodes: AutomationRunNode[]) {
+  function sortRunNodes(nodes: ApiAutomationRunNode[]) {
     return [...nodes].sort((left, right) => {
       if (left.status === right.status) {
         return 0;
@@ -423,11 +391,29 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
         </div>
       </section>
 
-      <section className="grid gap-3 md:grid-cols-4">
-        <Metric label="全部" value={automationList.total} />
-        <Metric label="已启用" value={automationList.enabled} tone="green" />
-        <Metric label="草稿" value={automationList.draft} tone="amber" />
-        <Metric label="已停用" value={automationList.paused} />
+      <section className="flex flex-col gap-3 lg:flex-row">
+        <div className="theme-panel w-full shrink-0 rounded-lg p-3 lg:w-[280px]">
+          <div className="mb-2 text-xs font-medium text-[var(--color-text-secondary)]">自动化类型</div>
+          <Tabs
+            variant="secondary"
+            selectedKey={typeFilter}
+            onSelectionChange={(key) => setTypeFilter(key as AutomationTypeFilter)}
+          >
+            <Tabs.ListContainer>
+              <Tabs.List aria-label="自动化类型筛选" className="w-full">
+                <Tabs.Tab id="all" className="flex-1 px-2 py-2 text-sm">全部<Tabs.Indicator /></Tabs.Tab>
+                <Tabs.Tab id="trigger" className="flex-1 px-2 py-2 text-sm">触发类型<Tabs.Indicator /></Tabs.Tab>
+                <Tabs.Tab id="process" className="flex-1 px-2 py-2 text-sm">流程类型<Tabs.Indicator /></Tabs.Tab>
+              </Tabs.List>
+            </Tabs.ListContainer>
+          </Tabs>
+        </div>
+        <div className="grid flex-1 gap-3 md:grid-cols-4">
+          <Metric label="全部" value={automationList.total} />
+          <Metric label="已启用" value={automationList.enabled} tone="green" />
+          <Metric label="草稿" value={automationList.draft} tone="amber" />
+          <Metric label="已停用" value={automationList.paused} />
+        </div>
       </section>
 
       {errorMessage ? (
@@ -491,7 +477,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
             </table>
           </div>
         ) : (
-          <EmptyState hasKeyword={keyword.trim().length > 0} />
+          <EmptyState hasKeyword={keyword.trim().length > 0 || typeFilter !== "all"} />
         )}
       </section>
 
@@ -535,7 +521,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                       aria-label="触发事件"
                       selectedKey={createTriggerEvent}
                       onSelectionChange={(key) =>
-                        setCreateTriggerEvent(String(key ?? "after_create") as TriggerEvent)
+                        setCreateTriggerEvent(String(key ?? "after_create") as ManualTriggerEvent)
                       }
                     >
                       <Select.Trigger>
@@ -852,7 +838,12 @@ function AutomationRow({
             <FormIcon />
           </span>
           <div className="min-w-0">
-            <div className="truncate font-medium text-[var(--color-text-primary)]">{flow.name}</div>
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="truncate font-medium text-[var(--color-text-primary)]">{flow.name}</div>
+              <span className={flow.flowType === "process" ? "shrink-0 rounded bg-[var(--color-success-soft)] px-1.5 py-0.5 text-[11px] text-[var(--color-success)]" : "shrink-0 rounded bg-[var(--color-bg-subtle)] px-1.5 py-0.5 text-[11px] text-[var(--color-text-secondary)]"}>
+                {flow.flowType === "process" ? "流程类型" : "触发类型"}
+              </span>
+            </div>
             <div className="mt-1 max-w-[300px] truncate text-xs text-[var(--color-text-secondary)]">
               {flow.description || flow.id}
             </div>
@@ -972,7 +963,7 @@ function getTriggerFormName(
 function buildDefaultAutomationName(
   forms: FormSummary[],
   formUuid: string,
-  triggerEvent: TriggerEvent,
+  triggerEvent: ManualTriggerEvent,
 ) {
   const formName = forms.find((form) => form.id === formUuid)?.name ?? "表单";
   const eventLabel =

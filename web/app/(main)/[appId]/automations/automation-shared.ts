@@ -1,9 +1,10 @@
 import type { AutomationFlow } from "../../../lib/api-client";
 
 export type TriggerEvent = AutomationFlow["triggerEvent"];
+export type ManualTriggerEvent = Exclude<TriggerEvent, "form_submit">;
 export type AutomationStatus = AutomationFlow["status"];
 
-export const triggerEvents: Array<{ id: TriggerEvent; label: string }> = [
+export const triggerEvents: Array<{ id: ManualTriggerEvent; label: string }> = [
   { id: "after_create", label: "创建成功后" },
   { id: "before_create", label: "创建成功前" },
   { id: "after_update", label: "编辑成功后" },

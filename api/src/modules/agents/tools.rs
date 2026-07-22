@@ -363,7 +363,7 @@ impl Tool for CreateFormDraftTool {
         if args.name.trim().is_empty() {
             return Err(tool_error("form name is required"));
         }
-        let form = create_blank_form(&self.db, &app_id, Some(args.name))
+        let form = create_blank_form(&self.db, &app_id, Some(args.name), "normal")
             .await
             .map_err(|error| tool_error(format!("form draft creation failed: {error:?}")))?;
         Ok(json!({
