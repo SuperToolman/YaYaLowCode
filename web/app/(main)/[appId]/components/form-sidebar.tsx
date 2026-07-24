@@ -32,6 +32,8 @@ import {
   FolderIcon,
   FolderOpenIcon,
   FormIcon,
+  DetailFormIcon,
+  DefinedPageIcon,
   WorkflowFormIcon,
   LinkIcon,
   CopiedIcon,
@@ -70,7 +72,7 @@ type NavigationItem = {
   sortOrder: number;
   isDefaultEntry: boolean;
   parentId?: string | null;
-  formType?: "normal" | "workflow";
+  formType?: "normal" | "workflow" | "defined" | "detail";
 };
 
 type SidebarNode = {
@@ -82,7 +84,7 @@ type SidebarNode = {
   sortOrder: number;
   targetFormUuid?: string | null;
   pathSlug: string;
-  formType?: "normal" | "workflow";
+  formType?: "normal" | "workflow" | "defined" | "detail";
   children: SidebarNode[];
 };
 
@@ -188,7 +190,7 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
     };
   }, [refreshNavigation, routeAppId]);
 
-  function handleCreateForm(formType: "normal" | "workflow" = "normal") {
+  function handleCreateForm(formType: "normal" | "workflow" | "defined" = "normal") {
     setErrorMessage("");
 
     void (async () => {
@@ -368,6 +370,9 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
                 if (key === "workflow-form") {
                   handleCreateForm("workflow");
                 }
+                if (key === "defined-form") {
+                  handleCreateForm("defined");
+                }
                 if (key === "group") {
                   setCreateGroupOpen(true);
                 }
@@ -378,6 +383,14 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
                   <span className="flex items-center gap-2">
                     <FormIcon />
                     创建普通表单
+                  </span>
+                </Dropdown.Item>
+              ) : null}
+              {canCreateForm ? (
+                <Dropdown.Item id="defined-form" textValue="创建自定义页面">
+                  <span className="flex items-center gap-2">
+                    <DefinedPageIcon />
+                    创建自定义页面
                   </span>
                 </Dropdown.Item>
               ) : null}
@@ -529,7 +542,8 @@ function SidebarTreeItem({
   const paddingLeft = 10 + level * 14;
   const nodeIcon = getSidebarNodeIcon(node.itemType, node.pathSlug, isExpanded, node.formType);
   const nodeIconColor = getSidebarNodeIconColor(node.itemType, node.formType);
-  const isDraggable = node.itemType !== "system";
+  const isDetailForm = node.itemType === "form" && node.formType === "detail";
+  const isDraggable = node.itemType !== "system" && !isDetailForm;
   const { attributes, isDragging, listeners, setNodeRef } = useDraggable({
     id: `navigation-item:${node.id}`,
     data: { kind: "navigation-item", itemId: node.id } satisfies NavigationDragData,
@@ -557,7 +571,7 @@ function SidebarTreeItem({
             : "",
         ].join(" ")}
       >
-        {dragState && dragState.itemId !== node.id && node.itemType !== "system" ? (
+        {dragState && dragState.itemId !== node.id && node.itemType !== "system" && !isDetailForm ? (
           <NavigationItemDropZones node={node} />
         ) : null}
         {node.itemType === "group" ? (
@@ -802,7 +816,7 @@ function getSidebarNodeIcon(
   itemType: NavigationItem["itemType"],
   pathSlug: string,
   isExpanded = false,
-  formType: "normal" | "workflow" | undefined,
+  formType: "normal" | "workflow" | "defined" | "detail" | undefined,
 ) {
   switch (itemType) {
     case "group":
@@ -822,7 +836,10 @@ function getSidebarNodeIcon(
     case "link":
       return <LinkIcon />;
     case "form":
-      return formType === "workflow" ? <WorkflowFormIcon /> : <FormIcon />;
+      if (formType === "workflow") return <WorkflowFormIcon />;
+       if (formType === "defined") return <DefinedPageIcon />;
+       if (formType === "detail") return <DetailFormIcon />;
+      return <FormIcon />;
     default:
       return <FormIcon />;
   }
@@ -830,15 +847,16 @@ function getSidebarNodeIcon(
 
 function getSidebarNodeIconColor(
   itemType: NavigationItem["itemType"],
-  formType?: "normal" | "workflow",
+  formType?: "normal" | "workflow" | "defined" | "detail",
 ) {
   switch (itemType) {
     case "group":
       return "text-[var(--nav-group-icon)]";
     case "form":
-      return formType === "workflow"
-        ? "text-[var(--color-secondary)]"
-        : "text-[var(--nav-form-icon)]";
+      if (formType === "detail") return "text-[var(--form-type-detail-icon-color)]";
+      if (formType === "workflow") return "text-[var(--form-type-workflow-icon-color)]";
+      if (formType === "defined") return "text-[var(--form-type-defined-icon-color)]";
+      return "text-[var(--nav-form-icon)]";
     case "link":
       return "text-[var(--nav-link-icon)]";
     case "system":
@@ -933,7 +951,7 @@ function applyFormTypes(
   forms: Array<{ id: string; formType?: string }>,
 ): NavigationItem[] {
   const typesById = new Map(
-    forms.map((form) => [form.id, form.formType === "workflow" ? "workflow" as const : "normal" as const]),
+    forms.map((form) => [form.id, form.formType === "workflow" ? "workflow" as const : form.formType === "defined" ? "defined" as const : form.formType === "detail" ? "detail" as const : "normal" as const]),
   );
   return navigation.map((item) => ({
     ...item,

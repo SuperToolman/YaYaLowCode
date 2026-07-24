@@ -56,8 +56,24 @@ pub(crate) async fn ensure_form_tables(db: &DatabaseConnection) -> Result<(), Ap
           created_at timestamptz NOT NULL,
           updated_at timestamptz NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS form_detail_definitions (
+          id uuid PRIMARY KEY,
+          detail_form_uuid varchar(40) NOT NULL UNIQUE,
+          source_form_uuid varchar(40) NOT NULL,
+          subform_field_id varchar(160) NOT NULL,
+          title varchar(160) NOT NULL,
+          primary_display_field_id varchar(160),
+          secondary_display_field_id varchar(160),
+          created_at timestamptz NOT NULL,
+          updated_at timestamptz NOT NULL,
+          UNIQUE (source_form_uuid, subform_field_id)
+        );
         CREATE INDEX IF NOT EXISTS idx_form_storage_definitions_mode
           ON form_storage_definitions (storage_mode);
+        ALTER TABLE form_detail_definitions
+          ADD COLUMN IF NOT EXISTS primary_display_field_id varchar(160);
+        ALTER TABLE form_detail_definitions
+          ADD COLUMN IF NOT EXISTS secondary_display_field_id varchar(160);
         "#,
     )
     .await?;
@@ -278,6 +294,10 @@ pub(crate) async fn ensure_agent_tables(db: &DatabaseConnection) -> Result<(), A
             ON agent_sessions (app_route_app_id, updated_at DESC);
         ALTER TABLE agent_sessions
             ADD COLUMN IF NOT EXISTS agent_id VARCHAR(80) NOT NULL DEFAULT 'agent-default';
+        ALTER TABLE agent_sessions
+            ADD COLUMN IF NOT EXISTS source VARCHAR(40) NOT NULL DEFAULT 'general';
+        ALTER TABLE agent_sessions
+            ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN NOT NULL DEFAULT FALSE;
         CREATE INDEX IF NOT EXISTS idx_agent_sessions_agent_id
             ON agent_sessions (agent_id, updated_at DESC);
 
@@ -503,5 +523,27 @@ pub(crate) async fn ensure_identity_tables(db: &DatabaseConnection) -> Result<()
         "#,
     )
     .await?;
+    Ok(())
+}
+
+/// The original migrations all live in `migrator.rs`, so SeaORM records them
+/// under one file-stem name. Keep newly introduced durable data available for
+/// existing installations while the migrations are split into individual files.
+pub(crate) async fn ensure_file_tables(db: &DatabaseConnection) -> Result<(), AppError> {
+    db.execute_unprepared(
+        r#"
+        CREATE TABLE IF NOT EXISTS uploaded_files (
+          id UUID PRIMARY KEY,
+          storage_key TEXT NOT NULL UNIQUE,
+          original_name TEXT NOT NULL,
+          mime_type VARCHAR(255) NOT NULL,
+          byte_size BIGINT NOT NULL,
+          uploaded_by VARCHAR(120) NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL
+        );
+        "#,
+    )
+    .await?;
+
     Ok(())
 }

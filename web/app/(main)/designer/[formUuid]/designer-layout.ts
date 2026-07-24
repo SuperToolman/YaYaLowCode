@@ -37,7 +37,11 @@ const COMPONENT_RESIZE_CAPABILITIES: Record<
   checkbox: { columns: true, rows: true },
   groupContainer: { columns: true, rows: true },
   subform: { columns: false, rows: false },
+  richText: { columns: false, rows: true },
+  serialNumber: { columns: true, rows: false },
   associationFormField: { columns: true, rows: false },
+  countryCity: { columns: true, rows: false },
+  cascader: { columns: true, rows: false },
   multiLineText: { columns: true, rows: true },
 };
 
@@ -113,15 +117,21 @@ export function moveField(
     return fields;
   }
 
-  if (nextParent?.type === "subform" && isContainerFieldType(targetField.type)) {
+  if (
+    nextParent?.type === "subform" &&
+    (isContainerFieldType(targetField.type) || targetField.type === "richText")
+  ) {
     return fields;
   }
 
   const targetRowSpan = nextParent?.type === "subform" ? 1 : targetField.rowSpan;
+  const richTextLayout = getRichTextScopeLayout(nextParent);
   const targetColSpan = targetField.type === "subform"
     ? nextParent?.type === "groupContainer"
       ? nextParent.colSpan
       : COLUMN_COUNT
+    : targetField.type === "richText"
+      ? richTextLayout.colSpan
     : nextParent?.type === "subform"
       ? 1
       : targetField.colSpan;
@@ -129,7 +139,9 @@ export function moveField(
     ? nextParent?.type === "groupContainer"
       ? nextParent.column
       : 0
-    : column;
+    : targetField.type === "richText"
+      ? richTextLayout.column
+      : column;
 
   if (
     targetField.row === row &&
@@ -172,9 +184,9 @@ export function moveField(
     });
   }
 
-  return fields.map((field) =>
+  return normalizeRichTextLayouts(fields.map((field) =>
     field.id === fieldId ? { ...field, row, column: targetColumn, rowSpan: targetRowSpan, colSpan: targetColSpan, parentGroupId: nextParentGroupId } : field,
-  );
+  ));
 }
 
 export type FieldInsertionDirection =
@@ -235,9 +247,9 @@ export function planFieldInsertion(
 
   if (
     (direction === "before-column" || direction === "after-column") &&
-    incoming.type === "subform"
+    (incoming.type === "subform" || incoming.type === "richText" || targetField.type === "richText")
   ) {
-    return invalidInsertionPlan(fields, fallbackTarget, "子表单固定跨全行，请从组件上方或下方插入");
+    return invalidInsertionPlan(fields, fallbackTarget, "富文本固定跨全行，请从组件上方或下方插入");
   }
 
   if (
@@ -252,8 +264,14 @@ export function planFieldInsertion(
     : new Set<string>();
   const draggedFields = fields.filter((field) => ignoredIds.has(field.id));
   const workingFields = fields.filter((field) => !ignoredIds.has(field.id));
+  if (parentField?.type === "subform" && incoming.type === "richText") {
+    return invalidInsertionPlan(fields, fallbackTarget, "富文本不能添加到子表单");
+  }
+
   const normalizedIncoming = parentField?.type === "subform"
     ? { ...incoming, rowSpan: 1, colSpan: 1 }
+    : incoming.type === "richText"
+      ? { ...incoming, ...getRichTextScopeLayout(parentField) }
     : incoming.type === "subform" && parentField?.type === "groupContainer"
       ? { ...incoming, rowSpan: 1, colSpan: parentField.colSpan }
       : incoming;
@@ -279,7 +297,7 @@ function planRowInsertion(
   const parentField = parentGroupId
     ? fields.find((field) => field.id === parentGroupId)
     : null;
-  const targetColumn = incoming.type === "subform"
+  const targetColumn = incoming.type === "subform" || incoming.type === "richText"
     ? parentField?.type === "groupContainer" ? parentField.column : 0
     : Math.min(targetField.column, COLUMN_COUNT - incoming.colSpan);
   const target = {
@@ -554,7 +572,16 @@ function expandContainerToFit(
       currentBottom + deltaRows,
     );
   }
-  return nextFields;
+  return normalizeRichTextLayouts(nextFields);
+}
+
+export function expandGroupToFit(
+  fields: PlacedField[],
+  groupId: string | null,
+  requiredBottom: number,
+) {
+  if (!groupId) return fields;
+  return expandContainerToFit(fields, groupId, requiredBottom);
 }
 
 function invalidInsertionPlan(
@@ -615,25 +642,102 @@ export function resizeField(
       targetField,
       nextRowSpan,
       nextColSpan,
-    ) ||
-    !canPlaceField(
-      fields,
-      targetField.id,
-      targetField.row,
-      targetField.column,
-      nextRowSpan,
-      nextColSpan,
-      targetField.parentGroupId ?? null,
     )
   ) {
     return fields;
   }
 
-  return fields.map((field) =>
+  return planResizeReflow(
+    fields,
+    targetField,
+    nextRowSpan,
+    nextColSpan,
+  );
+}
+
+function planResizeReflow(
+  fields: PlacedField[],
+  targetField: PlacedField,
+  nextRowSpan: number,
+  nextColSpan: number,
+) {
+  const parentGroupId = targetField.parentGroupId ?? null;
+  const parentField = parentGroupId
+    ? fields.find((field) => field.id === parentGroupId)
+    : null;
+  const isSubformChild = parentField?.type === "subform";
+
+  if (
+    (!isSubformChild && targetField.column + nextColSpan > COLUMN_COUNT) ||
+    (parentField?.type === "groupContainer" &&
+      targetField.column + nextColSpan > parentField.column + parentField.colSpan)
+  ) {
+    return fields;
+  }
+
+  let nextFields = fields.map((field) =>
     field.id === targetField.id
       ? { ...field, rowSpan: nextRowSpan, colSpan: nextColSpan }
       : field,
   );
+  const pushQueue: Array<FieldRectangle & { fieldId: string }> = [
+    {
+      row: targetField.row,
+      column: targetField.column,
+      rowSpan: nextRowSpan,
+      colSpan: nextColSpan,
+      fieldId: targetField.id,
+    },
+  ];
+  let pushCount = 0;
+  const maxPushCount = fields.length * fields.length + 10;
+
+  while (pushQueue.length > 0 && pushCount < maxPushCount) {
+    const pusher = pushQueue.shift()!;
+
+    while (true) {
+      const blocker = nextFields
+        .filter(
+          (field) =>
+            field.id !== pusher.fieldId &&
+            (field.parentGroupId ?? null) === parentGroupId &&
+            rectanglesOverlap(pusher, field),
+        )
+        .sort(compareFieldPosition)[0];
+      if (!blocker) break;
+
+      const nextRow = pusher.row + pusher.rowSpan;
+      const deltaRow = Math.max(1, nextRow - blocker.row);
+      nextFields = translateFieldRoots(
+        nextFields,
+        new Set([blocker.id]),
+        deltaRow,
+        0,
+      );
+      const movedBlocker = nextFields.find((field) => field.id === blocker.id)!;
+      pushQueue.push({
+        row: movedBlocker.row,
+        column: movedBlocker.column,
+        rowSpan: movedBlocker.rowSpan,
+        colSpan: movedBlocker.colSpan,
+        fieldId: movedBlocker.id,
+      });
+      pushCount += 1;
+    }
+  }
+
+  if (pushCount >= maxPushCount) return fields;
+
+  if (parentGroupId && parentField?.type === "groupContainer") {
+    const requiredBottom = Math.max(
+      ...nextFields
+        .filter((field) => field.parentGroupId === parentGroupId)
+        .map((field) => field.row + field.rowSpan),
+    );
+    nextFields = expandContainerToFit(nextFields, parentGroupId, requiredBottom);
+  }
+
+  return normalizeRichTextLayouts(nextFields);
 }
 
 function canResizeGroupWithinChildren(
@@ -647,6 +751,7 @@ function canResizeGroupWithinChildren(
   return fields.every(
     (field) =>
       !descendantIds.has(field.id) ||
+      (field.type === "richText" && field.parentGroupId === targetField.id) ||
       (field.row >= targetField.row &&
         field.column >= targetField.column &&
         field.row + field.rowSpan <= targetField.row + nextRowSpan &&
@@ -727,6 +832,8 @@ export function isTopAlignedField(type: DesignerComponentType) {
     type === "checkbox" ||
     type === "attachment" ||
     type === "imageUpload"
+    || type === "serialNumber"
+    || type === "richText"
     || type === "subform"
   );
 }
@@ -740,12 +847,20 @@ export function getInitialFieldLayout(type: DesignerComponentType) {
     return { rowSpan: 1, colSpan: COLUMN_COUNT };
   }
 
+  if (type === "richText" || type === "html" || type === "tsx") {
+    return { rowSpan: 1, colSpan: COLUMN_COUNT };
+  }
+
   if (type === "multiLineText") {
     return { rowSpan: 2, colSpan: 1 };
   }
 
+  if (type === "countryCity") {
+    return { rowSpan: 1, colSpan: 1 };
+  }
+
   if (type === "attachment" || type === "imageUpload") {
-    return { rowSpan: 2, colSpan: 1 };
+    return { rowSpan: 1, colSpan: 1 };
   }
 
   return { rowSpan: 1, colSpan: 1 };
@@ -788,4 +903,35 @@ export function collectGroupDescendantIds(fields: PlacedField[], groupId: string
 
 export function isContainerFieldType(type: DesignerComponentType) {
   return type === "groupContainer" || type === "subform";
+}
+
+export function getRichTextScopeLayout(parent?: PlacedField | null) {
+  return parent?.type === "groupContainer"
+    ? { column: parent.column, colSpan: parent.colSpan }
+    : { column: 0, colSpan: COLUMN_COUNT };
+}
+
+/** Keeps full-width rich-text fields aligned with their current canvas or group. */
+export function normalizeRichTextLayouts(fields: PlacedField[]) {
+  return fields.map((field) => {
+    if (
+      field.type === "attachment"
+      || field.type === "imageUpload"
+      || field.type === "countryCity"
+    ) {
+      // These controls have a fixed one-row height but can still span columns.
+      return field.rowSpan === 1 ? field : { ...field, rowSpan: 1 };
+    }
+
+    if (field.type !== "richText") return field;
+    const parent = field.parentGroupId
+      ? fields.find((candidate) => candidate.id === field.parentGroupId)
+      : null;
+    const validParent = parent?.type === "subform" ? null : parent;
+    return {
+      ...field,
+      ...getRichTextScopeLayout(validParent),
+      parentGroupId: parent?.type === "subform" ? null : field.parentGroupId ?? null,
+    };
+  });
 }

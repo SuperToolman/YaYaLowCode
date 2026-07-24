@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { Key } from "react";
 import { Button, Checkbox, Input, ListBox, Select, Switch, Tabs, TextArea } from "@heroui/react";
 import { Field } from "../_components/field";
+import { SettingsContentCard } from "../_components/settings-content-card";
 import type { AgentConfigProfile, AgentKnowledgeBase, AgentModelProvider, AgentPersona, AgentPlugin, AgentSkill, ApiEnvelope } from "../agent-types";
 
 type Tab = "ai" | "platform" | "plugins" | "skills";
@@ -69,25 +70,25 @@ export default function AgentProfilesPage() {
   }
   async function remove() { if (!selectedId) return; const response = await fetch(`/api/agent/config-profiles/${encodeURIComponent(selectedId)}`, { method: "DELETE" }); const payload = (await response.json()) as ApiEnvelope<unknown>; if (!response.ok) return setMessage(payload.message); setSelectedId(null); setMessage("配置文件已删除"); await load(null); }
 
-  return <section className="grid h-full min-h-0 grid-cols-[220px_minmax(0,1fr)] gap-4">
-    <aside className="theme-panel flex min-h-0 flex-col rounded-[22px] p-3 shadow-[var(--shadow-card)]">
-      <Button fullWidth className="shrink-0" onPress={startCreate}>添加配置文件</Button>
-      <nav className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto">
+  return <SettingsContentCard
+    title="Agent 配置文件"
+    subtitle={`组合模型、人格、平台能力与扩展资源。当前共 ${profiles.length} 个配置文件，平台不会自动创建默认配置。`}
+    bodyScrollable={false}
+    headerActions={<Button onPress={startCreate}>添加配置文件</Button>}
+    footer={<><p className="text-xs text-[var(--color-text-secondary)]">{selectedId ? "正在编辑已有配置文件" : "正在创建新配置文件"}</p><div className="flex gap-2">{selectedId ? <Button variant="ghost" className="text-[var(--color-danger)]" onPress={() => void remove()}>删除</Button> : null}<Button onPress={() => void save()}>保存配置</Button></div></>}
+  >
+    <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[160px_minmax(0,1fr)] overflow-hidden rounded-lg border border-[var(--color-border)] lg:grid-cols-[210px_minmax(0,1fr)] lg:grid-rows-1">
+    <aside className="flex min-h-0 flex-col border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-2 lg:border-b-0 lg:border-r">
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto">
         {profiles.map((item) => <Button key={item.id} fullWidth variant="ghost" onPress={() => selectProfile(item)} className={`h-auto min-h-0 justify-start rounded-xl px-3 py-2.5 text-left ${selectedId === item.id ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]" : "text-[var(--color-text-primary)]"}`}><span className="min-w-0"><span className="block truncate text-sm font-medium">{item.name}</span><span className="mt-0.5 block truncate text-[10px] text-[var(--color-text-secondary)]">{providers.find((provider) => provider.id === item.providerId)?.name ?? "未选择模型提供商"}</span></span></Button>)}
       </nav>
     </aside>
 
-    <Tabs variant="secondary" selectedKey={tab} onSelectionChange={(key) => setTab(key as Tab)} className="theme-panel flex min-h-0 flex-col overflow-hidden rounded-[22px] shadow-[var(--shadow-card)]">
+    <Tabs variant="secondary" selectedKey={tab} onSelectionChange={(key) => setTab(key as Tab)} className="flex min-h-0 flex-col overflow-hidden bg-[var(--color-bg-surface)]">
       <header className="shrink-0 border-b border-[var(--color-border)] px-5 py-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0 flex-1">
+        <div className="min-w-0 max-w-xl">
             <Input aria-label="配置文件名称" fullWidth className="max-w-md text-lg font-semibold" value={form.name} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} />
             <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{selectedId ? "编辑配置文件" : "正在创建新配置文件"}</p>
-          </div>
-          <div className="flex gap-2">
-            {selectedId ? <Button variant="ghost" className="text-[var(--color-danger)]" onPress={() => void remove()}>删除</Button> : null}
-            <Button onPress={() => void save()}>保存</Button>
-          </div>
         </div>
         <Tabs.ListContainer className="mt-4 overflow-x-auto">
           <Tabs.List aria-label="配置文件设置" className="min-w-max">
@@ -103,7 +104,8 @@ export default function AgentProfilesPage() {
         {message ? <p className="mt-4 rounded-lg bg-[var(--color-bg-subtle)] p-3 text-sm">{message}</p> : null}
       </div>
     </Tabs>
-  </section>;
+    </div>
+  </SettingsContentCard>;
 }
 
 function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) { return <section className="mb-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4"><h3 className="text-sm font-semibold">{title}</h3>{description ? <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">{description}</p> : null}<div className="mt-4 space-y-4">{children}</div></section>; }

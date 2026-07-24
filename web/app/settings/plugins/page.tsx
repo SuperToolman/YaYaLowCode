@@ -1,2 +1,2 @@
-import { AgentResourcePage } from "../_components/agent-resource-page";
-export default function PluginsPage() { return <AgentResourcePage kind="plugin" />; }
+import { AgentResourceSettingsContent } from "../_components/agent-resource-settings-content";
+export default function PluginsPage() { return <AgentResourceSettingsContent kind="plugin" />; }

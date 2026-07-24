@@ -8,7 +8,8 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use crate::modules::{
-    agent_config, agents, apps, automations, dingtalk, forms, identity, navigation, settings, workflows,
+    agent_config, agents, apps, automations, dingtalk, files, forms, identity, locations,
+    navigation, settings, workflows,
 };
 use crate::openapi;
 use crate::platform::{authorization, error::AppError, runtime::AppState};
@@ -22,14 +23,29 @@ pub(crate) fn build(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(health_check))
         .route("/openapi.json", get(openapi::openapi_json))
+        .route(
+            "/api/locations",
+            get(locations::list_locations).post(locations::import_locations),
+        )
+        .route("/api/files/upload", post(files::upload_file))
+        .route("/api/files/{file_id}/download", get(files::download_file))
         .route("/api/authorization/grants", get(authorization::get_grants))
         .route(
             "/api/settings/database",
             get(settings::get_database_settings).put(settings::update_database_settings),
         )
         .route(
+            "/api/settings/database/test",
+            post(settings::test_database_connection),
+        )
+        .route(
             "/api/settings/agent",
             get(settings::get_agent_settings).put(settings::update_agent_settings),
+        )
+        .route(
+            "/api/settings/agent-assistant",
+            get(settings::get_platform_agent_assistant_settings)
+                .put(settings::update_platform_agent_assistant_settings),
         )
         .route(
             "/api/agent/providers",
@@ -71,6 +87,10 @@ pub(crate) fn build(state: AppState) -> Router {
         .route(
             "/api/agent/skills",
             get(agent_config::list_skills).post(agent_config::create_skill),
+        )
+        .route(
+            "/api/agent/skills/import",
+            post(agent_config::import_skill),
         )
         .route(
             "/api/agent/skills/{id}",
@@ -151,6 +171,10 @@ pub(crate) fn build(state: AppState) -> Router {
             "/api/agent/sessions/{session_uuid}/messages",
             get(agents::list_agent_messages).post(agents::send_agent_message),
         )
+        .route(
+            "/api/agent/sessions/{session_uuid}",
+            axum::routing::patch(agents::update_agent_session).delete(agents::delete_agent_session),
+        )
         .route("/api/apps", get(apps::list_apps).post(apps::create_app))
         .route(
             "/api/apps/{app_id}",
@@ -209,11 +233,34 @@ pub(crate) fn build(state: AppState) -> Router {
             post(automations::retry_automation_flow_run_node),
         )
         .route("/api/forms/{form_uuid}/schema", get(forms::get_form_schema))
-        .route("/api/forms/{form_uuid}/records/{record_uuid}/workflow", get(workflows::get_workflow_record_runtime))
-        .route("/api/forms/{form_uuid}/records/{record_uuid}/workflow/submit", post(workflows::submit_workflow_record))
-        .route("/api/forms/{form_uuid}/records/{record_uuid}/workflow/reverse", post(workflows::reverse_workflow_record))
-        .route("/api/workflow/tasks/{task_uuid}/approve", post(workflows::approve_workflow_task))
-        .route("/api/workflow/tasks/{task_uuid}/reject", post(workflows::reject_workflow_task))
+        .route(
+            "/api/forms/{form_uuid}/detail-forms",
+            get(forms::list_detail_forms).post(forms::create_detail_form),
+        )
+        .route(
+            "/api/forms/{form_uuid}/workflow/process",
+            post(forms::ensure_workflow_process_flow),
+        )
+        .route(
+            "/api/forms/{form_uuid}/records/{record_uuid}/workflow",
+            get(workflows::get_workflow_record_runtime),
+        )
+        .route(
+            "/api/forms/{form_uuid}/records/{record_uuid}/workflow/submit",
+            post(workflows::submit_workflow_record),
+        )
+        .route(
+            "/api/forms/{form_uuid}/records/{record_uuid}/workflow/reverse",
+            post(workflows::reverse_workflow_record),
+        )
+        .route(
+            "/api/workflow/tasks/{task_uuid}/approve",
+            post(workflows::approve_workflow_task),
+        )
+        .route(
+            "/api/workflow/tasks/{task_uuid}/reject",
+            post(workflows::reject_workflow_task),
+        )
         .route(
             "/api/forms/{form_uuid}/views",
             get(forms::list_form_views).post(forms::create_form_view),

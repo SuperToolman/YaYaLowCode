@@ -29,6 +29,16 @@ import {
   LinkIcon as AppLinkIcon,
   MessageIcon,
 } from "../../../../components/app-icons";
+import type { CountryCityValue } from "../../../../lib/location-catalog";
+import {
+  DEFAULT_CASCADER_DATA_SOURCE,
+  getCascaderLabel,
+  getCascaderPathByValue,
+  normalizeCascaderDataSource,
+  serializeCascaderLabel,
+  serializeCascaderValue,
+  type CascaderOption,
+} from "../../../../lib/cascader-data-source";
 
 export const COMPONENT_GROUPS = [
   { key: "basic", label: "基础" },
@@ -53,10 +63,52 @@ export const DESIGNER_COMPONENTS = [
     group: "advanced",
   },
   {
+    type: "richText",
+    label: "富文本",
+    placeholder: "",
+    icon: "富",
+    group: "advanced",
+  },
+  {
+    type: "html",
+    label: "HTML 组件",
+    placeholder: "可运行 HTML、script 与 link",
+    icon: "H",
+    group: "advanced",
+  },
+  {
+    type: "tsx",
+    label: "TSX 组件",
+    placeholder: "受控 TSX 组件",
+    icon: "T",
+    group: "advanced",
+  },
+  {
+    type: "serialNumber",
+    label: "流水号",
+    placeholder: "自动生成",
+    icon: "序",
+    group: "advanced",
+  },
+  {
     type: "associationFormField",
     label: "关联表单",
     placeholder: "请选择关联记录",
     icon: "关",
+    group: "advanced",
+  },
+  {
+    type: "countryCity",
+    label: "国家/地区",
+    placeholder: "请选择国家/地区",
+    icon: "地",
+    group: "advanced",
+  },
+  {
+    type: "cascader",
+    label: "级联选择",
+    placeholder: "请选择",
+    icon: "级",
     group: "advanced",
   },
   {
@@ -186,13 +238,20 @@ export type DesignerFieldOption = {
   value: string;
 };
 
-export type DesignerDefaultValueType = "custom" | "formula" | "linkage";
+export type DesignerDefaultValueType = "none" | "custom" | "formula" | "linkage";
+export type DesignerTitlePosition = "top" | "left" | "inside";
+export type SerialNumberRule =
+  | { id: string; type: "autoCount"; digits: number; fixedDigits: boolean; resetPeriod: "never" | "daily" | "monthly" | "yearly"; initialValue: number }
+  | { id: string; type: "fixedText"; value: string }
+  | { id: string; type: "submittedDate"; format: "year" | "yearMonth" | "yearMonthDay" | "yearMonthDayHourMinute" | "yearMonthDayHourMinuteSecond" }
+  | { id: string; type: "formField"; fieldId: string; fallback: string };
 
 export type DesignerFieldProps = {
+  titlePosition?: DesignerTitlePosition;
   placeholder?: string;
   description?: string;
   defaultValueType?: DesignerDefaultValueType;
-  defaultValue?: string | number | string[];
+  defaultValue?: string | number | string[] | CountryCityValue;
   defaultValueFormula?: string;
   defaultValueLinkage?: string;
   isDisabled?: boolean;
@@ -212,6 +271,7 @@ export type DesignerFieldProps = {
   buttonText?: string;
   accept?: string;
   multiple?: boolean;
+  maxFileSizeMb?: number;
   subformAddButtonText?: string;
   subformButtonState?: "normal" | "disabled" | "hidden";
   subformAllowBatchImport?: boolean;
@@ -237,6 +297,11 @@ export type DesignerFieldProps = {
   subformActionColumnWidth?: number;
   subformAllowCustomColumns?: boolean;
   subformEnableTotals?: boolean;
+  serialNumberDigits?: number;
+  serialNumberFixedDigits?: boolean;
+  serialNumberResetPeriod?: "never" | "daily" | "monthly" | "yearly";
+  serialNumberInitialValue?: number;
+  serialNumberRules?: SerialNumberRule[];
   associationFormId?: string;
   associationFormName?: string;
   associationAppId?: string;
@@ -260,6 +325,10 @@ export type DesignerFieldProps = {
   memberUserIds?: string[];
   memberDisplayFormat?: "name" | "nameJobNumber" | "nameUserId";
   memberMultiple?: boolean;
+  locationDepth?: number;
+  dataSource?: CascaderOption[];
+  code?: string;
+  allowedResourceOrigins?: string[];
 };
 
 const DEFAULT_OPTIONS: DesignerFieldOption[] = [
@@ -306,6 +375,7 @@ export function getDefaultDesignerFieldProps(
 ): DesignerFieldProps {
   const component = getDesignerComponent(type);
   const commonProps = {
+    titlePosition: "top" as DesignerTitlePosition,
     description: "",
     defaultValueFormula: "",
     defaultValueLinkage: "",
@@ -329,15 +399,19 @@ export function getDefaultDesignerFieldProps(
 
   if (type === "groupContainer") {
     return {
-      ...commonProps,
+      titlePosition: "top" as DesignerTitlePosition,
       description: "用于收纳子组件的分组容器。",
+      isDisabled: false,
+      isHidden: false,
+      isReadOnly: false,
+      isRequired: false,
     };
   }
 
   if (type === "subform") {
     return {
       ...commonProps,
-      defaultValue: [],
+      defaultValueType: "none",
       subformAddButtonText: "新增一项",
       subformButtonState: "normal",
       subformAllowBatchImport: true,
@@ -366,6 +440,52 @@ export function getDefaultDesignerFieldProps(
     };
   }
 
+  if (type === "richText") {
+    return {
+      description: "",
+      isDisabled: false,
+      isHidden: false,
+      isReadOnly: false,
+      isRequired: false,
+    };
+  }
+
+  if (type === "html") {
+    return {
+      description: "在隔离运行时中执行。外部 script 与 stylesheet 需要显式授权来源。",
+      code: "<div class=\"custom-html-card\">\n  <strong>HTML 组件</strong>\n  <p>可通过 ctx.form 读写表单字段。</p>\n</div>",
+      allowedResourceOrigins: [],
+    };
+  }
+
+  if (type === "tsx") {
+    return {
+      description: "TSX 会在隔离运行时中执行，并只能通过 ctx.form 操作表单字段。",
+      code: "function render(ctx) {\n  return <div className=\"custom-tsx-card\">\n    <strong>TSX 组件</strong>\n    <button onClick={() => ctx.form.setValue('singleLineText-1', '已更新')}>更新字段</button>\n  </div>;\n}",
+      allowedResourceOrigins: [],
+    };
+  }
+
+  if (type === "serialNumber") {
+    return {
+      ...commonProps,
+      defaultValueType: "none",
+      placeholder: component.placeholder,
+      serialNumberDigits: 4,
+      serialNumberFixedDigits: true,
+      serialNumberResetPeriod: "never",
+      serialNumberInitialValue: 1,
+      serialNumberRules: [{
+        id: "auto-count",
+        type: "autoCount",
+        digits: 4,
+        fixedDigits: true,
+        resetPeriod: "never",
+        initialValue: 1,
+      }],
+    };
+  }
+
   if (type === "associationFormField") {
     return {
       ...commonProps,
@@ -380,6 +500,36 @@ export function getDefaultDesignerFieldProps(
       associationFills: [],
       associationSubformFills: [],
       associationSorts: [],
+    };
+  }
+
+  if (type === "countryCity") {
+    return {
+      ...commonProps,
+      defaultValue: { code: "", depth: 0, path: [] },
+      placeholder: component.placeholder,
+      locationDepth: 3,
+    };
+  }
+
+  if (type === "cascader") {
+    return {
+      ...commonProps,
+      defaultValue: "",
+      placeholder: component.placeholder,
+      dataSource: normalizeCascaderDataSource(DEFAULT_CASCADER_DATA_SOURCE),
+    };
+  }
+
+  if (type === "attachment" || type === "imageUpload") {
+    return {
+      ...commonProps,
+      defaultValueType: "none",
+      accept: type === "imageUpload" ? "image/*" : "",
+      buttonText: type === "imageUpload" ? "上传图片" : "上传附件",
+      multiple: false,
+      maxFileSizeMb: 20,
+      placeholder: component.placeholder,
     };
   }
 
@@ -469,26 +619,6 @@ export function getDefaultDesignerFieldProps(
     };
   }
 
-  if (type === "attachment") {
-    return {
-      ...commonProps,
-      accept: "",
-      buttonText: "上传附件",
-      multiple: true,
-      placeholder: component.placeholder,
-    };
-  }
-
-  if (type === "imageUpload") {
-    return {
-      ...commonProps,
-      accept: "image/*",
-      buttonText: "上传图片",
-      multiple: true,
-      placeholder: component.placeholder,
-    };
-  }
-
   if (type === "button") {
     return {
       ...commonProps,
@@ -507,9 +637,10 @@ export function getDefaultDesignerFieldProps(
 
 type CompToolProps = {
   embedded?: boolean;
+  allowCustomComponents?: boolean;
 };
 
-export function CompTool({ embedded = false }: CompToolProps) {
+export function CompTool({ embedded = false, allowCustomComponents = false }: CompToolProps) {
   const [searchKeyword, setSearchKeyword] = useState("");
   const normalizedKeyword = searchKeyword.trim();
   const groupedComponents = useMemo(
@@ -519,10 +650,11 @@ export function CompTool({ embedded = false }: CompToolProps) {
         components: DESIGNER_COMPONENTS.filter(
           (component) =>
             component.group === group.key &&
+            (allowCustomComponents || (component.type !== "html" && component.type !== "tsx")) &&
             component.label.includes(normalizedKeyword),
         ),
       })),
-    [normalizedKeyword],
+    [allowCustomComponents, normalizedKeyword],
   );
 
   const content = (
@@ -634,6 +766,10 @@ function ComponentPaletteIcon({
     return <GridIcon />;
   }
 
+  if (type === "serialNumber") {
+    return <span className="text-[11px] font-semibold">#</span>;
+  }
+
   if (type === "associationFormField") {
     return <FormIcon />;
   }
@@ -726,6 +862,11 @@ export function FieldPreview({
           <div className="grid grid-cols-3 divide-x divide-[var(--color-border)] text-center text-xs text-[var(--color-text-secondary)]"><span className="p-2">字段列</span><span className="p-2">字段列</span><span className="p-2">操作</span></div>
         </div>
       ) : null}
+      {type === "serialNumber" ? (
+        <div className="flex h-10 items-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 font-mono text-sm text-[var(--color-text-primary)]">
+          {formatSerialNumberPreview(fieldProps)}
+        </div>
+      ) : null}
       {type === "associationFormField" ? (
         <div className="flex h-10 w-full items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 text-sm text-[var(--color-text-disabled)]"><span>{fieldProps.associationPrimaryFieldId ? "已配置关联表单" : placeholder}</span><span>⌄</span></div>
       ) : null}
@@ -750,6 +891,12 @@ export function FieldPreview({
         <p className="rounded-xl bg-[var(--color-bg-subtle)] px-3 py-2 text-sm leading-6 text-[var(--color-text-secondary)]">
           {textDefaultValue || placeholder}
         </p>
+      ) : null}
+      {type === "html" || type === "tsx" ? (
+        <div className="rounded-md border border-dashed border-[var(--color-primary)] bg-[var(--color-bg-subtle)] px-3 py-4 text-xs text-[var(--color-text-secondary)]">
+          <strong className="block text-sm text-[var(--color-text-primary)]">{type === "html" ? "HTML 组件" : "TSX 组件"}</strong>
+          <span className="mt-1 block">将在预览和运行时的隔离容器中执行。</span>
+        </div>
       ) : null}
       {type === "multiLineText" ? (
         <div className="relative min-h-20 flex-1">
@@ -849,6 +996,15 @@ export function FieldPreview({
           isRequired={fieldProps.isRequired}
         />
       ) : null}
+      {type === "cascader" ? (
+        <CascaderPreview
+          label={label}
+          placeholder={placeholder}
+          value={choiceDefaultValue}
+          options={normalizeCascaderDataSource(fieldProps.dataSource)}
+          isDisabled={fieldProps.isDisabled}
+        />
+      ) : null}
       {type === "multiSelect" ? (
         <MultiSelectPreview
           label={label}
@@ -907,6 +1063,44 @@ export function FieldPreview({
       ) : null}
     </div>
   );
+}
+
+function CascaderPreview({ label, placeholder, value, options, isDisabled }: { label: string; placeholder: string; value: string; options: CascaderOption[]; isDisabled?: boolean }) {
+  const [selectedValue, setSelectedValue] = useState(value);
+  const [path, setPath] = useState<string[]>([]);
+  const selectedPath = getCascaderPathByValue(options, selectedValue);
+  const columns = [options, ...path.map((item) => {
+    const optionPath = getCascaderPathByValue(options, item);
+    return optionPath[optionPath.length - 1]?.children ?? [];
+  })].filter((items) => items.length > 0);
+
+  return <div className="relative"><Select aria-label={label} selectedKey={selectedValue || null} isDisabled={isDisabled} fullWidth>
+    <Select.Trigger><Select.Value>{selectedPath.length > 0 ? serializeCascaderLabel(selectedPath) : placeholder}</Select.Value><Select.Indicator /></Select.Trigger>
+    <Select.Popover><div className="flex max-w-full overflow-x-auto p-1">{columns.map((items, index) => <div key={index} className="min-w-32 border-r border-[var(--color-border)] last:border-r-0">{items.map((option) => <Button key={option.value} variant="ghost" size="sm" fullWidth className="justify-between" onPress={() => option.children?.length ? setPath((current) => [...current.slice(0, index), option.value]) : setSelectedValue(serializeCascaderValue(getCascaderPathByValue(options, option.value)))}>{getCascaderLabel(option.label)}{option.children?.length ? <span>&gt;</span> : null}</Button>)}</div>)}</div></Select.Popover>
+  </Select></div>;
+}
+
+function formatSerialNumberPreview(props: DesignerFieldProps) {
+  if (props.serialNumberRules?.length) {
+    return props.serialNumberRules.map((rule) => {
+      if (rule.type === "fixedText") return rule.value;
+      if (rule.type === "formField") return "{字段}";
+      if (rule.type === "submittedDate") return formatSerialDate(new Date(), rule.format);
+      return rule.fixedDigits ? String(rule.initialValue).padStart(rule.digits, "0") : String(rule.initialValue);
+    }).join("");
+  }
+  const initialValue = Math.max(1, Math.trunc(props.serialNumberInitialValue ?? 1));
+  if (!props.serialNumberFixedDigits) return String(initialValue);
+  return String(initialValue).padStart(Math.max(1, props.serialNumberDigits ?? 4), "0");
+}
+
+function formatSerialDate(date: Date, format: Extract<SerialNumberRule, { type: "submittedDate" }>["format"]) {
+  const day = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
+  if (format === "year") return String(date.getFullYear());
+  if (format === "yearMonth") return day.slice(0, 6);
+  if (format === "yearMonthDay") return day;
+  const time = `${String(date.getHours()).padStart(2, "0")}${String(date.getMinutes()).padStart(2, "0")}`;
+  return format === "yearMonthDayHourMinute" ? `${day}${time}` : `${day}${time}${String(date.getSeconds()).padStart(2, "0")}`;
 }
 
 export function normalizeFieldOptions(

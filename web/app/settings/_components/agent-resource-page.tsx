@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Checkbox, Input, Select, Switch, TextArea } from "@heroui/react";
 import { Field } from "./field";
 import type { ApiEnvelope } from "../agent-types";
@@ -58,6 +58,7 @@ export function AgentResourcePage({ kind }: { kind: Kind }) {
   const [message, setMessage] = useState("");
   const [query, setQuery] = useState("");
   const [platformTools, setPlatformTools] = useState<PlatformTool[]>([]);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const visibleItems = useMemo(() => {
     const keyword = query.trim().toLocaleLowerCase();
@@ -123,12 +124,29 @@ export function AgentResourcePage({ kind }: { kind: Kind }) {
     if (selectedId === id) select(updated);
   }
 
+  async function importSkill(file: File) {
+    if (!file.name.toLocaleLowerCase().endsWith(".zip")) {
+      setMessage("请选择 .zip 格式的 Skill 压缩包");
+      return;
+    }
+    const body = new FormData();
+    body.append("file", file);
+    const response = await fetch("/api/agent/skills/import", { method: "POST", body });
+    const payload = (await response.json()) as ApiEnvelope<Resource>;
+    if (!response.ok || !payload.data) {
+      setMessage(payload.message || "Skill 导入失败");
+      return;
+    }
+    setMessage(`已导入 Skill：${payload.data.name}`);
+    await load(payload.data.id);
+  }
+
   if (kind === "skill") {
     return <section className="h-full min-h-0 overflow-y-auto p-1">
       <header className="mx-auto border-b border-[var(--color-border)]">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div><h2 className="text-xl font-semibold text-[var(--color-text-primary)]">Skills</h2><p className="mt-2 max-w-4xl text-sm leading-6 text-[var(--color-text-secondary)]">本地 Skill 配置会作为 Agent 的可复用工作流加载。Skill 只能调用管理员批准的平台工具；外部执行能力仍须通过受控插件提供。</p></div>
-          <Button onPress={create}>新建 Skill</Button>
+          <div className="flex gap-2"><input ref={importInputRef} className="sr-only" type="file" accept=".zip,application/zip" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void importSkill(file); }} /><Button variant="secondary" onPress={() => importInputRef.current?.click()}>导入 ZIP</Button><Button onPress={create}>新建 Skill</Button></div>
         </div>
         <Input aria-label="搜索 Skills" className="mt-4 max-w-sm" placeholder="搜索名称或描述" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
       </header>

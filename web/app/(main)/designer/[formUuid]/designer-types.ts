@@ -83,6 +83,15 @@ export type DesignerDataSource = {
   description?: string;
 };
 
+export type DesignerPageAsset = {
+  id: string;
+  name: string;
+  type: "script" | "style";
+  url: string;
+  integrity?: string;
+  enabled: boolean;
+};
+
 export type DesignerFieldAction = {
   id: string;
   fieldId: string;
@@ -126,6 +135,7 @@ export type PageDesignerProps = {
   afterDataInitActions: PageNamedRule[];
   dataSourceCode: string;
   dataSources: DesignerDataSource[];
+  assets: DesignerPageAsset[];
   indexedFieldIds: string[];
   actionPanel: DesignerActionPanelState;
   agent: DesignerAgentConfig;

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button, Input, Modal, Switch, Tabs } from "@heroui/react";
 import { Field } from "../_components/field";
+import { SettingsContentCard } from "../_components/settings-content-card";
 
 type ProviderTab = "local" | "dingtalk" | "wecom" | "feishu";
 type ApiEnvelope<T> = { code: number; message: string; data: T | null };
@@ -227,22 +228,23 @@ export default function IdentitySourceSettingsPage() {
   }
 
   return (
-    <section className="theme-panel h-full min-h-0 overflow-hidden rounded-[24px] shadow-[var(--shadow-card)]">
+    <SettingsContentCard
+      title="身份源设置"
+      subtitle="配置平台账号或第三方组织身份源。所有配置由后端保存，修改后立即生效。"
+      className="p-0"
+      headerClassName="px-6 pt-6"
+      bodyClassName="mt-5 overflow-hidden"
+      footerClassName="px-6 pb-5"
+      footer={<><p className="text-xs leading-5 text-[var(--color-text-secondary)]">配置保存在后端本地设置文件中。</p><Button isDisabled={loading || saving || activeTab === "wecom" || activeTab === "feishu"} onPress={() => void saveSettings()}>{saving ? "正在保存…" : "保存配置"}</Button></>}
+    >
       <Tabs
         variant="secondary"
         selectedKey={activeTab}
         onSelectionChange={(key) => setActiveTab(key as ProviderTab)}
         className="flex h-full min-h-0 flex-col"
       >
-        <div className="shrink-0 border-b border-[var(--color-border)] px-6 pt-6">
-            <div>
-              <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">身份源设置</h2>
-              <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--color-text-secondary)]">
-                配置平台账号或第三方组织身份源。所有配置由后端保存，修改后立即生效。
-              </p>
-          </div>
-
-          <Tabs.ListContainer className="mt-5 overflow-x-auto">
+        <div className="shrink-0 px-6">
+          <Tabs.ListContainer className="overflow-x-auto">
             <Tabs.List aria-label="身份源类型" className="min-w-max">
               {providerTabs.map((tab) => (
                 <Tabs.Tab key={tab.id} id={tab.id} className="min-w-24 px-4 py-3 text-center text-sm font-semibold">
@@ -347,15 +349,6 @@ export default function IdentitySourceSettingsPage() {
           {error ? <p className="mt-5 rounded-xl bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">{error}</p> : null}
         </div>
 
-        <div className="flex shrink-0 items-center justify-between gap-4 border-t border-[var(--color-border)] bg-[var(--color-bg-surface)] px-6 py-4">
-          <p className="text-xs text-[var(--color-text-secondary)]">配置保存在后端本地设置文件中。</p>
-          <Button
-            isDisabled={loading || saving || activeTab === "wecom" || activeTab === "feishu"}
-            onPress={() => void saveSettings()}
-          >
-            {saving ? "正在保存…" : "保存配置"}
-          </Button>
-        </div>
       </Tabs>
       <Modal
         isOpen={clearConfirmOpen}
@@ -385,7 +378,7 @@ export default function IdentitySourceSettingsPage() {
           </Modal.Container>
         </Modal.Backdrop>
       </Modal>
-    </section>
+    </SettingsContentCard>
   );
 }
 

@@ -1,2934 +1,4 @@
 {
-  "openapi": "3.1.0",
-  "info": {
-    "title": "YaYa Low Code API",
-    "description": "Runtime-generated API contract for the YaYa Low Code backend.",
-    "license": {
-      "name": ""
-    },
-    "version": "0.2.0-alpha.0"
-  },
-  "paths": {
-    "/api/agent/config-profiles": {
-      "get": {
-        "tags": [],
-        "operationId": "listConfigProfiles",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_AgentConfigProfile"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [],
-        "operationId": "createConfigProfile",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProfileRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentConfigProfile"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agent/config-profiles/{id}": {
-      "put": {
-        "tags": [],
-        "operationId": "updateConfigProfile",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProfileRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentConfigProfile"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [],
-        "operationId": "deleteConfigProfile",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
-    "/api/agent/knowledge-bases": {
-      "get": {
-        "tags": [],
-        "operationId": "listKnowledgeBases",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_AgentKnowledgeBaseDefinition"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [],
-        "operationId": "createKnowledgeBase",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/KnowledgeBaseRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentKnowledgeBaseDefinition"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agent/knowledge-bases/{id}": {
-      "put": {
-        "tags": [],
-        "operationId": "updateKnowledgeBase",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/KnowledgeBaseRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentKnowledgeBaseDefinition"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [],
-        "operationId": "deleteKnowledgeBase",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
-    "/api/agent/personas": {
-      "get": {
-        "tags": [],
-        "operationId": "listPersonas",
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
-    "/api/agent/platform-tools": {
-      "get": {
-        "tags": [],
-        "operationId": "listPlatformTools",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_PlatformToolResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agent/plugins": {
-      "get": {
-        "tags": [],
-        "operationId": "listPlugins",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_AgentPluginDefinition"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [],
-        "operationId": "createPlugin",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PluginRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentPluginDefinition"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agent/plugins/{id}": {
-      "put": {
-        "tags": [],
-        "operationId": "updatePlugin",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PluginRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentPluginDefinition"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [],
-        "operationId": "deletePlugin",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
-    "/api/agent/providers": {
-      "get": {
-        "tags": [],
-        "operationId": "listProviders",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_ProviderResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [],
-        "operationId": "createProvider",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProviderRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ProviderResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agent/providers/{id}": {
-      "put": {
-        "tags": [],
-        "operationId": "updateProvider",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProviderRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ProviderResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [],
-        "operationId": "deleteProvider",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
-    "/api/agent/sessions": {
-      "get": {
-        "tags": [],
-        "operationId": "listAgentSessions",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_ApiAgentSession"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [],
-        "operationId": "createAgentSession",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateAgentSessionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ApiAgentSession"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agent/sessions/{sessionId}/messages": {
-      "get": {
-        "tags": [],
-        "operationId": "listAgentMessages",
-        "parameters": [
-          {
-            "name": "sessionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_ApiAgentMessage"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [],
-        "operationId": "sendAgentMessage",
-        "parameters": [
-          {
-            "name": "sessionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
-    "/api/agent/skills": {
-      "get": {
-        "tags": [],
-        "operationId": "listSkills",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_AgentSkillDefinition"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [],
-        "operationId": "createSkill",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SkillRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentSkillDefinition"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agent/skills/{id}": {
-      "put": {
-        "tags": [],
-        "operationId": "updateSkill",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SkillRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentSkillDefinition"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [],
-        "operationId": "deleteSkill",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
-    "/api/agent/skills/{id}/file": {
-      "get": {
-        "tags": [],
-        "operationId": "getSkillFile",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_SkillFileResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": [],
-        "operationId": "updateSkillFile",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SkillFileRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_SkillFileResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agents": {
-      "get": {
-        "tags": [],
-        "operationId": "listAgents",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_AgentDefinition"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [],
-        "operationId": "createAgent",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentDefinition"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agents/{id}": {
-      "put": {
-        "tags": [],
-        "operationId": "updateAgent",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentDefinition"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [],
-        "operationId": "deleteAgent",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
-    "/api/apps": {
-      "get": {
-        "operationId": "listApps",
-        "summary": "List apps",
-        "responses": {
-          "200": {
-            "description": "Wrapped app list",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AppListResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Backend error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Backend unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "operationId": "createApp",
-        "summary": "Create empty app",
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateAppRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Wrapped created app",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AppResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Backend error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Backend unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/apps/{appId}": {
-      "patch": {
-        "operationId": "updateApp",
-        "summary": "Update app name or status",
-        "parameters": [
-          {
-            "name": "appId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateAppRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Wrapped updated app",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AppResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "App not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "deleteApp",
-        "summary": "Delete app and related form data",
-        "parameters": [
-          {
-            "name": "appId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Wrapped delete result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GenericSuccessResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "App not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/apps/{appId}/automations": {
-      "get": {
-        "operationId": "listAutomationFlows",
-        "summary": "List automation flows by app",
-        "parameters": [
-          {
-            "name": "appId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Wrapped automation flow list",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AutomationFlowListResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Backend error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Backend unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "operationId": "createAutomationFlow",
-        "summary": "Create automation flow",
-        "parameters": [
-          {
-            "name": "appId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateAutomationFlowRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Wrapped created automation flow",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AutomationFlowResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid automation configuration",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Backend error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Backend unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/apps/{appId}/field-outline": {
-      "get": {
-        "tags": [],
-        "operationId": "getAppFieldOutline",
-        "parameters": [
-          {
-            "name": "appId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ApiAppFieldOutline"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/apps/{appId}/forms": {
-      "get": {
-        "operationId": "listForms",
-        "summary": "List forms by app",
-        "parameters": [
-          {
-            "name": "appId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Wrapped form list",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FormListResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Backend error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Backend unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "operationId": "createForm",
-        "summary": "Create blank form",
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateFormRequest"
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "appId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": "Wrapped created form",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FormResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Backend error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Backend unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/apps/{appId}/navigation": {
-      "get": {
-        "operationId": "listAppNavigation",
-        "summary": "List app navigation items",
-        "parameters": [
-          {
-            "name": "appId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Wrapped navigation item list",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NavigationListResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Backend error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Backend unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "patch": {
-        "operationId": "reorderNavigationItem",
-        "summary": "Reorder app navigation item",
-        "parameters": [
-          {
-            "name": "appId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ReorderNavigationRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Wrapped navigation item list",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NavigationListResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid reorder request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/apps/{appId}/navigation/default-entry": {
-      "patch": {
-        "tags": [],
-        "operationId": "setDefaultNavigationEntry",
-        "parameters": [
-          {
-            "name": "appId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetDefaultNavigationEntryRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ApiNavigationItem"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/apps/{appId}/navigation/groups": {
-      "post": {
-        "tags": [],
-        "operationId": "createNavigationGroup",
-        "parameters": [
-          {
-            "name": "appId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateNavigationGroupRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ApiNavigationItem"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/automations/{automationId}": {
-      "get": {
-        "operationId": "getAutomationFlow",
-        "summary": "Get automation flow detail",
-        "parameters": [
-          {
-            "name": "automationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Wrapped automation flow detail",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AutomationFlowDetailResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Automation flow not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "patch": {
-        "operationId": "updateAutomationFlow",
-        "summary": "Update automation flow",
-        "parameters": [
-          {
-            "name": "automationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateAutomationFlowRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Wrapped updated automation flow",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AutomationFlowResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid automation configuration",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Automation flow not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "deleteAutomationFlow",
-        "summary": "Delete automation flow",
-        "parameters": [
-          {
-            "name": "automationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Wrapped delete result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GenericSuccessResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Automation flow not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/automations/{automationId}/runs": {
-      "get": {
-        "tags": [],
-        "operationId": "listAutomationFlowRuns",
-        "parameters": [
-          {
-            "name": "automationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_ApiAutomationRun"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/automations/{automationId}/runs/{runId}/nodes/{nodeKey}/retry": {
-      "post": {
-        "tags": [],
-        "operationId": "retryAutomationFlowRunNode",
-        "parameters": [
-          {
-            "name": "automationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "runId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "nodeKey",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Value"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/automations/{automationId}/runs/{runId}/retry": {
-      "post": {
-        "tags": [],
-        "operationId": "retryAutomationFlowRun",
-        "parameters": [
-          {
-            "name": "automationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "runId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Value"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/automations/{automationId}/versions": {
-      "get": {
-        "operationId": "listAutomationFlowVersions",
-        "summary": "List automation flow versions",
-        "parameters": [
-          {
-            "name": "automationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Wrapped automation version list",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AutomationFlowVersionListResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Automation flow not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/automations/{automationId}/versions/{version}/restore": {
-      "post": {
-        "tags": [],
-        "operationId": "restoreAutomationFlowVersion",
-        "parameters": [
-          {
-            "name": "automationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "version",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RestoreVersionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ApiAutomationFlowDetail"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/forms/{formUuid}": {
-      "get": {
-        "tags": [],
-        "operationId": "getForm",
-        "parameters": [
-          {
-            "name": "formUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ApiFormSummary"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [],
-        "operationId": "deleteForm",
-        "parameters": [
-          {
-            "name": "formUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
-    "/api/forms/{formUuid}/publish": {
-      "post": {
-        "operationId": "publishFormSchema",
-        "summary": "Publish current draft schema",
-        "parameters": [
-          {
-            "name": "formUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Wrapped published schema",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FormSchemaResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Form not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/forms/{formUuid}/records": {
-      "get": {
-        "operationId": "listFormRecords",
-        "summary": "List form records",
-        "parameters": [
-          {
-            "name": "formUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 1
-            }
-          },
-          {
-            "name": "pageSize",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 1,
-              "maximum": 100
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Wrapped form records",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FormRecordListResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Form not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "operationId": "createFormRecord",
-        "summary": "Create form record",
-        "parameters": [
-          {
-            "name": "formUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateFormRecordRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Wrapped created form record",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FormRecordResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Form not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/forms/{formUuid}/records/{recordUuid}": {
-      "patch": {
-        "operationId": "updateFormRecord",
-        "summary": "Update form record",
-        "parameters": [
-          {
-            "name": "formUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "recordUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateFormRecordRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Wrapped updated form record",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FormRecordResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Form or record not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "deleteFormRecord",
-        "summary": "Delete form record",
-        "parameters": [
-          {
-            "name": "formUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "recordUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Wrapped delete result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GenericSuccessResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Form or record not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/forms/{formUuid}/schema": {
-      "get": {
-        "operationId": "getFormSchema",
-        "summary": "Get latest schema by form uuid",
-        "parameters": [
-          {
-            "name": "formUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "scope",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "draft",
-                "published",
-                "latest"
-              ]
-            }
-          },
-          {
-            "name": "version",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Wrapped schema",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FormSchemaResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Schema not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Backend unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/forms/{formUuid}/schema/draft": {
-      "post": {
-        "operationId": "saveFormSchemaDraft",
-        "summary": "Save form schema draft",
-        "parameters": [
-          {
-            "name": "formUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SaveSchemaRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Wrapped saved schema",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FormSchemaResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Form not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Backend unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/forms/{formUuid}/versions": {
-      "get": {
-        "operationId": "listFormVersions",
-        "summary": "List form schema versions",
-        "parameters": [
-          {
-            "name": "formUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Wrapped version list",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FormVersionListResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Form not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Backend unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/forms/{formUuid}/versions/{version}": {
-      "get": {
-        "operationId": "getFormVersion",
-        "summary": "Get specific form schema version",
-        "parameters": [
-          {
-            "name": "formUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "version",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Wrapped schema",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FormSchemaResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Schema not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/forms/{formUuid}/versions/{version}/restore": {
-      "post": {
-        "operationId": "restoreFormVersion",
-        "summary": "Restore historical version as new draft",
-        "parameters": [
-          {
-            "name": "formUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "version",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RestoreVersionRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Wrapped restored schema",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FormSchemaResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Version not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/forms/{formUuid}/views": {
-      "get": {
-        "tags": [],
-        "operationId": "listFormViews",
-        "parameters": [
-          {
-            "name": "formUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_FormViewResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [],
-        "operationId": "createFormView",
-        "parameters": [
-          {
-            "name": "formUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SaveFormViewRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_FormViewResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/forms/{formUuid}/views/{viewUuid}": {
-      "put": {
-        "tags": [],
-        "operationId": "updateFormView",
-        "parameters": [
-          {
-            "name": "formUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "viewUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SaveFormViewRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_FormViewResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [],
-        "operationId": "deleteFormView",
-        "parameters": [
-          {
-            "name": "formUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "viewUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Form view deleted"
-          }
-        }
-      }
-    },
-    "/api/identity/dingtalk/session": {
-      "post": {
-        "tags": [],
-        "operationId": "resolveDingTalkLogin",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DingTalkLoginRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_DingTalkLoginUserResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/identity/local-login": {
-      "post": {
-        "tags": [],
-        "operationId": "localLogin",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LocalLoginRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_DingTalkLoginUserResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/identity/organization-units": {
-      "get": {
-        "tags": [],
-        "operationId": "listOrganizationUnits",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_OrganizationUnitResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/identity/roles": {
-      "get": {
-        "tags": [],
-        "operationId": "listRoles",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_RoleResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [],
-        "operationId": "createLocalRole",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateLocalRoleRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_RoleResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/identity/roles/{roleId}": {
-      "put": {
-        "tags": [],
-        "operationId": "updateLocalRole",
-        "parameters": [
-          {
-            "name": "roleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateLocalRoleRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_RoleResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [],
-        "operationId": "deleteLocalRole",
-        "parameters": [
-          {
-            "name": "roleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
-    "/api/identity/users": {
-      "get": {
-        "tags": [],
-        "operationId": "listUsers",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_UserResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [],
-        "operationId": "createLocalUser",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateLocalUserRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_DingTalkLoginUserResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/identity/users/{userId}": {
-      "put": {
-        "tags": [],
-        "operationId": "updateUser",
-        "parameters": [
-          {
-            "name": "userId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateUserRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_UserResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [],
-        "operationId": "deleteUser",
-        "parameters": [
-          {
-            "name": "userId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
-    "/api/internal/identity-source": {
-      "get": {
-        "tags": [],
-        "operationId": "getInternalIdentitySourceSettings",
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
-    "/api/settings/agent": {
-      "get": {
-        "tags": [],
-        "operationId": "getAgentSettings",
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      },
-      "put": {
-        "tags": [],
-        "operationId": "updateAgentSettings",
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
-    "/api/settings/database": {
-      "get": {
-        "tags": [],
-        "operationId": "getDatabaseSettings",
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      },
-      "put": {
-        "tags": [],
-        "operationId": "updateDatabaseSettings",
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
-    "/api/settings/identity-source": {
-      "get": {
-        "tags": [],
-        "operationId": "getIdentitySourceSettings",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_IdentitySourceSettings"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": [],
-        "operationId": "updateIdentitySourceSettings",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateIdentitySourceSettingsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_IdentitySourceSettings"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/settings/identity-source/dingtalk/access-token": {
-      "post": {
-        "tags": [],
-        "operationId": "refreshDingTalkAccessToken",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AccessTokenResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/settings/identity-source/dingtalk/clear": {
-      "post": {
-        "tags": [],
-        "operationId": "clearDingTalkData",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ClearDingTalkDataResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/settings/identity-source/dingtalk/sync-departments": {
-      "post": {
-        "tags": [],
-        "operationId": "syncDingTalkDepartments",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_DepartmentSyncResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/settings/identity-source/dingtalk/sync-users": {
-      "post": {
-        "tags": [],
-        "operationId": "syncDingTalkUsers",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_UserSyncResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/settings/permissions/{roleId}": {
-      "get": {
-        "tags": [],
-        "operationId": "getRolePermissions",
-        "parameters": [
-          {
-            "name": "roleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_RolePermissionsResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": [],
-        "operationId": "updateRolePermissions",
-        "parameters": [
-          {
-            "name": "roleId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateRolePermissionsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_RolePermissionsResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/healthz": {
-      "get": {
-        "tags": [],
-        "operationId": "healthCheck",
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    }
-  },
   "components": {
     "schemas": {
       "AccessTokenResponse": {
@@ -3493,6 +563,7 @@
           "name",
           "status",
           "currentVersion",
+          "flowType",
           "triggerEvent",
           "triggerLabel",
           "nodesCount",
@@ -3520,6 +591,9 @@
               "string",
               "null"
             ]
+          },
+          "flowType": {
+            "type": "string"
           },
           "id": {
             "type": "string"
@@ -3562,6 +636,7 @@
           "name",
           "status",
           "currentVersion",
+          "flowType",
           "triggerEvent",
           "triggerLabel",
           "triggerConfig",
@@ -3594,6 +669,9 @@
             ]
           },
           "edges": {},
+          "flowType": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
@@ -3820,6 +898,29 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiDetailForm": {
+        "type": "object",
+        "required": [
+          "detailFormUuid",
+          "sourceFormUuid",
+          "subformFieldId",
+          "title"
+        ],
+        "properties": {
+          "detailFormUuid": {
+            "type": "string"
+          },
+          "sourceFormUuid": {
+            "type": "string"
+          },
+          "subformFieldId": {
+            "type": "string"
+          },
+          "title": {
             "type": "string"
           }
         }
@@ -4737,6 +1838,7 @@
               "name",
               "status",
               "currentVersion",
+              "flowType",
               "triggerEvent",
               "triggerLabel",
               "nodesCount",
@@ -4764,6 +1866,9 @@
                   "string",
                   "null"
                 ]
+              },
+              "flowType": {
+                "type": "string"
               },
               "id": {
                 "type": "string"
@@ -4826,6 +1931,7 @@
               "name",
               "status",
               "currentVersion",
+              "flowType",
               "triggerEvent",
               "triggerLabel",
               "triggerConfig",
@@ -4858,6 +1964,9 @@
                 ]
               },
               "edges": {},
+              "flowType": {
+                "type": "string"
+              },
               "id": {
                 "type": "string"
               },
@@ -4944,6 +2053,49 @@
               "total": {
                 "type": "integer",
                 "format": "int64"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_ApiDetailForm": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "detailFormUuid",
+              "sourceFormUuid",
+              "subformFieldId",
+              "title"
+            ],
+            "properties": {
+              "detailFormUuid": {
+                "type": "string"
+              },
+              "sourceFormUuid": {
+                "type": "string"
+              },
+              "subformFieldId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
               }
             }
           },
@@ -5319,6 +2471,37 @@
           }
         }
       },
+      "ApiResponse_DatabaseConnectionTestResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "connected"
+            ],
+            "properties": {
+              "connected": {
+                "type": "boolean"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
       "ApiResponse_DepartmentSyncResponse": {
         "type": "object",
         "required": [
@@ -5480,6 +2663,40 @@
             "type": "string"
           }
         }
+      },
+      "ApiResponse_PlatformAgentAssistantSettings": {
+        "properties": {
+          "code": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "data": {
+            "properties": {
+              "navigationAgentId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "schemaAnalysisPrompt": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "type": "object"
       },
       "ApiResponse_ProviderResponse": {
         "type": "object",
@@ -6683,6 +3900,64 @@
           }
         }
       },
+      "ApiResponse_Vec_ApiDetailForm": {
+        "properties": {
+          "code": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "data": {
+            "items": {
+              "properties": {
+                "detailFormUuid": {
+                  "type": "string"
+                },
+                "primaryDisplayFieldId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "secondaryDisplayFieldId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "sourceFormUuid": {
+                  "type": "string"
+                },
+                "subformFieldId": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "detailFormUuid",
+                "sourceFormUuid",
+                "subformFieldId",
+                "title"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_ApiFormVersionSummary": {
         "type": "object",
         "required": [
@@ -6845,6 +4120,75 @@
                 },
                 "viewUuid": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_Vec_LocationResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "code",
+                "depth",
+                "kind",
+                "name",
+                "labels"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "depth": {
+                  "type": "integer",
+                  "format": "int32"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "labels": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  }
+                },
+                "name": {
+                  "type": "string"
+                },
+                "parentId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
                 }
               }
             }
@@ -7267,6 +4611,30 @@
           }
         }
       },
+      "ApiResponse_usize": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
       "ApiSchemaPayload": {
         "type": "object",
         "required": [
@@ -7356,38 +4724,74 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
-          },
-          "owner": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
       "CreateAutomationFlowRequest": {
         "type": "object",
         "properties": {
-          "name": {
-            "type": "string"
-          },
           "description": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
-          "triggerFormUuid": {
-            "type": "string"
-          },
-          "triggerEvent": {
-            "type": "string",
-            "enum": [
-              "before_create",
-              "after_create",
-              "before_update",
-              "after_update",
-              "before_delete",
-              "after_delete"
+          "name": {
+            "type": [
+              "string",
+              "null"
             ]
           },
           "operator": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "triggerEvent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "triggerFormUuid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CreateDetailFormRequest": {
+        "type": "object",
+        "required": [
+          "subformFieldId"
+        ],
+        "properties": {
+          "subformFieldId": {
             "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primaryDisplayFieldId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "secondaryDisplayFieldId": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -7397,23 +4801,16 @@
           "data"
         ],
         "properties": {
-          "data": {
-            "type": "object",
-            "additionalProperties": true
-          },
-          "operator": {
-            "type": "string"
-          }
+          "data": {}
         }
       },
       "CreateFormRequest": {
         "type": "object",
         "properties": {
           "formType": {
-            "type": "string",
-            "enum": [
-              "normal",
-              "workflow"
+            "type": [
+              "string",
+              "null"
             ]
           }
         }
@@ -7487,6 +4884,17 @@
           },
           "title": {
             "type": "string"
+          }
+        }
+      },
+      "DatabaseConnectionTestResponse": {
+        "type": "object",
+        "required": [
+          "connected"
+        ],
+        "properties": {
+          "connected": {
+            "type": "boolean"
           }
         }
       },
@@ -7678,6 +5086,20 @@
           }
         }
       },
+      "ImportLocationsRequest": {
+        "type": "object",
+        "required": [
+          "locations"
+        ],
+        "properties": {
+          "locations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LocationImportItem"
+            }
+          }
+        }
+      },
       "KnowledgeBaseRequest": {
         "type": "object",
         "required": [
@@ -7723,6 +5145,106 @@
           },
           "username": {
             "type": "string"
+          }
+        }
+      },
+      "LocationImportItem": {
+        "type": "object",
+        "required": [
+          "code",
+          "kind",
+          "name",
+          "labels"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "parentCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sortOrder": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "LocationResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "depth",
+          "kind",
+          "name",
+          "labels"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "depth": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
           }
         }
       },
@@ -7801,6 +5323,34 @@
             "type": "string"
           }
         }
+      },
+      "PlatformAgentAssistantSettings": {
+        "properties": {
+          "navigationAgentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schemaAnalysisPrompt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PlatformAgentAssistantSettingsRequest": {
+        "properties": {
+          "navigationAgentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schemaAnalysisPrompt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
       },
       "PlatformToolResponse": {
         "type": "object",
@@ -8048,16 +5598,11 @@
           "item_id": {
             "type": "string"
           },
-          "target_item_id": {
+          "placement": {
             "type": "string"
           },
-          "placement": {
-            "type": "string",
-            "enum": [
-              "before",
-              "after",
-              "inside"
-            ]
+          "target_item_id": {
+            "type": "string"
           }
         }
       },
@@ -8065,7 +5610,10 @@
         "type": "object",
         "properties": {
           "change_log": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -8138,13 +5686,13 @@
           "schema"
         ],
         "properties": {
-          "schema": {
-            "type": "object",
-            "additionalProperties": true
-          },
           "change_log": {
-            "type": "string"
-          }
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema": {}
         }
       },
       "SetDefaultNavigationEntryRequest": {
@@ -8231,17 +5779,36 @@
           }
         }
       },
+      "UpdateAgentSessionRequest": {
+        "properties": {
+          "isPinned": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "UpdateAppRequest": {
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "status": {
-            "type": "string",
-            "enum": [
-              "enabled",
-              "paused"
+            "type": [
+              "string",
+              "null"
             ]
           }
         }
@@ -8249,56 +5816,80 @@
       "UpdateAutomationFlowRequest": {
         "type": "object",
         "properties": {
-          "name": {
-            "type": "string"
+          "changeSummary": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "description": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "edges": {},
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nodes": {},
+          "operator": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "status": {
-            "type": "string",
-            "enum": [
-              "enabled",
-              "paused",
-              "draft"
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "triggerConfig": {},
+          "triggerEvent": {
+            "type": [
+              "string",
+              "null"
             ]
           },
           "triggerFormUuid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "UpdateDatabaseSettingsRequest": {
+        "type": "object",
+        "required": [
+          "host",
+          "port",
+          "database",
+          "username"
+        ],
+        "properties": {
+          "database": {
             "type": "string"
           },
-          "triggerEvent": {
-            "type": "string",
-            "enum": [
-              "before_create",
-              "after_create",
-              "before_update",
-              "after_update",
-              "before_delete",
-              "after_delete"
+          "host": {
+            "type": "string"
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
             ]
           },
-          "triggerConfig": {
-            "type": "object",
-            "additionalProperties": true
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           },
-          "nodes": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": true
-            }
-          },
-          "edges": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": true
-            }
-          },
-          "changeSummary": {
-            "type": "string"
-          },
-          "operator": {
+          "username": {
             "type": "string"
           }
         }
@@ -8309,13 +5900,7 @@
           "data"
         ],
         "properties": {
-          "data": {
-            "type": "object",
-            "additionalProperties": true
-          },
-          "operator": {
-            "type": "string"
-          }
+          "data": {}
         }
       },
       "UpdateIdentitySourceSettingsRequest": {
@@ -8647,850 +6232,2847 @@
             "minimum": 0
           }
         }
-      },
-      "ApiMeta": {
-        "type": "object",
-        "required": [
-          "code",
-          "message",
-          "time"
-        ],
-        "properties": {
-          "code": {
-            "type": "integer"
-          },
-          "message": {
-            "type": "string"
-          },
-          "time": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "App": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "desc",
-          "icon",
-          "color",
-          "status",
-          "createdAt",
-          "owner",
-          "records"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "desc": {
-            "type": "string"
-          },
-          "icon": {
-            "type": "string"
-          },
-          "badge": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "color": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "enabled",
-              "draft",
-              "paused"
-            ]
-          },
-          "createdAt": {
-            "type": "string"
-          },
-          "owner": {
-            "type": "string"
-          },
-          "records": {
-            "type": "integer"
-          }
-        }
-      },
-      "FormSummary": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "formType",
-          "category",
-          "status",
-          "latestSchemaVersion",
-          "createdAt"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "formType": {
-            "type": "string",
-            "enum": [
-              "normal",
-              "workflow"
-            ]
-          },
-          "category": {
-            "type": "string"
-          },
-          "count": {
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "status": {
-            "type": "string"
-          },
-          "latestSchemaVersion": {
-            "type": "integer"
-          },
-          "createdAt": {
-            "type": "string"
-          }
-        }
-      },
-      "NavigationItem": {
-        "type": "object",
-        "required": [
-          "id",
-          "itemType",
-          "title",
-          "pathSlug",
-          "sortOrder",
-          "isDefaultEntry"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "itemType": {
-            "type": "string",
-            "enum": [
-              "form",
-              "system",
-              "group",
-              "link"
-            ]
-          },
-          "targetFormUuid": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "title": {
-            "type": "string"
-          },
-          "pathSlug": {
-            "type": "string"
-          },
-          "sortOrder": {
-            "type": "integer"
-          },
-          "isDefaultEntry": {
-            "type": "boolean"
-          },
-          "parentId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "visibilityRule": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        }
-      },
-      "SchemaPayload": {
-        "type": "object",
-        "required": [
-          "formUuid",
-          "schema",
-          "version",
-          "draftVersion",
-          "publishedVersion",
-          "latestVersion",
-          "published"
-        ],
-        "properties": {
-          "formUuid": {
-            "type": "string"
-          },
-          "schema": {
-            "type": "object",
-            "additionalProperties": true
-          },
-          "version": {
-            "type": "integer"
-          },
-          "draftVersion": {
-            "type": "integer"
-          },
-          "publishedVersion": {
-            "type": "integer"
-          },
-          "latestVersion": {
-            "type": "integer"
-          },
-          "published": {
-            "type": "boolean"
-          }
-        }
-      },
-      "FormRecord": {
-        "type": "object",
-        "required": [
-          "id",
-          "formUuid",
-          "schemaVersion",
-          "data",
-          "createdBy",
-          "updatedBy",
-          "createdAt",
-          "updatedAt"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "formUuid": {
-            "type": "string"
-          },
-          "schemaVersion": {
-            "type": "integer"
-          },
-          "data": {
-            "type": "object",
-            "additionalProperties": true
-          },
-          "createdBy": {
-            "type": "string"
-          },
-          "updatedBy": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "FormRecordList": {
-        "type": "object",
-        "required": [
-          "items",
-          "total"
-        ],
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FormRecord"
-            }
-          },
-          "total": {
-            "type": "integer"
-          }
-        }
-      },
-      "AutomationFlow": {
-        "type": "object",
-        "required": [
-          "id",
-          "appId",
-          "name",
-          "status",
-          "currentVersion",
-          "triggerEvent",
-          "triggerLabel",
-          "nodesCount",
-          "createdBy",
-          "updatedBy",
-          "createdAt",
-          "updatedAt"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "appId": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "enabled",
-              "paused",
-              "draft"
-            ]
-          },
-          "currentVersion": {
-            "type": "integer"
-          },
-          "triggerFormUuid": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "triggerEvent": {
-            "type": "string",
-            "enum": [
-              "before_create",
-              "after_create",
-              "before_update",
-              "after_update",
-              "before_delete",
-              "after_delete"
-            ]
-          },
-          "triggerLabel": {
-            "type": "string"
-          },
-          "nodesCount": {
-            "type": "integer"
-          },
-          "createdBy": {
-            "type": "string"
-          },
-          "updatedBy": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "AutomationFlowList": {
-        "type": "object",
-        "required": [
-          "items",
-          "total",
-          "enabled",
-          "paused",
-          "draft"
-        ],
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AutomationFlow"
-            }
-          },
-          "total": {
-            "type": "integer"
-          },
-          "enabled": {
-            "type": "integer"
-          },
-          "paused": {
-            "type": "integer"
-          },
-          "draft": {
-            "type": "integer"
-          }
-        }
-      },
-      "AutomationFlowDetail": {
-        "type": "object",
-        "required": [
-          "id",
-          "appId",
-          "name",
-          "status",
-          "currentVersion",
-          "triggerEvent",
-          "triggerLabel",
-          "triggerConfig",
-          "nodes",
-          "edges",
-          "nodesCount",
-          "createdBy",
-          "updatedBy",
-          "createdAt",
-          "updatedAt"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "appId": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "enabled",
-              "paused",
-              "draft"
-            ]
-          },
-          "currentVersion": {
-            "type": "integer"
-          },
-          "triggerFormUuid": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "triggerEvent": {
-            "type": "string",
-            "enum": [
-              "before_create",
-              "after_create",
-              "before_update",
-              "after_update",
-              "before_delete",
-              "after_delete"
-            ]
-          },
-          "triggerLabel": {
-            "type": "string"
-          },
-          "triggerConfig": {
-            "type": "object",
-            "additionalProperties": true
-          },
-          "nodes": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": true
-            }
-          },
-          "edges": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": true
-            }
-          },
-          "nodesCount": {
-            "type": "integer"
-          },
-          "createdBy": {
-            "type": "string"
-          },
-          "updatedBy": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "FormVersionSummary": {
-        "type": "object",
-        "required": [
-          "version",
-          "published",
-          "isCurrentDraft",
-          "isCurrentPublished",
-          "createdAt"
-        ],
-        "properties": {
-          "version": {
-            "type": "integer"
-          },
-          "published": {
-            "type": "boolean"
-          },
-          "isCurrentDraft": {
-            "type": "boolean"
-          },
-          "isCurrentPublished": {
-            "type": "boolean"
-          },
-          "changeLog": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "AutomationFlowVersionSummary": {
-        "type": "object",
-        "required": [
-          "version",
-          "name",
-          "status",
-          "createdBy",
-          "createdAt"
-        ],
-        "properties": {
-          "version": {
-            "type": "integer"
-          },
-          "name": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "enabled",
-              "paused",
-              "draft"
-            ]
-          },
-          "createdBy": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "changeSummary": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        }
-      },
-      "AppResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ApiMeta"
-          },
-          {
-            "type": "object",
-            "required": [
-              "data"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/App"
-              }
-            }
-          }
-        ]
-      },
-      "AppListResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ApiMeta"
-          },
-          {
-            "type": "object",
-            "required": [
-              "data"
-            ],
-            "properties": {
-              "data": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/App"
+      }
+    }
+  },
+  "info": {
+    "title": "YaYa Low Code API",
+    "description": "Runtime-generated API contract for the YaYa Low Code backend.",
+    "license": {
+      "name": ""
+    },
+    "version": "0.2.0-alpha.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/agent/config-profiles": {
+      "get": {
+        "tags": [],
+        "operationId": "listConfigProfiles",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AgentConfigProfile"
                 }
               }
             }
           }
-        ]
+        }
       },
-      "FormResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ApiMeta"
-          },
-          {
-            "type": "object",
-            "required": [
-              "data"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/FormSummary"
+      "post": {
+        "tags": [],
+        "operationId": "createConfigProfile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileRequest"
               }
             }
-          }
-        ]
-      },
-      "FormListResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ApiMeta"
           },
-          {
-            "type": "object",
-            "required": [
-              "data"
-            ],
-            "properties": {
-              "data": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/FormSummary"
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AgentConfigProfile"
                 }
               }
             }
           }
-        ]
+        }
+      }
+    },
+    "/api/agent/config-profiles/{id}": {
+      "delete": {
+        "tags": [],
+        "operationId": "deleteConfigProfile",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
       },
-      "NavigationListResponse": {
-        "allOf": [
+      "put": {
+        "tags": [],
+        "operationId": "updateConfigProfile",
+        "parameters": [
           {
-            "$ref": "#/components/schemas/ApiMeta"
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileRequest"
+              }
+            }
           },
-          {
-            "type": "object",
-            "required": [
-              "data"
-            ],
-            "properties": {
-              "data": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/NavigationItem"
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AgentConfigProfile"
                 }
               }
             }
           }
-        ]
-      },
-      "FormSchemaResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ApiMeta"
-          },
-          {
-            "type": "object",
-            "required": [
-              "data"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/SchemaPayload"
-              }
-            }
-          }
-        ]
-      },
-      "FormRecordResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ApiMeta"
-          },
-          {
-            "type": "object",
-            "required": [
-              "data"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/FormRecord"
-              }
-            }
-          }
-        ]
-      },
-      "FormRecordListResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ApiMeta"
-          },
-          {
-            "type": "object",
-            "required": [
-              "data"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/FormRecordList"
-              }
-            }
-          }
-        ]
-      },
-      "AutomationFlowResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ApiMeta"
-          },
-          {
-            "type": "object",
-            "required": [
-              "data"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/AutomationFlow"
-              }
-            }
-          }
-        ]
-      },
-      "AutomationFlowListResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ApiMeta"
-          },
-          {
-            "type": "object",
-            "required": [
-              "data"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/AutomationFlowList"
-              }
-            }
-          }
-        ]
-      },
-      "AutomationFlowDetailResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ApiMeta"
-          },
-          {
-            "type": "object",
-            "required": [
-              "data"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/AutomationFlowDetail"
-              }
-            }
-          }
-        ]
-      },
-      "AutomationFlowVersionListResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ApiMeta"
-          },
-          {
-            "type": "object",
-            "required": [
-              "data"
-            ],
-            "properties": {
-              "data": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/AutomationFlowVersionSummary"
+        }
+      }
+    },
+    "/api/agent/knowledge-bases": {
+      "get": {
+        "tags": [],
+        "operationId": "listKnowledgeBases",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AgentKnowledgeBaseDefinition"
                 }
               }
             }
           }
-        ]
+        }
       },
-      "GenericSuccessResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ApiMeta"
-          },
-          {
-            "type": "object",
-            "required": [
-              "data"
-            ],
-            "properties": {
-              "data": {
-                "type": "object",
-                "additionalProperties": true
+      "post": {
+        "tags": [],
+        "operationId": "createKnowledgeBase",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeBaseRequest"
               }
             }
-          }
-        ]
-      },
-      "FormVersionListResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ApiMeta"
           },
-          {
-            "type": "object",
-            "required": [
-              "data"
-            ],
-            "properties": {
-              "data": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/FormVersionSummary"
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AgentKnowledgeBaseDefinition"
                 }
               }
             }
           }
-        ]
+        }
+      }
+    },
+    "/api/agent/knowledge-bases/{id}": {
+      "delete": {
+        "tags": [],
+        "operationId": "deleteKnowledgeBase",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
       },
-      "ErrorResponse": {
-        "allOf": [
+      "put": {
+        "tags": [],
+        "operationId": "updateKnowledgeBase",
+        "parameters": [
           {
-            "$ref": "#/components/schemas/ApiMeta"
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeBaseRequest"
+              }
+            }
           },
-          {
-            "type": "object",
-            "required": [
-              "data"
-            ],
-            "properties": {
-              "data": {
-                "type": "null"
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AgentKnowledgeBaseDefinition"
+                }
               }
             }
           }
-        ]
+        }
+      }
+    },
+    "/api/agent/personas": {
+      "get": {
+        "tags": [],
+        "operationId": "listPersonas",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/agent/platform-tools": {
+      "get": {
+        "tags": [],
+        "operationId": "listPlatformTools",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_PlatformToolResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/plugins": {
+      "get": {
+        "tags": [],
+        "operationId": "listPlugins",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AgentPluginDefinition"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "createPlugin",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AgentPluginDefinition"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/plugins/{id}": {
+      "delete": {
+        "tags": [],
+        "operationId": "deletePlugin",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "tags": [],
+        "operationId": "updatePlugin",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AgentPluginDefinition"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/providers": {
+      "get": {
+        "tags": [],
+        "operationId": "listProviders",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ProviderResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "createProvider",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProviderResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/providers/{id}": {
+      "delete": {
+        "tags": [],
+        "operationId": "deleteProvider",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "tags": [],
+        "operationId": "updateProvider",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProviderResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/sessions": {
+      "get": {
+        "tags": [],
+        "operationId": "listAgentSessions",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ApiAgentSession"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "createAgentSession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiAgentSession"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/sessions/{sessionId}": {
+      "delete": {
+        "operationId": "deleteAgentSession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sessionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "tags": []
+      },
+      "patch": {
+        "operationId": "updateAgentSession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sessionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAgentSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiAgentSession"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": []
+      }
+    },
+    "/api/agent/sessions/{sessionId}/messages": {
+      "get": {
+        "tags": [],
+        "operationId": "listAgentMessages",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ApiAgentMessage"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "sendAgentMessage",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/agent/skills": {
+      "get": {
+        "tags": [],
+        "operationId": "listSkills",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AgentSkillDefinition"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "createSkill",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AgentSkillDefinition"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/skills/{id}": {
+      "delete": {
+        "tags": [],
+        "operationId": "deleteSkill",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "tags": [],
+        "operationId": "updateSkill",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AgentSkillDefinition"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/skills/{id}/file": {
+      "get": {
+        "tags": [],
+        "operationId": "getSkillFile",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SkillFileResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [],
+        "operationId": "updateSkillFile",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillFileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SkillFileResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents": {
+      "get": {
+        "tags": [],
+        "operationId": "listAgents",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AgentDefinition"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "createAgent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AgentDefinition"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}": {
+      "delete": {
+        "tags": [],
+        "operationId": "deleteAgent",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "tags": [],
+        "operationId": "updateAgent",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AgentDefinition"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps": {
+      "get": {
+        "tags": [],
+        "operationId": "listApps",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ApiApp"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "createApp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAppRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiApp"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{appId}": {
+      "delete": {
+        "tags": [],
+        "operationId": "deleteApp",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "patch": {
+        "tags": [],
+        "operationId": "updateApp",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAppRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiApp"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{appId}/automations": {
+      "get": {
+        "tags": [],
+        "operationId": "listAutomationFlows",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiAutomationFlowList"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "createAutomationFlow",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAutomationFlowRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiAutomationFlow"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{appId}/field-outline": {
+      "get": {
+        "tags": [],
+        "operationId": "getAppFieldOutline",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiAppFieldOutline"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{appId}/forms": {
+      "get": {
+        "tags": [],
+        "operationId": "listForms",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "createForm",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFormRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiFormSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{appId}/navigation": {
+      "get": {
+        "tags": [],
+        "operationId": "listAppNavigation",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ApiNavigationItem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [],
+        "operationId": "reorderNavigationItem",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderNavigationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ApiNavigationItem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{appId}/navigation/default-entry": {
+      "patch": {
+        "tags": [],
+        "operationId": "setDefaultNavigationEntry",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDefaultNavigationEntryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiNavigationItem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{appId}/navigation/groups": {
+      "post": {
+        "tags": [],
+        "operationId": "createNavigationGroup",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateNavigationGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiNavigationItem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automations/{automationId}": {
+      "delete": {
+        "tags": [],
+        "operationId": "deleteAutomationFlow",
+        "parameters": [
+          {
+            "name": "automationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "get": {
+        "tags": [],
+        "operationId": "getAutomationFlow",
+        "parameters": [
+          {
+            "name": "automationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiAutomationFlowDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [],
+        "operationId": "updateAutomationFlow",
+        "parameters": [
+          {
+            "name": "automationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAutomationFlowRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiAutomationFlow"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automations/{automationId}/runs": {
+      "get": {
+        "tags": [],
+        "operationId": "listAutomationFlowRuns",
+        "parameters": [
+          {
+            "name": "automationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ApiAutomationRun"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automations/{automationId}/runs/{runId}/nodes/{nodeKey}/retry": {
+      "post": {
+        "tags": [],
+        "operationId": "retryAutomationFlowRunNode",
+        "parameters": [
+          {
+            "name": "automationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "nodeKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automations/{automationId}/runs/{runId}/retry": {
+      "post": {
+        "tags": [],
+        "operationId": "retryAutomationFlowRun",
+        "parameters": [
+          {
+            "name": "automationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automations/{automationId}/versions": {
+      "get": {
+        "tags": [],
+        "operationId": "listAutomationFlowVersions",
+        "parameters": [
+          {
+            "name": "automationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ApiAutomationFlowVersionSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automations/{automationId}/versions/{version}/restore": {
+      "post": {
+        "tags": [],
+        "operationId": "restoreAutomationFlowVersion",
+        "parameters": [
+          {
+            "name": "automationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiAutomationFlowDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}": {
+      "delete": {
+        "tags": [],
+        "operationId": "deleteForm",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "get": {
+        "tags": [],
+        "operationId": "getForm",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiFormSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/detail-forms": {
+      "get": {
+        "operationId": "listDetailForms",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "formUuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ApiDetailForm"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": []
+      },
+      "post": {
+        "tags": [],
+        "operationId": "createDetailForm",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDetailFormRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiDetailForm"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/publish": {
+      "post": {
+        "tags": [],
+        "operationId": "publishFormSchema",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiSchemaPayload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/records": {
+      "get": {
+        "tags": [],
+        "operationId": "listFormRecords",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiFormRecordList"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "createFormRecord",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFormRecordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiFormRecord"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/records/{recordUuid}": {
+      "delete": {
+        "tags": [],
+        "operationId": "deleteFormRecord",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "recordUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "patch": {
+        "tags": [],
+        "operationId": "updateFormRecord",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "recordUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFormRecordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiFormRecord"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/schema": {
+      "get": {
+        "tags": [],
+        "operationId": "getFormSchema",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiSchemaPayload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/schema/draft": {
+      "post": {
+        "tags": [],
+        "operationId": "saveFormSchemaDraft",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveSchemaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiSchemaPayload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/versions": {
+      "get": {
+        "tags": [],
+        "operationId": "listFormVersions",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ApiFormVersionSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/versions/{version}": {
+      "get": {
+        "tags": [],
+        "operationId": "getFormVersion",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiSchemaPayload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/versions/{version}/restore": {
+      "post": {
+        "tags": [],
+        "operationId": "restoreFormVersion",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiSchemaPayload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/views": {
+      "get": {
+        "tags": [],
+        "operationId": "listFormViews",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_FormViewResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "createFormView",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveFormViewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_FormViewResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/views/{viewUuid}": {
+      "delete": {
+        "tags": [],
+        "operationId": "deleteFormView",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "viewUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Form view deleted"
+          }
+        }
+      },
+      "put": {
+        "tags": [],
+        "operationId": "updateFormView",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "viewUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveFormViewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_FormViewResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/workflow/process": {
+      "post": {
+        "tags": [],
+        "operationId": "ensureWorkflowProcessFlow",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiAutomationFlow"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/identity/dingtalk/session": {
+      "post": {
+        "tags": [],
+        "operationId": "resolveDingTalkLogin",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DingTalkLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DingTalkLoginUserResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/identity/local-login": {
+      "post": {
+        "tags": [],
+        "operationId": "localLogin",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocalLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DingTalkLoginUserResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/identity/organization-units": {
+      "get": {
+        "tags": [],
+        "operationId": "listOrganizationUnits",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_OrganizationUnitResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/identity/roles": {
+      "get": {
+        "tags": [],
+        "operationId": "listRoles",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_RoleResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "createLocalRole",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLocalRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RoleResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/identity/roles/{roleId}": {
+      "delete": {
+        "tags": [],
+        "operationId": "deleteLocalRole",
+        "parameters": [
+          {
+            "name": "roleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "tags": [],
+        "operationId": "updateLocalRole",
+        "parameters": [
+          {
+            "name": "roleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLocalRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RoleResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/identity/users": {
+      "get": {
+        "tags": [],
+        "operationId": "listUsers",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_UserResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "createLocalUser",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLocalUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DingTalkLoginUserResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/identity/users/{userId}": {
+      "delete": {
+        "tags": [],
+        "operationId": "deleteUser",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "tags": [],
+        "operationId": "updateUser",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UserResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/identity-source": {
+      "get": {
+        "tags": [],
+        "operationId": "getInternalIdentitySourceSettings",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/locations": {
+      "get": {
+        "tags": [],
+        "operationId": "listLocations",
+        "parameters": [
+          {
+            "name": "parentCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "depth",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_LocationResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "importLocations",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportLocationsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_usize"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/agent": {
+      "get": {
+        "tags": [],
+        "operationId": "getAgentSettings",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "tags": [],
+        "operationId": "updateAgentSettings",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/settings/agent-assistant": {
+      "get": {
+        "operationId": "getPlatformAgentAssistantSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PlatformAgentAssistantSettings"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": []
+      },
+      "put": {
+        "operationId": "updatePlatformAgentAssistantSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformAgentAssistantSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PlatformAgentAssistantSettings"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": []
+      }
+    },
+    "/api/settings/database": {
+      "get": {
+        "tags": [],
+        "operationId": "getDatabaseSettings",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "tags": [],
+        "operationId": "updateDatabaseSettings",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/settings/database/test": {
+      "post": {
+        "tags": [],
+        "operationId": "testDatabaseConnection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDatabaseSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DatabaseConnectionTestResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/identity-source": {
+      "get": {
+        "tags": [],
+        "operationId": "getIdentitySourceSettings",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_IdentitySourceSettings"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [],
+        "operationId": "updateIdentitySourceSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateIdentitySourceSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_IdentitySourceSettings"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/identity-source/dingtalk/access-token": {
+      "post": {
+        "tags": [],
+        "operationId": "refreshDingTalkAccessToken",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AccessTokenResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/identity-source/dingtalk/clear": {
+      "post": {
+        "tags": [],
+        "operationId": "clearDingTalkData",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ClearDingTalkDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/identity-source/dingtalk/sync-departments": {
+      "post": {
+        "tags": [],
+        "operationId": "syncDingTalkDepartments",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DepartmentSyncResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/identity-source/dingtalk/sync-users": {
+      "post": {
+        "tags": [],
+        "operationId": "syncDingTalkUsers",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UserSyncResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/permissions/{roleId}": {
+      "get": {
+        "tags": [],
+        "operationId": "getRolePermissions",
+        "parameters": [
+          {
+            "name": "roleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RolePermissionsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [],
+        "operationId": "updateRolePermissions",
+        "parameters": [
+          {
+            "name": "roleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRolePermissionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RolePermissionsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "tags": [],
+        "operationId": "healthCheck",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
       }
     }
   }

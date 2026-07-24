@@ -5,7 +5,7 @@
 "use client";
 
 import { Button, Input } from "@heroui/react";
-import type { PageDesignerProps, PageNamedRule } from "../../designer-types";
+import type { DesignerPageAsset, PageDesignerProps, PageNamedRule } from "../../designer-types";
 import {
   CodeToken,
   IconAction,
@@ -18,6 +18,7 @@ import {
 
 type PagePropertyPanelProps = {
   formName: string;
+  formType: "normal" | "workflow" | "defined";
   pageProps: PageDesignerProps;
   onPropsChange: (props: PageDesignerProps) => void;
 };
@@ -36,6 +37,7 @@ type RuleListKey =
 
 export function PagePropertyPanel({
   formName,
+  formType,
   pageProps,
   onPropsChange,
 }: PagePropertyPanelProps) {
@@ -290,8 +292,52 @@ export function PagePropertyPanel({
                   </Button>
                 </PageSection>
               </PropertyFold>
+              {formType === "defined" ? (
+                <PropertyFold title="页面资源">
+                  <PageAssetsPanel
+                    assets={pageProps.assets}
+                    onChange={(assets) => onPropsChange({ ...pageProps, assets })}
+                  />
+                </PropertyFold>
+              ) : null}
       </div>
     </div>
+  );
+}
+
+function PageAssetsPanel({
+  assets,
+  onChange,
+}: {
+  assets: DesignerPageAsset[];
+  onChange: (assets: DesignerPageAsset[]) => void;
+}) {
+  function update(assetId: string, patch: Partial<DesignerPageAsset>) {
+    onChange(assets.map((asset) => asset.id === assetId ? { ...asset, ...patch } : asset));
+  }
+
+  return (
+    <PageSection title="登记资源">
+      <p className="text-xs leading-5 text-[var(--color-text-secondary)]">
+        自定义页面通过 ctx.assets.loadScript(id) 或 ctx.assets.loadStyle(id) 加载已登记资源。
+      </p>
+      <div className="space-y-3">
+        {assets.map((asset) => (
+          <div key={asset.id} className="space-y-2 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-2">
+            <div className="flex items-center gap-2">
+              <input className="min-w-0 flex-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2 py-1 text-xs" value={asset.id} aria-label="资源 ID" onChange={(event) => update(asset.id, { id: event.currentTarget.value })} />
+              <select className="rounded border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2 py-1 text-xs" value={asset.type} aria-label="资源类型" onChange={(event) => update(asset.id, { type: event.currentTarget.value as DesignerPageAsset["type"] })}><option value="script">Script</option><option value="style">Style</option></select>
+              <Button isIconOnly aria-label="删除资源" size="sm" variant="ghost" onPress={() => onChange(assets.filter((item) => item.id !== asset.id))}><DeleteIcon /></Button>
+            </div>
+            <input className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2 py-1 text-xs" placeholder="资源名称" value={asset.name} aria-label="资源名称" onChange={(event) => update(asset.id, { name: event.currentTarget.value })} />
+            <input className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2 py-1 font-mono text-xs" placeholder="https://cdn.example.com/library.min.js" value={asset.url} aria-label="资源 URL" onChange={(event) => update(asset.id, { url: event.currentTarget.value })} />
+            <input className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2 py-1 font-mono text-xs" placeholder="sha384-...（推荐）" value={asset.integrity ?? ""} aria-label="完整性哈希" onChange={(event) => update(asset.id, { integrity: event.currentTarget.value })} />
+            <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={asset.enabled} onChange={(event) => update(asset.id, { enabled: event.currentTarget.checked })} />启用</label>
+          </div>
+        ))}
+      </div>
+      <Button fullWidth size="sm" variant="ghost" onPress={() => onChange([...assets, { id: `asset_${Date.now()}`, name: "新资源", type: "script", url: "", integrity: "", enabled: true }])}>添加资源</Button>
+    </PageSection>
   );
 }
 

@@ -7,7 +7,9 @@ use crate::modules::agent_config::{
     AgentRequest, KnowledgeBaseRequest, PlatformToolResponse, PluginRequest, ProfileRequest,
     ProviderRequest, ProviderResponse, SkillFileRequest, SkillFileResponse, SkillRequest,
 };
-use crate::modules::agents::{ApiAgentMessage, ApiAgentSession, CreateAgentSessionRequest};
+use crate::modules::agents::{
+    ApiAgentMessage, ApiAgentSession, CreateAgentSessionRequest, UpdateAgentSessionRequest,
+};
 use crate::modules::apps::{ApiApp, CreateAppRequest, UpdateAppRequest};
 use crate::modules::automations::{
     ApiAutomationFlow, ApiAutomationFlowDetail, ApiAutomationFlowList,
@@ -18,24 +20,28 @@ use crate::modules::dingtalk::{
     AccessTokenResponse, ClearDingTalkDataResponse, DepartmentSyncResponse, UserSyncResponse,
 };
 use crate::modules::forms::{
-    ApiAppFieldOutline, ApiFormRecord, ApiFormRecordList, ApiFormSummary, ApiFormVersionSummary,
-    ApiSchemaPayload, CreateFormRecordRequest, CreateFormRequest, FormViewResponse,
-    RestoreVersionRequest, SaveFormViewRequest, SaveSchemaRequest, UpdateFormRecordRequest,
+    ApiAppFieldOutline, ApiDetailForm, ApiFormRecord, ApiFormRecordList, ApiFormSummary,
+    ApiFormVersionSummary, ApiSchemaPayload, CreateDetailFormRequest, CreateFormRecordRequest,
+    CreateFormRequest, FormViewResponse, RestoreVersionRequest, SaveFormViewRequest,
+    SaveSchemaRequest, UpdateFormRecordRequest,
 };
 use crate::modules::identity::{
     CreateLocalRoleRequest, CreateLocalUserRequest, DingTalkLoginUserResponse,
     OrganizationUnitResponse, RoleResponse, UpdateLocalRoleRequest, UpdateUserRequest,
     UserResponse,
 };
+use crate::modules::locations::{ImportLocationsRequest, LocationResponse};
 use crate::modules::navigation::{
     ApiNavigationItem, CreateNavigationGroupRequest, ReorderNavigationRequest,
     SetDefaultNavigationEntryRequest,
 };
 use crate::modules::settings::{
-    RolePermissionsResponse, UpdateIdentitySourceSettingsRequest, UpdateRolePermissionsRequest,
+    DatabaseConnectionTestResponse, PlatformAgentAssistantSettingsRequest,
+    RolePermissionsResponse, UpdateDatabaseSettingsRequest, UpdateIdentitySourceSettingsRequest,
+    UpdateRolePermissionsRequest,
 };
 use crate::platform::api::ApiResponse;
-use crate::platform::config::IdentitySourceSettings;
+use crate::platform::config::{IdentitySourceSettings, PlatformAgentAssistantSettings};
 use crate::platform::config::{
     AgentConfigProfile, AgentDefinition, AgentKnowledgeBaseDefinition, AgentPluginDefinition,
     AgentSkillDefinition,
@@ -91,6 +97,15 @@ endpoint!(
     "/api/settings/database",
     "updateDatabaseSettings"
 );
+typed_endpoint!(
+    test_database_connection,
+    post,
+    "/api/settings/database/test",
+    "testDatabaseConnection",
+    (),
+    UpdateDatabaseSettingsRequest,
+    ApiResponse<DatabaseConnectionTestResponse>
+);
 endpoint!(
     get_agent_settings,
     get,
@@ -102,6 +117,40 @@ endpoint!(
     put,
     "/api/settings/agent",
     "updateAgentSettings"
+);
+typed_endpoint!(
+    get_platform_agent_assistant_settings,
+    get,
+    "/api/settings/agent-assistant",
+    "getPlatformAgentAssistantSettings",
+    (),
+    ApiResponse<PlatformAgentAssistantSettings>
+);
+typed_endpoint!(
+    update_platform_agent_assistant_settings,
+    put,
+    "/api/settings/agent-assistant",
+    "updatePlatformAgentAssistantSettings",
+    (),
+    PlatformAgentAssistantSettingsRequest,
+    ApiResponse<PlatformAgentAssistantSettings>
+);
+typed_endpoint!(
+    list_locations,
+    get,
+    "/api/locations",
+    "listLocations",
+    (("parentCode" = Option<String>, Query), ("depth" = Option<i16>, Query), ("query" = Option<String>, Query), ("limit" = Option<u64>, Query)),
+    ApiResponse<Vec<LocationResponse>>
+);
+typed_endpoint!(
+    import_locations,
+    post,
+    "/api/locations",
+    "importLocations",
+    (),
+    ImportLocationsRequest,
+    ApiResponse<usize>
 );
 
 typed_endpoint!(
@@ -513,6 +562,22 @@ typed_endpoint!(
     ApiResponse<ApiAgentSession>
 );
 typed_endpoint!(
+    update_agent_session,
+    patch,
+    "/api/agent/sessions/{sessionId}",
+    "updateAgentSession",
+    (("sessionId" = String, Path)),
+    UpdateAgentSessionRequest,
+    ApiResponse<ApiAgentSession>
+);
+endpoint!(
+    delete_agent_session,
+    delete,
+    "/api/agent/sessions/{sessionId}",
+    "deleteAgentSession",
+    ("sessionId" = String, Path)
+);
+typed_endpoint!(
     list_agent_messages,
     get,
     "/api/agent/sessions/{sessionId}/messages",
@@ -565,7 +630,7 @@ typed_endpoint!(
     list_navigation_items,
     get,
     "/api/apps/{appId}/navigation",
-    "listNavigationItems",
+    "listAppNavigation",
     (("appId" = String, Path)),
     ApiResponse<Vec<ApiNavigationItem>>
 );
@@ -619,6 +684,14 @@ typed_endpoint!(
     (("appId" = String, Path)),
     CreateFormRequest,
     ApiResponse<ApiFormSummary>
+);
+typed_endpoint!(
+    ensure_workflow_process_flow,
+    post,
+    "/api/forms/{formUuid}/workflow/process",
+    "ensureWorkflowProcessFlow",
+    (("formUuid" = String, Path)),
+    ApiResponse<ApiAutomationFlow>
 );
 typed_endpoint!(
     list_automation_flows,
@@ -723,6 +796,23 @@ fn update_form_view() {}
 fn delete_form_view() {}
 typed_endpoint!(list_form_records, get, "/api/forms/{formUuid}/records", "listFormRecords", (("formUuid" = String, Path), ("page" = Option<u64>, Query), ("pageSize" = Option<u64>, Query)), ApiResponse<ApiFormRecordList>);
 typed_endpoint!(
+    list_detail_forms,
+    get,
+    "/api/forms/{formUuid}/detail-forms",
+    "listDetailForms",
+    (("formUuid" = String, Path)),
+    ApiResponse<Vec<ApiDetailForm>>
+);
+typed_endpoint!(
+    create_detail_form,
+    post,
+    "/api/forms/{formUuid}/detail-forms",
+    "createDetailForm",
+    (("formUuid" = String, Path)),
+    CreateDetailFormRequest,
+    ApiResponse<ApiDetailForm>
+);
+typed_endpoint!(
     create_form_record,
     post,
     "/api/forms/{formUuid}/records",
@@ -817,8 +907,13 @@ endpoint!(
         health_check,
         get_database_settings,
         update_database_settings,
+        test_database_connection,
         get_agent_settings,
         update_agent_settings,
+        get_platform_agent_assistant_settings,
+        update_platform_agent_assistant_settings,
+        list_locations,
+        import_locations,
         list_providers,
         create_provider,
         update_provider,
@@ -869,6 +964,8 @@ endpoint!(
         delete_local_role,
         list_agent_sessions,
         create_agent_session,
+        update_agent_session,
+        delete_agent_session,
         list_agent_messages,
         send_agent_message,
         list_apps,
@@ -882,6 +979,7 @@ endpoint!(
         get_app_field_outline,
         list_forms,
         create_form,
+        ensure_workflow_process_flow,
         list_automation_flows,
         create_automation_flow,
         get_automation_flow,
@@ -898,6 +996,8 @@ endpoint!(
         update_form_view,
         delete_form_view,
         list_form_records,
+        list_detail_forms,
+        create_detail_form,
         create_form_record,
         update_form_record,
         delete_form_record,
@@ -935,6 +1035,9 @@ mod tests {
         assert!(value["paths"]["/api/settings/identity-source/dingtalk/clear"]["post"].is_object());
         assert!(value["paths"]["/api/identity/users/{userId}"]["put"].is_object());
         assert!(value["paths"]["/api/forms/{formUuid}/views/{viewUuid}"]["delete"].is_object());
+        assert!(value["paths"]["/api/forms/{formUuid}/workflow/process"]["post"].is_object());
+        assert!(value["paths"]["/api/locations"]["get"].is_object());
+        assert!(value["paths"]["/api/locations"]["post"].is_object());
         assert!(value["paths"]["/api/apps/{appId}/field-outline"]["get"].is_object());
         assert!(value["components"]["schemas"]["FormViewResponse"].is_object());
         assert!(value["components"]["schemas"]["ApiAppFieldOutline"].is_object());

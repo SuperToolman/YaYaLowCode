@@ -34,6 +34,19 @@ type AutomationsPageClientProps = {
 
 type RunLogFilter = "all" | "failed" | "success" | "running";
 type AutomationTypeFilter = "all" | "trigger" | "process";
+type TriggerAction = "create" | "update" | "delete";
+type TriggerTiming = "before" | "after";
+
+const triggerActions: Array<{ id: TriggerAction; label: string }> = [
+  { id: "create", label: "创建成功" },
+  { id: "update", label: "更新成功" },
+  { id: "delete", label: "删除成功" },
+];
+
+const triggerTimings: Array<{ id: TriggerTiming; label: string }> = [
+  { id: "after", label: "后" },
+  { id: "before", label: "前" },
+];
 
 const emptyAutomationList: AutomationFlowList = {
   items: [],
@@ -55,8 +68,9 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
   const [deleteTarget, setDeleteTarget] = useState<AutomationFlow | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createFormUuid, setCreateFormUuid] = useState("");
-  const [createTriggerEvent, setCreateTriggerEvent] =
-    useState<ManualTriggerEvent>("after_create");
+  const [createTriggerAction, setCreateTriggerAction] = useState<TriggerAction>("create");
+  const [createTriggerTiming, setCreateTriggerTiming] = useState<TriggerTiming>("after");
+  const [createAutomationName, setCreateAutomationName] = useState("");
   const [logsTarget, setLogsTarget] = useState<AutomationFlow | null>(null);
   const [runLogs, setRunLogs] = useState<ApiAutomationRun[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -155,14 +169,47 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
   }, [automationList.items, formNameByUuid, keyword, typeFilter]);
 
   function openCreateModal() {
-    setCreateFormUuid(forms[0]?.id ?? "");
-    setCreateTriggerEvent("after_create");
+    const formUuid = forms[0]?.id ?? "";
+    setCreateFormUuid(formUuid);
+    setCreateTriggerAction("create");
+    setCreateTriggerTiming("after");
+    setCreateAutomationName(buildDefaultAutomationName(forms, formUuid, "after_create"));
     setCreateOpen(true);
+  }
+
+  function updateCreateForm(formUuid: string) {
+    setCreateFormUuid(formUuid);
+    setCreateAutomationName(
+      buildDefaultAutomationName(
+        forms,
+        formUuid,
+        toManualTriggerEvent(createTriggerAction, createTriggerTiming),
+      ),
+    );
+  }
+
+  function updateCreateTriggerAction(action: TriggerAction) {
+    setCreateTriggerAction(action);
+    setCreateAutomationName(
+      buildDefaultAutomationName(forms, createFormUuid, toManualTriggerEvent(action, createTriggerTiming)),
+    );
+  }
+
+  function updateCreateTriggerTiming(timing: TriggerTiming) {
+    setCreateTriggerTiming(timing);
+    setCreateAutomationName(
+      buildDefaultAutomationName(forms, createFormUuid, toManualTriggerEvent(createTriggerAction, timing)),
+    );
   }
 
   async function handleCreateAutomation() {
     if (!createFormUuid) {
       setErrorMessage("请先创建表单，再配置集成自动化。");
+      return;
+    }
+    const name = createAutomationName.trim();
+    if (!name) {
+      setErrorMessage("请输入自动化名称。");
       return;
     }
 
@@ -173,9 +220,9 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
         const { data, error } = await createAutomationFlow({
           path: { appId },
           body: {
-            name: buildDefaultAutomationName(forms, createFormUuid, createTriggerEvent),
+            name,
             triggerFormUuid: createFormUuid,
-            triggerEvent: createTriggerEvent,
+            triggerEvent: toManualTriggerEvent(createTriggerAction, createTriggerTiming),
           },
           responseStyle: "fields",
         });
@@ -493,54 +540,98 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                   </Modal.Heading>
                 </Modal.Header>
                 <Modal.Body className="space-y-4 px-5 py-4">
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <Select
-                      aria-label="触发表单"
-                      selectedKey={createFormUuid}
-                      onSelectionChange={(key) => setCreateFormUuid(String(key ?? ""))}
-                    >
-                      <Select.Trigger>
-                        <Select.Value>
-                          {forms.find((form) => form.id === createFormUuid)?.name ??
-                            "选择触发表单"}
-                        </Select.Value>
-                        <Select.Indicator />
-                      </Select.Trigger>
-                      <Select.Popover>
-                        <ListBox>
-                          {forms.map((form) => (
-                            <ListBox.Item key={form.id} id={form.id} textValue={form.name}>
-                              {form.name}
-                            </ListBox.Item>
-                          ))}
-                        </ListBox>
-                      </Select.Popover>
-                    </Select>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="grid gap-1.5">
+                      <span className="text-sm font-medium text-[var(--color-text-primary)]">表单</span>
+                      <Select
+                        aria-label="表单"
+                        selectedKey={createFormUuid}
+                        onSelectionChange={(key) => updateCreateForm(String(key ?? ""))}
+                      >
+                        <Select.Trigger>
+                          <Select.Value>
+                            {forms.find((form) => form.id === createFormUuid)?.name ??
+                              "选择触发表单"}
+                          </Select.Value>
+                          <Select.Indicator />
+                        </Select.Trigger>
+                        <Select.Popover>
+                          <ListBox>
+                            {forms.map((form) => (
+                              <ListBox.Item key={form.id} id={form.id} textValue={form.name}>
+                                {form.name}
+                              </ListBox.Item>
+                            ))}
+                          </ListBox>
+                        </Select.Popover>
+                      </Select>
+                    </div>
 
-                    <Select
-                      aria-label="触发事件"
-                      selectedKey={createTriggerEvent}
-                      onSelectionChange={(key) =>
-                        setCreateTriggerEvent(String(key ?? "after_create") as ManualTriggerEvent)
-                      }
-                    >
-                      <Select.Trigger>
-                        <Select.Value>
-                          {triggerEvents.find((event) => event.id === createTriggerEvent)
-                            ?.label ?? "创建成功后"}
-                        </Select.Value>
-                        <Select.Indicator />
-                      </Select.Trigger>
-                      <Select.Popover>
-                        <ListBox>
-                          {triggerEvents.map((event) => (
-                            <ListBox.Item key={event.id} id={event.id} textValue={event.label}>
-                              {event.label}
-                            </ListBox.Item>
-                          ))}
-                        </ListBox>
-                      </Select.Popover>
-                    </Select>
+                    <div className="grid gap-1.5">
+                      <span className="text-sm font-medium text-[var(--color-text-primary)]">触发类型</span>
+                      <Select
+                        aria-label="触发类型"
+                        selectedKey={createTriggerAction}
+                        onSelectionChange={(key) =>
+                          updateCreateTriggerAction(String(key ?? "create") as TriggerAction)
+                        }
+                      >
+                        <Select.Trigger>
+                          <Select.Value>
+                            {triggerActions.find((action) => action.id === createTriggerAction)
+                              ?.label ?? "创建成功"}
+                          </Select.Value>
+                          <Select.Indicator />
+                        </Select.Trigger>
+                        <Select.Popover>
+                          <ListBox>
+                            {triggerActions.map((action) => (
+                              <ListBox.Item key={action.id} id={action.id} textValue={action.label}>
+                                {action.label}
+                              </ListBox.Item>
+                            ))}
+                          </ListBox>
+                        </Select.Popover>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-1.5">
+                      <span className="text-sm font-medium text-[var(--color-text-primary)]">前后</span>
+                      <Select
+                        aria-label="前后"
+                        selectedKey={createTriggerTiming}
+                        onSelectionChange={(key) =>
+                          updateCreateTriggerTiming(String(key ?? "after") as TriggerTiming)
+                        }
+                      >
+                        <Select.Trigger>
+                          <Select.Value>
+                            {triggerTimings.find((timing) => timing.id === createTriggerTiming)
+                              ?.label ?? "后"}
+                          </Select.Value>
+                          <Select.Indicator />
+                        </Select.Trigger>
+                        <Select.Popover>
+                          <ListBox>
+                            {triggerTimings.map((timing) => (
+                              <ListBox.Item key={timing.id} id={timing.id} textValue={timing.label}>
+                                {timing.label}
+                              </ListBox.Item>
+                            ))}
+                          </ListBox>
+                        </Select.Popover>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid w-full gap-1.5">
+                    <span className="text-sm font-medium text-[var(--color-text-primary)]">自动化标题</span>
+                    <Input
+                      aria-label="自动化标题"
+                      fullWidth
+                      className="w-full"
+                      value={createAutomationName}
+                      onChange={(event) => setCreateAutomationName(event.currentTarget.value)}
+                    />
                   </div>
                 </Modal.Body>
                 <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
@@ -970,6 +1061,13 @@ function buildDefaultAutomationName(
     triggerEvents.find((event) => event.id === triggerEvent)?.label ?? "创建成功后";
 
   return `${formName}${eventLabel}`;
+}
+
+function toManualTriggerEvent(
+  action: TriggerAction,
+  timing: TriggerTiming,
+): ManualTriggerEvent {
+  return `${timing}_${action}` as ManualTriggerEvent;
 }
 
 function formatDateTime(value: string) {

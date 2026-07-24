@@ -9,6 +9,8 @@ pub struct Model {
     pub session_uuid: String,
     pub agent_id: String,
     pub title: String,
+    pub source: String,
+    pub is_pinned: bool,
     pub app_route_app_id: Option<String>,
     pub context_json: Json,
     pub status: String,

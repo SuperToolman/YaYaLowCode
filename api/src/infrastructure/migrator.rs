@@ -32,16 +32,244 @@ impl MigratorTrait for Migrator {
             Box::new(m20260722_000024_add_automation_flow_type::Migration),
             Box::new(m20260722_000025_create_workflow_runtime_tables::Migration),
             Box::new(m20260722_000026_add_workflow_task_assignee_user::Migration),
+            Box::new(m20260723_000027_create_locations_table::Migration),
+            Box::new(m20260723_000028_create_uploaded_files_table::Migration),
+            Box::new(m20260723_000028_limit_locations_to_three_levels::Migration),
+            Box::new(m20260723_000029_convert_locations_to_tree::Migration),
+            Box::new(m20260723_000030_repair_locations_tree_schema::Migration),
+            Box::new(m20260724_000031_extend_agent_sessions::Migration),
         ]
+    }
+}
+
+mod m20260724_000031_extend_agent_sessions {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(r#"
+                ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS source VARCHAR(40) NOT NULL DEFAULT 'general';
+                ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN NOT NULL DEFAULT FALSE;
+                CREATE INDEX IF NOT EXISTS idx_agent_sessions_source_updated_at
+                    ON agent_sessions (source, is_pinned DESC, updated_at DESC);
+            "#).await?;
+            Ok(())
+        }
+
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
+    }
+}
+
+mod m20260723_000028_create_uploaded_files_table {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                CREATE TABLE IF NOT EXISTS uploaded_files (
+                    id UUID PRIMARY KEY,
+                    storage_key TEXT NOT NULL UNIQUE,
+                    original_name TEXT NOT NULL,
+                    mime_type VARCHAR(255) NOT NULL,
+                    byte_size BIGINT NOT NULL,
+                    uploaded_by VARCHAR(120) NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL
+                );
+            "#,
+                )
+                .await?;
+            Ok(())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE IF EXISTS uploaded_files")
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260723_000027_create_locations_table {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(
+                "CREATE TABLE IF NOT EXISTS locations (
+                    id UUID PRIMARY KEY,
+                    code VARCHAR(255) NOT NULL UNIQUE,
+                    parent_code VARCHAR(255) NULL REFERENCES locations(code) ON DELETE CASCADE,
+                    kind VARCHAR(24) NOT NULL,
+                    name TEXT NOT NULL,
+                    labels JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    source VARCHAR(64) NOT NULL DEFAULT 'manual',
+                    source_id VARCHAR(255) NULL,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL,
+                    CONSTRAINT chk_locations_kind CHECK (kind IN ('country', 'region', 'city'))
+                );
+                CREATE INDEX IF NOT EXISTS idx_locations_parent_kind_sort ON locations (parent_code, kind, sort_order, name);
+                CREATE INDEX IF NOT EXISTS idx_locations_country_kind ON locations (kind) WHERE parent_code IS NULL;"
+            ).await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE IF EXISTS locations;")
+                .await?;
+            Ok(())
+        }
+    }
+}
+mod m20260723_000028_limit_locations_to_three_levels {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(
+                "ALTER TABLE locations DROP CONSTRAINT IF EXISTS chk_locations_kind;
+                 ALTER TABLE locations ADD CONSTRAINT chk_locations_kind CHECK (kind IN ('country', 'region', 'city'));"
+            ).await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(
+                "ALTER TABLE locations DROP CONSTRAINT IF EXISTS chk_locations_kind;
+                 ALTER TABLE locations ADD CONSTRAINT chk_locations_kind CHECK (kind IN ('country', 'region', 'city', 'district'));"
+            ).await?;
+            Ok(())
+        }
+    }
+}
+mod m20260723_000029_convert_locations_to_tree {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "ALTER TABLE locations ADD COLUMN IF NOT EXISTS parent_id UUID NULL",
+                )
+                .await?;
+            manager
+                .get_connection()
+                .execute_unprepared("ALTER TABLE locations ADD COLUMN IF NOT EXISTS depth SMALLINT")
+                .await?;
+            manager.get_connection().execute_unprepared(
+                "UPDATE locations AS child SET parent_id = parent.id FROM locations AS parent WHERE child.parent_code = parent.code AND child.parent_id IS NULL;
+                 UPDATE locations SET depth = 1 WHERE parent_id IS NULL AND depth IS NULL;
+                 WITH RECURSIVE tree AS (
+                    SELECT id, 1::SMALLINT AS depth FROM locations WHERE parent_id IS NULL
+                    UNION ALL
+                    SELECT child.id, (tree.depth + 1)::SMALLINT FROM locations AS child JOIN tree ON child.parent_id = tree.id
+                 ) UPDATE locations SET depth = tree.depth FROM tree WHERE locations.id = tree.id;
+                 ALTER TABLE locations ALTER COLUMN depth SET NOT NULL;
+                 ALTER TABLE locations DROP CONSTRAINT IF EXISTS locations_parent_code_fkey;
+                 ALTER TABLE locations DROP CONSTRAINT IF EXISTS chk_locations_kind;
+                 ALTER TABLE locations ADD CONSTRAINT locations_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES locations(id) ON DELETE CASCADE;
+                 ALTER TABLE locations DROP COLUMN IF EXISTS parent_code;
+                 CREATE INDEX IF NOT EXISTS idx_locations_parent_depth_sort ON locations (parent_id, depth, sort_order, name);"
+            ).await?;
+            Ok(())
+        }
+
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Migration(
+                "locations tree migration is irreversible".to_string(),
+            ))
+        }
+    }
+}
+mod m20260723_000030_repair_locations_tree_schema {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            let connection = manager.get_connection();
+            connection
+                .execute_unprepared(
+                    "ALTER TABLE locations ADD COLUMN IF NOT EXISTS parent_id UUID NULL",
+                )
+                .await?;
+            connection
+                .execute_unprepared("ALTER TABLE locations ADD COLUMN IF NOT EXISTS depth SMALLINT")
+                .await?;
+            connection.execute_unprepared("DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'locations' AND column_name = 'parent_code') THEN UPDATE locations AS child SET parent_id = parent.id FROM locations AS parent WHERE child.parent_code = parent.code AND child.parent_id IS NULL; ALTER TABLE locations DROP CONSTRAINT IF EXISTS locations_parent_code_fkey; ALTER TABLE locations DROP COLUMN parent_code; END IF; END $$").await?;
+            connection
+                .execute_unprepared(
+                    "UPDATE locations SET depth = 1 WHERE parent_id IS NULL AND depth IS NULL",
+                )
+                .await?;
+            connection.execute_unprepared("WITH RECURSIVE tree AS (SELECT id, 1::SMALLINT AS calculated_depth FROM locations WHERE parent_id IS NULL UNION ALL SELECT child.id, (tree.calculated_depth + 1)::SMALLINT FROM locations AS child JOIN tree ON child.parent_id = tree.id) UPDATE locations SET depth = tree.calculated_depth FROM tree WHERE locations.id = tree.id").await?;
+            connection
+                .execute_unprepared("ALTER TABLE locations ALTER COLUMN depth SET NOT NULL")
+                .await?;
+            connection
+                .execute_unprepared(
+                    "ALTER TABLE locations DROP CONSTRAINT IF EXISTS chk_locations_kind",
+                )
+                .await?;
+            connection.execute_unprepared("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'locations_parent_id_fkey') THEN ALTER TABLE locations ADD CONSTRAINT locations_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES locations(id) ON DELETE CASCADE; END IF; END $$").await?;
+            connection.execute_unprepared("CREATE INDEX IF NOT EXISTS idx_locations_parent_depth_sort ON locations (parent_id, depth, sort_order, name)").await?;
+            Ok(())
+        }
+
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Migration(
+                "locations tree schema repair is irreversible".to_string(),
+            ))
+        }
     }
 }
 mod m20260722_000026_add_workflow_task_assignee_user {
     use sea_orm_migration::prelude::*;
-    #[derive(DeriveMigrationName)] pub struct Migration;
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
-        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> { manager.get_connection().execute_unprepared("ALTER TABLE workflow_tasks ADD COLUMN IF NOT EXISTS assignee_user_id UUID REFERENCES iam_users(id) ON DELETE SET NULL; CREATE INDEX IF NOT EXISTS idx_workflow_tasks_assignee_user_status ON workflow_tasks (assignee_user_id, status, created_at DESC);").await?; Ok(()) }
-        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> { manager.get_connection().execute_unprepared("DROP INDEX IF EXISTS idx_workflow_tasks_assignee_user_status; ALTER TABLE workflow_tasks DROP COLUMN IF EXISTS assignee_user_id;").await?; Ok(()) }
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("ALTER TABLE workflow_tasks ADD COLUMN IF NOT EXISTS assignee_user_id UUID REFERENCES iam_users(id) ON DELETE SET NULL; CREATE INDEX IF NOT EXISTS idx_workflow_tasks_assignee_user_status ON workflow_tasks (assignee_user_id, status, created_at DESC);").await?;
+            Ok(())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("DROP INDEX IF EXISTS idx_workflow_tasks_assignee_user_status; ALTER TABLE workflow_tasks DROP COLUMN IF EXISTS assignee_user_id;").await?;
+            Ok(())
+        }
     }
 }
 mod m20260722_000023_add_form_type {

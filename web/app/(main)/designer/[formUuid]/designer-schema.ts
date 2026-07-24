@@ -1,5 +1,5 @@
 import { COLUMN_COUNT } from "./designer-constants";
-import { getRowCount } from "./designer-layout";
+import { getRowCount, normalizeRichTextLayouts } from "./designer-layout";
 import type { PageDesignerProps, PlacedField } from "./designer-types";
 import {
   getDefaultActionPanelCode,
@@ -33,6 +33,7 @@ export function getDefaultPageDesignerProps(): PageDesignerProps {
         description: "当前登录用户",
       },
     ],
+    assets: [],
     indexedFieldIds: [],
     actionPanel: {
       code: getDefaultActionPanelCode(),
@@ -75,6 +76,7 @@ export function normalizePageDesignerProps(
     afterSubmitActions: pageProps?.afterSubmitActions ?? defaults.afterSubmitActions,
     afterDataInitActions: pageProps?.afterDataInitActions ?? defaults.afterDataInitActions,
     dataSources: pageProps?.dataSources ?? defaults.dataSources,
+    assets: pageProps?.assets ?? defaults.assets,
     indexedFieldIds: pageProps?.indexedFieldIds ?? defaults.indexedFieldIds,
     actionPanel: {
       ...defaults.actionPanel,
@@ -98,13 +100,14 @@ export function buildSchema(
   fields: PlacedField[],
   pageProps: PageDesignerProps,
 ) {
+  const normalizedFields = normalizeRichTextLayouts(fields);
   return {
     formUuid,
     formName: formName.trim() || "New Page",
     columns: COLUMN_COUNT,
-    rows: getRowCount(fields),
+    rows: getRowCount(normalizedFields),
     pageProps,
-    fields: [...fields]
+    fields: [...normalizedFields]
       .sort((left, right) => left.row - right.row || left.column - right.column)
       .map((field) => ({
         id: field.id,

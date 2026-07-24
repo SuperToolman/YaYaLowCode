@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Button,
   Checkbox,
@@ -19,6 +19,7 @@ import {
   updateRolePermissions,
 } from "../../lib/api-client";
 import { mapWithConcurrency } from "../../lib/async";
+import { SettingsContentCard } from "../_components/settings-content-card";
 
 type Role = {
   id: string;
@@ -287,16 +288,6 @@ export default function PermissionsSettingsPage() {
         : without;
     });
   }
-  function setFormsAll(appId: string, formIds: string[], checked: boolean) {
-    if (isSystemAdministrator || !formIds.length) return;
-    const formGrants = formIds.flatMap((formId) =>
-      formActions.map((action) => `form:${formId}:${action}`),
-    );
-    setGrants((current) => {
-      const without = current.filter((grant) => !formGrants.includes(grant));
-      return checked ? [...without, ...formGrants, `app:${appId}:display`] : without;
-    });
-  }
   function toggle(grant: string) {
     if (!isSystemAdministrator)
       setGrants((current) =>
@@ -365,8 +356,15 @@ export default function PermissionsSettingsPage() {
   }
 
   return (
-    <section className="grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)] gap-4">
-      <aside className="theme-panel flex min-h-0 flex-col overflow-hidden rounded-[22px] p-4 shadow-[var(--shadow-card)]">
+    <SettingsContentCard
+      title="权限设置"
+      subtitle="按角色配置应用、表单与平台功能的访问范围。"
+      bodyScrollable={false}
+      bodyClassName="flex min-h-0 flex-1 flex-col !overflow-hidden"
+      footer={<><p className="text-xs leading-5 text-[var(--color-text-secondary)]">{message || (activeRole ? isSystemAdministrator ? "系统管理员拥有全部权限，权限不可修改。" : `正在配置「${activeRole.name}」的 RBAC 权限。` : "请先选择需要配置的角色。")}</p><Button variant="primary" isDisabled={!roleId || saving || isSystemAdministrator} onPress={() => void save()}>{saving ? "正在保存…" : "保存权限"}</Button></>}
+    >
+    <section className="grid min-h-0 w-full flex-1 grid-cols-[180px_minmax(0,1fr)] overflow-hidden">
+      <aside className="flex min-h-0 flex-col overflow-hidden border-r border-[var(--color-border)] pr-4">
         <h2 className="text-base font-semibold text-[var(--color-text-primary)]">
           授权角色
         </h2>
@@ -380,15 +378,15 @@ export default function PermissionsSettingsPage() {
           className="mt-4"
         >
           <Tabs.List aria-label="角色来源筛选" className="w-full">
-            <Tabs.Tab id="all" className="flex-1 px-2 py-1.5 text-xs">
+            <Tabs.Tab id="all" className="flex-1 px-1 py-1.5 text-[11px]">
               全部
               <Tabs.Indicator />
             </Tabs.Tab>
-            <Tabs.Tab id="local" className="flex-1 px-2 py-1.5 text-xs">
+            <Tabs.Tab id="local" className="flex-1 px-1 py-1.5 text-[11px]">
               平台
               <Tabs.Indicator />
             </Tabs.Tab>
-            <Tabs.Tab id="dingtalk" className="flex-1 px-2 py-1.5 text-xs">
+            <Tabs.Tab id="dingtalk" className="flex-1 px-1 py-1.5 text-[11px]">
               钉钉
               <Tabs.Indicator />
             </Tabs.Tab>
@@ -429,28 +427,16 @@ export default function PermissionsSettingsPage() {
           ) : null}
         </div>
       </aside>
-      <div className="theme-panel flex min-h-0 flex-col overflow-hidden rounded-[22px] shadow-[var(--shadow-card)]">
-        <header className="shrink-0 border-b border-[var(--color-border)] px-5 py-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h1 className="text-lg font-semibold text-[var(--color-text-primary)]">
-                权限设置
-              </h1>
-              <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+      <div className="flex min-h-0 flex-col overflow-hidden pl-4">
+        <header className="shrink-0 pb-4">
+          <div>
+              <p className="text-sm text-[var(--color-text-secondary)]">
                 {activeRole
                   ? isSystemAdministrator
                     ? "系统管理员拥有全部权限，权限不可修改"
                     : `正在配置「${activeRole.name}」的 RBAC 权限`
                   : "请先从左侧选择授权角色"}
               </p>
-            </div>
-            <Button
-              variant="primary"
-              isDisabled={!roleId || saving || isSystemAdministrator}
-              onPress={() => void save()}
-            >
-              {saving ? "正在保存…" : "保存权限"}
-            </Button>
           </div>
           {activeRole ? (
             <Tabs
@@ -473,55 +459,44 @@ export default function PermissionsSettingsPage() {
           ) : null}
         </header>
         {error ? (
-          <p className="mx-5 mt-4 rounded-xl bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
+          <p className="mt-4 rounded-lg bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
             {error}
           </p>
         ) : null}
         {message ? (
-          <p className="mx-5 mt-4 rounded-xl bg-[var(--color-success-soft)] px-4 py-3 text-sm text-[var(--color-success)]">
+          <p className="mt-4 rounded-lg bg-[var(--color-success-soft)] px-4 py-3 text-sm text-[var(--color-success)]">
             {message}
           </p>
         ) : null}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {!activeRole ? (
-            <Empty text="选择角色后可设置应用权限和平台权限。" />
+            <div className="flex h-full items-center justify-center"><Empty text="选择角色后可设置应用权限和平台权限。" /></div>
           ) : tab === "apps" ? (
-            <div className="grid min-h-[460px] grid-cols-[minmax(220px,0.65fr)_minmax(0,1.4fr)] overflow-hidden rounded-2xl border border-[var(--color-border)]">
+            <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)] overflow-hidden rounded-lg border border-[var(--color-border)]">
               <AppTree
                 apps={apps}
                 tree={tree}
                 state={resourceState}
                 onSelect={setSelectedResource}
                 onSetAll={setAll}
-                onSetFormsAll={setFormsAll}
                 selected={selectedResource}
               />
-              <ResourcePermissions
-                resource={selectedResource}
-                grants={grantSet}
-                state={resourceState}
-                onToggle={toggle}
-                onSetScope={setScope}
-                onSetVisibleViews={setVisibleViews}
-              />
+              <div className="min-h-0 overflow-y-auto overscroll-contain"><ResourcePermissions resource={selectedResource} grants={grantSet} state={resourceState} onToggle={toggle} onSetScope={setScope} onSetVisibleViews={setVisibleViews} /></div>
             </div>
           ) : (
-            <PlatformPermissions
-              grants={grantSet}
-              onToggle={toggle}
-              onSetGroup={setPlatformGroup}
-            />
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"><PlatformPermissions grants={grantSet} onToggle={toggle} onSetGroup={setPlatformGroup} /></div>
           )}
         </div>
       </div>
     </section>
+    </SettingsContentCard>
   );
 }
 
 type PermissionTreeNode = {
   id: string;
   name: string;
-  kind: "app" | "group" | "form";
+  kind: "app" | "form";
   resourceId?: string;
   appId?: string;
   children?: PermissionTreeNode[];
@@ -532,7 +507,6 @@ function AppTree({
   state,
   onSelect,
   onSetAll,
-  onSetFormsAll,
   selected,
 }: {
   apps: App[];
@@ -551,7 +525,6 @@ function AppTree({
     actions: readonly string[],
     checked: boolean,
   ) => void;
-  onSetFormsAll: (appId: string, formIds: string[], checked: boolean) => void;
   selected: { kind: "app" | "form"; id: string } | null;
 }) {
   const data = useMemo<PermissionTreeNode[]>(
@@ -561,12 +534,12 @@ function AppTree({
         name: app.name,
         kind: "app",
         resourceId: app.id,
-        children: buildChildren(tree[app.id] ?? [], null, app.id),
+        children: buildFormNodes(tree[app.id] ?? [], null, app.id),
       })),
     [apps, tree],
   );
   return (
-    <aside className="border-r border-[var(--color-border)] bg-[var(--color-control-soft)] p-3">
+    <aside className="flex min-h-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-control-soft)] p-3">
       <p className="px-2 pb-3 text-xs font-semibold text-[var(--color-text-secondary)]">
         应用结构
       </p>
@@ -575,42 +548,22 @@ function AppTree({
           data={data}
           width="100%"
           height={480}
-          indent={20}
-          rowHeight={44}
+          indent={14}
+          rowHeight={40}
           openByDefault
           disableDrag
           disableDrop
         >
           {({ node, style }: NodeRendererProps<PermissionTreeNode>) => {
             const item = node.data;
-            const prefix =
-              item.kind === "app"
-                ? `app:${item.resourceId}`
-                : item.kind === "form"
-                  ? `form:${item.resourceId}`
-                  : "";
+            const prefix = item.kind === "app" ? `app:${item.resourceId}` : `form:${item.resourceId}`;
             const actions = item.kind === "app" ? appActions : formActions;
-            const groupFormIds =
-              item.kind === "group" ? findDescendantFormIds(item) : [];
-            const groupStates = groupFormIds.map((formId) =>
-              state(`form:${formId}`, formActions),
-            );
-            const status = prefix
-              ? state(prefix, actions)
-              : groupStates.length &&
-                  groupStates.every((value) => value === "all")
-                ? "all"
-                : groupStates.some((value) => value !== "none")
-                  ? "partial"
-                  : "none";
-            const active =
-              (item.kind === "app" || item.kind === "form") &&
-              selected?.kind === item.kind &&
-              selected.id === item.resourceId;
+            const status = state(prefix, actions);
+            const active = selected?.kind === item.kind && selected.id === item.resourceId;
             return (
               <div style={style} className="px-1">
                 <div
-                  className={`flex h-[38px] items-center gap-1.5 rounded-lg px-2 ${active ? "bg-[var(--color-primary-soft)]" : "hover:bg-[var(--color-bg-hover)]"}`}
+                  className={`flex h-[34px] items-center gap-1.5 rounded-lg px-2 ${active ? "bg-[var(--color-primary-soft)]" : "hover:bg-[var(--color-bg-hover)]"}`}
                 >
                   {node.isInternal ? (
                     <button
@@ -628,37 +581,14 @@ function AppTree({
                   ) : (
                     <span aria-hidden className="h-6 w-6 shrink-0" />
                   )}
-                  {item.kind === "group" ? (
-                    <PermissionCheckbox
-                      label={`授予分组${item.name}下所有表单全部权限`}
-                      state={status}
-                      isDisabled={!groupFormIds.length}
-                      onChange={(checked) =>
-                        onSetFormsAll(item.appId!, groupFormIds, checked)
-                      }
-                    />
-                  ) : (
-                    <PermissionCheckbox
-                      label={`授予${item.name}全部权限`}
-                      state={status}
-                      onChange={(checked) => onSetAll(prefix, actions, checked)}
-                    />
-                  )}
+                  <PermissionCheckbox label={`授予${item.name}全部权限`} state={status} onChange={(checked) => onSetAll(prefix, actions, checked)} />
                   <button
                     type="button"
-                    disabled={item.kind === "group"}
-                    onClick={() =>
-                      item.kind !== "group" &&
-                      onSelect({
-                        kind: item.kind,
-                        id: item.resourceId!,
-                        label: item.name,
-                      })
-                    }
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm disabled:cursor-default"
+                    onClick={() => onSelect({ kind: item.kind, id: item.resourceId!, label: item.name })}
+                    className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-xs"
                   >
                     <TreeIcon kind={item.kind} />
-                    <span className="truncate text-[var(--color-text-primary)]">
+                    <span className="truncate text-[12px] text-[var(--color-text-primary)]">
                       {item.name}
                     </span>
                   </button>
@@ -671,6 +601,7 @@ function AppTree({
                           : "未授权"
                     }
                     tone={status}
+                    className="text-xs"
                   />
                 </div>
               </div>
@@ -683,14 +614,7 @@ function AppTree({
     </aside>
   );
 }
-function findDescendantFormIds(node: PermissionTreeNode): string[] {
-  return (node.children ?? []).flatMap((child) =>
-    child.kind === "form" && child.resourceId
-      ? [child.resourceId]
-      : findDescendantFormIds(child),
-  );
-}
-function buildChildren(
+function buildFormNodes(
   items: NavigationItem[],
   parentId: string | null,
   appId: string,
@@ -703,15 +627,7 @@ function buildChildren(
     )
     .flatMap<PermissionTreeNode>((item): PermissionTreeNode[] =>
       item.itemType === "group"
-        ? [
-            {
-              id: `group:${item.id}`,
-              name: item.title,
-              kind: "group",
-              appId,
-              children: buildChildren(items, item.id, appId),
-            },
-          ]
+        ? buildFormNodes(items, item.id, appId)
         : item.targetFormUuid
           ? [
               {
@@ -725,11 +641,11 @@ function buildChildren(
           : [],
     );
 }
-function TreeIcon({ kind }: { kind: "app" | "group" | "form" }) {
+function TreeIcon({ kind }: { kind: "app" | "form" }) {
   return kind === "app" ? (
     <svg
       viewBox="0 0 24 24"
-      className="h-5 w-5 shrink-0 text-[var(--color-primary)]"
+      className="h-4 w-4 shrink-0 text-[var(--color-primary)]"
       fill="none"
       stroke="currentColor"
       strokeWidth="1.8"
@@ -737,20 +653,10 @@ function TreeIcon({ kind }: { kind: "app" | "group" | "form" }) {
       <rect x="4" y="3.5" width="16" height="17" rx="2" />
       <path d="M8 7.5h8M8 11.5h8M8 15.5h5" />
     </svg>
-  ) : kind === "group" ? (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-5 w-5 shrink-0 text-[var(--color-warning)]"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-    >
-      <path d="M3.5 7.5h6l1.7 2h9.3v8.7a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V7.5Z" />
-    </svg>
   ) : (
     <svg
       viewBox="0 0 24 24"
-      className="h-5 w-5 shrink-0 text-[var(--color-text-secondary)]"
+      className="h-4 w-4 shrink-0 text-[var(--color-text-secondary)]"
       fill="none"
       stroke="currentColor"
       strokeWidth="1.8"
@@ -1174,20 +1080,17 @@ function PermissionCheckbox({
   isDisabled?: boolean;
   onChange: (checked: boolean) => void;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (inputRef.current) inputRef.current.indeterminate = state === "partial";
-  }, [state]);
   return (
-    <input
-      ref={inputRef}
+    <Checkbox
       aria-label={label}
-      type="checkbox"
-      checked={state === "all"}
-      disabled={isDisabled}
-      onChange={(event) => onChange(event.currentTarget.checked)}
-      className="h-4 w-4 accent-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-40"
-    />
+      isSelected={state === "all"}
+      isIndeterminate={state === "partial"}
+      isDisabled={isDisabled}
+      onChange={onChange}
+      className="shrink-0"
+    >
+      <Checkbox.Control><Checkbox.Indicator /></Checkbox.Control>
+    </Checkbox>
   );
 }
 function SourceTag({ source }: { source: string }) {
@@ -1203,9 +1106,11 @@ function SourceTag({ source }: { source: string }) {
 function StatusTag({
   value,
   tone,
+  className = "",
 }: {
   value: string;
   tone: "all" | "partial" | "none" | "neutral";
+  className?: string;
 }) {
   const toneClass =
     tone === "all"
@@ -1217,7 +1122,7 @@ function StatusTag({
           : "bg-[var(--color-primary-soft)] text-[var(--color-primary)]";
   return (
     <span
-      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${toneClass}`}
+      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${toneClass} ${className}`}
     >
       {value}
     </span>

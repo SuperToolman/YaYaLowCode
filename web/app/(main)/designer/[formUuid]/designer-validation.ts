@@ -1,7 +1,7 @@
 import type { PlacedField } from "./designer-types";
 
 export type DesignerSchemaValidationIssue = {
-  code: "empty-container" | "association-display";
+  code: "empty-container" | "association-display" | "duplicate-serial-number";
   fieldId: string;
   message: string;
 };
@@ -25,7 +25,27 @@ export function validateDesignerSchema(
       .filter((parentId): parentId is string => Boolean(parentId)),
   );
 
-  return fields.flatMap<DesignerSchemaValidationIssue>((field) => {
+  const serialNumberScopes = new Map<string, PlacedField[]>();
+  for (const field of fields.filter((item) => item.type === "serialNumber")) {
+    const scope = getSerialNumberScope(field, fields);
+    const scopedFields = serialNumberScopes.get(scope) ?? [];
+    scopedFields.push(field);
+    serialNumberScopes.set(scope, scopedFields);
+  }
+
+  const serialNumberIssues = [...serialNumberScopes.entries()].flatMap(
+    ([scope, scopedFields]) => scopedFields.slice(1).map((field) => ({
+      code: "duplicate-serial-number" as const,
+      fieldId: field.id,
+      message: scope === "canvas"
+        ? "主画布只能添加一个流水号组件"
+        : "每个子表单只能添加一个流水号组件",
+    })),
+  );
+
+  return [
+    ...serialNumberIssues,
+    ...fields.flatMap<DesignerSchemaValidationIssue>((field) => {
     if (field.type === "associationFormField") {
       if (!field.props.associationFormId || !field.props.associationPrimaryFieldId) {
         return [{
@@ -49,5 +69,18 @@ export function validateDesignerSchema(
         message: `${containerName}“${label}”至少需要包含一个子组件`,
       },
     ];
-  });
+    }),
+  ];
+}
+
+function getSerialNumberScope(field: PlacedField, fields: PlacedField[]) {
+  const fieldsById = new Map(fields.map((item) => [item.id, item]));
+  let parentId = field.parentGroupId;
+  while (parentId) {
+    const parent = fieldsById.get(parentId);
+    if (!parent) break;
+    if (parent.type === "subform") return `subform:${parent.id}`;
+    parentId = parent.parentGroupId;
+  }
+  return "canvas";
 }

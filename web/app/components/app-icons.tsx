@@ -332,6 +332,28 @@ export function WorkflowFormIcon() {
   );
 }
 
+export function DetailFormIcon() {
+  return (
+    <IconBase className="h-4 w-4">
+      <path d="M4 5.5h10.5a2 2 0 0 1 2 2v2" />
+      <path d="m14.2 7.2 2.3 2.3 2.3-2.3" />
+      <rect x="5" y="11" width="14" height="8" rx="1.5" />
+      <path d="M5 14h14M9.7 11v8M14.3 11v8" />
+    </IconBase>
+  );
+}
+
+export function DefinedPageIcon() {
+  return (
+    <IconBase className="h-4 w-4">
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <path d="M4 8h16" />
+      <path d="m10 12-2 2 2 2" />
+      <path d="m14 12 2 2-2 2" />
+    </IconBase>
+  );
+}
+
 export function LinkIcon() {
   return (
     <IconBase className="h-4 w-4">

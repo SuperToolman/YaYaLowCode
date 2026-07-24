@@ -1,10 +1,11 @@
 "use client";
 
-import { Modal } from "@heroui/react/modal";
+import { Drawer } from "@heroui/react/drawer";
 import type { FormDesignerSchema } from "../designer-schema";
 import { useTheme } from "../../../../components/theme-provider";
 import {
   RuntimeFormRenderer,
+  RuntimeFormSurface,
   type RuntimeDebugEvent,
   type RuntimeFormSchema,
 } from "../../../../components/runtime-form-renderer";
@@ -30,36 +31,32 @@ export function FormPreviewModal({
   };
 
   return (
-    <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
-      <Modal.Backdrop className="designer-modal-backdrop" isDismissable>
-        <Modal.Container
-          placement="center"
-          scroll="inside"
-          size="cover"
-        >
-          <Modal.Dialog
+    <Drawer isOpen={isOpen} onOpenChange={onOpenChange}>
+      <Drawer.Backdrop className="designer-modal-backdrop" isDismissable>
+        <Drawer.Content placement="right">
+          <Drawer.Dialog
             data-theme={resolvedTheme}
-            className="designer-theme-surface flex h-[90vh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-2xl bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]"
+            className="designer-theme-surface flex h-[100dvh] w-[90vw] max-w-[90vw] flex-col overflow-hidden bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]"
           >
-            <Modal.Header className="border-b border-[var(--designer-border)] bg-[var(--designer-surface-solid)] px-5 py-4">
+            <Drawer.Header className="border-b border-[var(--designer-border)] bg-[var(--designer-surface-solid)] px-5 py-4">
               <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
                 <div className="min-w-0">
-                  <Modal.Heading className="mt-1 truncate text-xl font-semibold text-[var(--color-text-primary)]">
+                  <Drawer.Heading className="mt-1 truncate text-xl font-semibold text-[var(--color-text-primary)]">
                     {schema.formName}
-                  </Modal.Heading>
+                  </Drawer.Heading>
                 </div>
                 <span className="shrink-0 rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-sm font-medium text-[var(--color-primary)]">
                   {visibleFields.length} 个控件
                 </span>
-                <Modal.CloseTrigger
+                <Drawer.CloseTrigger
                   aria-label="关闭预览"
                   className="shrink-0"
                 />
               </div>
-            </Modal.Header>
+            </Drawer.Header>
 
-            <Modal.Body className="flex-1 overflow-auto bg-[var(--designer-surface-soft)] p-5">
-              <div className="mx-auto min-h-full max-w-[1180px] rounded-2xl border border-[var(--designer-border)] bg-[var(--designer-surface-solid)] p-6 shadow-[var(--shadow-designer)]">
+            <Drawer.Body className="flex-1 overflow-auto bg-[var(--designer-surface-soft)] p-5">
+              <RuntimeFormSurface>
                 {visibleFields.length > 0 ? (
                   <RuntimeFormRenderer
                     schema={runtimeSchema}
@@ -76,11 +73,11 @@ export function FormPreviewModal({
                     当前没有可预览控件
                   </div>
                 )}
-              </div>
-            </Modal.Body>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
+              </RuntimeFormSurface>
+            </Drawer.Body>
+          </Drawer.Dialog>
+        </Drawer.Content>
+      </Drawer.Backdrop>
+    </Drawer>
   );
 }

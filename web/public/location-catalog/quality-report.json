@@ -1,0 +1,15 @@
+{
+  "generatedAt": "2026-07-24T02:46:39.530Z",
+  "countries": 250,
+  "regions": 3865,
+  "districts": 47549,
+  "cities": 235024,
+  "locations": 286688,
+  "duplicateCodes": 0,
+  "fallbackLabels": {
+    "zh-CN": 191727,
+    "en-US": 185547,
+    "ja-JP": 218250
+  },
+  "notes": "A fallback label is intentionally not treated as a translation. Add a GeoNames alternate name or location-catalog-overrides.json to improve it."
+}

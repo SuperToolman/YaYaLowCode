@@ -12,12 +12,18 @@ const [base, generated] = await Promise.all(
   ),
 );
 
+const paths = { ...generated.paths };
+for (const [path, baseOperations] of Object.entries(base.paths ?? {})) {
+  paths[path] = {
+    ...paths[path],
+    ...baseOperations,
+  };
+}
+
 const merged = {
   ...generated,
-  paths: {
-    ...generated.paths,
-    ...base.paths,
-  },
+  ...base,
+  paths,
   components: {
     ...generated.components,
     ...base.components,

@@ -105,7 +105,7 @@ function LoginScreen() {
         <div className="absolute left-[48%] top-[18%] h-52 w-52 rounded-full bg-[var(--color-secondary-soft)] opacity-60 blur-3xl" />
       </div>
 
-      <div className="relative mx-auto grid h-full w-full max-w-[1180px] overflow-hidden rounded-[32px] border border-[var(--glass-border)] bg-[var(--glass-background)] shadow-[var(--glass-shadow)] backdrop-blur-2xl lg:grid-cols-[1.08fr_0.92fr]">
+      <div className="relative mx-auto grid h-full w-full overflow-hidden rounded-[32px] border border-[var(--glass-border)] bg-[var(--glass-background)] shadow-[var(--glass-shadow)] backdrop-blur-2xl lg:grid-cols-[1.08fr_0.92fr]">
         <section className="relative hidden flex-col justify-between overflow-hidden border-r border-[var(--color-border)] p-10 lg:flex xl:p-14">
           <div>
             <Brand />

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const backendBaseUrl = process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8787";
+export const backendBaseUrl = process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8787";
 
 export function backendAuthorizationHeaders(
   request: Request,

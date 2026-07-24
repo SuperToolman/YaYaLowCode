@@ -54,6 +54,7 @@ type DesignerWorkbenchSidebarProps = {
   activePanel: DesignerPanelKey;
   agentAnalysisStale: boolean;
   fields: PlacedField[];
+  formType: "normal" | "workflow" | "defined";
   isAnalyzingAgent: boolean;
   pageProps: PageDesignerProps;
   schema: FormDesignerSchema;
@@ -83,6 +84,7 @@ export const DesignerWorkbenchSidebar = memo(function DesignerWorkbenchSidebar({
   activePanel,
   agentAnalysisStale,
   fields,
+  formType,
   isAnalyzingAgent,
   pageProps,
   schema,
@@ -99,6 +101,7 @@ export const DesignerWorkbenchSidebar = memo(function DesignerWorkbenchSidebar({
     agentAnalysisStale,
     debugEvents,
     fields,
+    formType,
     isAnalyzingAgent,
     onAnalyzeAgentSchema,
     onBeforeDesignerActionRegister,
@@ -158,6 +161,7 @@ function areDesignerWorkbenchPropsEqual(
   next: DesignerWorkbenchSidebarProps,
 ) {
   if (previous.activePanel !== next.activePanel) return false;
+  if (previous.formType !== next.formType) return false;
 
   // The component toolbox owns its search state and does not consume form data.
   // Avoid rebuilding it on every field move, resize, or property update.
@@ -182,6 +186,7 @@ function renderDesignerPanelContent({
   agentAnalysisStale,
   debugEvents,
   fields,
+  formType,
   isAnalyzingAgent,
   onAnalyzeAgentSchema,
   onBeforeDesignerActionRegister,
@@ -193,6 +198,7 @@ function renderDesignerPanelContent({
   agentAnalysisStale: boolean;
   debugEvents: RuntimeDebugEvent[];
   fields: PlacedField[];
+  formType: "normal" | "workflow" | "defined";
   isAnalyzingAgent: boolean;
   onAnalyzeAgentSchema: () => void;
   onBeforeDesignerActionRegister?: (handler: (() => boolean) | null) => void;
@@ -205,7 +211,7 @@ function renderDesignerPanelContent({
   }
 
   if (activePanel === "components") {
-    return <CompTool embedded />;
+    return <CompTool embedded allowCustomComponents={formType === "defined"} />;
   }
 
   if (activePanel === "dataSources") {
@@ -838,8 +844,10 @@ function ActionContextDialog({
               <ContextRow code="ctx.state.values / ctx.values">当前表单值</ContextRow>
               <ContextRow code="ctx.state.urlParams / ctx.urlParams">当前路由参数</ContextRow>
               <ContextRow code="ctx.state.dataSources / ctx.dataSources">数据源变量</ContextRow>
-              <ContextRow code="ctx.fieldId / ctx.eventName / ctx.value">当前触发事件上下文</ContextRow>
+              <ContextRow code="ctx.fieldId / ctx.eventName / ctx.value / ctx.label">当前触发事件上下文</ContextRow>
               <ContextRow code="ctx.helpers.getFieldValue(id)">读取字段值</ContextRow>
+              <ContextRow code="$(id).value / $(id).label">读取字段值与显示标签</ContextRow>
+              <ContextRow code="ctx.helpers.getCascader(id)">读取级联选择的 value 与 label 路径</ContextRow>
               <ContextRow code="ctx.helpers.setFieldValue(id, value)">更新字段值</ContextRow>
               <ContextRow code="ctx.helpers.getDataSource(name)">读取变量</ContextRow>
               <ContextRow code="ctx.helpers.setDataSource(name, value)">更新变量</ContextRow>
@@ -1071,6 +1079,8 @@ function handleMonacoBeforeMount(monaco: Monaco) {
       "declare type ActionHelpers = {",
       "  state: { values: Record<string, unknown>; urlParams: Record<string, string>; dataSources: Record<string, unknown> };",
       "  getFieldValue(id: string): unknown;",
+      "  getCountryCity(id: string): CountryCityValue | null;",
+      "  getCascader(id: string): { value: string; label: string } | null;",
       "  setFieldValue(id: string, nextValue: unknown): void;",
       "  getDataSource(name: string): unknown;",
       "  setDataSource(name: string, nextValue: unknown): void;",
@@ -1079,6 +1089,10 @@ function handleMonacoBeforeMount(monaco: Monaco) {
       "  value: unknown;",
       "  console: Console;",
       "};",
+      "declare type FieldAccessor = { id: string; type: string; value: unknown; label: string };",
+      "declare function $(id: string): FieldAccessor | null;",
+      "declare type LocationItem = { code: string; name: string };",
+      "declare type CountryCityValue = { code: string; depth: number; path: LocationItem[] };",
       "declare type ActionContext = {",
       "  state: { values: Record<string, unknown>; urlParams: Record<string, string>; dataSources: Record<string, unknown> };",
       "  values: Record<string, unknown>;",
@@ -1087,6 +1101,7 @@ function handleMonacoBeforeMount(monaco: Monaco) {
       "  fieldId: string;",
       "  eventName: string;",
       "  value: unknown;",
+      "  label?: string;",
       "  helpers: ActionHelpers;",
       "  console: Console;",
       "};",

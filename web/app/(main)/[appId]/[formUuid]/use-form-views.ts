@@ -50,9 +50,19 @@ export function useFormViews({
     const timer = window.setTimeout(() => {
       void listFormViews({ path: { formUuid }, responseStyle: "fields" }).then(({ data, error }) => {
         if (error || !data || data.code !== 0 || !data.data) throw new Error(data?.message || "无法加载表单视图");
+        const savedDefaultView = data.data.find((view) => view.viewUuid === "default");
         const stored: FormView[] = [
-          { id: "default", name: "全部数据", isDefault: true, config: defaultViewConfig, updatedAt: new Date().toISOString() },
-          ...data.data.map((view) => ({ id: `view-${view.viewUuid}`, viewUuid: view.viewUuid, name: view.name, isDefault: false, config: view.config as ViewConfig, updatedAt: view.updatedAt })),
+          {
+            id: "default",
+            viewUuid: "default",
+            name: "全部数据",
+            isDefault: true,
+            config: savedDefaultView ? savedDefaultView.config as ViewConfig : defaultViewConfig,
+            updatedAt: savedDefaultView?.updatedAt ?? new Date().toISOString(),
+          },
+          ...data.data
+            .filter((view) => view.viewUuid !== "default")
+            .map((view) => ({ id: `view-${view.viewUuid}`, viewUuid: view.viewUuid, name: view.name, isDefault: false, config: view.config as ViewConfig, updatedAt: view.updatedAt })),
         ];
         setViews(stored);
         setActiveViewId((current) => stored.some((view) => view.id === current) ? current : "default");
@@ -80,12 +90,8 @@ export function useFormViews({
 
   async function saveViewConfig() {
     if (!pendingViewConfig || !activeFormView) return;
-    if (activeFormView.isDefault || !activeFormView.viewUuid) {
-      toast.danger("默认视图无需保存配置");
-      return;
-    }
     const { data, error } = await updateFormView({
-      path: { formUuid, viewUuid: activeFormView.viewUuid },
+      path: { formUuid, viewUuid: activeFormView.viewUuid ?? "default" },
       body: { name: activeFormView.name, config: pendingViewConfig },
       responseStyle: "fields",
     });

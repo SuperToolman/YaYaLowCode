@@ -13,7 +13,7 @@ export function Field({
   return (
     <label className="block text-sm font-medium text-[var(--color-text-primary)]">
       {label}
-      {children}
+      <div className="mt-2">{children}</div>
       {hint ? (
         <span className="mt-2 block text-xs font-normal text-[var(--color-text-secondary)]">
           {hint}

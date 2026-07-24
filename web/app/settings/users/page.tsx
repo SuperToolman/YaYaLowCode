@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Avatar, Button, Checkbox, Input, Modal } from "@heroui/react";
+import { Avatar, Button, Checkbox, Dropdown, Input, Modal } from "@heroui/react";
 import {
   createLocalUser,
   deleteUser,
@@ -11,6 +11,7 @@ import {
   type UpdateUserRequest,
   type UserResponse,
 } from "../../lib/api-client";
+import { SettingsContentCard } from "../_components/settings-content-card";
 
 type EmailAddressItem = { label: string; email: string };
 type RoleItem = {
@@ -119,11 +120,7 @@ export default function UsersSettingsPage() {
       const nextUsers = usersData.data.map(normalizeUser);
       setUsers(nextUsers);
       setRoles(rolesData.data.filter((role) => role.status === "active"));
-      setSelectedId((current) =>
-        current && nextUsers.some((user) => user.id === current)
-          ? current
-          : nextUsers[0]?.id || null,
-      );
+      setSelectedId((current) => current && nextUsers.some((user) => user.id === current) ? current : nextUsers[0]?.id || null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法加载用户");
     } finally {
@@ -250,8 +247,13 @@ export default function UsersSettingsPage() {
   }
 
   return (
-    <section className="theme-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] shadow-[var(--shadow-card)]">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-[var(--color-border)] px-5 py-4">
+    <SettingsContentCard
+      title="用户管理"
+      subtitle={`管理平台账号与组织身份源。共 ${users.length} 人，其中 ${users.filter((user) => user.status === "active").length} 人已启用。`}
+      bodyClassName="flex flex-col overflow-hidden"
+      headerActions={<div className="flex flex-wrap items-center justify-end gap-2"><Input aria-label="搜索用户" className="w-64" placeholder="搜索姓名、部门、角色或手机号" value={query} onChange={(event) => setQuery(event.currentTarget.value)} /><Button variant="secondary" onPress={() => setCreating(true)}>添加用户</Button><Button variant="secondary" isDisabled={loading} onPress={() => void loadUsers()}><RefreshIcon />{loading ? "刷新中…" : "刷新"}</Button></div>}
+    >
+      <div className="hidden">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">
@@ -296,7 +298,33 @@ export default function UsersSettingsPage() {
       ) : null}
 
       <div className="relative min-h-0 flex-1">
-        <div className="absolute inset-0 flex overflow-hidden">
+        <div className="settings-scroll-area absolute inset-0 overflow-y-auto overscroll-contain pr-1">
+          <div className="mb-5 flex flex-wrap items-center gap-2">
+            <FilterChip label="全部用户" count={users.length} active={sourceFilter === "all"} onPress={() => setSourceFilter("all")} />
+            <FilterChip label="平台账号" count={users.filter((user) => user.sourceType === "local").length} active={sourceFilter === "local"} onPress={() => setSourceFilter("local")} />
+            <FilterChip label="钉钉" count={users.filter((user) => user.sourceType === "dingtalk").length} active={sourceFilter === "dingtalk"} onPress={() => setSourceFilter("dingtalk")} />
+            <span className="mx-1 h-5 w-px bg-[var(--color-border)]" />
+            <FilterChip label="全部状态" count={users.length} active={statusFilter === "all"} onPress={() => setStatusFilter("all")} />
+            <FilterChip label="已启用" count={users.filter((user) => user.status === "active").length} active={statusFilter === "active"} onPress={() => setStatusFilter("active")} />
+            <FilterChip label="已停用" count={users.filter((user) => user.status !== "active").length} active={statusFilter === "inactive"} onPress={() => setStatusFilter("inactive")} />
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+            <div className="grid min-w-[940px] grid-cols-[minmax(180px,1.3fr)_80px_minmax(130px,1fr)_minmax(130px,1fr)_minmax(160px,1.2fr)_80px_48px] gap-3 border-b border-[var(--color-border)] bg-[var(--color-control-soft)] px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)]">
+              <div>用户</div><div>来源</div><div>组织</div><div>角色</div><div>联系方式</div><div>状态</div><div>操作</div>
+            </div>
+            {filteredUsers.map((user) => <div key={user.id} className="grid min-w-[940px] grid-cols-[minmax(180px,1.3fr)_80px_minmax(130px,1fr)_minmax(130px,1fr)_minmax(160px,1.2fr)_80px_48px] items-center gap-3 border-b border-[var(--color-border)] px-4 py-3 last:border-0 hover:bg-[var(--color-bg-hover)]">
+              <div className="flex min-w-0 items-center gap-3"><UserAvatar user={user} size="sm" /><div className="min-w-0"><p className="truncate text-sm font-medium text-[var(--color-text-primary)]">{user.displayName}</p><p className="mt-0.5 truncate text-[11px] text-[var(--color-text-secondary)]">{user.title || user.jobNumber || "未设置职位"}</p></div></div>
+              <SourceTag source={user.sourceType} />
+              <TagList values={user.departments} empty="未分配组织" />
+              <TagList values={user.roles} empty="未分配角色" />
+              <div className="min-w-0 text-xs text-[var(--color-text-secondary)]"><p className="truncate text-[var(--color-text-primary)]">{user.mobile || "未设置手机号"}</p><p className="mt-0.5 truncate">{user.email || "未设置邮箱"}</p></div>
+              <span className={`w-fit shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${user.status === "active" ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-control-soft)] text-[var(--color-text-disabled)]"}`}>{user.status === "active" ? "已启用" : "已停用"}</span>
+              <UserActions user={user} onEdit={openEdit} onToggle={(target) => void update(target, { status: target.status === "active" ? "inactive" : "active" })} onDelete={setDeleting} />
+            </div>)}
+          </div>
+          {!loading && filteredUsers.length === 0 ? <div className="flex min-h-64 items-center justify-center text-sm text-[var(--color-text-secondary)]">没有符合当前条件的用户。</div> : null}
+        </div>
+        {false && <div className="hidden">
           <div className="settings-scroll-area h-full w-[180px] shrink-0 overflow-y-auto border-r border-[var(--color-border)] bg-[var(--color-control-soft)] p-3 overscroll-contain">
             <FilterGroup label="用户来源">
               <FilterButton
@@ -444,7 +472,7 @@ export default function UsersSettingsPage() {
               </div>
             )}
           </aside>
-        </div>
+        </div>}
       </div>
       <Modal
         isOpen={editing !== null}
@@ -798,8 +826,16 @@ export default function UsersSettingsPage() {
           </Modal.Container>
         </Modal.Backdrop>
       </Modal>
-    </section>
+    </SettingsContentCard>
   );
+}
+
+function FilterChip({ label, count, active, onPress }: { label: string; count: number; active: boolean; onPress: () => void }) {
+  return <Button variant={active ? "primary" : "secondary"} className="h-8 px-3 text-xs" onPress={onPress}>{label}<span className="opacity-65">{count}</span></Button>;
+}
+
+function UserActions({ user, onEdit, onToggle, onDelete }: { user: UserItem; onEdit: (user: UserItem) => void; onToggle: (user: UserItem) => void; onDelete: (user: UserItem) => void }) {
+  return <Dropdown><Dropdown.Trigger aria-label={`${user.displayName}更多操作`} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-base text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]">•••</Dropdown.Trigger><Dropdown.Popover><Dropdown.Menu aria-label={`${user.displayName}操作`} className="min-w-52"><Dropdown.Item id="account" isDisabled>账号：{user.username || "未设置"}</Dropdown.Item><Dropdown.Item id="password" isDisabled>密码：{user.password || "未设置"}</Dropdown.Item><Dropdown.Item id="edit" onAction={() => onEdit(user)}>查看并编辑完整资料</Dropdown.Item><Dropdown.Item id="toggle" onAction={() => onToggle(user)}>{user.status === "active" ? "停用用户" : "启用用户"}</Dropdown.Item><Dropdown.Item id="delete" className="text-[var(--color-danger)]" onAction={() => onDelete(user)}>删除用户</Dropdown.Item></Dropdown.Menu></Dropdown.Popover></Dropdown>;
 }
 
 function FilterGroup({

@@ -9,7 +9,7 @@ html[data-resolved-theme="light"] {
   /* Core theme palette */
   --color-bg-canvas: #e7edf7;
   --color-bg-surface: #fafcff;
-  --color-bg-subtle: #dce5f1;
+  --color-bg-subtle: #e8f2ff;
   --color-text-primary: #1a1d2b;
   --color-text-secondary: #5b6378;
   --color-text-disabled: #9aa2b5;
@@ -46,6 +46,8 @@ html[data-resolved-theme="light"] {
   --color-border-card-glass: rgba(196, 212, 234, 0.76);
   --shadow-card-glass: 0 18px 48px rgba(42, 63, 98, 0.1);
   --color-bg-input: rgba(228, 235, 246, 0.84);
+  --runtime-form-input-background: #e8edf5;
+  --runtime-form-group-background: #f4f7fb;
   --color-bg-menu: rgba(250, 252, 255, 0.96);
   --color-bg-hover: rgba(219, 234, 255, 0.94);
   --color-code-bg: #111827;
@@ -115,6 +117,10 @@ html[data-resolved-theme="light"] {
   --nav-group-icon: var(--color-accent);
   --nav-form-icon: var(--color-primary);
   --nav-link-icon: var(--color-warning);
+  --form-type-workflow-icon-color: #0e7490;
+  --form-type-defined-icon-color: #7c5cff;
+  /* Detail forms are subordinate views of a form, so retain the form hue at a softer weight. */
+  --form-type-detail-icon-color: color-mix(in srgb, var(--nav-form-icon) 64%, var(--color-bg-surface));
 
   /* HeroUI v3 theme bridge */
   --surface-foreground: var(--color-text-primary);
@@ -129,7 +135,7 @@ html[data-resolved-theme="light"] {
   --default-foreground: var(--color-text-primary);
   --accent: var(--color-primary);
   --accent-foreground: var(--color-text-on-primary);
-  --field-background: var(--color-bg-input);
+  --field-background: #e8edf5;
   --field-foreground: var(--color-text-primary);
   --field-placeholder: var(--color-text-disabled);
   --field-border: var(--color-border);
@@ -193,6 +199,8 @@ html[data-resolved-theme="dark"] {
   --color-border-card-glass: rgba(235, 229, 255, 0.13);
   --shadow-card-glass: 0 18px 48px rgba(0, 0, 0, 0.34);
   --color-bg-input: rgba(37, 36, 42, 0.86);
+  --runtime-form-input-background: #111114;
+  --runtime-form-group-background: #1c1c21;
   --color-bg-menu: rgba(27, 27, 32, 0.98);
   --color-bg-hover: rgba(53, 48, 63, 0.9);
   --color-code-bg: #0c0c0f;
@@ -261,6 +269,9 @@ html[data-resolved-theme="dark"] {
   --nav-group-icon: var(--color-accent);
   --nav-form-icon: var(--color-primary);
   --nav-link-icon: var(--color-warning);
+  --form-type-workflow-icon-color: #67e8f9;
+  --form-type-defined-icon-color: #e0b5ff;
+  --form-type-detail-icon-color: color-mix(in srgb, var(--nav-form-icon) 70%, var(--color-bg-surface));
 
   /* HeroUI v3 theme bridge */
   --surface-foreground: var(--color-text-primary);
@@ -275,7 +286,7 @@ html[data-resolved-theme="dark"] {
   --default-foreground: var(--color-text-primary);
   --accent: var(--color-primary);
   --accent-foreground: var(--color-text-on-primary);
-  --field-background: var(--color-bg-input);
+  --field-background: #111114;
   --field-foreground: var(--color-text-primary);
   --field-placeholder: var(--color-text-disabled);
   --field-border: var(--color-border);
@@ -523,6 +534,12 @@ select {
   color: var(--color-text-primary);
 }
 
+.theme-page-shell.settings-page-shell {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .theme-panel {
   border: 1px solid var(--color-border);
   background: var(--color-bg-panel);
@@ -557,6 +574,13 @@ select {
   border: 1px solid var(--color-border);
   background: var(--color-bg-input);
   color: var(--color-text-primary);
+}
+
+/* Runtime forms render in preview, drawers, and record detail views. Keep field
+   backgrounds opaque so their appearance does not depend on the surrounding overlay. */
+.runtime-form-surface {
+  --color-bg-input: var(--runtime-form-input-background);
+  --field-background: var(--runtime-form-input-background);
 }
 
 .theme-menu-surface {
@@ -599,8 +623,8 @@ html[data-resolved-theme="dark"] .theme-modal-backdrop {
 }
 
 .designer-theme-root {
-  background: var(--designer-background);
-  transition: background 180ms ease, color 180ms ease;
+  /* background: var(--designer-background); */
+  /* transition: background 180ms ease, color 180ms ease; */
 }
 
 .designer-is-interacting :is(.backdrop-blur, .backdrop-blur-xl, .backdrop-blur-2xl) {
@@ -735,21 +759,64 @@ html[data-resolved-theme="dark"] .designer-properties-drawer button:hover {
   padding: 0 !important;
 }
 
+/* Country/city menus retain a usable, stable width while only their results scroll. */
+.country-city-select-popover {
+  width: 320px !important;
+  min-width: 320px !important;
+  max-width: calc(100vw - 32px) !important;
+  max-height: min(360px, calc(100dvh - 32px)) !important;
+  overflow: hidden !important;
+}
+
+.country-city-select-search {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--color-border);
+  padding: 8px;
+}
+
+.country-city-select-results {
+  max-height: min(304px, calc(100dvh - 88px));
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .low-code-date-range-picker {
   max-width: 100% !important;
 }
 
-/* Detail mode keeps the designer's layout while removing editable-field chrome. */
-.runtime-form-readonly :is(
-  input:not([type="checkbox"]):not([type="radio"]),
-  textarea,
-  [data-slot="input"],
-  [data-slot="input-group"],
-  [data-slot="input-container"],
-  .number-field__group,
-  .number-field__input,
-  .select__trigger,
-  .date-input-group
-) {
-  background-color: transparent !important;
+.rich-text-content p.is-editor-empty:first-child::before {
+  color: var(--color-text-disabled);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+.rich-text-content :is(h1, h2, h3) {
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0.6em 0 0.35em;
+}
+
+.rich-text-content h1 { font-size: 1.5rem; }
+.rich-text-content h2 { font-size: 1.25rem; }
+.rich-text-content h3 { font-size: 1.1rem; }
+.rich-text-content :is(ul, ol) { margin: 0.5em 0; padding-left: 1.5em; }
+.rich-text-content blockquote { border-left: 3px solid var(--color-border); color: var(--color-text-secondary); margin: 0.75em 0; padding-left: 0.8em; }
+.rich-text-content img { height: auto; max-width: 100%; }
+.rich-text-content table { border-collapse: collapse; margin: 0.75em 0; table-layout: fixed; width: 100%; }
+.rich-text-content :is(th, td) { border: 1px solid var(--color-border); min-width: 64px; padding: 0.4rem 0.55rem; vertical-align: top; }
+.rich-text-content th { background: var(--color-bg-subtle); font-weight: 600; }
+
+/* Resource settings keep the shared settings card as the page-level container. */
+.agent-resource-settings-shell-skill > section > header > div > div:first-child {
+  display: none;
+}
+
+@media (max-width: 1279px) {
+  .agent-resource-settings-shell:not(.agent-resource-settings-shell-skill) > section {
+    height: auto;
+    overflow: visible;
+  }
 }

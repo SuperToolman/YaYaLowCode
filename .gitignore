@@ -21,8 +21,14 @@ out/
 build/
 api/target/
 api/target-openapi/
+api/target-location-import/
+api/target-codex-openapi/
+api/target-migration/
+api/data/
 web/src-tauri/target/
 web/src-tauri/gen/
+web/.cache/
+.codex-openapi-target/
 
 # misc
 .DS_Store
@@ -44,6 +50,7 @@ yarn-error.log*
 .yaya-agent-registry.json
 .yaya-identity-settings.json
 api/.yaya-rbac-permissions.json
+api/.yaya-platform-agent-assistant-settings.json
 web/openapi/openapi.generated.json
 
 # vercel

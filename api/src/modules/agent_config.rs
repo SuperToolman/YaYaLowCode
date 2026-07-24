@@ -1,5 +1,5 @@
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Multipart, Path, State};
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::platform::config::{
     AgentConfigProfile, AgentDefinition, AgentKnowledgeBaseDefinition, AgentModelProvider,
     AgentPersonaDefinition, AgentPluginDefinition, AgentRegistry, AgentSkillDefinition,
-    ensure_skill_package, load_agent_registry, read_skill_markdown, save_agent_registry,
+    ensure_skill_package, import_skill_package, load_agent_registry, read_skill_markdown, save_agent_registry,
     write_skill_markdown,
 };
 use crate::platform::prelude::{ApiResponse, AppError, AppState};
@@ -150,6 +150,13 @@ pub(crate) async fn list_platform_tools(
         "platform tools loaded",
         vec![
             PlatformToolResponse {
+                id: "list_apps",
+                name: "读取应用列表",
+                description: "查询当前可访问的应用。",
+                category: "app",
+                risk_level: "read",
+            },
+            PlatformToolResponse {
                 id: "list_forms",
                 name: "读取表单列表",
                 description: "查询应用内表单元数据。",
@@ -167,6 +174,13 @@ pub(crate) async fn list_platform_tools(
                 id: "create_form_draft",
                 name: "创建表单草稿",
                 description: "创建空白表单草稿；还要求 Profile 开启创建表单能力。",
+                category: "form",
+                risk_level: "write",
+            },
+            PlatformToolResponse {
+                id: "save_form_schema_draft",
+                name: "保存表单草稿",
+                description: "保存表单草稿结构；还要求 Profile 开启创建表单能力。",
                 category: "form",
                 risk_level: "write",
             },
@@ -382,12 +396,6 @@ pub(crate) async fn create_agent(
     let mut registry = load_agent_registry();
     validate_agent(&registry, &payload)?;
     let agent = agent_from_request(format!("agent-{}", Uuid::new_v4().simple()), payload);
-    if agent.is_default {
-        registry
-            .agents
-            .iter_mut()
-            .for_each(|item| item.is_default = false);
-    }
     registry.agents.push(agent.clone());
     save_agent_registry(&registry).map_err(AppError::Server)?;
     Ok((
@@ -409,12 +417,6 @@ pub(crate) async fn update_agent(
         .position(|item| item.id == id)
         .ok_or_else(|| AppError::NotFound("agent not found".to_string()))?;
     let agent = agent_from_request(id, payload);
-    if agent.is_default {
-        registry
-            .agents
-            .iter_mut()
-            .for_each(|item| item.is_default = false);
-    }
     registry.agents[index] = agent.clone();
     save_agent_registry(&registry).map_err(AppError::Server)?;
     Ok(Json(success_response("agent updated", agent)))
@@ -429,11 +431,6 @@ pub(crate) async fn delete_agent(
     registry.agents.retain(|item| item.id != id);
     if registry.agents.len() == before {
         return Err(AppError::NotFound("agent not found".to_string()));
-    }
-    if !registry.agents.iter().any(|item| item.is_default) {
-        if let Some(first) = registry.agents.first_mut() {
-            first.is_default = true;
-        }
     }
     save_agent_registry(&registry).map_err(AppError::Server)?;
     Ok(Json(success_response(
@@ -560,6 +557,52 @@ pub(crate) async fn create_skill(
         StatusCode::CREATED,
         Json(success_response("skill created", item)),
     ))
+}
+
+pub(crate) async fn import_skill(
+    State(_state): State<AppState>,
+    mut multipart: Multipart,
+) -> Result<(StatusCode, Json<ApiResponse<AgentSkillDefinition>>), AppError> {
+    let field = multipart
+        .next_field()
+        .await
+        .map_err(|error| AppError::BadRequest(format!("invalid Skill import payload: {error}")))?
+        .ok_or_else(|| AppError::BadRequest("请选择一个 Skill ZIP 文件".to_string()))?;
+    let file_name = field.file_name().unwrap_or("skill.zip").to_string();
+    if !file_name.to_ascii_lowercase().ends_with(".zip") {
+        return Err(AppError::BadRequest("Skill 导入仅支持 .zip 文件".to_string()));
+    }
+    let bytes = field
+        .bytes()
+        .await
+        .map_err(|error| AppError::BadRequest(format!("无法读取 Skill ZIP 文件: {error}")))?;
+    let mut registry = load_agent_registry();
+    let id = format!("skill-{}", Uuid::new_v4().simple());
+    let mut item = AgentSkillDefinition {
+        package_name: String::new(),
+        id,
+        name: file_name
+            .strip_suffix(".zip")
+            .or_else(|| file_name.strip_suffix(".ZIP"))
+            .unwrap_or(&file_name)
+            .to_string(),
+        source: "local".to_string(),
+        version: "1.0.0".to_string(),
+        package_path: String::new(),
+        is_system: false,
+        description: String::new(),
+        enabled: true,
+        allowed_tools: Vec::new(),
+        instructions: String::new(),
+        requires_confirmation: false,
+    };
+    import_skill_package(&mut item, &bytes).map_err(AppError::BadRequest)?;
+    if item.name.trim().is_empty() {
+        item.name = item.package_name.clone();
+    }
+    registry.skills.push(item.clone());
+    save_agent_registry(&registry).map_err(AppError::Server)?;
+    Ok((StatusCode::CREATED, Json(success_response("skill imported", item))))
 }
 pub(crate) async fn update_skill(
     State(_state): State<AppState>,

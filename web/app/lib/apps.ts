@@ -20,7 +20,7 @@ export type AppForm = {
   id: string;
   name: string;
   category: "menu" | "group";
-  formType?: "normal" | "workflow";
+  formType?: "normal" | "workflow" | "defined" | "detail";
   active?: boolean;
   count?: number;
 };

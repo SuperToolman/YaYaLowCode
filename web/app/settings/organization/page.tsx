@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Avatar, Button, Input } from "@heroui/react";
+import { SettingsContentCard } from "../_components/settings-content-card";
 
 type ApiEnvelope<T> = { code: number; message: string; data: T | null };
 type OrganizationUnit = {
@@ -89,19 +90,20 @@ export default function OrganizationSettingsPage() {
   }
 
   return (
-    <section className="theme-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] shadow-[var(--shadow-card)]">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-[var(--color-border)] px-5 py-4">
-        <div>
-          <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">组织架构</h2>
-          <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{units.length} 个组织节点 · {units.reduce((total, unit) => total + unit.memberCount, 0)} 个部门成员关系</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <SettingsContentCard
+      title="组织架构"
+      subtitle={`查看和检索平台组织层级。当前共 ${units.length} 个组织节点、${units.reduce((total, unit) => total + unit.memberCount, 0)} 个部门成员关系。`}
+      className="p-0"
+      headerClassName="px-6 pt-6"
+      bodyClassName="mt-5 overflow-hidden"
+      headerActions={<div className="flex flex-wrap items-center gap-2">
           <Input aria-label="搜索组织" className="w-56" placeholder="搜索部门名称" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
           <Button variant="secondary" isDisabled={loading} onPress={() => void loadUnits()}>{loading ? "刷新中…" : "刷新"}</Button>
-        </div>
-      </div>
+      </div>}
+    >
+      <div className="flex h-full min-h-0 flex-col">
 
-      {error ? <p className="mx-5 mt-4 rounded-xl bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">{error}</p> : null}
+      {error ? <p className="mx-6 mb-4 rounded-xl bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">{error}</p> : null}
 
       <div className="relative min-h-0 flex-1">
         <div className="absolute inset-0 flex overflow-hidden">
@@ -136,31 +138,32 @@ export default function OrganizationSettingsPage() {
             {!loading && tree.length === 0 ? <div className="flex min-h-64 items-center justify-center text-sm text-[var(--color-text-secondary)]">暂无组织数据，请先在身份源设置中执行同步。</div> : null}
           </div>
 
-          <div className="settings-scroll-area h-full min-h-0 w-[280px] shrink-0 overflow-y-scroll bg-[var(--color-control-soft)] p-5 overscroll-contain">
+          <aside className="h-full min-h-0 w-[320px] shrink-0 bg-[var(--color-control-soft)] p-5">
             {selected ? (
-              <>
+              <div className="flex h-full min-h-0 flex-col">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--color-primary-soft)] text-lg font-semibold text-[var(--color-primary)]">{selected.name.slice(0, 1)}</div>
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <h3 className="text-base font-semibold text-[var(--color-text-primary)]">{selected.name}</h3>
                   <SourceTag source={selected.sourceType} />
                 </div>
-                <dl className="mt-6 space-y-4 text-sm">
+                <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 text-sm">
                   <Detail label="状态" value={selected.status === "active" ? "启用" : "停用"} />
                   <Detail label="直属成员" value={`${selected.memberCount} 人`} />
                   <Detail label="直属子部门" value={`${selectedChildren} 个`} />
-                  <Detail label="外部部门 ID" value={selected.externalId} />
-                  <Detail label="上级部门 ID" value={selected.parentExternalId || "根节点"} />
+                  <Detail className="col-span-2" label="外部部门 ID" value={selected.externalId} />
+                  <Detail className="col-span-2" label="上级部门 ID" value={selected.parentExternalId || "根节点"} />
                 </dl>
-                <div className="mt-6 border-t border-[var(--color-border)] pt-4">
+                <div className="mt-5 flex min-h-0 flex-1 flex-col border-t border-[var(--color-border)] pt-4">
                   <h4 className="text-xs font-semibold text-[var(--color-text-secondary)]">直属成员</h4>
-                  {(selected.members ?? []).length ? <div className="mt-3 space-y-2">{(selected.members ?? []).map((member) => <div key={member.id} className="flex min-w-0 items-center gap-2 rounded-xl bg-[var(--color-bg-surface)] p-2"><Avatar className="h-8 w-8 shrink-0"><Avatar.Image alt="" src={member.avatarUrl ?? undefined} /><Avatar.Fallback>{member.displayName.slice(0, 1)}</Avatar.Fallback></Avatar><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-[var(--color-text-primary)]">{member.displayName}</p><p className="truncate text-[11px] text-[var(--color-text-secondary)]">{member.title || "未设置职务"}</p></div><span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${member.status === "active" ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]"}`}>{member.status === "active" ? "启用" : "停用"}</span></div>)}</div> : <p className="mt-3 text-sm text-[var(--color-text-secondary)]">该组织暂无直属成员。</p>}
+                  {(selected.members ?? []).length ? <div className="settings-scroll-area mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1">{(selected.members ?? []).map((member) => <div key={member.id} className="flex min-w-0 items-center gap-2 rounded-xl bg-[var(--color-bg-surface)] p-2"><Avatar className="h-8 w-8 shrink-0"><Avatar.Image alt="" src={member.avatarUrl ?? undefined} /><Avatar.Fallback>{member.displayName.slice(0, 1)}</Avatar.Fallback></Avatar><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-[var(--color-text-primary)]">{member.displayName}</p><p className="truncate text-[11px] text-[var(--color-text-secondary)]">{member.title || "未设置职务"}</p></div><span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${member.status === "active" ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]"}`}>{member.status === "active" ? "启用" : "停用"}</span></div>)}</div> : <p className="mt-3 text-sm text-[var(--color-text-secondary)]">该组织暂无直属成员。</p>}
                 </div>
-              </>
+              </div>
             ) : <div className="text-sm text-[var(--color-text-secondary)]">选择一个组织节点查看详情。</div>}
-          </div>
+          </aside>
         </div>
       </div>
-    </section>
+      </div>
+    </SettingsContentCard>
   );
 }
 
@@ -230,4 +233,4 @@ function sourceLabel(source: string): string {
 }
 
 function SourceTag({ source }: { source: string }) { return source === "dingtalk" ? <span className="shrink-0 rounded-full bg-[#eaf2ff] px-2 py-0.5 text-[10px] font-semibold text-[#1677ff]">钉钉</span> : <span className="shrink-0 rounded-full bg-[var(--color-primary-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-primary)]">平台</span>; }
-function Detail({ label, value }: { label: string; value: string }) { return <div><dt className="text-xs text-[var(--color-text-secondary)]">{label}</dt><dd className="mt-1 break-all font-medium text-[var(--color-text-primary)]">{value}</dd></div>; }
+function Detail({ label, value, className = "" }: { label: string; value: string; className?: string }) { return <div className={className}><dt className="text-xs text-[var(--color-text-secondary)]">{label}</dt><dd className="mt-1 break-all font-medium text-[var(--color-text-primary)]">{value}</dd></div>; }

@@ -7,6 +7,15 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Key } from "react";
 import {
+  DndContext,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
   Button,
   Checkbox,
   Input,
@@ -14,9 +23,10 @@ import {
   Select,
   Switch,
   Tabs,
+  Popover,
 } from "@heroui/react";
 import { Modal } from "@heroui/react/modal";
-import type { DesignerComponentType, DesignerFieldProps } from "../CompTool";
+import type { DesignerComponentType, DesignerFieldProps, SerialNumberRule } from "../CompTool";
 import { isChoiceFieldType } from "../../designer-options";
 import type {
   FieldPropsChangeHandler,
@@ -32,13 +42,13 @@ import { getAppForms } from "../../../../../lib/app-resources";
 import { mapWithConcurrency } from "../../../../../lib/async";
 import { DefaultValueEditor } from "./DefaultValueEditor";
 import { OptionsEditor } from "./OptionsEditor";
+import { CascaderDataSourceEditor } from "./CascaderDataSourceEditor";
 import {
   CodeToken,
   IconAction,
   NumberWithActions,
   PanelSwitch,
   PropertyFold,
-  PropertyPanel,
   PropertyRow,
   TextWithActions,
 } from "./PropertyLayout";
@@ -54,13 +64,39 @@ const PLACEHOLDER_FIELD_TYPES = new Set<DesignerComponentType>([
   "dateRange",
   "attachment",
   "imageUpload",
+  "serialNumber",
   "member",
   "department",
+  "countryCity",
+  "cascader",
 ]);
 
 const COUNTER_FIELD_TYPES = new Set<DesignerComponentType>([
   "singleLineText",
   "multiLineText",
+]);
+
+const TITLE_POSITION_FIELD_TYPES = new Set<DesignerComponentType>([
+  "singleLineText",
+  "multiLineText",
+  "number",
+  "radio",
+  "checkbox",
+  "select",
+  "multiSelect",
+  "date",
+  "dateRange",
+  "attachment",
+  "imageUpload",
+  "member",
+  "department",
+  "countryCity",
+  "associationFormField",
+  "cascader",
+]);
+
+const INSIDE_TITLE_FIELD_TYPES = new Set<DesignerComponentType>([
+  "singleLineText",
 ]);
 
 type FieldPropertyPanelProps = {
@@ -86,6 +122,12 @@ export function FieldPropertyPanel({
   const supportsCounter = COUNTER_FIELD_TYPES.has(field.type);
   const supportsOptions =
     field.type !== "member" && isChoiceFieldType(field.type);
+  const parentField = field.parentGroupId
+    ? fields.find((candidate) => candidate.id === field.parentGroupId)
+    : null;
+  const isSubformChild = parentField?.type === "subform";
+  const supportsTitlePosition =
+    TITLE_POSITION_FIELD_TYPES.has(field.type) && !isSubformChild;
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden text-[11px] text-[var(--color-text-primary)]">
@@ -102,13 +144,24 @@ export function FieldPropertyPanel({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="py-0.5">
-          <PropertyPanel>
+          <PropertyFold title="基础属性">
             <PropertyRow label="标题">
               <TextWithActions
                 value={field.label}
                 onChange={(value) => onLabelChange(field.id, value)}
               />
             </PropertyRow>
+            {supportsTitlePosition ? (
+              <PropertyRow label="标题位置">
+                <TitlePositionSegmented
+                  allowInside={INSIDE_TITLE_FIELD_TYPES.has(field.type)}
+                  value={field.props.titlePosition ?? "top"}
+                  onChange={(titlePosition) =>
+                    onPropsChange(field.id, { titlePosition })
+                  }
+                />
+              </PropertyRow>
+            ) : null}
             <PropertyRow label="描述">
               <TextWithActions
                 value={field.props.description ?? ""}
@@ -131,7 +184,7 @@ export function FieldPropertyPanel({
               <StatusSegmented field={field} onPropsChange={onPropsChange} />
               <IconAction label="表达式" icon={<CodeToken />} />
             </PropertyRow>
-            {field.type !== "subform" && field.type !== "member" ? (
+            {field.type !== "groupContainer" && field.type !== "member" && field.type !== "serialNumber" && field.type !== "richText" ? (
               <PropertyRow label="默认值" align="start">
                 <DefaultValueEditor
                   fields={fields}
@@ -149,10 +202,18 @@ export function FieldPropertyPanel({
                 />
               </PropertyRow>
             ) : null}
+            {field.type === "cascader" ? (
+              <PropertyRow label="数据源" align="start">
+                <CascaderDataSourceEditor field={field} onPropsChange={onPropsChange} />
+              </PropertyRow>
+            ) : null}
             <FieldSpecificProperties
               field={field}
               onPropsChange={onPropsChange}
             />
+            {field.type === "html" || field.type === "tsx" ? (
+              <CustomCodeProperties field={field} onPropsChange={onPropsChange} />
+            ) : null}
             {supportsCounter ? (
               <>
                 <PropertyRow label="清除按钮">
@@ -173,7 +234,7 @@ export function FieldPropertyPanel({
                 </PropertyRow>
               </>
             ) : null}
-          </PropertyPanel>
+          </PropertyFold>
 
           {field.type === "associationFormField" ? (
             <AssociationFormProperties
@@ -187,7 +248,11 @@ export function FieldPropertyPanel({
             <SubformProperties field={field} onPropsChange={onPropsChange} />
           ) : null}
 
-          {field.type !== "subform" ? (
+          {field.type === "serialNumber" ? (
+            <SerialNumberProperties field={field} fields={fields} onPropsChange={onPropsChange} />
+          ) : null}
+
+          {field.type !== "subform" && field.type !== "serialNumber" ? (
             <PropertyFold title="校验">
               <PropertyRow label="必填">
                 <PanelSwitch
@@ -279,6 +344,90 @@ export function FieldPropertyPanel({
   );
 }
 
+function CustomCodeProperties({
+  field,
+  onPropsChange,
+}: {
+  field: PlacedField;
+  onPropsChange: FieldPropsChangeHandler;
+}) {
+  const origins = (field.props.allowedResourceOrigins ?? []).join(", ");
+  const codeLabel = field.type === "html" ? "HTML 源码" : "TSX 源码";
+
+  return (
+    <>
+      <PropertyRow label={codeLabel} align="start">
+        <textarea
+          aria-label={codeLabel}
+          className="min-h-44 w-full resize-y rounded-md border border-[var(--color-border)] bg-[var(--color-code-bg)] p-2 font-mono text-[11px] leading-5 text-[var(--color-code-text)] outline-none focus:border-[var(--color-primary)]"
+          value={field.props.code ?? ""}
+          onChange={(event) => onPropsChange(field.id, { code: event.currentTarget.value })}
+        />
+      </PropertyRow>
+      <PropertyRow label="外部资源来源" align="start">
+        <input
+          aria-label="外部资源来源"
+          className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2 py-1.5 text-xs outline-none focus:border-[var(--color-primary)]"
+          placeholder="https://cdn.example.com, https://api.example.com"
+          value={origins}
+          onChange={(event) => onPropsChange(field.id, {
+            allowedResourceOrigins: event.currentTarget.value
+              .split(",")
+              .map((value) => value.trim())
+              .filter(Boolean),
+          })}
+        />
+      </PropertyRow>
+    </>
+  );
+}
+
+function TitlePositionSegmented({
+  allowInside,
+  onChange,
+  value,
+}: {
+  allowInside: boolean;
+  onChange: (value: NonNullable<DesignerFieldProps["titlePosition"]>) => void;
+  value: NonNullable<DesignerFieldProps["titlePosition"]>;
+}) {
+  const options: Array<{
+    value: NonNullable<DesignerFieldProps["titlePosition"]>;
+    label: string;
+  }> = [
+    { value: "top", label: "上" },
+    { value: "left", label: "左" },
+    ...(allowInside ? [{ value: "inside" as const, label: "内" }] : []),
+  ];
+
+  return (
+    <div
+      role="tablist"
+      aria-label="标题位置"
+      className="grid h-7 min-w-0 flex-1 overflow-hidden rounded-md bg-[var(--color-bg-subtle)] p-0.5"
+      style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+    >
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="tab"
+          aria-selected={value === option.value}
+          onClick={() => onChange(option.value)}
+          className={[
+            "min-w-0 overflow-hidden truncate whitespace-nowrap rounded-sm px-1 text-[10px] transition",
+            value === option.value
+              ? "bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)]"
+              : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]",
+          ].join(" ")}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function FieldSpecificProperties({
   field,
   onPropsChange,
@@ -311,6 +460,18 @@ function FieldSpecificProperties({
       {field.type === "member" ? (
         <MemberProperties field={field} onPropsChange={onPropsChange} />
       ) : null}
+      {field.type === "countryCity" ? (
+        <PropertyRow label="级联深度">
+          <NumberWithActions
+            max={4}
+            min={1}
+            value={field.props.locationDepth ?? 3}
+            onChange={(value) => onPropsChange(field.id, {
+              locationDepth: Math.min(4, Math.max(1, Math.round(value ?? 3))),
+            })}
+          />
+        </PropertyRow>
+      ) : null}
       {field.type === "attachment" || field.type === "imageUpload" ? (
         <>
           <PropertyRow label="按钮文字">
@@ -331,6 +492,15 @@ function FieldSpecificProperties({
             <PanelSwitch
               isSelected={Boolean(field.props.multiple)}
               onChange={(value) => onPropsChange(field.id, { multiple: value })}
+            />
+          </PropertyRow>
+          <PropertyRow label="文件大小限制 (MB)">
+            <TextWithActions
+              value={String(field.props.maxFileSizeMb ?? 20)}
+              onChange={(value) => {
+                const size = Number(value);
+                onPropsChange(field.id, { maxFileSizeMb: Number.isFinite(size) && size > 0 ? size : 20 });
+              }}
             />
           </PropertyRow>
         </>
@@ -2064,6 +2234,136 @@ function SubformProperties({
       </PropertyFold>
     </>
   );
+}
+
+function SerialNumberProperties({
+  field,
+  fields,
+  onPropsChange,
+}: {
+  field: PlacedField;
+  fields: PlacedField[];
+  onPropsChange: FieldPropsChangeHandler;
+}) {
+  const update = (props: DesignerFieldProps) => onPropsChange(field.id, props);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const rules = getSerialNumberRules(field.props);
+  const editingRule = rules.find((rule) => rule.id === editingRuleId) ?? null;
+  const selectableFields = fields.filter((candidate) => candidate.id !== field.id && candidate.type !== "groupContainer" && candidate.type !== "subform" && candidate.type !== "description" && candidate.type !== "button");
+  const preview = rules.map((rule) => serialRulePreview(rule, selectableFields)).join("");
+
+  const updateRule = (ruleId: string, nextRule: SerialNumberRule) => {
+    update({ serialNumberRules: rules.map((rule) => rule.id === ruleId ? nextRule : rule) });
+  };
+
+  const moveRule = (activeRuleId: string, targetRuleId: string) => {
+    if (activeRuleId === targetRuleId) return;
+    const sourceIndex = rules.findIndex((rule) => rule.id === activeRuleId);
+    const targetIndex = rules.findIndex((rule) => rule.id === targetRuleId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+    const nextRules = [...rules];
+    const [moved] = nextRules.splice(sourceIndex, 1);
+    nextRules.splice(targetIndex, 0, moved);
+    update({ serialNumberRules: nextRules });
+  };
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const onDragEnd = (event: DragEndEvent) => {
+    const targetRuleId = event.over?.id;
+    if (targetRuleId) moveRule(String(event.active.id), String(targetRuleId));
+  };
+
+  return (
+    <>
+      <PropertyFold title="规则定义">
+        <div className="space-y-1.5">
+          <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+            {rules.map((rule) => <SerialNumberRuleItem key={rule.id} rule={rule} fields={selectableFields} onDelete={() => update({ serialNumberRules: rules.filter((item) => item.id !== rule.id) })} onEdit={() => setEditingRuleId(rule.id)} />)}
+          </DndContext>
+          <SerialNumberAddRulePopover fields={selectableFields} onAdd={(rule) => update({ serialNumberRules: [...rules, rule] })} />
+        </div>
+      </PropertyFold>
+      <PropertyFold title="流水号效果预览">
+        <div className="rounded-md bg-[var(--color-primary-soft)] px-3 py-2 text-center font-mono text-sm text-[var(--color-text-primary)]">
+          {preview}
+        </div>
+      </PropertyFold>
+      <Modal isOpen={Boolean(editingRule)} onOpenChange={(open) => !open && setEditingRuleId(null)}>
+        <Modal.Backdrop className="designer-modal-backdrop"><Modal.Container placement="center" size="sm"><Modal.Dialog className="bg-[var(--designer-surface-solid)]"><Modal.Header><Modal.Heading>编辑规则</Modal.Heading></Modal.Header><Modal.Body>
+          {editingRule?.type === "fixedText" ? <Input aria-label="固定字符内容" value={editingRule.value} onChange={(event) => updateRule(editingRule.id, { ...editingRule, value: event.currentTarget.value })} /> : null}
+          {editingRule?.type === "submittedDate" ? <PropertySegmented value={editingRule.format} options={[{ label: "年", value: "year" }, { label: "年月", value: "yearMonth" }, { label: "年月日", value: "yearMonthDay" }, { label: "年月日时分", value: "yearMonthDayHourMinute" }, { label: "年月日时分秒", value: "yearMonthDayHourMinuteSecond" }]} onChange={(value) => updateRule(editingRule.id, { ...editingRule, format: value as typeof editingRule.format })} /> : null}
+          {editingRule?.type === "formField" ? <div className="space-y-2"><select aria-label="表单字段" value={editingRule.fieldId} onChange={(event) => updateRule(editingRule.id, { ...editingRule, fieldId: event.currentTarget.value })} className="h-9 w-full rounded-md border border-[var(--designer-border)] bg-[var(--designer-surface-solid)] px-2 text-sm"><option value="">请选择字段</option>{selectableFields.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.label}</option>)}</select><Input aria-label="空值替代" placeholder="请输入（最多10个字符）" maxLength={10} value={editingRule.fallback} onChange={(event) => updateRule(editingRule.id, { ...editingRule, fallback: event.currentTarget.value })} /></div> : null}
+          {editingRule?.type === "autoCount" ? <div className="space-y-2"><PropertyRow label="计数位数"><NumberWithActions min={1} value={editingRule.digits} onChange={(value) => updateRule(editingRule.id, { ...editingRule, digits: Math.max(1, value ?? 4) })} /></PropertyRow><PropertyRow label="固定补零"><PanelSwitch isSelected={editingRule.fixedDigits} onChange={(value) => updateRule(editingRule.id, { ...editingRule, fixedDigits: value })} /></PropertyRow><PropertyRow label="重置周期"><PropertySegmented value={editingRule.resetPeriod} options={[{ label: "不自动重置", value: "never" }, { label: "每天", value: "daily" }, { label: "每月", value: "monthly" }, { label: "每年", value: "yearly" }]} onChange={(value) => updateRule(editingRule.id, { ...editingRule, resetPeriod: value as typeof editingRule.resetPeriod })} /></PropertyRow><PropertyRow label="初始值"><NumberWithActions min={1} value={editingRule.initialValue} onChange={(value) => updateRule(editingRule.id, { ...editingRule, initialValue: Math.max(1, value ?? 1) })} /></PropertyRow></div> : null}
+        </Modal.Body><Modal.Footer><Button onPress={() => setEditingRuleId(null)}>完成</Button></Modal.Footer></Modal.Dialog></Modal.Container></Modal.Backdrop>
+      </Modal>
+    </>
+  );
+}
+
+function getSerialNumberRules(props: DesignerFieldProps): SerialNumberRule[] {
+  if (props.serialNumberRules?.length) return props.serialNumberRules;
+  return [{ id: "auto-count", type: "autoCount", digits: Math.max(1, props.serialNumberDigits ?? 4), fixedDigits: props.serialNumberFixedDigits !== false, resetPeriod: props.serialNumberResetPeriod ?? "never", initialValue: Math.max(1, props.serialNumberInitialValue ?? 1) }];
+}
+
+function SerialNumberRuleItem({ rule, fields, onDelete, onEdit }: { rule: SerialNumberRule; fields: PlacedField[]; onDelete: () => void; onEdit: () => void }) {
+  const { attributes, listeners, setNodeRef: setDraggableRef, transform, isDragging } = useDraggable({ id: rule.id });
+  const { setNodeRef: setDroppableRef, isOver } = useDroppable({ id: rule.id });
+  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
+  return <div ref={(node) => { setDraggableRef(node); setDroppableRef(node); }} style={style} className={`flex min-w-0 items-center gap-1 rounded-md border px-2 py-1.5 ${isDragging ? "opacity-40" : ""} ${isOver ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)]" : "border-[var(--designer-border)] bg-[var(--designer-surface-solid)]"}`}>
+    <button type="button" aria-label="拖拽排序" className="cursor-grab touch-none text-[13px] text-[var(--color-text-disabled)] active:cursor-grabbing" {...attributes} {...listeners}>⋮⋮</button>
+    <span className="min-w-0 flex-1 truncate text-[11px]">{serialRuleLabel(rule, fields)}</span>
+    <button type="button" aria-label="编辑规则" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-primary)]" onClick={onEdit}>✎</button>
+    {rule.type !== "autoCount" ? <button type="button" aria-label="删除规则" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-danger)]" onClick={onDelete}>×</button> : null}
+  </div>;
+}
+
+function SerialNumberAddRulePopover({ fields, onAdd }: { fields: PlacedField[]; onAdd: (rule: SerialNumberRule) => void }) {
+  const [isOpen, setOpen] = useState(false);
+  const [ruleCounter, setRuleCounter] = useState(1);
+  const [type, setType] = useState<"fixedText" | "submittedDate" | "formField">("fixedText");
+  const [value, setValue] = useState("TEXT");
+  const [format, setFormat] = useState<Extract<SerialNumberRule, { type: "submittedDate" }>["format"]>("yearMonthDay");
+  const [fieldId, setFieldId] = useState("");
+  const [fallback, setFallback] = useState("");
+  const confirmAdd = () => {
+    const id = `serial-rule-${type}-${ruleCounter}`;
+    onAdd(type === "fixedText" ? { id, type, value } : type === "submittedDate" ? { id, type, format } : { id, type, fieldId, fallback });
+    setRuleCounter((current) => current + 1);
+    setOpen(false);
+  };
+  return <Popover isOpen={isOpen} onOpenChange={setOpen}>
+    <Popover.Trigger><Button size="sm" variant="secondary">添加规则</Button></Popover.Trigger>
+    <Popover.Content className="w-72 border border-[var(--designer-border)] bg-[var(--designer-surface-solid)] p-0">
+      <Popover.Dialog className="space-y-3 p-3">
+        <Popover.Heading className="text-sm font-medium">添加规则</Popover.Heading>
+        <PropertySegmented value={type} options={[{ label: "固定字符", value: "fixedText" }, { label: "提交日期", value: "submittedDate" }, { label: "表单字段", value: "formField" }]} onChange={(next) => setType(next as typeof type)} />
+        {type === "fixedText" ? <Input aria-label="固定字符" value={value} onChange={(event) => setValue(event.currentTarget.value)} /> : null}
+        {type === "submittedDate" ? <PropertySegmented value={format} options={[{ label: "年", value: "year" }, { label: "年月", value: "yearMonth" }, { label: "年月日", value: "yearMonthDay" }, { label: "年月日时分", value: "yearMonthDayHourMinute" }, { label: "年月日时分秒", value: "yearMonthDayHourMinuteSecond" }]} onChange={(next) => setFormat(next as typeof format)} /> : null}
+        {type === "formField" ? <div className="space-y-2"><Select aria-label="表单字段" selectedKey={fieldId || null} onSelectionChange={(key: Key | null) => setFieldId(key ? String(key) : "")}><Select.Trigger className="h-9 w-full rounded-md border-[var(--designer-border)]"><Select.Value>{fields.find((field) => field.id === fieldId)?.label ?? "请选择字段"}</Select.Value><Select.Indicator /></Select.Trigger><Select.Popover><ListBox>{fields.map((field) => <ListBox.Item key={field.id} id={field.id} textValue={field.label}>{field.label}</ListBox.Item>)}</ListBox></Select.Popover></Select><Input aria-label="空值替代" placeholder="请输入（最多10个字符）" maxLength={10} value={fallback} onChange={(event) => setFallback(event.currentTarget.value)} /></div> : null}
+        <div className="flex justify-end"><Button size="sm" onPress={confirmAdd}>确认添加</Button></div>
+      </Popover.Dialog>
+    </Popover.Content>
+  </Popover>;
+}
+
+function serialRuleLabel(rule: SerialNumberRule, fields: PlacedField[]) {
+  if (rule.type === "autoCount") return `自动计数  ${rule.digits} 位数`;
+  if (rule.type === "fixedText") return `固定字符  ${rule.value || "未设置"}`;
+  if (rule.type === "submittedDate") return `提交日期  ${serialRulePreview(rule, fields)}`;
+  return `表单字段  ${fields.find((field) => field.id === rule.fieldId)?.label ?? "未选择"}`;
+}
+
+function serialRulePreview(rule: SerialNumberRule, fields: PlacedField[]) {
+  if (rule.type === "autoCount") return rule.fixedDigits ? String(rule.initialValue).padStart(rule.digits, "0") : String(rule.initialValue);
+  if (rule.type === "fixedText") return rule.value;
+  if (rule.type === "formField") return `{${fields.find((field) => field.id === rule.fieldId)?.label ?? "字段"}}` || rule.fallback;
+  const now = new Date();
+  const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+  if (rule.format === "year") return String(now.getFullYear());
+  if (rule.format === "yearMonth") return date.slice(0, 6);
+  if (rule.format === "yearMonthDay") return date;
+  if (rule.format === "yearMonthDayHourMinute") return `${date}${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+  return `${date}${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(now.getSeconds()).padStart(2, "0")}`;
 }
 
 function PropertySegmented({

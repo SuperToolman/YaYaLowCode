@@ -20,7 +20,15 @@ pub(crate) struct AgentPageContext {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CreateAgentSessionRequest {
     pub(crate) agent_id: Option<String>,
+    pub(crate) source: Option<String>,
     pub(crate) context: Option<AgentPageContext>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UpdateAgentSessionRequest {
+    pub(crate) title: Option<String>,
+    pub(crate) is_pinned: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -36,6 +44,9 @@ pub(crate) struct ApiAgentSession {
     pub(crate) id: String,
     pub(crate) agent_id: String,
     pub(crate) title: String,
+    pub(crate) source: String,
+    pub(crate) is_pinned: bool,
+    pub(crate) model_provider: Option<String>,
     pub(crate) app_id: Option<String>,
     pub(crate) context: Value,
     pub(crate) status: String,
@@ -59,6 +70,9 @@ impl From<agent_session_entity::Model> for ApiAgentSession {
             id: value.session_uuid,
             agent_id: value.agent_id,
             title: value.title,
+            source: value.source,
+            is_pinned: value.is_pinned,
+            model_provider: None,
             app_id: value.app_route_app_id,
             context: value.context_json,
             status: value.status,

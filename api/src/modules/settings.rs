@@ -3,16 +3,19 @@
 use axum::Json;
 use axum::extract::Path;
 use axum::http::StatusCode;
-use sea_orm::Database;
+use sea_orm::{ConnectOptions, Database};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use utoipa::ToSchema;
 
 use crate::platform::authorization;
 use crate::platform::config::{
     AgentSettings, DatabaseSettings, DingTalkSettings, IdentitySourceSettings,
-    RbacPermissionSettings, load_agent_settings, load_database_settings,
-    load_identity_source_settings, load_rbac_permission_settings, save_agent_settings,
-    save_database_settings, save_identity_source_settings, save_rbac_permission_settings,
+    PlatformAgentAssistantSettings, RbacPermissionSettings, load_agent_registry,
+    load_agent_settings, load_database_settings, load_identity_source_settings,
+    load_platform_agent_assistant_settings, load_rbac_permission_settings, save_agent_settings,
+    save_database_settings, save_identity_source_settings, save_platform_agent_assistant_settings,
+    save_rbac_permission_settings,
 };
 use crate::platform::prelude::{ApiResponse, AppError, AppState};
 use crate::shared::success_response;
@@ -24,16 +27,25 @@ pub(crate) struct DatabaseSettingsResponse {
     port: u16,
     database: String,
     username: String,
-    password_configured: bool,
+    password: String,
+    connection_status: String,
+    connection_error: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct UpdateDatabaseSettingsRequest {
     host: String,
     port: u16,
     database: String,
     username: String,
     password: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DatabaseConnectionTestResponse {
+    connected: bool,
 }
 
 #[derive(Serialize)]
@@ -64,6 +76,14 @@ pub(crate) struct UpdateAgentSettingsRequest {
     system_prompt: String,
 }
 
+#[derive(Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PlatformAgentAssistantSettingsRequest {
+    navigation_agent_id: Option<String>,
+    #[serde(default)]
+    schema_analysis_prompt: String,
+}
+
 #[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct UpdateIdentitySourceSettingsRequest {
@@ -87,13 +107,7 @@ pub(crate) async fn get_database_settings(
     axum::extract::State(_state): axum::extract::State<AppState>,
 ) -> Result<Json<ApiResponse<DatabaseSettingsResponse>>, AppError> {
     let settings = load_database_settings().unwrap_or_else(default_database_settings);
-    let response = DatabaseSettingsResponse {
-        host: settings.host,
-        port: settings.port,
-        database: settings.database,
-        username: settings.username,
-        password_configured: !settings.password.is_empty(),
-    };
+    let response = database_settings_response(settings).await;
 
     Ok(Json(success_response("database settings loaded", response)))
 }
@@ -105,9 +119,8 @@ pub(crate) async fn update_database_settings(
     let previous = load_database_settings();
     let password = payload
         .password
-        .filter(|value| !value.is_empty())
         .or_else(|| previous.as_ref().map(|settings| settings.password.clone()))
-        .ok_or_else(|| AppError::BadRequest("database password is required".to_string()))?;
+        .unwrap_or_default();
     let settings = DatabaseSettings {
         host: payload.host.trim().to_string(),
         port: payload.port,
@@ -117,19 +130,13 @@ pub(crate) async fn update_database_settings(
     };
     settings.validate().map_err(AppError::BadRequest)?;
 
-    Database::connect(settings.to_database_url())
+    verify_database_connection(&settings)
         .await
         .map_err(|error| AppError::BadRequest(format!("database connection failed: {error}")))?;
     save_database_settings(&settings).map_err(AppError::Server)?;
     state.schedule_restart().map_err(AppError::Server)?;
 
-    let response = DatabaseSettingsResponse {
-        host: settings.host,
-        port: settings.port,
-        database: settings.database,
-        username: settings.username,
-        password_configured: true,
-    };
+    let response = database_settings_response(settings).await;
 
     Ok((
         StatusCode::ACCEPTED,
@@ -138,6 +145,57 @@ pub(crate) async fn update_database_settings(
             response,
         )),
     ))
+}
+
+pub(crate) async fn test_database_connection(
+    Json(payload): Json<UpdateDatabaseSettingsRequest>,
+) -> Result<Json<ApiResponse<DatabaseConnectionTestResponse>>, AppError> {
+    let settings = DatabaseSettings {
+        host: payload.host.trim().to_string(),
+        port: payload.port,
+        database: payload.database.trim().to_string(),
+        username: payload.username.trim().to_string(),
+        password: payload.password.unwrap_or_default(),
+    };
+    settings.validate().map_err(AppError::BadRequest)?;
+
+    verify_database_connection(&settings)
+        .await
+        .map_err(|error| AppError::BadRequest(format!("database connection failed: {error}")))?;
+
+    Ok(Json(success_response(
+        "database connection succeeded",
+        DatabaseConnectionTestResponse { connected: true },
+    )))
+}
+
+async fn database_settings_response(settings: DatabaseSettings) -> DatabaseSettingsResponse {
+    match verify_database_connection(&settings).await {
+        Ok(()) => DatabaseSettingsResponse {
+            host: settings.host,
+            port: settings.port,
+            database: settings.database,
+            username: settings.username,
+            password: settings.password,
+            connection_status: "connected".to_string(),
+            connection_error: None,
+        },
+        Err(error) => DatabaseSettingsResponse {
+            host: settings.host,
+            port: settings.port,
+            database: settings.database,
+            username: settings.username,
+            password: settings.password,
+            connection_status: "disconnected".to_string(),
+            connection_error: Some(error.to_string()),
+        },
+    }
+}
+
+async fn verify_database_connection(settings: &DatabaseSettings) -> Result<(), sea_orm::DbErr> {
+    let mut options = ConnectOptions::new(settings.to_database_url());
+    options.connect_timeout(Duration::from_secs(3));
+    Database::connect(options).await.map(|_| ())
 }
 
 pub(crate) async fn get_agent_settings(
@@ -180,6 +238,30 @@ pub(crate) async fn update_agent_settings(
         "agent settings saved",
         AgentSettingsResponse::from(&settings),
     )))
+}
+
+pub(crate) async fn get_platform_agent_assistant_settings(
+    axum::extract::State(_state): axum::extract::State<AppState>,
+) -> Result<Json<ApiResponse<PlatformAgentAssistantSettings>>, AppError> {
+    Ok(Json(success_response("platform agent assistant settings loaded", load_platform_agent_assistant_settings().unwrap_or_default())))
+}
+
+pub(crate) async fn update_platform_agent_assistant_settings(
+    axum::extract::State(_state): axum::extract::State<AppState>,
+    Json(payload): Json<PlatformAgentAssistantSettingsRequest>,
+) -> Result<Json<ApiResponse<PlatformAgentAssistantSettings>>, AppError> {
+    let navigation_agent_id = payload.navigation_agent_id.map(|id| id.trim().to_string()).filter(|id| !id.is_empty());
+    if let Some(agent_id) = &navigation_agent_id {
+        if !load_agent_registry().agents.iter().any(|agent| agent.id == *agent_id && agent.enabled) {
+            return Err(AppError::BadRequest("请选择一个已启用的机器人".to_string()));
+        }
+    }
+    if payload.schema_analysis_prompt.len() > 32 * 1024 {
+        return Err(AppError::BadRequest("Schema 分析提示词不能超过 32 KB".to_string()));
+    }
+    let settings = PlatformAgentAssistantSettings { navigation_agent_id, schema_analysis_prompt: payload.schema_analysis_prompt.trim().to_string() };
+    save_platform_agent_assistant_settings(&settings).map_err(AppError::Server)?;
+    Ok(Json(success_response("platform agent assistant settings saved", settings)))
 }
 
 pub(crate) async fn get_identity_source_settings(

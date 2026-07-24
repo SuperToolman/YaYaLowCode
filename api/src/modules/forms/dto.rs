@@ -97,6 +97,26 @@ pub(crate) struct CreateFormRequest {
     pub(crate) form_type: Option<String>,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CreateDetailFormRequest {
+    pub(crate) subform_field_id: String,
+    pub(crate) title: Option<String>,
+    pub(crate) primary_display_field_id: Option<String>,
+    pub(crate) secondary_display_field_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ApiDetailForm {
+    pub(crate) detail_form_uuid: String,
+    pub(crate) source_form_uuid: String,
+    pub(crate) subform_field_id: String,
+    pub(crate) title: String,
+    pub(crate) primary_display_field_id: Option<String>,
+    pub(crate) secondary_display_field_id: Option<String>,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiAppFieldOutline {

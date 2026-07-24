@@ -6,7 +6,7 @@
 
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { Button, Input, InputGroup } from "@heroui/react";
 import { Modal } from "@heroui/react/modal";
@@ -29,11 +29,19 @@ import {
   formulaToDisplay,
   formulaToStored,
 } from "../../../../../lib/form-formula";
+import {
+  getLocationLabel,
+  listLocationChildren,
+  normalizeCountryCityValue,
+  toStoredLocationItem,
+  type LocationCatalogItem,
+} from "../../../../../lib/location-catalog";
 
 const DEFAULT_VALUE_TYPE_OPTIONS: Array<{
   label: string;
   value: DesignerDefaultValueType;
 }> = [
+  { label: "无", value: "none" },
   { label: "自定义", value: "custom" },
   { label: "公式编辑", value: "formula" },
   { label: "数据联动", value: "linkage" },
@@ -48,22 +56,30 @@ export function DefaultValueEditor({
   field: PlacedField;
   onPropsChange: FieldPropsChangeHandler;
 }) {
-  const defaultValueType = field.props.defaultValueType ?? "custom";
+  const allowedTypes = getAllowedDefaultValueTypes(field.type);
+  const configuredType = field.props.defaultValueType ?? "custom";
+  const defaultValueType = allowedTypes.includes(configuredType)
+    ? configuredType
+    : allowedTypes[0];
 
   function handleDefaultValueTypeChange(value: DesignerDefaultValueType) {
     onPropsChange(field.id, {
       defaultValueType: value,
+      defaultValue: value === "none" ? undefined : field.props.defaultValue,
       defaultValueFormula:
         value === "formula"
           ? field.props.defaultValueFormula ||
             getDefaultValueFormulaSeed(field.props.defaultValue)
-          : field.props.defaultValueFormula,
+          : "",
+      defaultValueLinkage:
+        value === "linkage" ? field.props.defaultValueLinkage : "",
     });
   }
 
   return (
     <div className="w-full min-w-0 flex-1 space-y-1 overflow-hidden">
       <DefaultValueTypeSegmented
+        options={allowedTypes}
         value={defaultValueType}
         onChange={handleDefaultValueTypeChange}
       />
@@ -82,6 +98,18 @@ export function DefaultValueEditor({
   );
 }
 
+function getAllowedDefaultValueTypes(fieldType: PlacedField["type"]) {
+  if (
+    fieldType === "subform" ||
+    fieldType === "attachment" ||
+    fieldType === "imageUpload"
+  ) {
+    return ["none", "linkage"] satisfies DesignerDefaultValueType[];
+  }
+
+  return DEFAULT_VALUE_TYPE_OPTIONS.map((option) => option.value);
+}
+
 function CustomDefaultValueEditor({
   field,
   onPropsChange,
@@ -92,7 +120,7 @@ function CustomDefaultValueEditor({
   if (field.type === "number") {
     return (
       <NumberWithActions
-        value={toOptionalNumber(field.props.defaultValue)}
+        value={toOptionalNumber(field.props.defaultValue as string | number | string[] | undefined)}
         onChange={(value) =>
           onPropsChange(field.id, { defaultValue: value ?? 0 })
         }
@@ -188,6 +216,10 @@ function CustomDefaultValueEditor({
     );
   }
 
+  if (field.type === "countryCity") {
+    return <CountryCityDefaultEditor field={field} onPropsChange={onPropsChange} />;
+  }
+
   const value =
     typeof field.props.defaultValue === "string" ? field.props.defaultValue : "";
 
@@ -207,6 +239,43 @@ function CustomDefaultValueEditor({
         />
       </InputGroup>
       <div className="text-right text-xs text-[var(--color-text-secondary)]">{value.length}/500</div>
+    </div>
+  );
+}
+
+function CountryCityDefaultEditor({
+  field,
+  onPropsChange,
+}: {
+  field: PlacedField;
+  onPropsChange: FieldPropsChangeHandler;
+}) {
+  const [columns, setColumns] = useState<LocationCatalogItem[][]>([]);
+  const value = normalizeCountryCityValue(field.props.defaultValue);
+  const maxDepth = Math.min(4, Math.max(1, Math.round(field.props.locationDepth ?? 3)));
+
+  useEffect(() => {
+    let active = true;
+    void listLocationChildren(undefined, 1).then((items) => active && setColumns([items])).catch(() => active && setColumns([[]]));
+    return () => { active = false; };
+  }, []);
+
+  function selectItem(item: LocationCatalogItem | null, columnIndex: number) {
+    const path = item ? [...value.path.slice(0, columnIndex), toStoredLocationItem(item)] : value.path.slice(0, columnIndex);
+    const selected = path.at(-1);
+    onPropsChange(field.id, { defaultValue: selected ? { code: selected.code, depth: selected.depth, path } : { code: "", depth: 0, path: [] } });
+    if (!item || item.depth >= maxDepth) {
+      setColumns((current) => current.slice(0, columnIndex + 1));
+      return;
+    }
+    void listLocationChildren(item.code, item.depth + 1)
+      .then((children) => setColumns((current) => [...current.slice(0, columnIndex + 1), children]))
+      .catch(() => setColumns((current) => current.slice(0, columnIndex + 1)));
+  }
+
+  return (
+    <div className="grid min-w-0 flex-1 gap-1" style={{ gridTemplateColumns: `repeat(${maxDepth}, minmax(0, 1fr))` }}>
+      {columns.map((items, columnIndex) => <select key={columnIndex} aria-label={`默认地区第${columnIndex + 1}级`} className="h-7 min-w-0 rounded-sm border border-[var(--designer-border)] bg-[var(--color-bg-input)] px-1 text-[11px]" value={value.path[columnIndex]?.code ?? ""} onChange={(event) => selectItem(items.find((item) => item.code === event.currentTarget.value) ?? null, columnIndex)}><option value="">{columnIndex === 0 ? "默认国家" : "默认地区"}</option>{items.map((item) => <option key={item.id || item.code} value={item.code}>{getLocationLabel(item)}</option>)}</select>)}
     </div>
   );
 }
@@ -685,18 +754,21 @@ function DataLinkagePlaceholder() {
 
 function DefaultValueTypeSegmented({
   onChange,
+  options,
   value,
 }: {
   onChange: (value: DesignerDefaultValueType) => void;
+  options: DesignerDefaultValueType[];
   value: DesignerDefaultValueType;
 }) {
   return (
     <div
       role="tablist"
       aria-label="默认值类型"
-      className="grid h-7 w-full min-w-0 grid-cols-3 overflow-hidden rounded-md bg-[var(--color-bg-subtle)] p-0.5"
+      className="grid h-7 w-full min-w-0 overflow-hidden rounded-md bg-[var(--color-bg-subtle)] p-0.5"
+      style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
     >
-      {DEFAULT_VALUE_TYPE_OPTIONS.map((option) => (
+      {DEFAULT_VALUE_TYPE_OPTIONS.filter((option) => options.includes(option.value)).map((option) => (
         <button
           key={option.value}
           type="button"
@@ -717,9 +789,7 @@ function DefaultValueTypeSegmented({
   );
 }
 
-function getDefaultValueFormulaSeed(
-  value: string | number | string[] | undefined,
-) {
+function getDefaultValueFormulaSeed(value: unknown) {
   if (typeof value === "number") {
     return String(value);
   }

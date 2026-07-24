@@ -15,13 +15,15 @@ use rig_core::completion::Message;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::platform::config::{resolve_agent_runtime, resolve_agent_runtime_for_scope};
+use crate::platform::config::{
+    load_platform_agent_assistant_settings, resolve_agent_runtime, resolve_agent_runtime_for_scope,
+};
 use crate::platform::prelude::*;
 use crate::shared::success_response;
 
 pub(crate) use self::dto::{
     AgentPageContext, ApiAgentMessage, ApiAgentSession, CreateAgentSessionRequest,
-    SendAgentMessageRequest,
+    SendAgentMessageRequest, UpdateAgentSessionRequest,
 };
 use self::runner::execute_agent_run;
 
@@ -29,12 +31,13 @@ pub(crate) async fn list_agent_sessions(
     State(state): State<AppState>,
 ) -> Result<Json<ApiResponse<Vec<ApiAgentSession>>>, AppError> {
     let sessions = AgentSessionEntity::find()
+        .order_by_desc(agent_session_entity::Column::IsPinned)
         .order_by_desc(agent_session_entity::Column::UpdatedAt)
         .all(&state.db)
         .await?;
     Ok(Json(success_response(
         "agent sessions loaded",
-        sessions.into_iter().map(ApiAgentSession::from).collect(),
+        sessions.into_iter().map(to_api_session).collect(),
     )))
 }
 
@@ -44,12 +47,21 @@ pub(crate) async fn create_agent_session(
 ) -> Result<(StatusCode, Json<ApiResponse<ApiAgentSession>>), AppError> {
     let payload = payload.map(|Json(value)| value);
     let requested_agent_id = payload.as_ref().and_then(|value| value.agent_id.clone());
+    let source =
+        normalize_session_source(payload.as_ref().and_then(|value| value.source.as_deref()));
     let context = payload.and_then(|value| value.context).unwrap_or_default();
-    let runtime = resolve_agent_runtime_for_scope(
-        requested_agent_id.as_deref(),
-        context.app_id.as_deref(),
-        context.business_id.as_deref(),
-    )
+    let runtime = if source == "general" {
+        let navigation_agent_id = load_platform_agent_assistant_settings()
+            .and_then(|settings| settings.navigation_agent_id)
+            .ok_or_else(|| AppError::BadRequest("请先在 Agent 协助设置中配置平台导航助手".to_string()))?;
+        resolve_agent_runtime(Some(&navigation_agent_id))
+    } else {
+        resolve_agent_runtime_for_scope(
+            requested_agent_id.as_deref(),
+            context.app_id.as_deref(),
+            context.business_id.as_deref(),
+        )
+    }
     .map_err(AppError::BadRequest)?;
     let now = Utc::now();
     let session = agent_session_entity::ActiveModel {
@@ -57,6 +69,8 @@ pub(crate) async fn create_agent_session(
         session_uuid: Set(format!("ASESSION-{}", Uuid::new_v4().simple())),
         agent_id: Set(runtime.agent_id),
         title: Set("新对话".to_string()),
+        source: Set(source.to_string()),
+        is_pinned: Set(false),
         app_route_app_id: Set(context.app_id.clone()),
         context_json: Set(serde_json::to_value(context).unwrap_or_else(|_| json!({}))),
         status: Set("active".to_string()),
@@ -70,9 +84,47 @@ pub(crate) async fn create_agent_session(
         StatusCode::CREATED,
         Json(success_response(
             "agent session created",
-            ApiAgentSession::from(session),
+            to_api_session(session),
         )),
     ))
+}
+
+pub(crate) async fn update_agent_session(
+    State(state): State<AppState>,
+    Path(session_uuid): Path<String>,
+    Json(payload): Json<UpdateAgentSessionRequest>,
+) -> Result<Json<ApiResponse<ApiAgentSession>>, AppError> {
+    let session = find_session(&state.db, &session_uuid).await?;
+    let mut active: agent_session_entity::ActiveModel = session.into();
+    if let Some(title) = payload.title {
+        let title = title.trim();
+        if title.is_empty() {
+            return Err(AppError::BadRequest(
+                "agent session title is required".to_string(),
+            ));
+        }
+        active.title = Set(truncate_title(title));
+    }
+    if let Some(is_pinned) = payload.is_pinned {
+        active.is_pinned = Set(is_pinned);
+    }
+    active.updated_at = Set(Utc::now().into());
+    let updated = active.update(&state.db).await?;
+    Ok(Json(success_response(
+        "agent session updated",
+        to_api_session(updated),
+    )))
+}
+
+pub(crate) async fn delete_agent_session(
+    State(state): State<AppState>,
+    Path(session_uuid): Path<String>,
+) -> Result<StatusCode, AppError> {
+    let session = find_session(&state.db, &session_uuid).await?;
+    AgentSessionEntity::delete_by_id(session.id)
+        .exec(&state.db)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub(crate) async fn list_agent_messages(
@@ -103,6 +155,16 @@ pub(crate) async fn send_agent_message(
         ));
     }
     let session = find_session(&state.db, &session_uuid).await?;
+    if session.source == "general" {
+        let navigation_agent_id = load_platform_agent_assistant_settings()
+            .and_then(|settings| settings.navigation_agent_id)
+            .ok_or_else(|| AppError::BadRequest("请先在 Agent 协助设置中配置平台导航助手".to_string()))?;
+        if session.agent_id != navigation_agent_id {
+            return Err(AppError::BadRequest(
+                "平台导航助手已变更，请新建会话后继续".to_string(),
+            ));
+        }
+    }
     let runtime = resolve_agent_runtime(Some(&session.agent_id)).map_err(AppError::BadRequest)?;
     runtime.settings.validate().map_err(AppError::BadRequest)?;
     if !runtime.settings.enabled {
@@ -286,4 +348,20 @@ fn truncate_title(content: &str) -> String {
         title.push('…');
     }
     title
+}
+
+fn normalize_session_source(value: Option<&str>) -> &'static str {
+    match value.unwrap_or("general") {
+        "schema_analysis" => "schema_analysis",
+        "form_fill" => "form_fill",
+        _ => "general",
+    }
+}
+
+fn to_api_session(session: agent_session_entity::Model) -> ApiAgentSession {
+    let mut api_session = ApiAgentSession::from(session.clone());
+    api_session.model_provider = resolve_agent_runtime(Some(&session.agent_id))
+        .ok()
+        .map(|runtime| format!("{} · {}", runtime.settings.provider, runtime.settings.chat_model));
+    api_session
 }

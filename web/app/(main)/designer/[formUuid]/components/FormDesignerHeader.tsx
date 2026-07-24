@@ -33,7 +33,7 @@ type FormDesignerHeaderProps = {
   appName?: string | null;
   fieldsCount: number;
   formName: string;
-  formType: "normal" | "workflow";
+  formType: "normal" | "workflow" | "defined";
   formUuid: string;
   isEditingFormName: boolean;
   latestVersion: number;
@@ -79,6 +79,8 @@ export function FormDesignerHeader({
   const displayedVersions = versions.slice(0, 20);
   const designerViews = formType === "workflow"
     ? ["表单设计", "流程设计", ...normalDesignerViews.slice(1)]
+    : formType === "defined"
+      ? ["页面设计", "页面设置", "页面发布"]
     : normalDesignerViews;
 
   return (

@@ -115,7 +115,7 @@ pub(crate) async fn create_process_flow_for_form<C>(
     app_id: &str,
     form_uuid: &str,
     form_name: &str,
-) -> Result<(), AppError>
+) -> Result<automation_flow_entity::Model, AppError>
 where
     C: ConnectionTrait,
 {
@@ -141,7 +141,30 @@ where
     }
     .insert(db)
     .await?;
-    create_automation_snapshot(db, &flow, Some("流程表单创建时自动生成".to_string())).await
+    create_automation_snapshot(db, &flow, Some("流程表单创建时自动生成".to_string())).await?;
+    Ok(flow)
+}
+
+pub(crate) async fn ensure_process_flow_for_form<C>(
+    db: &C,
+    app_id: &str,
+    form_uuid: &str,
+    form_name: &str,
+) -> Result<automation_flow_entity::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    if let Some(flow) = AutomationFlowEntity::find()
+        .filter(automation_flow_entity::Column::AppRouteAppId.eq(app_id))
+        .filter(automation_flow_entity::Column::TriggerFormUuid.eq(form_uuid))
+        .filter(automation_flow_entity::Column::FlowType.eq("process"))
+        .one(db)
+        .await?
+    {
+        return Ok(flow);
+    }
+
+    create_process_flow_for_form(db, app_id, form_uuid, form_name).await
 }
 
 pub(crate) async fn get_automation_flow(
@@ -395,7 +418,14 @@ pub(crate) async fn update_automation_flow(
     }
 
     validate_automation_graph(&next_nodes_json, &next_edges_json)?;
-    validate_flow_node_kinds(&next_nodes_json, if is_process_flow { "process" } else { "trigger" })?;
+    validate_flow_node_kinds(
+        &next_nodes_json,
+        if is_process_flow {
+            "process"
+        } else {
+            "trigger"
+        },
+    )?;
     ensure_automation_node_forms_belong_to_app(&state.db, &app_id, &next_nodes_json).await?;
 
     if nodes_updated {
@@ -821,7 +851,11 @@ pub(crate) async fn execute_process_automation_node(
         "update-data" => execute_update_data_node(db, flow, config, &context).await?,
         "delete-data" => execute_delete_data_node(db, flow, config, &context).await?,
         "http-request" => execute_http_request_node(config, &context).await?,
-        _ => return Err(AppError::BadRequest("unsupported process automation node kind".to_string())),
+        _ => {
+            return Err(AppError::BadRequest(
+                "unsupported process automation node kind".to_string(),
+            ));
+        }
     };
     outputs.insert(node_id.to_string(), output);
     Ok(())
@@ -1093,14 +1127,41 @@ fn validate_flow_node_kinds(nodes: &Value, flow_type: &str) -> Result<(), AppErr
     let allowed: &[&str] = if flow_type == "process" {
         // Process flows use the automation nodes as well as their human-task nodes.
         // `end` remains accepted only so existing process definitions stay editable.
-        &["trigger", "condition", "add-data", "update-data", "get-one", "get-many", "delete-data", "http-request", "approval", "copy", "executor", "end"]
+        &[
+            "trigger",
+            "condition",
+            "add-data",
+            "update-data",
+            "get-one",
+            "get-many",
+            "delete-data",
+            "http-request",
+            "approval",
+            "copy",
+            "executor",
+            "end",
+        ]
     } else {
-        &["trigger", "condition", "add-data", "update-data", "get-one", "get-many", "delete-data", "http-request"]
+        &[
+            "trigger",
+            "condition",
+            "add-data",
+            "update-data",
+            "get-one",
+            "get-many",
+            "delete-data",
+            "http-request",
+        ]
     };
     for node in json_array_items(nodes) {
-        let kind = node.pointer("/data/kind").and_then(Value::as_str).unwrap_or_default();
+        let kind = node
+            .pointer("/data/kind")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         if !allowed.contains(&kind) {
-            return Err(AppError::BadRequest("node kind is not available for this automation type".to_string()));
+            return Err(AppError::BadRequest(
+                "node kind is not available for this automation type".to_string(),
+            ));
         }
     }
     Ok(())

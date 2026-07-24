@@ -7,7 +7,7 @@ mod shared;
 
 use std::net::SocketAddr;
 
-use modules::navigation;
+use modules::{locations, navigation};
 use platform::config::{AppConfig, ensure_default_agent_resources};
 use platform::error::AppError;
 use platform::form_storage::ensure_all_form_dynamic_storage;
@@ -41,11 +41,19 @@ async fn main() -> Result<(), AppError> {
     let config = AppConfig::from_env();
     let db = Database::connect(&config.database_url).await?;
 
+    locations::prepare_legacy_location_catalog_schema(&db).await?;
     infrastructure::migrator::Migrator::up(&db, None).await?;
+    locations::ensure_location_catalog_schema(&db).await?;
     infrastructure::legacy_bootstrap::ensure_form_tables(&db).await?;
     infrastructure::legacy_bootstrap::ensure_automation_tables(&db).await?;
     infrastructure::legacy_bootstrap::ensure_agent_tables(&db).await?;
     infrastructure::legacy_bootstrap::ensure_identity_tables(&db).await?;
+    infrastructure::legacy_bootstrap::ensure_file_tables(&db).await?;
+    if let Some(path) = import_location_catalog_path() {
+        let imported = locations::import_catalog_directory(&db, &path).await?;
+        info!(count = imported, "location catalog imported");
+        return Ok(());
+    }
     navigation::ensure_system_navigation_items(&db).await?;
     ensure_all_form_dynamic_storage(&db).await?;
 
@@ -64,4 +72,14 @@ async fn main() -> Result<(), AppError> {
         })
         .await
         .map_err(AppError::from)
+}
+
+fn import_location_catalog_path() -> Option<std::path::PathBuf> {
+    let mut arguments = std::env::args_os().skip(1);
+    while let Some(argument) = arguments.next() {
+        if argument == "--import-location-catalog" {
+            return arguments.next().map(std::path::PathBuf::from);
+        }
+    }
+    None
 }

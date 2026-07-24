@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, FormEvent, Key } from "react";
+import type { ChangeEvent, FormEvent, Key, ReactNode } from "react";
 import {
   Button,
   DateRangePicker,
@@ -10,6 +10,7 @@ import {
   Link as HeroLink,
   ListBox,
   NumberField,
+  Popover,
   Radio,
   RadioGroup,
   RangeCalendar,
@@ -18,13 +19,27 @@ import {
 } from "@heroui/react";
 import { DateInputGroup } from "@heroui/react/date-input-group";
 import { Description } from "@heroui/react/description";
+import { ChevronDown } from "@gravity-ui/icons";
 import { parseDate } from "@internationalized/date";
 import { normalizeActionPanelCode } from "../lib/action-panel-code";
 import { calculateFormulaValues } from "../lib/form-formula";
+import {
+  getLocationLabel,
+  isCountryCityValue,
+  listLocationChildren,
+  normalizeCountryCityValue,
+  toStoredLocationItem,
+  type CountryCityValue,
+  type LocationCatalogItem,
+} from "../lib/location-catalog";
 import { TrashIcon } from "./app-icons";
 import { RuntimeAssociationField } from "./runtime-association-field";
+import { getCascaderPathByValue, normalizeCascaderDataSource, serializeCascaderLabel } from "../lib/cascader-data-source";
 import { RuntimeMemberSelect } from "./runtime-member-select";
+import { RuntimeCascaderSelect } from "./runtime-cascader-select";
 import { RuntimeSubformTable } from "./runtime-subform-table";
+import { RichTextEditor, type RichTextDocument } from "./rich-text-editor";
+import { RuntimeDefinedComponent } from "./runtime-defined-component";
 
 const DEFAULT_COLUMN_GAP = 16;
 const DEFAULT_ROW_GAP = 20;
@@ -44,10 +59,14 @@ const DID_MOUNT_DEDUP_WINDOW_MS = 2000;
 export type RuntimeFieldType =
   | "groupContainer"
   | "subform"
+  | "serialNumber"
   | "associationFormField"
   | "singleLineText"
   | "description"
   | "multiLineText"
+  | "richText"
+  | "html"
+  | "tsx"
   | "number"
   | "radio"
   | "checkbox"
@@ -60,6 +79,8 @@ export type RuntimeFieldType =
   | "imageUpload"
   | "member"
   | "department"
+  | "countryCity"
+  | "cascader"
   | "button";
 
 export type RuntimeFieldOption = {
@@ -68,10 +89,11 @@ export type RuntimeFieldOption = {
 };
 
 export type RuntimeFieldProps = {
+  titlePosition?: "top" | "left" | "inside";
   placeholder?: string;
   description?: string;
-  defaultValueType?: "custom" | "formula" | "linkage";
-  defaultValue?: string | number | string[];
+  defaultValueType?: "none" | "custom" | "formula" | "linkage";
+  defaultValue?: string | number | string[] | CountryCityValue;
   defaultValueFormula?: string;
   defaultValueLinkage?: string;
   isDisabled?: boolean;
@@ -91,6 +113,7 @@ export type RuntimeFieldProps = {
   buttonText?: string;
   accept?: string;
   multiple?: boolean;
+  maxFileSizeMb?: number;
   subformAddButtonText?: string;
   subformButtonState?: "normal" | "disabled" | "hidden";
   subformAllowBatchImport?: boolean;
@@ -116,6 +139,16 @@ export type RuntimeFieldProps = {
   subformActionColumnWidth?: number;
   subformAllowCustomColumns?: boolean;
   subformEnableTotals?: boolean;
+  serialNumberDigits?: number;
+  serialNumberFixedDigits?: boolean;
+  serialNumberResetPeriod?: "never" | "daily" | "monthly" | "yearly";
+  serialNumberInitialValue?: number;
+  serialNumberRules?: Array<
+    | { id: string; type: "autoCount"; digits: number; fixedDigits: boolean; resetPeriod: "never" | "daily" | "monthly" | "yearly"; initialValue: number }
+    | { id: string; type: "fixedText"; value: string }
+    | { id: string; type: "submittedDate"; format: "year" | "yearMonth" | "yearMonthDay" | "yearMonthDayHourMinute" | "yearMonthDayHourMinuteSecond" }
+    | { id: string; type: "formField"; fieldId: string; fallback: string }
+  >;
   associationFormId?: string;
   associationAppId?: string;
   associationPrimaryFieldId?: string;
@@ -135,6 +168,10 @@ export type RuntimeFieldProps = {
   memberUserIds?: string[];
   memberDisplayFormat?: "name" | "nameJobNumber" | "nameUserId";
   memberMultiple?: boolean;
+  locationDepth?: number;
+  dataSource?: unknown;
+  code?: string;
+  allowedResourceOrigins?: string[];
 };
 
 export type RuntimeSchemaField = {
@@ -157,6 +194,15 @@ export type RuntimeDataSource = {
   description?: string;
 };
 
+export type RuntimePageAsset = {
+  id: string;
+  name: string;
+  type: "script" | "style";
+  url: string;
+  integrity?: string;
+  enabled: boolean;
+};
+
 export type RuntimeFieldAction = {
   id: string;
   fieldId: string;
@@ -177,6 +223,7 @@ export type RuntimePageProps = {
     sortableFieldIds?: string[];
   };
   dataSources?: RuntimeDataSource[];
+  assets?: RuntimePageAsset[];
   actionPanel?: Partial<RuntimeActionPanelState>;
   agent?: {
     enabled?: boolean;
@@ -234,6 +281,14 @@ type RuntimeRendererState = {
   formulaErrors: Record<string, string>;
   debugEvent?: RuntimeDebugEvent;
 };
+
+export function RuntimeFormSurface({ children }: { children: ReactNode }) {
+  return (
+    <div className="runtime-form-surface mx-auto min-h-full w-full  rounded-2xl border border-[var(--designer-border)] bg-[var(--designer-surface-solid)] p-6 shadow-[var(--shadow-designer)]">
+      {children}
+    </div>
+  );
+}
 
 export function RuntimeFormRenderer({
   schema,
@@ -380,6 +435,7 @@ export function RuntimeFormRenderer({
         let didMountErrorMessage = "";
         const result = runActionHandler({
           actionModule,
+          fields,
           handlerName: "didMount",
           fieldId: "",
           eventName: "didMount",
@@ -452,6 +508,12 @@ export function RuntimeFormRenderer({
 
     return childrenByParent;
   }, [fields]);
+  const definedComponentWritableFieldIds = useMemo(
+    () => fields
+      .filter((field) => !["html", "tsx", "description", "button", "groupContainer"].includes(field.type))
+      .map((field) => field.id),
+    [fields],
+  );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -459,6 +521,7 @@ export function RuntimeFormRenderer({
     const submitDataSources = { ...dataSources };
     const result = runActionHandler({
       actionModule,
+      fields,
       handlerName: "onSubmit",
       fieldId: "",
       eventName: "onSubmit",
@@ -513,6 +576,7 @@ export function RuntimeFormRenderer({
     const nextDataSources = { ...current.dataSources };
     runActionHandler({
       actionModule: current.actionModule,
+      fields: current.fields,
       handlerName: "onFieldEvent",
       fieldId,
       eventName,
@@ -583,7 +647,7 @@ export function RuntimeFormRenderer({
             key={field.id}
             className={[
               "flex min-w-0",
-              field.type === "multiLineText"
+              (field.rowSpan ?? 1) > 1 || field.type === "multiLineText" || field.type === "richText" || field.type === "html" || field.type === "tsx"
                 ? "items-stretch"
                 : isTopAlignedRuntimeField(field.type) || descriptionRows.has(field.row)
                 ? "items-start"
@@ -600,6 +664,8 @@ export function RuntimeFormRenderer({
               formulaErrors={runtimeState.formulaErrors}
               value={values[field.id]}
               values={values}
+              definedComponentWritableFieldIds={definedComponentWritableFieldIds}
+              definedAssets={schema.pageProps?.assets ?? []}
               onFieldAction={setFieldValue}
             />
           </div>
@@ -623,6 +689,8 @@ export function RuntimeFormRenderer({
 
 function RuntimeFieldNode({
   childFieldsByParent,
+  definedComponentWritableFieldIds,
+  definedAssets,
   field,
   formulaErrors,
   onFieldAction,
@@ -630,6 +698,8 @@ function RuntimeFieldNode({
   values,
 }: {
   childFieldsByParent: Map<string, RuntimeSchemaField[]>;
+  definedComponentWritableFieldIds: string[];
+  definedAssets: RuntimePageAsset[];
   field: RuntimeSchemaField;
   formulaErrors: Record<string, string>;
   onFieldAction: (fieldId: string, nextValue: unknown, eventName?: string) => void;
@@ -645,7 +715,7 @@ function RuntimeFieldNode({
     const childFields = childFieldsByParent.get(field.id) ?? [];
 
     return (
-      <div className="flex w-full min-w-0 flex-col rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-1">
+      <div className="flex w-full min-w-0 flex-col rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--runtime-form-group-background)] p-1">
         <div className="mb-3 text-sm font-semibold text-[var(--color-text-primary)]">{field.label}</div>
         <div
           className="grid"
@@ -661,7 +731,7 @@ function RuntimeFieldNode({
               key={child.id}
               className={[
                 "flex min-w-0",
-                child.type === "multiLineText"
+                (child.rowSpan ?? 1) > 1 || child.type === "multiLineText" || child.type === "richText" || child.type === "html" || child.type === "tsx"
                   ? "items-stretch"
                   : isTopAlignedRuntimeField(child.type) ? "items-start" : "items-end",
               ].join(" ")}
@@ -672,6 +742,8 @@ function RuntimeFieldNode({
             >
               <RuntimeFieldNode
                 childFieldsByParent={childFieldsByParent}
+                definedComponentWritableFieldIds={definedComponentWritableFieldIds}
+                definedAssets={definedAssets}
                 field={child}
                 formulaErrors={formulaErrors}
                 onFieldAction={onFieldAction}
@@ -687,6 +759,21 @@ function RuntimeFieldNode({
 
   if (field.type === "associationFormField") {
     return <RuntimeAssociationField field={field} value={value} onChange={(nextValue) => onFieldAction(field.id, nextValue, "onChange")} onFill={(source) => applyAssociationFillRules(field.props, source, onFieldAction)} />;
+  }
+
+  if (field.type === "html" || field.type === "tsx") {
+    return (
+      <RuntimeDefinedComponent
+        type={field.type}
+        code={field.props?.code}
+        allowedResourceOrigins={field.props?.allowedResourceOrigins}
+        allowedFieldIds={definedComponentWritableFieldIds}
+        assets={definedAssets}
+        values={values}
+        isReadOnly={Boolean(field.props?.isReadOnly || field.props?.isDisabled)}
+        onSetFieldValue={(fieldId, nextValue) => onFieldAction(fieldId, nextValue, "onChange")}
+      />
+    );
   }
 
   return (
@@ -823,6 +910,7 @@ const FormField = memo(function FormField({
   value: unknown;
 }) {
   const props = field.props ?? {};
+  const titlePosition = getRuntimeTitlePosition(field.type, props.titlePosition);
   const placeholder = props.placeholder ?? "请输入";
   const options = normalizeFieldOptions(props.options, field.type);
   const textValue =
@@ -838,35 +926,66 @@ const FormField = memo(function FormField({
     typeof value === "number"
       ? value
       : toOptionalNumber(value as string | number | string[] | undefined) ??
-        toOptionalNumber(props.defaultValue);
+        toOptionalNumber(props.defaultValue as string | number | string[] | undefined);
   const description = props.description?.trim();
   const orientation =
     field.type === "radio" || field.type === "checkbox"
       ? "horizontal"
       : (props.orientation ?? "vertical");
 
+  const hasVisibleLabel = showLabel && field.type !== "button" && titlePosition !== "inside";
+  const isLeftTitle = hasVisibleLabel && titlePosition === "left";
+  const isInsideTitle = titlePosition === "inside";
+  const contentClass = field.type === "multiLineText" || field.type === "richText"
+    ? "flex h-full min-h-0 w-full min-w-0 flex-1 flex-col gap-2"
+    : "w-full min-w-0 space-y-2";
+
   return (
-    <div className={field.type === "multiLineText" ? "flex h-full min-w-0 flex-1 flex-col gap-2" : "w-full min-w-0 flex-1 space-y-2"}>
-      {showLabel && field.type !== "button" ? (
-        <label className="block text-sm font-medium text-[var(--color-text-primary)]" htmlFor={field.id}>
+    <div className={isLeftTitle ? "grid h-full w-full min-w-0 grid-cols-[minmax(0,max-content)_minmax(0,1fr)] items-start gap-3 pt-7" : field.type === "multiLineText" || field.type === "richText" ? "flex h-full min-h-0 w-full min-w-0 flex-col" : "w-full min-w-0"}>
+      {hasVisibleLabel ? (
+        <label className={isLeftTitle ? "max-w-28 truncate pt-2 text-sm font-medium text-[var(--color-text-primary)]" : "mb-2 block text-sm font-medium text-[var(--color-text-primary)]"} htmlFor={field.id}>
           {field.label}
         </label>
       ) : null}
+      <div className={contentClass}>
       {field.type === "singleLineText" ? (
         <div className="relative">
-          <Input
-            id={field.id}
-            aria-label={field.label}
-            disabled={props.isDisabled}
-            placeholder={placeholder}
-            readOnly={props.isReadOnly}
-            required={props.isRequired}
-            value={textValue}
-            onChange={(event: ChangeEvent<HTMLInputElement>) =>
-              onFieldAction(field.id, event.currentTarget.value, "onChange")
-            }
-            fullWidth
-          />
+          {isInsideTitle ? (
+            <InputGroup fullWidth>
+              <InputGroup.Prefix className="max-w-28 shrink-0">
+                <span className="truncate text-sm font-medium text-[var(--color-text-primary)]">
+                  {field.label}
+                </span>
+              </InputGroup.Prefix>
+              <InputGroup.Input
+                id={field.id}
+                aria-label={field.label}
+                disabled={props.isDisabled}
+                placeholder={placeholder}
+                readOnly={props.isReadOnly}
+                required={props.isRequired}
+                value={textValue}
+                onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                  onFieldAction(field.id, event.currentTarget.value, "onChange")
+                }
+                className="min-w-0 flex-1"
+              />
+            </InputGroup>
+          ) : (
+            <Input
+              id={field.id}
+              aria-label={field.label}
+              disabled={props.isDisabled}
+              placeholder={placeholder}
+              readOnly={props.isReadOnly}
+              required={props.isRequired}
+              value={textValue}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                onFieldAction(field.id, event.currentTarget.value, "onChange")
+              }
+              fullWidth
+            />
+          )}
           {props.showClearButton ? (
             <RuntimeClearButton
               isDisabled={Boolean(props.isDisabled || props.isReadOnly)}
@@ -881,8 +1000,18 @@ const FormField = memo(function FormField({
           {textValue || placeholder}
         </p>
       ) : null}
+      {field.type === "serialNumber" ? (
+        <Input
+          id={field.id}
+          aria-label={field.label}
+          readOnly
+          placeholder={props.placeholder ?? "自动生成"}
+          value={formatRuntimeSerialNumber(props)}
+          fullWidth
+        />
+      ) : null}
       {field.type === "multiLineText" ? (
-        <div className="relative min-h-20 flex-1">
+        <div className="relative min-h-0 flex-1">
           <InputGroup fullWidth className="h-full">
             <InputGroup.TextArea
               id={field.id}
@@ -908,6 +1037,15 @@ const FormField = memo(function FormField({
           {props.showCounter ? <Counter value={textValue} /> : null}
         </div>
       ) : null}
+      {field.type === "richText" ? (
+        <RichTextEditor
+          ariaLabel={field.label}
+          disabled={props.isDisabled}
+          readOnly={props.isReadOnly}
+          value={isRichTextDocument(value) ? value : EMPTY_RICH_TEXT_DOCUMENT}
+          onChange={(nextValue) => onFieldAction(field.id, nextValue, "onChange")}
+        />
+      ) : null}
       {field.type === "number" ? (
         <NumberField
           aria-label={field.label}
@@ -916,7 +1054,6 @@ const FormField = memo(function FormField({
           onChange={(nextValue) => onFieldAction(field.id, nextValue ?? "", "onChange")}
           isDisabled={props.isDisabled}
           isReadOnly={props.isReadOnly}
-          isRequired={props.isRequired}
           maxValue={props.maxValue}
           minValue={props.minValue}
           step={props.step}
@@ -985,6 +1122,25 @@ const FormField = memo(function FormField({
           onChange={(nextValue) => onFieldAction(field.id, nextValue, "onChange")}
         />
       ) : null}
+      {field.type === "countryCity" ? (
+        <RuntimeCountryCitySelect
+          field={field}
+          props={props}
+          value={value}
+          onChange={(nextValue, eventName) => onFieldAction(field.id, nextValue, eventName)}
+        />
+      ) : null}
+      {field.type === "cascader" ? (
+        <RuntimeCascaderSelect
+          ariaLabel={field.label}
+          dataSource={props.dataSource}
+          isDisabled={props.isDisabled}
+          isReadOnly={props.isReadOnly}
+          placeholder={placeholder}
+          value={textValue}
+          onChange={(nextValue) => onFieldAction(field.id, nextValue, "onChange")}
+        />
+      ) : null}
       {field.type === "multiSelect" ? (
         <RuntimeMultiSelect
           field={field}
@@ -1025,7 +1181,12 @@ const FormField = memo(function FormField({
         />
       ) : null}
       {field.type === "attachment" || field.type === "imageUpload" ? (
-        <RuntimeUpload field={field} props={props} />
+        <RuntimeUpload
+          field={field}
+          props={props}
+          value={value}
+          onFilesCommitted={(nextValue) => onFieldAction(field.id, nextValue, "onChange")}
+        />
       ) : null}
       {field.type === "button" ? (
         <Button
@@ -1045,6 +1206,7 @@ const FormField = memo(function FormField({
           公式错误：{formulaError}
         </Description>
       ) : null}
+      </div>
     </div>
   );
 });
@@ -1088,6 +1250,138 @@ function RuntimeSelect({
         </ListBox>
       </Select.Popover>
     </Select>
+  );
+}
+
+function RuntimeCountryCitySelect({
+  field,
+  props,
+  value,
+  onChange,
+}: {
+  field: RuntimeSchemaField;
+  props: RuntimeFieldProps;
+  value: unknown;
+  onChange: (value: CountryCityValue, eventName: "onChange") => void;
+}) {
+  const maxDepth = Math.min(4, Math.max(1, Math.round(props.locationDepth ?? 3)));
+  const popoverWidth = `${maxDepth === 1 ? 18 : maxDepth * 14}rem`;
+  const [isOpen, setIsOpen] = useState(false);
+  const [columns, setColumns] = useState<LocationCatalogItem[][]>([]);
+  const [activePath, setActivePath] = useState<LocationCatalogItem[]>([]);
+  const [selectionIsLeaf, setSelectionIsLeaf] = useState(false);
+  const [searches, setSearches] = useState<string[]>([]);
+  const [loadError, setLoadError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const location = normalizeCountryCityValue(value);
+  const isDisabled = Boolean(props.isDisabled || props.isReadOnly);
+  const selectedPath = location.path;
+  const filteredColumns = useMemo(() => columns
+    .map((items, columnIndex) => ({
+      columnIndex,
+      items: searches[columnIndex]?.trim()
+        ? items.filter((item) => matchesLocationSearch(item, searches[columnIndex]))
+        : items,
+    })), [columns, searches]);
+
+  useEffect(() => {
+    let active = true;
+    listLocationChildren(undefined, 1)
+      .then((items) => active && setColumns([items]))
+      .catch(() => {
+        if (!active) return;
+        setColumns([[]]);
+        setLoadError("地区目录加载失败");
+      })
+      .finally(() => active && setIsLoading(false));
+    return () => { active = false; };
+  }, []);
+
+  async function selectItem(item: LocationCatalogItem, columnIndex: number) {
+    const nextPath = [...activePath.slice(0, columnIndex), item];
+    setActivePath(nextPath);
+    setSelectionIsLeaf(false);
+    setSearches((current) => {
+      const next = current.slice(0, columnIndex + 1);
+      next[columnIndex] = "";
+      return next;
+    });
+    if (item.depth >= maxDepth) {
+      setSelectionIsLeaf(true);
+      setColumns((current) => current.slice(0, columnIndex + 1));
+      return;
+    }
+    setIsLoading(true);
+    setLoadError("");
+    try {
+      const children = await listLocationChildren(item.code, item.depth + 1);
+      setSelectionIsLeaf(children.length === 0);
+      setColumns((current) => children.length > 0
+        ? [...current.slice(0, columnIndex + 1), children]
+        : current.slice(0, columnIndex + 1));
+    } catch {
+      setSelectionIsLeaf(true);
+      setColumns((current) => current.slice(0, columnIndex + 1));
+      setLoadError("地区目录加载失败");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  return (
+    <Popover isOpen={isOpen} onOpenChange={(next) => !isDisabled && setIsOpen(next)}>
+      <Popover.Trigger aria-label={field.label} className="block w-full">
+        <div
+          style={{ backgroundColor: "var(--field-background)" }}
+          className={[
+            "flex h-10 w-full min-w-0 items-center gap-2 rounded-xl bg-[var(--field-background)] px-3 text-sm text-[var(--color-text-primary)] shadow-[var(--shadow-card-glass)]",
+            isDisabled ? "cursor-not-allowed opacity-60" : "",
+          ].join(" ")}
+        >
+          <span className={[
+            "min-w-0 flex-1 truncate leading-5",
+            selectedPath.length === 0 ? "text-[var(--color-text-disabled)]" : "",
+          ].join(" ")}>
+            {selectedPath.length > 0
+              ? selectedPath.map((item) => getLocationLabel(item)).join(" / ")
+              : (props.placeholder || "请选择国家/地区")}
+          </span>
+          <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-[var(--color-text-disabled)]" />
+        </div>
+      </Popover.Trigger>
+      <Popover.Content className="max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl bg-[var(--color-bg-surface)] p-0 shadow-[var(--shadow-floating)]" style={{ width: `min(${popoverWidth}, calc(100vw - 2rem))` }}>
+        <Popover.Dialog aria-label={`${field.label}国家地区选择`} className="w-full min-w-0">
+          <div className="flex min-w-0 overflow-x-auto" role="listbox">
+            {filteredColumns.map(({ items, columnIndex }) => <div key={columnIndex} className={["flex h-72 shrink-0 flex-col border-r border-[var(--color-border)] last:border-r-0", maxDepth === 1 ? "w-full" : "w-56"].join(" ")}>
+              <div className="border-b border-[var(--color-border)] p-2"><Input aria-label={`搜索第${columnIndex + 1}级地区`} placeholder={`搜索第${columnIndex + 1}级地区`} value={searches[columnIndex] ?? ""} onChange={(event) => setSearches((current) => { const next = [...current]; next[columnIndex] = event.currentTarget.value; return next; })} fullWidth /></div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-1">
+                {items.map((item) => <Button key={item.id || item.code} type="button" variant="ghost" className={["h-auto min-h-10 w-full justify-between rounded-lg px-2 py-1 text-left focus-visible:outline-none focus-visible:ring-0", activePath[columnIndex]?.code === item.code ? "bg-[var(--color-bg-hover)]" : ""].join(" ")} onPress={() => void selectItem(item, columnIndex)}><LocationOptionContent item={item} />{item.depth < maxDepth ? <span aria-hidden="true" className="ml-2 text-[var(--color-text-secondary)]">&gt;</span> : null}</Button>)}
+                {!isLoading && items.length === 0 ? <div className="px-2 py-5 text-center text-xs text-[var(--color-text-secondary)]">{loadError || (searches[columnIndex]?.trim() ? "没有匹配的地区" : "没有地区数据")}</div> : null}
+              </div>
+            </div>)}
+          </div>
+          <div className="flex items-center justify-between border-t border-[var(--color-border)] p-2"><span className="min-w-0 truncate text-xs text-[var(--color-text-secondary)]">{activePath.map((item) => getLocationLabel(item)).join(" / ") || `请选择第 ${maxDepth} 级地区`}</span><Button type="button" size="sm" isDisabled={activePath.length === 0 || (activePath.length < maxDepth && !selectionIsLeaf)} onPress={() => { const selected = activePath.at(-1); if (!selected) return; onChange({ code: selected.code, depth: selected.depth, path: activePath.map(toStoredLocationItem) }, "onChange"); setIsOpen(false); }}>确认</Button></div>
+        </Popover.Dialog>
+      </Popover.Content>
+    </Popover>
+  );
+}
+
+function matchesLocationSearch(item: LocationCatalogItem, query: string) {
+  const keyword = query.trim().toLocaleLowerCase();
+  if (!keyword) return true;
+  return item.name.toLocaleLowerCase().includes(keyword)
+    || Object.values(item.labels ?? {}).some((label) => label.toLocaleLowerCase().includes(keyword))
+    || item.code.toLocaleLowerCase().includes(keyword);
+}
+
+function LocationOptionContent({ item }: { item: LocationCatalogItem }) {
+  const label = getLocationLabel(item);
+  return (
+    <span className="flex min-w-0 flex-col py-0.5">
+      <span className="truncate text-sm text-[var(--color-text-primary)]">{label}</span>
+      <span className="truncate text-xs text-[var(--color-text-secondary)]">{item.name}</span>
+    </span>
   );
 }
 
@@ -1179,31 +1473,91 @@ function RuntimeMultiSelect({
 function RuntimeUpload({
   field,
   props,
+  value,
+  onFilesCommitted,
 }: {
   field: RuntimeSchemaField;
   props: RuntimeFieldProps;
+  value: unknown;
+  onFilesCommitted: (files: UploadedRuntimeFile[]) => void;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const isDisabled = Boolean(props.isDisabled || props.isReadOnly);
+  const [isUploading, setIsUploading] = useState(false);
+  const files = normalizeUploadedRuntimeFiles(value);
+
+  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const selectedFiles = Array.from(event.currentTarget.files ?? []);
+    event.currentTarget.value = "";
+    if (selectedFiles.length === 0) return;
+    if (field.type === "imageUpload" && selectedFiles.some((file) => !file.type.startsWith("image/"))) {
+      toast.danger("请选择图片文件");
+      return;
+    }
+    const maxBytes = (props.maxFileSizeMb ?? 20) * 1024 * 1024;
+    if (selectedFiles.some((file) => file.size > maxBytes)) {
+      toast.danger("文件超过大小限制", { description: `单个文件不能超过 ${props.maxFileSizeMb ?? 20} MB。` });
+      return;
+    }
+    setIsUploading(true);
+    try {
+      const uploaded = await Promise.all(selectedFiles.map(uploadRuntimeFile));
+      onFilesCommitted(props.multiple ? [...files, ...uploaded] : uploaded.slice(0, 1));
+    } catch (error) {
+      toast.danger("文件上传失败", { description: error instanceof Error ? error.message : "请稍后重试。" });
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
   return (
-    <label className="block rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-3">
-      <span
-        className={[
-          "inline-flex h-8 items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 text-sm text-[var(--color-text-primary)]",
-          props.isDisabled || props.isReadOnly ? "cursor-not-allowed opacity-60" : "cursor-pointer",
-        ].join(" ")}
+    <div className="block rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-3">
+      <Button
+        type="button"
+        variant="ghost"
+        isDisabled={isDisabled || isUploading}
+        onClick={() => inputRef.current?.click()}
+        className="h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 text-sm text-[var(--color-text-primary)]"
       >
         {props.buttonText || props.placeholder || "上传"}
-      </span>
+      </Button>
       <input
-        className="sr-only"
+        ref={inputRef}
+        className="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0"
         type="file"
         name={field.id}
         accept={props.accept}
         multiple={props.multiple}
-        disabled={props.isDisabled || props.isReadOnly}
+        disabled={isDisabled}
         required={props.isRequired}
+        tabIndex={-1}
+        onChange={handleFileChange}
       />
-    </label>
+      {files.length > 0 ? <div className={field.type === "imageUpload" ? "mt-3 grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2" : "mt-2 space-y-1"}>{files.map((file) => field.type === "imageUpload" ? <div key={file.fileId} className="relative min-w-0 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)]"><img src={`/api/files/${encodeURIComponent(file.fileId)}/download`} alt={file.name} className="h-20 w-full object-cover" /><div className="truncate px-2 py-1 text-xs text-[var(--color-text-secondary)]" title={file.name}>{file.name}</div><button type="button" aria-label={`删除${file.name}`} className="absolute right-1 top-1 h-5 w-5 rounded bg-black/60 text-xs text-white" disabled={isDisabled || isUploading} onClick={() => onFilesCommitted(files.filter((item) => item.fileId !== file.fileId))}>×</button></div> : <div key={file.fileId} className="flex items-center justify-between gap-2 text-xs text-[var(--color-text-secondary)]"><a className="min-w-0 truncate text-[var(--color-primary)]" href={`/api/files/${encodeURIComponent(file.fileId)}/download`} target="_blank" rel="noreferrer">{file.name}</a><span className="shrink-0">{formatFileSize(file.size)}</span><button type="button" aria-label={`删除${file.name}`} className="shrink-0 text-[var(--color-danger)]" disabled={isDisabled || isUploading} onClick={() => onFilesCommitted(files.filter((item) => item.fileId !== file.fileId))}>删除</button></div>)}</div> : null}
+    </div>
   );
+}
+
+type UploadedRuntimeFile = { fileId: string; name: string; size: number; mimeType: string };
+
+async function uploadRuntimeFile(file: File): Promise<UploadedRuntimeFile> {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetch("/api/files/upload", { method: "POST", body });
+  const payload = await response.json() as { code: number; message: string; data?: UploadedRuntimeFile };
+  if (!response.ok || payload.code !== 0 || !payload.data) throw new Error(payload.message || "上传失败");
+  return payload.data;
+}
+
+function normalizeUploadedRuntimeFiles(value: unknown): UploadedRuntimeFile[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is UploadedRuntimeFile => Boolean(item && typeof item === "object" && typeof (item as UploadedRuntimeFile).fileId === "string"));
+}
+
+function formatFileSize(size: number) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function RuntimeDateRangePicker({
@@ -1307,7 +1661,7 @@ function getInitialValues(
     if (field.parentGroupId && subformIds.has(field.parentGroupId)) {
       continue;
     }
-    if (field.type === "description" || field.type === "link" || field.type === "groupContainer") {
+    if (field.type === "description" || field.type === "link" || field.type === "groupContainer" || field.type === "html" || field.type === "tsx") {
       continue;
     }
 
@@ -1318,6 +1672,13 @@ function getInitialValues(
 
     if (field.type === "button") {
       values[field.id] = initialValues?.[field.id] ?? field.props?.defaultValue ?? "";
+      continue;
+    }
+
+    if (field.type === "richText") {
+      values[field.id] = isRichTextDocument(initialValues?.[field.id])
+        ? initialValues![field.id]
+        : EMPTY_RICH_TEXT_DOCUMENT;
       continue;
     }
 
@@ -1359,21 +1720,76 @@ function parseDataSourceValue(source: RuntimeDataSource) {
 }
 
 function getFieldDefaultValue(field: RuntimeSchemaField) {
+  if (field.type === "serialNumber") {
+    return formatRuntimeSerialNumber(field.props ?? {});
+  }
+  if (field.props?.defaultValueType === "none") {
+    if (field.type === "checkbox" || field.type === "multiSelect" || field.type === "dateRange") {
+      return [];
+    }
+    if (field.type === "countryCity") {
+      return normalizeCountryCityValue(undefined);
+    }
+    return "";
+  }
+
   const defaultValue = field.props?.defaultValue;
+
+  if (field.type === "countryCity") {
+    return normalizeCountryCityValue(defaultValue);
+  }
 
   if (field.type === "checkbox" || field.type === "multiSelect" || field.type === "dateRange") {
     return Array.isArray(defaultValue) ? defaultValue : [];
   }
 
   if (field.type === "number") {
-    return toOptionalNumber(defaultValue) ?? "";
+    return toOptionalNumber(defaultValue as string | number | string[] | undefined) ?? "";
   }
 
   return defaultValue ?? "";
 }
 
+const EMPTY_RICH_TEXT_DOCUMENT: RichTextDocument = { type: "doc", content: [] };
+
+function isRichTextDocument(value: unknown): value is RichTextDocument {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    (value as { type?: unknown }).type === "doc" &&
+    Array.isArray((value as { content?: unknown }).content),
+  );
+}
+
+function formatRuntimeSerialNumber(props: RuntimeFieldProps) {
+  if (props.serialNumberRules?.length) {
+    return props.serialNumberRules.map((rule) => {
+      if (rule.type === "fixedText") return rule.value;
+      if (rule.type === "formField") return rule.fallback || "{字段}";
+      if (rule.type === "submittedDate") return formatRuntimeSerialDate(new Date(), rule.format);
+      return rule.fixedDigits ? String(rule.initialValue).padStart(rule.digits, "0") : String(rule.initialValue);
+    }).join("");
+  }
+  const initialValue = Math.max(1, Math.trunc(props.serialNumberInitialValue ?? 1));
+  if (!props.serialNumberFixedDigits) return String(initialValue);
+  return String(initialValue).padStart(Math.max(1, props.serialNumberDigits ?? 4), "0");
+}
+
+function formatRuntimeSerialDate(
+  date: Date,
+  format: "year" | "yearMonth" | "yearMonthDay" | "yearMonthDayHourMinute" | "yearMonthDayHourMinuteSecond",
+) {
+  const day = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
+  if (format === "year") return String(date.getFullYear());
+  if (format === "yearMonth") return day.slice(0, 6);
+  if (format === "yearMonthDay") return day;
+  const time = `${String(date.getHours()).padStart(2, "0")}${String(date.getMinutes()).padStart(2, "0")}`;
+  return format === "yearMonthDayHourMinute" ? `${day}${time}` : `${day}${time}${String(date.getSeconds()).padStart(2, "0")}`;
+}
+
 function runActionHandler({
   actionModule,
+  fields,
   handlerName,
   fieldId,
   eventName,
@@ -1386,6 +1802,7 @@ function runActionHandler({
   values,
 }: {
   actionModule: RuntimeActionModule;
+  fields: RuntimeSchemaField[];
   handlerName: keyof RuntimeActionModuleHandlers;
   fieldId: string;
   eventName: string;
@@ -1414,10 +1831,28 @@ function runActionHandler({
     urlParams,
     dataSources,
   };
+  const currentCascader = getRuntimeCascaderValue(fields, values, fieldId);
+  const fieldById = new Map(fields.map((field) => [field.id, field]));
+  actionModule.setFieldAccessor((id) => {
+    const field = fieldById.get(id);
+    if (!field) return null;
+    const cascader = getRuntimeCascaderValue(fields, values, id);
+    return {
+      id: field.id,
+      type: field.type,
+      value: cascader?.value ?? values[id],
+      label: cascader?.label ?? field.label,
+    };
+  });
 
   const helpers: RuntimeActionHelpers = {
     state,
     getFieldValue: (id: string) => values[id],
+    getCountryCity: (id: string) => {
+      const field = values[id];
+      return isCountryCityValue(field) ? normalizeCountryCityValue(field) : null;
+    },
+    getCascader: (id: string) => getRuntimeCascaderValue(fields, values, id),
     setFieldValue: (id: string, nextValue: unknown) => {
       values[id] = nextValue;
     },
@@ -1440,6 +1875,7 @@ function runActionHandler({
       fieldId,
       eventName,
       value,
+      label: currentCascader?.label,
       helpers,
       console,
     };
@@ -1465,6 +1901,8 @@ type RuntimeActionState = {
 type RuntimeActionHelpers = {
   state: RuntimeActionState;
   getFieldValue: (id: string) => unknown;
+  getCountryCity: (id: string) => CountryCityValue | null;
+  getCascader: (id: string) => { value: string; label: string } | null;
   setFieldValue: (id: string, nextValue: unknown) => void;
   getDataSource: (name: string) => unknown;
   setDataSource: (name: string, nextValue: unknown) => void;
@@ -1482,9 +1920,38 @@ type RuntimeActionContext = {
   fieldId: string;
   eventName: string;
   value: unknown;
+  label?: string;
   helpers: RuntimeActionHelpers;
   console: Console;
 };
+
+type RuntimeFieldAccessor = {
+  id: string;
+  type: RuntimeFieldType;
+  value: unknown;
+  label: string;
+};
+
+function getRuntimeCascaderValue(
+  fields: RuntimeSchemaField[],
+  values: Record<string, unknown>,
+  fieldId: string,
+) {
+  const field = fields.find((item) => item.id === fieldId);
+  const value = values[fieldId];
+  if (field?.type !== "cascader" || typeof value !== "string") return null;
+  const path = getCascaderPathByValue(
+    normalizeCascaderDataSource(field.props?.dataSource),
+    value,
+  );
+  return path.length > 0
+    ? { value, label: serializeCascaderLabel(path, getRuntimeLocale()) }
+    : null;
+}
+
+function getRuntimeLocale() {
+  return typeof navigator === "undefined" ? "zh_CN" : navigator.language.replace("-", "_");
+}
 
 type RuntimeActionHandler = (context: RuntimeActionContext) => unknown;
 
@@ -1496,6 +1963,7 @@ type RuntimeActionModuleHandlers = {
 
 type RuntimeActionModule = {
   handlers: RuntimeActionModuleHandlers;
+  setFieldAccessor: (accessor: (id: string) => RuntimeFieldAccessor | null) => void;
   error?: string;
 };
 
@@ -1513,26 +1981,41 @@ function buildInitialRuntimeState(
 
 function compileActionModule(code: string): RuntimeActionModule {
   if (!code.trim()) {
-    return { handlers: {} };
+    return createRuntimeActionModule(() => ({}));
   }
 
   try {
     const factory = new Function(
+      "$",
       `"use strict"; ${code}
 return {
   didMount: typeof didMount === "function" ? didMount : undefined,
   onSubmit: typeof onSubmit === "function" ? onSubmit : undefined,
   onFieldEvent: typeof onFieldEvent === "function" ? onFieldEvent : undefined,
 };`,
-    ) as () => RuntimeActionModuleHandlers;
+    ) as ($: (id: string) => RuntimeFieldAccessor | null) => RuntimeActionModuleHandlers;
 
-    return { handlers: factory() };
+    return createRuntimeActionModule(factory);
   } catch (error) {
     return {
       handlers: {},
+      setFieldAccessor: () => undefined,
       error: error instanceof Error ? error.message : "动作脚本编译失败",
     };
   }
+}
+
+function createRuntimeActionModule(
+  factory: ($: (id: string) => RuntimeFieldAccessor | null) => RuntimeActionModuleHandlers,
+): RuntimeActionModule {
+  let accessor: (id: string) => RuntimeFieldAccessor | null = () => null;
+  const $ = (id: string) => accessor(id);
+  return {
+    handlers: factory($),
+    setFieldAccessor: (nextAccessor) => {
+      accessor = nextAccessor;
+    },
+  };
 }
 
 function createRuntimeDebugEventId() {
@@ -1626,10 +2109,24 @@ function isTopAlignedRuntimeField(type: RuntimeFieldType) {
     type === "groupContainer" ||
     type === "description" ||
     type === "multiLineText" ||
+    type === "richText" ||
+    type === "html" ||
+    type === "tsx" ||
     type === "radio" ||
     type === "checkbox" ||
     type === "attachment" ||
     type === "imageUpload"
     || type === "subform"
   );
+}
+
+function getRuntimeTitlePosition(
+  type: RuntimeFieldType,
+  position: RuntimeFieldProps["titlePosition"],
+) {
+  if (position === "inside" && type !== "singleLineText") {
+    return "top";
+  }
+
+  return position ?? "top";
 }

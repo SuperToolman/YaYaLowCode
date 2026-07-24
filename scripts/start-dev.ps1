@@ -25,6 +25,35 @@ function Test-BackendReady {
     }
 }
 
+function Test-BackendBinaryStale {
+    $binaryPath = Join-Path $apiRoot "target\debug\yaya-api.exe"
+    if (-not (Test-Path $binaryPath)) {
+        return $true
+    }
+    $latestSource = @(
+        Get-ChildItem -Path (Join-Path $apiRoot "src") -Recurse -File
+        Get-Item (Join-Path $apiRoot "Cargo.toml"), (Join-Path $apiRoot "Cargo.lock") -ErrorAction SilentlyContinue
+    ) | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    return $latestSource.LastWriteTime -gt (Get-Item $binaryPath).LastWriteTime
+}
+
+function Stop-StaleBackend {
+    $listener = Get-NetTCPConnection -State Listen -LocalPort $BackendPort -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $listener) {
+        return
+    }
+    $process = Get-Process -Id $listener.OwningProcess -ErrorAction Stop
+    if ($process.ProcessName -ne "yaya-api") {
+        throw "Port $BackendPort is occupied by $($process.ProcessName), not yaya-api. Stop it before starting the development backend."
+    }
+    Write-Host "Restarting stale backend..."
+    Stop-Process -Id $process.Id -ErrorAction Stop
+    $deadline = (Get-Date).AddSeconds(10)
+    while ((Get-Date) -lt $deadline -and (Test-BackendReady)) {
+        Start-Sleep -Milliseconds 200
+    }
+}
+
 if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     throw "cargo was not found. Install the Rust toolchain first."
 }
@@ -35,8 +64,13 @@ if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
 $startedBackend = $false
 $backendProcess = $null
 if (Test-BackendReady) {
-    Write-Host "Backend is already running: $backendHealthUrl"
-} else {
+    if (Test-BackendBinaryStale) {
+        Stop-StaleBackend
+    } else {
+        Write-Host "Backend is already running: $backendHealthUrl"
+    }
+}
+if (-not (Test-BackendReady)) {
     Remove-Item -Force $backendLog, $backendErrorLog -ErrorAction SilentlyContinue
     Write-Host "Starting backend..."
     $backendProcess = Start-Process `

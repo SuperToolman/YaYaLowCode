@@ -174,6 +174,22 @@ where
             .await?
             .ok_or_else(|| AppError::NotFound("inserted record not found".to_string()))?;
 
+        // The form type is table-level metadata duplicated onto every row so child-table
+        // projections can be identified without joining form_definitions.
+        self.db
+            .execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                format!(
+                    "UPDATE \"{}\" SET form_type = $1 WHERE id = $2",
+                    plan.main_table
+                ),
+                vec![
+                    SeaValue::String(Some(definition.form_type.clone())),
+                    SeaValue::Uuid(Some(id)),
+                ],
+            ))
+            .await?;
+
         self.increment_app_records_count(&definition.app_route_app_id, now)
             .await?;
         Ok(stored_record_from_row(&row, &definition.form_uuid)?)

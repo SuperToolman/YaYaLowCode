@@ -97,14 +97,16 @@ export function RuntimeAssociationField({
   const placeholder = props.associationFormId
     ? props.placeholder ?? "请选择"
     : "请先配置关联表单";
+  const isLeftTitle = showLabel && props.titlePosition === "left";
 
   return (
-    <div className={showLabel ? "w-full min-w-0 space-y-2" : "w-full min-w-0"}>
+    <div className={isLeftTitle ? "grid h-full w-full min-w-0 grid-cols-[minmax(0,max-content)_minmax(0,1fr)] items-start gap-3 pt-7" : showLabel ? "w-full min-w-0 space-y-2" : "w-full min-w-0"}>
       {showLabel ? (
-        <label className="block text-sm font-medium text-[var(--color-text-primary)]">
+        <label className={isLeftTitle ? "max-w-28 truncate pt-2 text-sm font-medium text-[var(--color-text-primary)]" : "block text-sm font-medium text-[var(--color-text-primary)]"}>
           {field.label}
         </label>
       ) : null}
+      <div className={isLeftTitle ? "w-full min-w-0" : undefined}>
       <Select
         aria-label={field.label}
         className="low-code-select-field"
@@ -142,6 +144,7 @@ export function RuntimeAssociationField({
           </ListBox>
         </Select.Popover>
       </Select>
+      </div>
     </div>
   );
 }

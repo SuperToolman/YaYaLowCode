@@ -10,6 +10,7 @@ import type {
 import { createContext, memo, useContext, useLayoutEffect, useMemo, useRef } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { TrashIcon } from "../../../../components/app-icons";
+import { RichTextEditor } from "../../../../components/rich-text-editor";
 import {
   CELL_MIN_HEIGHT,
   COLUMN_COUNT,
@@ -23,7 +24,6 @@ import {
   getFieldAt,
   getTopLevelFields,
   isCellCovered,
-  isContainerFieldType,
   isTopAlignedField,
 } from "../designer-layout";
 import type {
@@ -216,13 +216,13 @@ export const DesignerCanvas = memo(function DesignerCanvas({
                 key={`${row}-${column}`}
                 id={`canvas-cell:${row}:${column}`}
                 data={{ kind: "cell", row, column, parentGroupId: null }}
-                allowInsertionZones={field ? !isContainerFieldType(field.type) : false}
+                allowInsertionZones={Boolean(field)}
                 occupiedFieldId={field?.id}
                 showMatrix={showMatrix}
                 className={[
                   "rounded-2xl transition",
                   showMatrix ? "border border-dashed p-0" : "p-0",
-                  field && showMatrix ? "border-[var(--color-border)] bg-[var(--color-bg-surface)]" : "",
+                  field && showMatrix ? "border-[var(--color-border)] bg-[var(--color-bg-surface)] p-1" : "",
                   !field && showMatrix
                     ? "border-[var(--color-border)] bg-[var(--color-bg-subtle)]"
                     : "",
@@ -244,7 +244,8 @@ export const DesignerCanvas = memo(function DesignerCanvas({
                     selectedFieldId={selectedFieldId}
                     isTopAligned={
                       isTopAlignedField(field.type) ||
-                      descriptionRows.has(field.row)
+                      descriptionRows.has(field.row) ||
+                      field.rowSpan > 1
                     }
                     onResizePointerDown={onResizePointerDown}
                     onResizePointerMove={onResizePointerMove}
@@ -307,7 +308,7 @@ function PlacedDesignerField({
       className={[
         "relative flex cursor-grab p-0 transition active:cursor-grabbing",
         isDragging ? "opacity-35" : "",
-        field.type === "multiLineText" ? "h-full items-stretch" : isTopAligned ? "min-h-full items-start" : "h-full items-end",
+        field.rowSpan > 1 || field.type === "multiLineText" || field.type === "richText" ? "h-full items-stretch" : isTopAligned ? "min-h-full items-start" : "h-full items-end",
         isSelected
           ? "rounded-xl outline outline-1 outline-[var(--color-primary)] outline-offset-2"
           : "",
@@ -387,9 +388,25 @@ function DesignerFieldPreview({ field }: { field: PlacedField }) {
   const isChoice = field.type === "radio" || field.type === "checkbox";
   const isMultiline = field.type === "multiLineText";
   const isUpload = field.type === "attachment" || field.type === "imageUpload";
+  const titlePosition = getCanvasTitlePosition(field.type, props.titlePosition);
+  const isLeftTitle = titlePosition === "left";
+  const showTitle = titlePosition !== "inside";
+  const isInsideTitle = titlePosition === "inside";
 
   if (field.type === "description") {
     return <p className="w-full rounded-md bg-[var(--color-bg-subtle)] px-3 py-2 text-sm text-[var(--color-text-secondary)]">{String(props.defaultValue || placeholder)}</p>;
+  }
+
+  if (field.type === "richText") {
+    return (
+      <div className="flex h-full min-h-0 w-full flex-col">
+        <div className="mb-2 text-sm font-medium text-[var(--color-text-primary)]">{field.label}</div>
+        <div className="min-h-0 flex-1">
+          <RichTextEditor ariaLabel={field.label} preview readOnly value={{ type: "doc", content: [] }} onChange={() => undefined} />
+        </div>
+        {description ? <div className="mt-2 text-xs text-[var(--color-text-secondary)]">{description}</div> : null}
+      </div>
+    );
   }
 
   if (field.type === "button") {
@@ -397,8 +414,9 @@ function DesignerFieldPreview({ field }: { field: PlacedField }) {
   }
 
   return (
-    <div className={isMultiline ? "flex h-full w-full min-w-0 flex-col gap-2" : "w-full min-w-0 space-y-2"}>
-      <div className="text-sm font-medium text-[var(--color-text-primary)]">{field.label}</div>
+    <div className={isLeftTitle ? "grid h-full w-full min-w-0 grid-cols-[minmax(0,max-content)_minmax(0,1fr)] items-start gap-3 pt-7" : isMultiline ? "flex h-full min-h-0 w-full min-w-0 flex-col" : "w-full min-w-0"}>
+      {showTitle ? <div className={isLeftTitle ? "max-w-24 truncate pt-2 text-sm font-medium text-[var(--color-text-primary)]" : "mb-2 text-sm font-medium text-[var(--color-text-primary)]"}>{field.label}</div> : null}
+      <div className={isMultiline ? "flex h-full min-h-0 w-full min-w-0 flex-1 flex-col gap-2" : "w-full min-w-0 space-y-2"}>
       {isChoice ? (
         <div className="flex flex-wrap gap-3 text-sm text-[var(--color-text-secondary)]">
           {(options.length > 0 ? options : [{ label: "选项一" }, { label: "选项二" }]).map((option, index) => (
@@ -408,11 +426,26 @@ function DesignerFieldPreview({ field }: { field: PlacedField }) {
       ) : isUpload ? (
         <div className="flex min-h-12 items-center justify-center rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-xs text-[var(--color-text-secondary)]">{props.buttonText || (field.type === "imageUpload" ? "上传图片" : "上传附件")}</div>
       ) : (
-        <div className={["flex w-full items-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 text-sm text-[var(--color-text-disabled)]", isMultiline ? "min-h-16 flex-1 items-start py-2" : "h-10"].join(" ")}>{placeholder}</div>
+        <div className={["flex w-full items-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 text-sm text-[var(--color-text-disabled)]", isMultiline ? "min-h-0 flex-1 items-start py-2" : "h-10", isInsideTitle ? "gap-2" : ""].join(" ")}>
+          {isInsideTitle ? <span className="max-w-24 shrink-0 truncate font-medium text-[var(--color-text-primary)]">{field.label}</span> : null}
+          <span className="min-w-0 truncate">{placeholder}</span>
+        </div>
       )}
       {description ? <div className="text-xs text-[var(--color-text-secondary)]">{description}</div> : null}
+      </div>
     </div>
   );
+}
+
+function getCanvasTitlePosition(
+  type: PlacedField["type"],
+  position: PlacedField["props"]["titlePosition"],
+) {
+  if (position === "inside" && type !== "singleLineText") {
+    return "top";
+  }
+
+  return position ?? "top";
 }
 
 function SubformFieldCanvas({ allFields, field, selectedFieldId, onFieldSelect, onResizePointerDown, onResizePointerMove, onResizePointerUp }: { allFields: PlacedField[]; field: PlacedField; selectedFieldId: string | null; onFieldSelect: (event: MouseEvent<HTMLDivElement>, fieldId: string) => void; onResizePointerDown: (event: PointerEvent<HTMLButtonElement>, field: PlacedField, direction: ResizeDirection) => void; onResizePointerMove: (event: PointerEvent<HTMLButtonElement>) => void; onResizePointerUp: () => void }) {
@@ -549,14 +582,14 @@ function GroupedFieldCanvas({
               key={`${field.id}-${row}-${column}`}
               id={`group-cell:${field.id}:${row}:${column}`}
               data={{ kind: "cell", row, column, parentGroupId: field.id }}
-              allowInsertionZones={nestedField ? !isContainerFieldType(nestedField.type) : false}
+              allowInsertionZones={Boolean(nestedField)}
               occupiedFieldId={nestedField?.id}
               showMatrix
               className={[
-                "rounded-md border transition",
+                "rounded-md transition",
                 nestedField
-                  ? "border-[var(--color-primary)] bg-[var(--color-bg-surface)]"
-                  : "border-[var(--color-border)] bg-[var(--color-bg-subtle)]",
+                  ? "bg-[var(--color-bg-surface)] p-1"
+                  : "border border-[var(--color-border)] bg-[var(--color-bg-subtle)]",
               ].join(" ")}
               style={{
                 gridColumn: nestedField
@@ -573,7 +606,7 @@ function GroupedFieldCanvas({
                   field={nestedField}
                   isSelected={selectedFieldId === nestedField.id}
                   selectedFieldId={selectedFieldId}
-                  isTopAligned={isTopAlignedField(nestedField.type)}
+                  isTopAligned={isTopAlignedField(nestedField.type) || nestedField.rowSpan > 1}
                   onResizePointerDown={onResizePointerDown}
                   onResizePointerMove={onResizePointerMove}
                   onResizePointerUp={onResizePointerUp}
@@ -619,11 +652,11 @@ function DesignerDropCell({
     <div
       ref={setNodeRef}
       data-designer-drop-id={id}
-      className={[
-        "relative",
-        className,
-        isOver && showMatrix
-          ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)]"
+        className={[
+          "relative",
+          className,
+          isOver && showMatrix
+          ? "border border-[var(--color-primary)] bg-[var(--color-primary-soft)]"
           : "",
       ].join(" ")}
       style={style}

@@ -178,8 +178,8 @@ async fn required_permission(
     path: &str,
 ) -> Result<Option<String>, AppError> {
     let platform_permission = match path {
-        "/api/settings/database" => Some("settings.database"),
-        "/api/settings/agent" => Some("settings.agent"),
+        "/api/settings/database" | "/api/settings/database/test" => Some("settings.database"),
+        "/api/settings/agent" | "/api/settings/agent-assistant" => Some("settings.agent"),
         "/api/settings/identity-source"
         | "/api/settings/identity-source/dingtalk/access-token"
         | "/api/settings/identity-source/dingtalk/sync-departments"
@@ -243,6 +243,12 @@ async fn required_permission(
                 return form_development_permission(state, form_uuid, "publish").await;
             }
             if method == Method::POST && segments.get(3) == Some(&"schema") {
+                return form_development_permission(state, form_uuid, "edit_form").await;
+            }
+            if method == Method::POST
+                && segments.get(3) == Some(&"workflow")
+                && segments.get(4) == Some(&"process")
+            {
                 return form_development_permission(state, form_uuid, "edit_form").await;
             }
             let action = form_action(method, segments.get(3).copied());

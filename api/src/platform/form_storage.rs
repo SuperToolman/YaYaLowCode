@@ -252,6 +252,11 @@ where
 {
     let definitions = FormDefinitionEntity::find().all(db).await?;
     for definition in definitions {
+        // Detail forms are logical projections over a source subform table. They must never
+        // acquire their own dynamic table during application bootstrap.
+        if definition.form_type == "detail" {
+            continue;
+        }
         let schema = FormSchemaEntity::find()
             .filter(form_schema_entity::Column::FormUuid.eq(definition.form_uuid.clone()))
             .filter(form_schema_entity::Column::Version.eq(definition.published_schema_version))
@@ -354,6 +359,7 @@ where
             id UUID PRIMARY KEY,
             record_uuid VARCHAR(40) NOT NULL UNIQUE,
             schema_version INTEGER NOT NULL,
+            form_type VARCHAR(24) NOT NULL DEFAULT 'normal',
             extension_data JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             created_by VARCHAR(80) NOT NULL,
             updated_by VARCHAR(80) NOT NULL,
@@ -364,8 +370,10 @@ where
             ON "{}" (created_at DESC);
         ALTER TABLE "{}"
             ADD COLUMN IF NOT EXISTS extension_data JSONB NOT NULL DEFAULT '{{}}'::jsonb;
+        ALTER TABLE "{}"
+            ADD COLUMN IF NOT EXISTS form_type VARCHAR(24) NOT NULL DEFAULT 'normal';
         "#,
-        plan.main_table, created_at_index, plan.main_table, plan.main_table
+        plan.main_table, created_at_index, plan.main_table, plan.main_table, plan.main_table
     ))
     .await?;
 
@@ -430,14 +438,17 @@ where
                 id BIGSERIAL PRIMARY KEY,
                 parent_record_uuid VARCHAR(40) NOT NULL
                     REFERENCES "{}" (record_uuid) ON DELETE CASCADE,
-                row_index INTEGER NOT NULL,
-                row_data JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+                 row_index INTEGER NOT NULL,
+                 form_type VARCHAR(24) NOT NULL DEFAULT 'normal',
+                 row_data JSONB NOT NULL DEFAULT '{{}}'::jsonb,
                 UNIQUE (parent_record_uuid, row_index)
             );
             CREATE INDEX IF NOT EXISTS "{}"
                 ON "{}" (parent_record_uuid, row_index);
+            ALTER TABLE "{}"
+                ADD COLUMN IF NOT EXISTS form_type VARCHAR(24) NOT NULL DEFAULT 'normal';
             "#,
-            child_table, plan.main_table, parent_index, child_table
+            child_table, plan.main_table, parent_index, child_table, child_table
         ))
         .await?;
 
@@ -539,8 +550,8 @@ where
         CREATE OR REPLACE FUNCTION "{}"() RETURNS trigger AS $function$
         BEGIN
             DELETE FROM "{}" WHERE parent_record_uuid = NEW.record_uuid;
-            INSERT INTO "{}" (parent_record_uuid, row_index, row_data{})
-            SELECT NEW.record_uuid, (item.ordinality - 1)::integer, {}{}
+            INSERT INTO "{}" (parent_record_uuid, row_index, form_type, row_data{})
+            SELECT NEW.record_uuid, (item.ordinality - 1)::integer, NEW.form_type, {}{}
             FROM jsonb_array_elements(
                 CASE
                     WHEN jsonb_typeof(NEW.extension_data -> '{}') = 'array'
@@ -553,7 +564,7 @@ where
         $function$ LANGUAGE plpgsql;
         DROP TRIGGER IF EXISTS "{}" ON "{}";
         CREATE TRIGGER "{}"
-            AFTER INSERT OR UPDATE OF extension_data ON "{}"
+            AFTER INSERT OR UPDATE OF extension_data, form_type ON "{}"
             FOR EACH ROW EXECUTE FUNCTION "{}"();
         "#,
         function_name,
@@ -599,11 +610,14 @@ fn storage_mapping(component_type: &str) -> (StorageTarget, Option<&'static str>
         | "department" => (StorageTarget::Column, Some("TEXT")),
         "number" => (StorageTarget::Column, Some("NUMERIC")),
         "date" => (StorageTarget::Column, Some("DATE")),
-        "checkbox" | "multiSelect" | "dateRange" | "attachment" | "imageUpload" => {
-            (StorageTarget::ExtensionJson, Some("JSONB"))
-        }
+        "checkbox" | "multiSelect" | "dateRange" | "attachment" | "imageUpload" | "countryCity"
+        | "richText" => (StorageTarget::ExtensionJson, Some("JSONB")),
         "subform" => (StorageTarget::ChildTable, None),
-        "groupContainer" | "description" | "button" => (StorageTarget::Virtual, None),
+        // Presentation and executable-page nodes must never be written to a record,
+        // indexed, or materialized as physical table columns.
+        "groupContainer" | "description" | "button" | "html" | "tsx" => {
+            (StorageTarget::Virtual, None)
+        }
         _ => (StorageTarget::ExtensionJson, Some("JSONB")),
     }
 }
@@ -755,6 +769,45 @@ mod tests {
 
         assert!(matches!(plan.fields[0].target, StorageTarget::ChildTable));
         assert!(matches!(plan.fields[1].target, StorageTarget::ChildColumn));
+    }
+
+    #[test]
+    fn stores_country_city_values_as_json_extension_data() {
+        let plan = compile_form_storage_plan(
+            "FORM-ABC",
+            &json!({
+                "fields": [
+                    { "id": "location", "type": "countryCity" }
+                ]
+            }),
+        )
+        .expect("storage plan should compile");
+
+        assert!(matches!(
+            plan.fields[0].target,
+            StorageTarget::ExtensionJson
+        ));
+        assert_eq!(plan.fields[0].sql_type.as_deref(), Some("JSONB"));
+        assert!(!plan.fields[0].indexed);
+    }
+
+    #[test]
+    fn stores_rich_text_values_as_json_extension_data() {
+        let plan = compile_form_storage_plan(
+            "FORM-ABC",
+            &json!({
+                "fields": [
+                    { "id": "content", "type": "richText" }
+                ]
+            }),
+        )
+        .expect("storage plan should compile");
+
+        assert!(matches!(
+            plan.fields[0].target,
+            StorageTarget::ExtensionJson
+        ));
+        assert_eq!(plan.fields[0].sql_type.as_deref(), Some("JSONB"));
     }
 
     #[test]

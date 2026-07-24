@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Card } from "@heroui/react/card";
-import { PageHeader } from "../components/page-header";
 import { useAuth } from "../components/auth-provider";
 
 const settingsGroups = [
@@ -15,6 +14,12 @@ const settingsGroups = [
         permission: "settings.database",
         label: "数据库连接",
         description: "PostgreSQL 连接与凭据",
+      },
+      {
+        href: "/settings/agent-assistant",
+        permission: "settings.agent",
+        label: "Agent 协助设置",
+        description: "导航助手与 Schema 分析",
       },
     ],
   },
@@ -102,7 +107,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   const canView = (permission: string) => permissions.includes("*") || permissions.includes(permission);
 
   return (
-    <div className="theme-page-shell h-full min-h-0 overflow-hidden">
+    <div className="theme-page-shell settings-page-shell h-full min-h-0 overflow-hidden">
       <main className="mx-auto grid h-full min-h-0 w-full grid-cols-[232px_minmax(0,1fr)] gap-4">
           <Card className="theme-panel min-h-0 overflow-hidden p-2.5 shadow-[var(--shadow-card)]">
             <div className="flex h-full min-h-0 flex-col">
@@ -152,7 +157,6 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
           </Card>
 
           <div className="flex min-h-0 min-w-0 flex-col gap-4 overflow-hidden">
-            <PageHeader title="设置" description="管理平台基础设施、用户权限与 Agent 能力。每个设置项目拥有独立地址，可以直接访问和分享。" />
             <div className="min-h-0 flex-1 overflow-hidden">
               {children}
             </div>

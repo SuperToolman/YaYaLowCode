@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ClearDingTalkDataData, ClearDingTalkDataResponses, CreateAgentData, CreateAgentResponses, CreateAgentSessionData, CreateAgentSessionResponses, CreateAppData, CreateAppErrors, CreateAppResponses, CreateAutomationFlowData, CreateAutomationFlowErrors, CreateAutomationFlowResponses, CreateConfigProfileData, CreateConfigProfileResponses, CreateFormData, CreateFormErrors, CreateFormRecordData, CreateFormRecordErrors, CreateFormRecordResponses, CreateFormResponses, CreateFormViewData, CreateFormViewResponses, CreateKnowledgeBaseData, CreateKnowledgeBaseResponses, CreateLocalRoleData, CreateLocalRoleResponses, CreateLocalUserData, CreateLocalUserResponses, CreateNavigationGroupData, CreateNavigationGroupResponses, CreatePluginData, CreatePluginResponses, CreateProviderData, CreateProviderResponses, CreateSkillData, CreateSkillResponses, DeleteAgentData, DeleteAgentResponses, DeleteAppData, DeleteAppErrors, DeleteAppResponses, DeleteAutomationFlowData, DeleteAutomationFlowErrors, DeleteAutomationFlowResponses, DeleteConfigProfileData, DeleteConfigProfileResponses, DeleteFormData, DeleteFormRecordData, DeleteFormRecordErrors, DeleteFormRecordResponses, DeleteFormResponses, DeleteFormViewData, DeleteFormViewResponses, DeleteKnowledgeBaseData, DeleteKnowledgeBaseResponses, DeleteLocalRoleData, DeleteLocalRoleResponses, DeletePluginData, DeletePluginResponses, DeleteProviderData, DeleteProviderResponses, DeleteSkillData, DeleteSkillResponses, DeleteUserData, DeleteUserResponses, GetAgentSettingsData, GetAgentSettingsResponses, GetAppFieldOutlineData, GetAppFieldOutlineResponses, GetAutomationFlowData, GetAutomationFlowErrors, GetAutomationFlowResponses, GetDatabaseSettingsData, GetDatabaseSettingsResponses, GetFormData, GetFormResponses, GetFormSchemaData, GetFormSchemaErrors, GetFormSchemaResponses, GetFormVersionData, GetFormVersionErrors, GetFormVersionResponses, GetIdentitySourceSettingsData, GetIdentitySourceSettingsResponses, GetInternalIdentitySourceSettingsData, GetInternalIdentitySourceSettingsResponses, GetRolePermissionsData, GetRolePermissionsResponses, GetSkillFileData, GetSkillFileResponses, HealthCheckData, HealthCheckResponses, ListAgentMessagesData, ListAgentMessagesResponses, ListAgentsData, ListAgentSessionsData, ListAgentSessionsResponses, ListAgentsResponses, ListAppNavigationData, ListAppNavigationErrors, ListAppNavigationResponses, ListAppsData, ListAppsErrors, ListAppsResponses, ListAutomationFlowRunsData, ListAutomationFlowRunsResponses, ListAutomationFlowsData, ListAutomationFlowsErrors, ListAutomationFlowsResponses, ListAutomationFlowVersionsData, ListAutomationFlowVersionsErrors, ListAutomationFlowVersionsResponses, ListConfigProfilesData, ListConfigProfilesResponses, ListFormRecordsData, ListFormRecordsErrors, ListFormRecordsResponses, ListFormsData, ListFormsErrors, ListFormsResponses, ListFormVersionsData, ListFormVersionsErrors, ListFormVersionsResponses, ListFormViewsData, ListFormViewsResponses, ListKnowledgeBasesData, ListKnowledgeBasesResponses, ListOrganizationUnitsData, ListOrganizationUnitsResponses, ListPersonasData, ListPersonasResponses, ListPlatformToolsData, ListPlatformToolsResponses, ListPluginsData, ListPluginsResponses, ListProvidersData, ListProvidersResponses, ListRolesData, ListRolesResponses, ListSkillsData, ListSkillsResponses, ListUsersData, ListUsersResponses, LocalLoginData, LocalLoginResponses, PublishFormSchemaData, PublishFormSchemaErrors, PublishFormSchemaResponses, RefreshDingTalkAccessTokenData, RefreshDingTalkAccessTokenResponses, ReorderNavigationItemData, ReorderNavigationItemErrors, ReorderNavigationItemResponses, ResolveDingTalkLoginData, ResolveDingTalkLoginResponses, RestoreAutomationFlowVersionData, RestoreAutomationFlowVersionResponses, RestoreFormVersionData, RestoreFormVersionErrors, RestoreFormVersionResponses, RetryAutomationFlowRunData, RetryAutomationFlowRunNodeData, RetryAutomationFlowRunNodeResponses, RetryAutomationFlowRunResponses, SaveFormSchemaDraftData, SaveFormSchemaDraftErrors, SaveFormSchemaDraftResponses, SendAgentMessageData, SendAgentMessageResponses, SetDefaultNavigationEntryData, SetDefaultNavigationEntryResponses, SyncDingTalkDepartmentsData, SyncDingTalkDepartmentsResponses, SyncDingTalkUsersData, SyncDingTalkUsersResponses, UpdateAgentData, UpdateAgentResponses, UpdateAgentSettingsData, UpdateAgentSettingsResponses, UpdateAppData, UpdateAppErrors, UpdateAppResponses, UpdateAutomationFlowData, UpdateAutomationFlowErrors, UpdateAutomationFlowResponses, UpdateConfigProfileData, UpdateConfigProfileResponses, UpdateDatabaseSettingsData, UpdateDatabaseSettingsResponses, UpdateFormRecordData, UpdateFormRecordErrors, UpdateFormRecordResponses, UpdateFormViewData, UpdateFormViewResponses, UpdateIdentitySourceSettingsData, UpdateIdentitySourceSettingsResponses, UpdateKnowledgeBaseData, UpdateKnowledgeBaseResponses, UpdateLocalRoleData, UpdateLocalRoleResponses, UpdatePluginData, UpdatePluginResponses, UpdateProviderData, UpdateProviderResponses, UpdateRolePermissionsData, UpdateRolePermissionsResponses, UpdateSkillData, UpdateSkillFileData, UpdateSkillFileResponses, UpdateSkillResponses, UpdateUserData, UpdateUserResponses } from './types.gen';
+import type { ClearDingTalkDataData, ClearDingTalkDataResponses, CreateAgentData, CreateAgentResponses, CreateAgentSessionData, CreateAgentSessionResponses, CreateAppData, CreateAppResponses, CreateAutomationFlowData, CreateAutomationFlowResponses, CreateConfigProfileData, CreateConfigProfileResponses, CreateDetailFormData, CreateDetailFormResponses, CreateFormData, CreateFormRecordData, CreateFormRecordResponses, CreateFormResponses, CreateFormViewData, CreateFormViewResponses, CreateKnowledgeBaseData, CreateKnowledgeBaseResponses, CreateLocalRoleData, CreateLocalRoleResponses, CreateLocalUserData, CreateLocalUserResponses, CreateNavigationGroupData, CreateNavigationGroupResponses, CreatePluginData, CreatePluginResponses, CreateProviderData, CreateProviderResponses, CreateSkillData, CreateSkillResponses, DeleteAgentData, DeleteAgentResponses, DeleteAgentSessionData, DeleteAgentSessionResponses, DeleteAppData, DeleteAppResponses, DeleteAutomationFlowData, DeleteAutomationFlowResponses, DeleteConfigProfileData, DeleteConfigProfileResponses, DeleteFormData, DeleteFormRecordData, DeleteFormRecordResponses, DeleteFormResponses, DeleteFormViewData, DeleteFormViewResponses, DeleteKnowledgeBaseData, DeleteKnowledgeBaseResponses, DeleteLocalRoleData, DeleteLocalRoleResponses, DeletePluginData, DeletePluginResponses, DeleteProviderData, DeleteProviderResponses, DeleteSkillData, DeleteSkillResponses, DeleteUserData, DeleteUserResponses, EnsureWorkflowProcessFlowData, EnsureWorkflowProcessFlowResponses, GetAgentSettingsData, GetAgentSettingsResponses, GetAppFieldOutlineData, GetAppFieldOutlineResponses, GetAutomationFlowData, GetAutomationFlowResponses, GetDatabaseSettingsData, GetDatabaseSettingsResponses, GetFormData, GetFormResponses, GetFormSchemaData, GetFormSchemaResponses, GetFormVersionData, GetFormVersionResponses, GetIdentitySourceSettingsData, GetIdentitySourceSettingsResponses, GetInternalIdentitySourceSettingsData, GetInternalIdentitySourceSettingsResponses, GetPlatformAgentAssistantSettingsData, GetPlatformAgentAssistantSettingsResponses, GetRolePermissionsData, GetRolePermissionsResponses, GetSkillFileData, GetSkillFileResponses, HealthCheckData, HealthCheckResponses, ImportLocationsData, ImportLocationsResponses, ListAgentMessagesData, ListAgentMessagesResponses, ListAgentsData, ListAgentSessionsData, ListAgentSessionsResponses, ListAgentsResponses, ListAppNavigationData, ListAppNavigationResponses, ListAppsData, ListAppsResponses, ListAutomationFlowRunsData, ListAutomationFlowRunsResponses, ListAutomationFlowsData, ListAutomationFlowsResponses, ListAutomationFlowVersionsData, ListAutomationFlowVersionsResponses, ListConfigProfilesData, ListConfigProfilesResponses, ListDetailFormsData, ListDetailFormsResponses, ListFormRecordsData, ListFormRecordsResponses, ListFormsData, ListFormsResponses, ListFormVersionsData, ListFormVersionsResponses, ListFormViewsData, ListFormViewsResponses, ListKnowledgeBasesData, ListKnowledgeBasesResponses, ListLocationsData, ListLocationsResponses, ListOrganizationUnitsData, ListOrganizationUnitsResponses, ListPersonasData, ListPersonasResponses, ListPlatformToolsData, ListPlatformToolsResponses, ListPluginsData, ListPluginsResponses, ListProvidersData, ListProvidersResponses, ListRolesData, ListRolesResponses, ListSkillsData, ListSkillsResponses, ListUsersData, ListUsersResponses, LocalLoginData, LocalLoginResponses, PublishFormSchemaData, PublishFormSchemaResponses, RefreshDingTalkAccessTokenData, RefreshDingTalkAccessTokenResponses, ReorderNavigationItemData, ReorderNavigationItemResponses, ResolveDingTalkLoginData, ResolveDingTalkLoginResponses, RestoreAutomationFlowVersionData, RestoreAutomationFlowVersionResponses, RestoreFormVersionData, RestoreFormVersionResponses, RetryAutomationFlowRunData, RetryAutomationFlowRunNodeData, RetryAutomationFlowRunNodeResponses, RetryAutomationFlowRunResponses, SaveFormSchemaDraftData, SaveFormSchemaDraftResponses, SendAgentMessageData, SendAgentMessageResponses, SetDefaultNavigationEntryData, SetDefaultNavigationEntryResponses, SyncDingTalkDepartmentsData, SyncDingTalkDepartmentsResponses, SyncDingTalkUsersData, SyncDingTalkUsersResponses, TestDatabaseConnectionData, TestDatabaseConnectionResponses, UpdateAgentData, UpdateAgentResponses, UpdateAgentSessionData, UpdateAgentSessionResponses, UpdateAgentSettingsData, UpdateAgentSettingsResponses, UpdateAppData, UpdateAppResponses, UpdateAutomationFlowData, UpdateAutomationFlowResponses, UpdateConfigProfileData, UpdateConfigProfileResponses, UpdateDatabaseSettingsData, UpdateDatabaseSettingsResponses, UpdateFormRecordData, UpdateFormRecordResponses, UpdateFormViewData, UpdateFormViewResponses, UpdateIdentitySourceSettingsData, UpdateIdentitySourceSettingsResponses, UpdateKnowledgeBaseData, UpdateKnowledgeBaseResponses, UpdateLocalRoleData, UpdateLocalRoleResponses, UpdatePlatformAgentAssistantSettingsData, UpdatePlatformAgentAssistantSettingsResponses, UpdatePluginData, UpdatePluginResponses, UpdateProviderData, UpdateProviderResponses, UpdateRolePermissionsData, UpdateRolePermissionsResponses, UpdateSkillData, UpdateSkillFileData, UpdateSkillFileResponses, UpdateSkillResponses, UpdateUserData, UpdateUserResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -121,6 +121,17 @@ export const createAgentSession = <ThrowOnError extends boolean = false>(options
     }
 });
 
+export const deleteAgentSession = <ThrowOnError extends boolean = false>(options: Options<DeleteAgentSessionData, ThrowOnError>): RequestResult<DeleteAgentSessionResponses, unknown, ThrowOnError> => (options.client ?? client).delete<DeleteAgentSessionResponses, unknown, ThrowOnError>({ url: '/api/agent/sessions/{sessionId}', ...options });
+
+export const updateAgentSession = <ThrowOnError extends boolean = false>(options: Options<UpdateAgentSessionData, ThrowOnError>): RequestResult<UpdateAgentSessionResponses, unknown, ThrowOnError> => (options.client ?? client).patch<UpdateAgentSessionResponses, unknown, ThrowOnError>({
+    url: '/api/agent/sessions/{sessionId}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
 export const listAgentMessages = <ThrowOnError extends boolean = false>(options: Options<ListAgentMessagesData, ThrowOnError>): RequestResult<ListAgentMessagesResponses, unknown, ThrowOnError> => (options.client ?? client).get<ListAgentMessagesResponses, unknown, ThrowOnError>({ url: '/api/agent/sessions/{sessionId}/messages', ...options });
 
 export const sendAgentMessage = <ThrowOnError extends boolean = false>(options: Options<SendAgentMessageData, ThrowOnError>): RequestResult<SendAgentMessageResponses, unknown, ThrowOnError> => (options.client ?? client).post<SendAgentMessageResponses, unknown, ThrowOnError>({ url: '/api/agent/sessions/{sessionId}/messages', ...options });
@@ -180,32 +191,20 @@ export const updateAgent = <ThrowOnError extends boolean = false>(options: Optio
     }
 });
 
-/**
- * List apps
- */
-export const listApps = <ThrowOnError extends boolean = false>(options?: Options<ListAppsData, ThrowOnError>): RequestResult<ListAppsResponses, ListAppsErrors, ThrowOnError> => (options?.client ?? client).get<ListAppsResponses, ListAppsErrors, ThrowOnError>({ url: '/api/apps', ...options });
+export const listApps = <ThrowOnError extends boolean = false>(options?: Options<ListAppsData, ThrowOnError>): RequestResult<ListAppsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListAppsResponses, unknown, ThrowOnError>({ url: '/api/apps', ...options });
 
-/**
- * Create empty app
- */
-export const createApp = <ThrowOnError extends boolean = false>(options?: Options<CreateAppData, ThrowOnError>): RequestResult<CreateAppResponses, CreateAppErrors, ThrowOnError> => (options?.client ?? client).post<CreateAppResponses, CreateAppErrors, ThrowOnError>({
+export const createApp = <ThrowOnError extends boolean = false>(options: Options<CreateAppData, ThrowOnError>): RequestResult<CreateAppResponses, unknown, ThrowOnError> => (options.client ?? client).post<CreateAppResponses, unknown, ThrowOnError>({
     url: '/api/apps',
     ...options,
     headers: {
         'Content-Type': 'application/json',
-        ...options?.headers
+        ...options.headers
     }
 });
 
-/**
- * Delete app and related form data
- */
-export const deleteApp = <ThrowOnError extends boolean = false>(options: Options<DeleteAppData, ThrowOnError>): RequestResult<DeleteAppResponses, DeleteAppErrors, ThrowOnError> => (options.client ?? client).delete<DeleteAppResponses, DeleteAppErrors, ThrowOnError>({ url: '/api/apps/{appId}', ...options });
+export const deleteApp = <ThrowOnError extends boolean = false>(options: Options<DeleteAppData, ThrowOnError>): RequestResult<DeleteAppResponses, unknown, ThrowOnError> => (options.client ?? client).delete<DeleteAppResponses, unknown, ThrowOnError>({ url: '/api/apps/{appId}', ...options });
 
-/**
- * Update app name or status
- */
-export const updateApp = <ThrowOnError extends boolean = false>(options: Options<UpdateAppData, ThrowOnError>): RequestResult<UpdateAppResponses, UpdateAppErrors, ThrowOnError> => (options.client ?? client).patch<UpdateAppResponses, UpdateAppErrors, ThrowOnError>({
+export const updateApp = <ThrowOnError extends boolean = false>(options: Options<UpdateAppData, ThrowOnError>): RequestResult<UpdateAppResponses, unknown, ThrowOnError> => (options.client ?? client).patch<UpdateAppResponses, unknown, ThrowOnError>({
     url: '/api/apps/{appId}',
     ...options,
     headers: {
@@ -214,15 +213,9 @@ export const updateApp = <ThrowOnError extends boolean = false>(options: Options
     }
 });
 
-/**
- * List automation flows by app
- */
-export const listAutomationFlows = <ThrowOnError extends boolean = false>(options: Options<ListAutomationFlowsData, ThrowOnError>): RequestResult<ListAutomationFlowsResponses, ListAutomationFlowsErrors, ThrowOnError> => (options.client ?? client).get<ListAutomationFlowsResponses, ListAutomationFlowsErrors, ThrowOnError>({ url: '/api/apps/{appId}/automations', ...options });
+export const listAutomationFlows = <ThrowOnError extends boolean = false>(options: Options<ListAutomationFlowsData, ThrowOnError>): RequestResult<ListAutomationFlowsResponses, unknown, ThrowOnError> => (options.client ?? client).get<ListAutomationFlowsResponses, unknown, ThrowOnError>({ url: '/api/apps/{appId}/automations', ...options });
 
-/**
- * Create automation flow
- */
-export const createAutomationFlow = <ThrowOnError extends boolean = false>(options: Options<CreateAutomationFlowData, ThrowOnError>): RequestResult<CreateAutomationFlowResponses, CreateAutomationFlowErrors, ThrowOnError> => (options.client ?? client).post<CreateAutomationFlowResponses, CreateAutomationFlowErrors, ThrowOnError>({
+export const createAutomationFlow = <ThrowOnError extends boolean = false>(options: Options<CreateAutomationFlowData, ThrowOnError>): RequestResult<CreateAutomationFlowResponses, unknown, ThrowOnError> => (options.client ?? client).post<CreateAutomationFlowResponses, unknown, ThrowOnError>({
     url: '/api/apps/{appId}/automations',
     ...options,
     headers: {
@@ -233,15 +226,9 @@ export const createAutomationFlow = <ThrowOnError extends boolean = false>(optio
 
 export const getAppFieldOutline = <ThrowOnError extends boolean = false>(options: Options<GetAppFieldOutlineData, ThrowOnError>): RequestResult<GetAppFieldOutlineResponses, unknown, ThrowOnError> => (options.client ?? client).get<GetAppFieldOutlineResponses, unknown, ThrowOnError>({ url: '/api/apps/{appId}/field-outline', ...options });
 
-/**
- * List forms by app
- */
-export const listForms = <ThrowOnError extends boolean = false>(options: Options<ListFormsData, ThrowOnError>): RequestResult<ListFormsResponses, ListFormsErrors, ThrowOnError> => (options.client ?? client).get<ListFormsResponses, ListFormsErrors, ThrowOnError>({ url: '/api/apps/{appId}/forms', ...options });
+export const listForms = <ThrowOnError extends boolean = false>(options: Options<ListFormsData, ThrowOnError>): RequestResult<ListFormsResponses, unknown, ThrowOnError> => (options.client ?? client).get<ListFormsResponses, unknown, ThrowOnError>({ url: '/api/apps/{appId}/forms', ...options });
 
-/**
- * Create blank form
- */
-export const createForm = <ThrowOnError extends boolean = false>(options: Options<CreateFormData, ThrowOnError>): RequestResult<CreateFormResponses, CreateFormErrors, ThrowOnError> => (options.client ?? client).post<CreateFormResponses, CreateFormErrors, ThrowOnError>({
+export const createForm = <ThrowOnError extends boolean = false>(options: Options<CreateFormData, ThrowOnError>): RequestResult<CreateFormResponses, unknown, ThrowOnError> => (options.client ?? client).post<CreateFormResponses, unknown, ThrowOnError>({
     url: '/api/apps/{appId}/forms',
     ...options,
     headers: {
@@ -250,15 +237,9 @@ export const createForm = <ThrowOnError extends boolean = false>(options: Option
     }
 });
 
-/**
- * List app navigation items
- */
-export const listAppNavigation = <ThrowOnError extends boolean = false>(options: Options<ListAppNavigationData, ThrowOnError>): RequestResult<ListAppNavigationResponses, ListAppNavigationErrors, ThrowOnError> => (options.client ?? client).get<ListAppNavigationResponses, ListAppNavigationErrors, ThrowOnError>({ url: '/api/apps/{appId}/navigation', ...options });
+export const listAppNavigation = <ThrowOnError extends boolean = false>(options: Options<ListAppNavigationData, ThrowOnError>): RequestResult<ListAppNavigationResponses, unknown, ThrowOnError> => (options.client ?? client).get<ListAppNavigationResponses, unknown, ThrowOnError>({ url: '/api/apps/{appId}/navigation', ...options });
 
-/**
- * Reorder app navigation item
- */
-export const reorderNavigationItem = <ThrowOnError extends boolean = false>(options: Options<ReorderNavigationItemData, ThrowOnError>): RequestResult<ReorderNavigationItemResponses, ReorderNavigationItemErrors, ThrowOnError> => (options.client ?? client).patch<ReorderNavigationItemResponses, ReorderNavigationItemErrors, ThrowOnError>({
+export const reorderNavigationItem = <ThrowOnError extends boolean = false>(options: Options<ReorderNavigationItemData, ThrowOnError>): RequestResult<ReorderNavigationItemResponses, unknown, ThrowOnError> => (options.client ?? client).patch<ReorderNavigationItemResponses, unknown, ThrowOnError>({
     url: '/api/apps/{appId}/navigation',
     ...options,
     headers: {
@@ -285,20 +266,11 @@ export const createNavigationGroup = <ThrowOnError extends boolean = false>(opti
     }
 });
 
-/**
- * Delete automation flow
- */
-export const deleteAutomationFlow = <ThrowOnError extends boolean = false>(options: Options<DeleteAutomationFlowData, ThrowOnError>): RequestResult<DeleteAutomationFlowResponses, DeleteAutomationFlowErrors, ThrowOnError> => (options.client ?? client).delete<DeleteAutomationFlowResponses, DeleteAutomationFlowErrors, ThrowOnError>({ url: '/api/automations/{automationId}', ...options });
+export const deleteAutomationFlow = <ThrowOnError extends boolean = false>(options: Options<DeleteAutomationFlowData, ThrowOnError>): RequestResult<DeleteAutomationFlowResponses, unknown, ThrowOnError> => (options.client ?? client).delete<DeleteAutomationFlowResponses, unknown, ThrowOnError>({ url: '/api/automations/{automationId}', ...options });
 
-/**
- * Get automation flow detail
- */
-export const getAutomationFlow = <ThrowOnError extends boolean = false>(options: Options<GetAutomationFlowData, ThrowOnError>): RequestResult<GetAutomationFlowResponses, GetAutomationFlowErrors, ThrowOnError> => (options.client ?? client).get<GetAutomationFlowResponses, GetAutomationFlowErrors, ThrowOnError>({ url: '/api/automations/{automationId}', ...options });
+export const getAutomationFlow = <ThrowOnError extends boolean = false>(options: Options<GetAutomationFlowData, ThrowOnError>): RequestResult<GetAutomationFlowResponses, unknown, ThrowOnError> => (options.client ?? client).get<GetAutomationFlowResponses, unknown, ThrowOnError>({ url: '/api/automations/{automationId}', ...options });
 
-/**
- * Update automation flow
- */
-export const updateAutomationFlow = <ThrowOnError extends boolean = false>(options: Options<UpdateAutomationFlowData, ThrowOnError>): RequestResult<UpdateAutomationFlowResponses, UpdateAutomationFlowErrors, ThrowOnError> => (options.client ?? client).patch<UpdateAutomationFlowResponses, UpdateAutomationFlowErrors, ThrowOnError>({
+export const updateAutomationFlow = <ThrowOnError extends boolean = false>(options: Options<UpdateAutomationFlowData, ThrowOnError>): RequestResult<UpdateAutomationFlowResponses, unknown, ThrowOnError> => (options.client ?? client).patch<UpdateAutomationFlowResponses, unknown, ThrowOnError>({
     url: '/api/automations/{automationId}',
     ...options,
     headers: {
@@ -313,10 +285,7 @@ export const retryAutomationFlowRunNode = <ThrowOnError extends boolean = false>
 
 export const retryAutomationFlowRun = <ThrowOnError extends boolean = false>(options: Options<RetryAutomationFlowRunData, ThrowOnError>): RequestResult<RetryAutomationFlowRunResponses, unknown, ThrowOnError> => (options.client ?? client).post<RetryAutomationFlowRunResponses, unknown, ThrowOnError>({ url: '/api/automations/{automationId}/runs/{runId}/retry', ...options });
 
-/**
- * List automation flow versions
- */
-export const listAutomationFlowVersions = <ThrowOnError extends boolean = false>(options: Options<ListAutomationFlowVersionsData, ThrowOnError>): RequestResult<ListAutomationFlowVersionsResponses, ListAutomationFlowVersionsErrors, ThrowOnError> => (options.client ?? client).get<ListAutomationFlowVersionsResponses, ListAutomationFlowVersionsErrors, ThrowOnError>({ url: '/api/automations/{automationId}/versions', ...options });
+export const listAutomationFlowVersions = <ThrowOnError extends boolean = false>(options: Options<ListAutomationFlowVersionsData, ThrowOnError>): RequestResult<ListAutomationFlowVersionsResponses, unknown, ThrowOnError> => (options.client ?? client).get<ListAutomationFlowVersionsResponses, unknown, ThrowOnError>({ url: '/api/automations/{automationId}/versions', ...options });
 
 export const restoreAutomationFlowVersion = <ThrowOnError extends boolean = false>(options: Options<RestoreAutomationFlowVersionData, ThrowOnError>): RequestResult<RestoreAutomationFlowVersionResponses, unknown, ThrowOnError> => (options.client ?? client).post<RestoreAutomationFlowVersionResponses, unknown, ThrowOnError>({
     url: '/api/automations/{automationId}/versions/{version}/restore',
@@ -331,20 +300,22 @@ export const deleteForm = <ThrowOnError extends boolean = false>(options: Option
 
 export const getForm = <ThrowOnError extends boolean = false>(options: Options<GetFormData, ThrowOnError>): RequestResult<GetFormResponses, unknown, ThrowOnError> => (options.client ?? client).get<GetFormResponses, unknown, ThrowOnError>({ url: '/api/forms/{formUuid}', ...options });
 
-/**
- * Publish current draft schema
- */
-export const publishFormSchema = <ThrowOnError extends boolean = false>(options: Options<PublishFormSchemaData, ThrowOnError>): RequestResult<PublishFormSchemaResponses, PublishFormSchemaErrors, ThrowOnError> => (options.client ?? client).post<PublishFormSchemaResponses, PublishFormSchemaErrors, ThrowOnError>({ url: '/api/forms/{formUuid}/publish', ...options });
+export const listDetailForms = <ThrowOnError extends boolean = false>(options: Options<ListDetailFormsData, ThrowOnError>): RequestResult<ListDetailFormsResponses, unknown, ThrowOnError> => (options.client ?? client).get<ListDetailFormsResponses, unknown, ThrowOnError>({ url: '/api/forms/{formUuid}/detail-forms', ...options });
 
-/**
- * List form records
- */
-export const listFormRecords = <ThrowOnError extends boolean = false>(options: Options<ListFormRecordsData, ThrowOnError>): RequestResult<ListFormRecordsResponses, ListFormRecordsErrors, ThrowOnError> => (options.client ?? client).get<ListFormRecordsResponses, ListFormRecordsErrors, ThrowOnError>({ url: '/api/forms/{formUuid}/records', ...options });
+export const createDetailForm = <ThrowOnError extends boolean = false>(options: Options<CreateDetailFormData, ThrowOnError>): RequestResult<CreateDetailFormResponses, unknown, ThrowOnError> => (options.client ?? client).post<CreateDetailFormResponses, unknown, ThrowOnError>({
+    url: '/api/forms/{formUuid}/detail-forms',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
-/**
- * Create form record
- */
-export const createFormRecord = <ThrowOnError extends boolean = false>(options: Options<CreateFormRecordData, ThrowOnError>): RequestResult<CreateFormRecordResponses, CreateFormRecordErrors, ThrowOnError> => (options.client ?? client).post<CreateFormRecordResponses, CreateFormRecordErrors, ThrowOnError>({
+export const publishFormSchema = <ThrowOnError extends boolean = false>(options: Options<PublishFormSchemaData, ThrowOnError>): RequestResult<PublishFormSchemaResponses, unknown, ThrowOnError> => (options.client ?? client).post<PublishFormSchemaResponses, unknown, ThrowOnError>({ url: '/api/forms/{formUuid}/publish', ...options });
+
+export const listFormRecords = <ThrowOnError extends boolean = false>(options: Options<ListFormRecordsData, ThrowOnError>): RequestResult<ListFormRecordsResponses, unknown, ThrowOnError> => (options.client ?? client).get<ListFormRecordsResponses, unknown, ThrowOnError>({ url: '/api/forms/{formUuid}/records', ...options });
+
+export const createFormRecord = <ThrowOnError extends boolean = false>(options: Options<CreateFormRecordData, ThrowOnError>): RequestResult<CreateFormRecordResponses, unknown, ThrowOnError> => (options.client ?? client).post<CreateFormRecordResponses, unknown, ThrowOnError>({
     url: '/api/forms/{formUuid}/records',
     ...options,
     headers: {
@@ -353,15 +324,9 @@ export const createFormRecord = <ThrowOnError extends boolean = false>(options: 
     }
 });
 
-/**
- * Delete form record
- */
-export const deleteFormRecord = <ThrowOnError extends boolean = false>(options: Options<DeleteFormRecordData, ThrowOnError>): RequestResult<DeleteFormRecordResponses, DeleteFormRecordErrors, ThrowOnError> => (options.client ?? client).delete<DeleteFormRecordResponses, DeleteFormRecordErrors, ThrowOnError>({ url: '/api/forms/{formUuid}/records/{recordUuid}', ...options });
+export const deleteFormRecord = <ThrowOnError extends boolean = false>(options: Options<DeleteFormRecordData, ThrowOnError>): RequestResult<DeleteFormRecordResponses, unknown, ThrowOnError> => (options.client ?? client).delete<DeleteFormRecordResponses, unknown, ThrowOnError>({ url: '/api/forms/{formUuid}/records/{recordUuid}', ...options });
 
-/**
- * Update form record
- */
-export const updateFormRecord = <ThrowOnError extends boolean = false>(options: Options<UpdateFormRecordData, ThrowOnError>): RequestResult<UpdateFormRecordResponses, UpdateFormRecordErrors, ThrowOnError> => (options.client ?? client).patch<UpdateFormRecordResponses, UpdateFormRecordErrors, ThrowOnError>({
+export const updateFormRecord = <ThrowOnError extends boolean = false>(options: Options<UpdateFormRecordData, ThrowOnError>): RequestResult<UpdateFormRecordResponses, unknown, ThrowOnError> => (options.client ?? client).patch<UpdateFormRecordResponses, unknown, ThrowOnError>({
     url: '/api/forms/{formUuid}/records/{recordUuid}',
     ...options,
     headers: {
@@ -370,15 +335,9 @@ export const updateFormRecord = <ThrowOnError extends boolean = false>(options: 
     }
 });
 
-/**
- * Get latest schema by form uuid
- */
-export const getFormSchema = <ThrowOnError extends boolean = false>(options: Options<GetFormSchemaData, ThrowOnError>): RequestResult<GetFormSchemaResponses, GetFormSchemaErrors, ThrowOnError> => (options.client ?? client).get<GetFormSchemaResponses, GetFormSchemaErrors, ThrowOnError>({ url: '/api/forms/{formUuid}/schema', ...options });
+export const getFormSchema = <ThrowOnError extends boolean = false>(options: Options<GetFormSchemaData, ThrowOnError>): RequestResult<GetFormSchemaResponses, unknown, ThrowOnError> => (options.client ?? client).get<GetFormSchemaResponses, unknown, ThrowOnError>({ url: '/api/forms/{formUuid}/schema', ...options });
 
-/**
- * Save form schema draft
- */
-export const saveFormSchemaDraft = <ThrowOnError extends boolean = false>(options: Options<SaveFormSchemaDraftData, ThrowOnError>): RequestResult<SaveFormSchemaDraftResponses, SaveFormSchemaDraftErrors, ThrowOnError> => (options.client ?? client).post<SaveFormSchemaDraftResponses, SaveFormSchemaDraftErrors, ThrowOnError>({
+export const saveFormSchemaDraft = <ThrowOnError extends boolean = false>(options: Options<SaveFormSchemaDraftData, ThrowOnError>): RequestResult<SaveFormSchemaDraftResponses, unknown, ThrowOnError> => (options.client ?? client).post<SaveFormSchemaDraftResponses, unknown, ThrowOnError>({
     url: '/api/forms/{formUuid}/schema/draft',
     ...options,
     headers: {
@@ -387,20 +346,11 @@ export const saveFormSchemaDraft = <ThrowOnError extends boolean = false>(option
     }
 });
 
-/**
- * List form schema versions
- */
-export const listFormVersions = <ThrowOnError extends boolean = false>(options: Options<ListFormVersionsData, ThrowOnError>): RequestResult<ListFormVersionsResponses, ListFormVersionsErrors, ThrowOnError> => (options.client ?? client).get<ListFormVersionsResponses, ListFormVersionsErrors, ThrowOnError>({ url: '/api/forms/{formUuid}/versions', ...options });
+export const listFormVersions = <ThrowOnError extends boolean = false>(options: Options<ListFormVersionsData, ThrowOnError>): RequestResult<ListFormVersionsResponses, unknown, ThrowOnError> => (options.client ?? client).get<ListFormVersionsResponses, unknown, ThrowOnError>({ url: '/api/forms/{formUuid}/versions', ...options });
 
-/**
- * Get specific form schema version
- */
-export const getFormVersion = <ThrowOnError extends boolean = false>(options: Options<GetFormVersionData, ThrowOnError>): RequestResult<GetFormVersionResponses, GetFormVersionErrors, ThrowOnError> => (options.client ?? client).get<GetFormVersionResponses, GetFormVersionErrors, ThrowOnError>({ url: '/api/forms/{formUuid}/versions/{version}', ...options });
+export const getFormVersion = <ThrowOnError extends boolean = false>(options: Options<GetFormVersionData, ThrowOnError>): RequestResult<GetFormVersionResponses, unknown, ThrowOnError> => (options.client ?? client).get<GetFormVersionResponses, unknown, ThrowOnError>({ url: '/api/forms/{formUuid}/versions/{version}', ...options });
 
-/**
- * Restore historical version as new draft
- */
-export const restoreFormVersion = <ThrowOnError extends boolean = false>(options: Options<RestoreFormVersionData, ThrowOnError>): RequestResult<RestoreFormVersionResponses, RestoreFormVersionErrors, ThrowOnError> => (options.client ?? client).post<RestoreFormVersionResponses, RestoreFormVersionErrors, ThrowOnError>({
+export const restoreFormVersion = <ThrowOnError extends boolean = false>(options: Options<RestoreFormVersionData, ThrowOnError>): RequestResult<RestoreFormVersionResponses, unknown, ThrowOnError> => (options.client ?? client).post<RestoreFormVersionResponses, unknown, ThrowOnError>({
     url: '/api/forms/{formUuid}/versions/{version}/restore',
     ...options,
     headers: {
@@ -430,6 +380,8 @@ export const updateFormView = <ThrowOnError extends boolean = false>(options: Op
         ...options.headers
     }
 });
+
+export const ensureWorkflowProcessFlow = <ThrowOnError extends boolean = false>(options: Options<EnsureWorkflowProcessFlowData, ThrowOnError>): RequestResult<EnsureWorkflowProcessFlowResponses, unknown, ThrowOnError> => (options.client ?? client).post<EnsureWorkflowProcessFlowResponses, unknown, ThrowOnError>({ url: '/api/forms/{formUuid}/workflow/process', ...options });
 
 export const resolveDingTalkLogin = <ThrowOnError extends boolean = false>(options: Options<ResolveDingTalkLoginData, ThrowOnError>): RequestResult<ResolveDingTalkLoginResponses, unknown, ThrowOnError> => (options.client ?? client).post<ResolveDingTalkLoginResponses, unknown, ThrowOnError>({
     url: '/api/identity/dingtalk/session',
@@ -497,13 +449,44 @@ export const updateUser = <ThrowOnError extends boolean = false>(options: Option
 
 export const getInternalIdentitySourceSettings = <ThrowOnError extends boolean = false>(options?: Options<GetInternalIdentitySourceSettingsData, ThrowOnError>): RequestResult<GetInternalIdentitySourceSettingsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetInternalIdentitySourceSettingsResponses, unknown, ThrowOnError>({ url: '/api/internal/identity-source', ...options });
 
+export const listLocations = <ThrowOnError extends boolean = false>(options?: Options<ListLocationsData, ThrowOnError>): RequestResult<ListLocationsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListLocationsResponses, unknown, ThrowOnError>({ url: '/api/locations', ...options });
+
+export const importLocations = <ThrowOnError extends boolean = false>(options: Options<ImportLocationsData, ThrowOnError>): RequestResult<ImportLocationsResponses, unknown, ThrowOnError> => (options.client ?? client).post<ImportLocationsResponses, unknown, ThrowOnError>({
+    url: '/api/locations',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
 export const getAgentSettings = <ThrowOnError extends boolean = false>(options?: Options<GetAgentSettingsData, ThrowOnError>): RequestResult<GetAgentSettingsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetAgentSettingsResponses, unknown, ThrowOnError>({ url: '/api/settings/agent', ...options });
 
 export const updateAgentSettings = <ThrowOnError extends boolean = false>(options?: Options<UpdateAgentSettingsData, ThrowOnError>): RequestResult<UpdateAgentSettingsResponses, unknown, ThrowOnError> => (options?.client ?? client).put<UpdateAgentSettingsResponses, unknown, ThrowOnError>({ url: '/api/settings/agent', ...options });
 
+export const getPlatformAgentAssistantSettings = <ThrowOnError extends boolean = false>(options?: Options<GetPlatformAgentAssistantSettingsData, ThrowOnError>): RequestResult<GetPlatformAgentAssistantSettingsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetPlatformAgentAssistantSettingsResponses, unknown, ThrowOnError>({ url: '/api/settings/agent-assistant', ...options });
+
+export const updatePlatformAgentAssistantSettings = <ThrowOnError extends boolean = false>(options: Options<UpdatePlatformAgentAssistantSettingsData, ThrowOnError>): RequestResult<UpdatePlatformAgentAssistantSettingsResponses, unknown, ThrowOnError> => (options.client ?? client).put<UpdatePlatformAgentAssistantSettingsResponses, unknown, ThrowOnError>({
+    url: '/api/settings/agent-assistant',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
 export const getDatabaseSettings = <ThrowOnError extends boolean = false>(options?: Options<GetDatabaseSettingsData, ThrowOnError>): RequestResult<GetDatabaseSettingsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetDatabaseSettingsResponses, unknown, ThrowOnError>({ url: '/api/settings/database', ...options });
 
 export const updateDatabaseSettings = <ThrowOnError extends boolean = false>(options?: Options<UpdateDatabaseSettingsData, ThrowOnError>): RequestResult<UpdateDatabaseSettingsResponses, unknown, ThrowOnError> => (options?.client ?? client).put<UpdateDatabaseSettingsResponses, unknown, ThrowOnError>({ url: '/api/settings/database', ...options });
+
+export const testDatabaseConnection = <ThrowOnError extends boolean = false>(options: Options<TestDatabaseConnectionData, ThrowOnError>): RequestResult<TestDatabaseConnectionResponses, unknown, ThrowOnError> => (options.client ?? client).post<TestDatabaseConnectionResponses, unknown, ThrowOnError>({
+    url: '/api/settings/database/test',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 export const getIdentitySourceSettings = <ThrowOnError extends boolean = false>(options?: Options<GetIdentitySourceSettingsData, ThrowOnError>): RequestResult<GetIdentitySourceSettingsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetIdentitySourceSettingsResponses, unknown, ThrowOnError>({ url: '/api/settings/identity-source', ...options });
 

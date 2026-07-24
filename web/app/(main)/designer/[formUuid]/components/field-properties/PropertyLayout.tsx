@@ -76,10 +76,12 @@ export function TextWithActions({
 }
 
 export function NumberWithActions({
+  max,
   min,
   onChange,
   value,
 }: {
+  max?: number;
   min?: number;
   onChange: (value: number | undefined) => void;
   value?: number;
@@ -89,6 +91,7 @@ export function NumberWithActions({
       aria-label="数值属性"
       className="h-7 min-w-0 flex-1 rounded-sm border border-[var(--designer-border)] bg-[var(--color-bg-input)] px-1.5 text-[11px] text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary-soft)]"
       min={min}
+      max={max}
       type="number"
       value={typeof value === "number" ? String(value) : ""}
       onChange={(event: ChangeEvent<HTMLInputElement>) =>

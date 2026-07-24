@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
+use std::io::{Cursor, Read};
+use std::path::{Path, PathBuf};
+
+use zip::ZipArchive;
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -33,6 +36,39 @@ pub struct AgentSettings {
     pub temperature: f64,
     pub max_steps: usize,
     pub system_prompt: String,
+}
+
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformAgentAssistantSettings {
+    #[serde(default)]
+    pub navigation_agent_id: Option<String>,
+    #[serde(default)]
+    pub schema_analysis_prompt: String,
+}
+
+impl Default for PlatformAgentAssistantSettings {
+    fn default() -> Self {
+        Self {
+            navigation_agent_id: None,
+            schema_analysis_prompt: default_schema_analysis_prompt(),
+        }
+    }
+}
+
+fn default_schema_analysis_prompt() -> String {
+    [
+        "分析下面的低代码表单 Schema，为运行时表单 Agent 生成简洁、可复用的业务上下文。只输出最终分析结果，不要描述分析过程。",
+        "输出规则：",
+        "- 使用紧凑 Markdown，只允许必要的小标题、表格和列表。",
+        "- 不要输出寒暄、前言、总结、主观意见、改进建议或工具调用过程。",
+        "- 不要出现“我来获取”“现在我已拥有完整上下文”“开始生成分析报告”“以下是”等过程性或口语化句子。",
+        "- 不要重复 Schema 原文，不要使用连续空行，每个段落只保留必要换行。",
+        "- 只陈述能从 Schema 和设计者提示中确认的事实；不确定内容明确标记为“需询问”。",
+        "- 字段必须同时标注 label 和 fieldId；相同类型规则尽量合并表达。",
+        "- 内容结构限定为：业务目的、字段与约束、Agent 填写策略、关联规则。没有内容的章节省略。",
+    ]
+    .join("\n")
 }
 
 /// The concrete configuration selected for one Agent run.
@@ -385,11 +421,24 @@ pub fn save_agent_settings(settings: &AgentSettings) -> Result<(), std::io::Erro
     fs::rename(temporary_path, path)
 }
 
+pub fn load_platform_agent_assistant_settings() -> Option<PlatformAgentAssistantSettings> {
+    let content = fs::read_to_string(platform_agent_assistant_settings_path()).ok()?;
+    serde_json::from_str::<PlatformAgentAssistantSettings>(&content).ok()
+}
+
+pub fn save_platform_agent_assistant_settings(settings: &PlatformAgentAssistantSettings) -> Result<(), std::io::Error> {
+    let path = platform_agent_assistant_settings_path();
+    let temporary_path = path.with_extension("tmp");
+    let content = serde_json::to_vec_pretty(settings).expect("assistant settings are serializable");
+    fs::write(&temporary_path, content)?;
+    if path.exists() { fs::remove_file(&path)?; }
+    fs::rename(temporary_path, path)
+}
+
 pub fn load_agent_registry() -> AgentRegistry {
     let mut registry = fs::read_to_string(agent_registry_path())
         .ok()
         .and_then(|content| serde_json::from_str::<AgentRegistry>(&content).ok())
-        .filter(|registry| !registry.agents.is_empty())
         .unwrap_or_else(default_agent_registry);
     ensure_default_agent_resources_in_registry(&mut registry);
     registry
@@ -411,7 +460,6 @@ pub fn ensure_default_agent_resources() -> Result<(), std::io::Error> {
     let mut registry = fs::read_to_string(&path)
         .ok()
         .and_then(|content| serde_json::from_str::<AgentRegistry>(&content).ok())
-        .filter(|registry| !registry.agents.is_empty())
         .unwrap_or_else(default_agent_registry);
     let resources_changed = ensure_default_agent_resources_in_registry(&mut registry);
     let packages_changed = ensure_skill_packages_in_registry(&mut registry)?;
@@ -466,6 +514,88 @@ pub fn write_skill_markdown(
     Ok(())
 }
 
+pub fn import_skill_package(
+    skill: &mut AgentSkillDefinition,
+    archive: &[u8],
+) -> Result<(), String> {
+    const MAX_ARCHIVE_BYTES: usize = 10 * 1024 * 1024;
+    const MAX_FILES: usize = 256;
+    const MAX_UNCOMPRESSED_BYTES: u64 = 20 * 1024 * 1024;
+
+    if archive.is_empty() || archive.len() > MAX_ARCHIVE_BYTES {
+        return Err("Skill 压缩包不能为空且不得超过 10 MB".to_string());
+    }
+    let mut zip = ZipArchive::new(Cursor::new(archive))
+        .map_err(|error| format!("无法读取 Skill ZIP 文件: {error}"))?;
+    if zip.len() > MAX_FILES {
+        return Err("Skill 压缩包中的文件数量不能超过 256 个".to_string());
+    }
+
+    let mut skill_prefix = None;
+    let mut total_size = 0_u64;
+    for index in 0..zip.len() {
+        let file = zip
+            .by_index(index)
+            .map_err(|error| format!("无法读取 Skill ZIP 条目: {error}"))?;
+        let path = file
+            .enclosed_name()
+            .ok_or_else(|| "Skill 压缩包包含不安全的文件路径".to_string())?;
+        total_size = total_size.saturating_add(file.size());
+        if total_size > MAX_UNCOMPRESSED_BYTES {
+            return Err("Skill 压缩包解压后不得超过 20 MB".to_string());
+        }
+        if !file.is_dir() && path.file_name().is_some_and(|name| name == "SKILL.md") {
+            skill_prefix = Some(path.parent().unwrap_or_else(|| Path::new("")).to_path_buf());
+            break;
+        }
+    }
+    let prefix = skill_prefix.ok_or_else(|| "Skill 压缩包必须包含 SKILL.md".to_string())?;
+
+    if skill.package_name.trim().is_empty() {
+        skill.package_name = skill_package_name(&skill.id);
+    }
+    let package_dir = skill_packages_root().join(&skill.package_name);
+    fs::create_dir_all(&package_dir).map_err(|error| error.to_string())?;
+    let mut instructions = None;
+    for index in 0..zip.len() {
+        let mut file = zip
+            .by_index(index)
+            .map_err(|error| format!("无法读取 Skill ZIP 条目: {error}"))?;
+        let source = file
+            .enclosed_name()
+            .ok_or_else(|| "Skill 压缩包包含不安全的文件路径".to_string())?;
+        if !source.starts_with(&prefix) {
+            continue;
+        }
+        let relative = source
+            .strip_prefix(&prefix)
+            .map_err(|_| "Skill 压缩包目录结构无效".to_string())?;
+        if relative.as_os_str().is_empty() {
+            continue;
+        }
+        let target = package_dir.join(relative);
+        if file.is_dir() {
+            fs::create_dir_all(&target).map_err(|error| error.to_string())?;
+            continue;
+        }
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        let mut bytes = Vec::with_capacity(file.size() as usize);
+        file.read_to_end(&mut bytes)
+            .map_err(|error| format!("无法解压 Skill 文件: {error}"))?;
+        if relative == Path::new("SKILL.md") {
+            instructions = Some(String::from_utf8(bytes.clone()).map_err(|_| "SKILL.md 必须是 UTF-8 文本".to_string())?);
+        }
+        fs::write(target, bytes).map_err(|error| error.to_string())?;
+    }
+    skill.instructions = instructions.ok_or_else(|| "Skill 压缩包必须包含 SKILL.md".to_string())?;
+    skill.source = "local".to_string();
+    skill.version = default_skill_version();
+    skill.package_path = format!("skills/{}/SKILL.md", skill.package_name);
+    Ok(())
+}
+
 fn ensure_skill_packages_in_registry(registry: &mut AgentRegistry) -> Result<bool, std::io::Error> {
     let mut changed = false;
     for skill in &mut registry.skills {
@@ -507,6 +637,9 @@ fn skill_packages_root() -> PathBuf {
 
 fn ensure_default_agent_resources_in_registry(registry: &mut AgentRegistry) -> bool {
     let mut changed = false;
+    // New installations start with no provider, profile, or Agent. Existing
+    // records are always preserved, including legacy IDs such as
+    // `provider-default`, because administrators may have customized them.
     for skill in default_agent_skills() {
         if let Some(existing) = registry.skills.iter_mut().find(|item| item.id == skill.id) {
             if skill.is_system {
@@ -555,28 +688,6 @@ fn ensure_default_agent_resources_in_registry(registry: &mut AgentRegistry) -> b
         if !registry.plugins.iter().any(|item| item.id == plugin.id) {
             registry.plugins.push(plugin);
             changed = true;
-        }
-    }
-    if let Some(profile) = registry
-        .profiles
-        .iter_mut()
-        .find(|profile| profile.id == "profile-default")
-    {
-        for id in [
-            "skill-form-designer",
-            "skill-form-draft-assistant",
-            "skill-automation-reviewer",
-        ] {
-            if !profile.skill_ids.iter().any(|item| item == id) {
-                profile.skill_ids.push(id.to_string());
-                changed = true;
-            }
-        }
-        for id in ["knowledge-form-components", "knowledge-automation-review"] {
-            if !profile.knowledge_base_ids.iter().any(|item| item == id) {
-                profile.knowledge_base_ids.push(id.to_string());
-                changed = true;
-            }
         }
     }
     changed
@@ -947,7 +1058,7 @@ mod tests {
     }
 
     #[test]
-    fn default_resources_are_added_once_and_bound_to_default_profile() {
+    fn system_resources_are_added_without_rebinding_existing_model_setup() {
         let mut registry = registry();
         registry.profiles[0].id = "profile-default".to_string();
         registry.profiles[0].skill_ids.clear();
@@ -976,73 +1087,28 @@ mod tests {
                 .iter()
                 .any(|item| item.id == "plugin-http-json-template" && !item.enabled)
         );
-        assert_eq!(registry.profiles[0].skill_ids.len(), 3);
-        assert_eq!(registry.profiles[0].knowledge_base_ids.len(), 2);
+        assert_eq!(registry.profiles.len(), 1);
+        assert!(registry.profiles[0].skill_ids.is_empty());
+        assert!(registry.profiles[0].knowledge_base_ids.is_empty());
+        assert_eq!(registry.agents.len(), 1);
         assert!(!ensure_default_agent_resources_in_registry(&mut registry));
+    }
+
+    #[test]
+    fn new_registry_has_no_default_provider_profile_or_agent() {
+        let registry = default_agent_registry();
+
+        assert!(registry.providers.is_empty());
+        assert!(registry.profiles.is_empty());
+        assert!(registry.agents.is_empty());
     }
 }
 
 fn default_agent_registry() -> AgentRegistry {
-    let legacy = load_agent_settings().unwrap_or(AgentSettings {
-        enabled: false,
-        provider: "openai-compatible".to_string(),
-        api_base_url: "https://api.openai.com/v1".to_string(),
-        api_key: String::new(),
-        chat_model: "gpt-4.1-mini".to_string(),
-        embedding_model: "text-embedding-3-small".to_string(),
-        temperature: 0.2,
-        max_steps: 8,
-        system_prompt: "你是 YaYa 低代码平台助手。".to_string(),
-    });
     AgentRegistry {
-        providers: vec![AgentModelProvider {
-            id: "provider-default".to_string(),
-            name: "默认模型提供商".to_string(),
-            kind: legacy.provider,
-            enabled: legacy.enabled,
-            api_base_url: legacy.api_base_url,
-            api_key: legacy.api_key,
-        }],
-        profiles: vec![AgentConfigProfile {
-            id: "profile-default".to_string(),
-            name: "默认配置".to_string(),
-            provider_id: "provider-default".to_string(),
-            chat_model: legacy.chat_model,
-            embedding_model: legacy.embedding_model,
-            temperature: legacy.temperature,
-            max_steps: legacy.max_steps,
-            max_retries: default_max_retries(),
-            image_caption_model: String::new(),
-            persona_id: default_persona_id(),
-            web_search_enabled: false,
-            allow_create_apps: false,
-            allow_create_forms: false,
-            allow_create_automations: false,
-            context_max_turns: default_context_max_turns(),
-            context_discard_turns: default_context_discard_turns(),
-            context_overflow_strategy: default_context_overflow_strategy(),
-            context_compression_prompt: default_context_compression_prompt(),
-            context_keep_recent_ratio: default_context_keep_recent_ratio(),
-            context_compression_provider_id: None,
-            max_context_tokens: default_max_context_tokens(),
-            plugin_ids: Vec::new(),
-            skill_ids: Vec::new(),
-            knowledge_base_ids: Vec::new(),
-        }],
-        agents: vec![AgentDefinition {
-            id: "agent-default".to_string(),
-            name: "YaYa Agent".to_string(),
-            description: "平台默认低代码助手".to_string(),
-            enabled: legacy.enabled,
-            is_default: true,
-            scope_type: "platform".to_string(),
-            scope_ref_id: None,
-            profile_id: "profile-default".to_string(),
-            system_prompt: legacy.system_prompt,
-            plugin_ids: Vec::new(),
-            skill_ids: Vec::new(),
-            knowledge_base_ids: Vec::new(),
-        }],
+        providers: Vec::new(),
+        profiles: Vec::new(),
+        agents: Vec::new(),
         plugins: Vec::new(),
         skills: Vec::new(),
         knowledge_bases: Vec::new(),
@@ -1177,6 +1243,12 @@ fn agent_settings_path() -> PathBuf {
     std::env::var_os("YAYA_AGENT_SETTINGS_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(".yaya-agent-settings.json"))
+}
+
+fn platform_agent_assistant_settings_path() -> PathBuf {
+    std::env::var_os("YAYA_PLATFORM_AGENT_ASSISTANT_SETTINGS_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(".yaya-platform-agent-assistant-settings.json"))
 }
 
 fn agent_registry_path() -> PathBuf {
