@@ -329,6 +329,8 @@ export type DesignerFieldProps = {
   dataSource?: CascaderOption[];
   code?: string;
   allowedResourceOrigins?: string[];
+  /** Controls whether this field may be included in an Agent tool result. */
+  agentDataAccess?: "allow" | "mask" | "deny";
 };
 
 const DEFAULT_OPTIONS: DesignerFieldOption[] = [

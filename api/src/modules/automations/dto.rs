@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 use crate::infrastructure::entities::{
     automation_flow_entity, automation_flow_version_entity, automation_run_node_entity,
 };
-use crate::shared::{automation_trigger_label, calculate_duration_ms};
+use crate::shared::{automation_trigger_events, automation_trigger_label, calculate_duration_ms};
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -21,6 +21,7 @@ pub(crate) struct ApiAutomationFlow {
     pub(crate) flow_type: String,
     pub(crate) trigger_form_uuid: Option<String>,
     pub(crate) trigger_event: String,
+    pub(crate) trigger_events: Vec<String>,
     pub(crate) trigger_label: String,
     pub(crate) nodes_count: usize,
     pub(crate) created_by: String,
@@ -41,6 +42,7 @@ pub(crate) struct ApiAutomationFlowDetail {
     pub(crate) flow_type: String,
     pub(crate) trigger_form_uuid: Option<String>,
     pub(crate) trigger_event: String,
+    pub(crate) trigger_events: Vec<String>,
     pub(crate) trigger_label: String,
     pub(crate) trigger_config: Value,
     pub(crate) nodes: Value,
@@ -114,6 +116,7 @@ pub(crate) struct CreateAutomationFlowRequest {
     pub(crate) description: Option<String>,
     pub(crate) trigger_form_uuid: Option<String>,
     pub(crate) trigger_event: Option<String>,
+    pub(crate) trigger_events: Option<Vec<String>>,
     pub(crate) operator: Option<String>,
 }
 
@@ -125,6 +128,7 @@ pub(crate) struct UpdateAutomationFlowRequest {
     pub(crate) status: Option<String>,
     pub(crate) trigger_form_uuid: Option<String>,
     pub(crate) trigger_event: Option<String>,
+    pub(crate) trigger_events: Option<Vec<String>>,
     pub(crate) trigger_config: Option<Value>,
     pub(crate) nodes: Option<Value>,
     pub(crate) edges: Option<Value>,
@@ -149,7 +153,12 @@ impl From<automation_flow_entity::Model> for ApiAutomationFlow {
             current_version: value.current_version,
             flow_type: value.flow_type,
             trigger_form_uuid: value.trigger_form_uuid,
-            trigger_label: automation_trigger_label(&value.trigger_event).to_string(),
+            trigger_label: automation_trigger_events(&value.trigger_event, &value.trigger_config)
+                .iter()
+                .map(|event| automation_trigger_label(event))
+                .collect::<Vec<_>>()
+                .join("、"),
+            trigger_events: automation_trigger_events(&value.trigger_event, &value.trigger_config),
             trigger_event: value.trigger_event,
             nodes_count,
             created_by: value.created_by,
@@ -178,7 +187,12 @@ impl From<automation_flow_entity::Model> for ApiAutomationFlowDetail {
             flow_type: value.flow_type,
             trigger_form_uuid: value.trigger_form_uuid,
             trigger_event: value.trigger_event.clone(),
-            trigger_label: automation_trigger_label(&value.trigger_event).to_string(),
+            trigger_events: automation_trigger_events(&value.trigger_event, &value.trigger_config),
+            trigger_label: automation_trigger_events(&value.trigger_event, &value.trigger_config)
+                .iter()
+                .map(|event| automation_trigger_label(event))
+                .collect::<Vec<_>>()
+                .join("、"),
             trigger_config: value.trigger_config,
             nodes: value.nodes_json,
             edges: value.edges_json,

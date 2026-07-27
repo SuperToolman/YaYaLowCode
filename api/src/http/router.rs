@@ -175,6 +175,15 @@ pub(crate) fn build(state: AppState) -> Router {
             "/api/agent/sessions/{session_uuid}",
             axum::routing::patch(agents::update_agent_session).delete(agents::delete_agent_session),
         )
+        .route(
+            "/api/agent/sessions/{session_uuid}/pending-actions/{action_uuid}/confirm",
+            post(agents::confirm_pending_action),
+        )
+        .route("/api/agent/sessions/{session_uuid}/pending-actions", get(agents::list_pending_actions))
+        .route(
+            "/api/agent/sessions/{session_uuid}/pending-actions/{action_uuid}/cancel",
+            post(agents::cancel_pending_action),
+        )
         .route("/api/apps", get(apps::list_apps).post(apps::create_app))
         .route(
             "/api/apps/{app_id}",
@@ -246,6 +255,10 @@ pub(crate) fn build(state: AppState) -> Router {
             get(workflows::get_workflow_record_runtime),
         )
         .route(
+            "/api/forms/{form_uuid}/records/{record_uuid}/workflow/comments",
+            get(workflows::list_workflow_comments).post(workflows::create_workflow_comment),
+        )
+        .route(
             "/api/forms/{form_uuid}/records/{record_uuid}/workflow/submit",
             post(workflows::submit_workflow_record),
         )
@@ -253,10 +266,15 @@ pub(crate) fn build(state: AppState) -> Router {
             "/api/forms/{form_uuid}/records/{record_uuid}/workflow/reverse",
             post(workflows::reverse_workflow_record),
         )
+        .route("/api/forms/{form_uuid}/records/{record_uuid}/workflow/pause", post(workflows::pause_workflow_record))
+        .route("/api/forms/{form_uuid}/records/{record_uuid}/workflow/resume", post(workflows::resume_workflow_record))
         .route(
             "/api/workflow/tasks/{task_uuid}/approve",
             post(workflows::approve_workflow_task),
         )
+        .route("/api/workflow/tasks", get(workflows::list_workflow_tasks))
+        .route("/api/workflow/notifications", get(workflows::list_workflow_notifications))
+        .route("/api/workflow/notifications/{notification_uuid}/read", post(workflows::read_workflow_notification))
         .route(
             "/api/workflow/tasks/{task_uuid}/reject",
             post(workflows::reject_workflow_task),

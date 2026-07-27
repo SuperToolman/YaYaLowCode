@@ -298,8 +298,12 @@ pub(crate) async fn ensure_agent_tables(db: &DatabaseConnection) -> Result<(), A
             ADD COLUMN IF NOT EXISTS source VARCHAR(40) NOT NULL DEFAULT 'general';
         ALTER TABLE agent_sessions
             ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE agent_sessions
+            ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES iam_users(id) ON DELETE CASCADE;
         CREATE INDEX IF NOT EXISTS idx_agent_sessions_agent_id
             ON agent_sessions (agent_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_agent_sessions_owner_updated_at
+            ON agent_sessions (owner_user_id, is_pinned DESC, updated_at DESC);
 
         CREATE TABLE IF NOT EXISTS agent_messages (
             id UUID PRIMARY KEY,

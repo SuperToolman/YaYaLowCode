@@ -31,6 +31,14 @@ function validateGetDataConfig(config: unknown): WorkflowNodeConfigValidationIss
   return requireConfigString("formUuid", "请选择来源表单")(config);
 }
 
+function validateUpdateDataConfig(config: unknown): WorkflowNodeConfigValidationIssue[] {
+  const updateMode = readConfigString(config, "updateMode") || "form";
+  if (updateMode === "data-node") {
+    return requireConfigString("sourceNodeId", "请选择查询数据源节点")(config);
+  }
+  return requireConfigString("targetFormUuid", "请选择目标表单")(config);
+}
+
 function validateConditionConfig(config: unknown): WorkflowNodeConfigValidationIssue[] {
   const branches =
     typeof config === "object" && config !== null
@@ -63,7 +71,7 @@ export const automationWorkflowNodeRegistry = createWorkflowNodeRegistry([
     isRoot: true,
   },
   { kind: "add-data", label: "新增数据", description: "写入目标表单的新数据", group: "数据节点", validateConfig: requireConfigString("targetFormUuid", "请选择目标表单") },
-  { kind: "update-data", label: "更新数据", description: "更新目标表单已有数据", group: "数据节点", validateConfig: requireConfigString("targetFormUuid", "请选择目标表单") },
+  { kind: "update-data", label: "更新数据", description: "更新目标表单已有数据", group: "数据节点", validateConfig: validateUpdateDataConfig },
   { kind: "get-one", label: "获取单条数据", description: "按条件查询一条记录", group: "数据节点", validateConfig: validateGetDataConfig },
   { kind: "get-many", label: "获取多条数据", description: "按条件查询多条记录", group: "数据节点", validateConfig: validateGetDataConfig },
   { kind: "delete-data", label: "删除数据", description: "按条件删除目标表单记录", group: "数据节点", validateConfig: requireConfigString("targetFormUuid", "请选择目标表单") },
@@ -79,7 +87,7 @@ export const automationWorkflowPaletteGroups = groupWorkflowNodeDefinitions(
 export const processWorkflowNodeRegistry = createWorkflowNodeRegistry([
   { kind: "trigger", label: "表单提交时", description: "由审批表单提交启动", group: "流程起点", isRoot: true },
   { kind: "add-data", label: "新增数据", description: "写入目标表单的新数据", group: "数据节点", validateConfig: requireConfigString("targetFormUuid", "请选择目标表单") },
-  { kind: "update-data", label: "更新数据", description: "更新目标表单已有数据", group: "数据节点", validateConfig: requireConfigString("targetFormUuid", "请选择目标表单") },
+  { kind: "update-data", label: "更新数据", description: "更新目标表单已有数据", group: "数据节点", validateConfig: validateUpdateDataConfig },
   { kind: "get-one", label: "获取单条数据", description: "按条件查询一条记录", group: "数据节点", validateConfig: validateGetDataConfig },
   { kind: "get-many", label: "获取多条数据", description: "按条件查询多条记录", group: "数据节点", validateConfig: validateGetDataConfig },
   { kind: "delete-data", label: "删除数据", description: "按条件删除目标表单记录", group: "数据节点", validateConfig: requireConfigString("targetFormUuid", "请选择目标表单") },

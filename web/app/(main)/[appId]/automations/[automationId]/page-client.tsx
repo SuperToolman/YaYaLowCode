@@ -25,6 +25,7 @@ import {
   MarkerType,
   Position,
   ReactFlowProvider,
+  useReactFlow,
   type Connection,
   type EdgeChange,
   type EdgeProps,
@@ -33,18 +34,20 @@ import {
   type OnConnect,
   type OnConnectEnd,
 } from "@xyflow/react";
-import { Button, Dropdown, Input, ListBox, Select, toast } from "@heroui/react";
+import { Button, Checkbox, Dropdown, Input, ListBox, Select, Slider, toast } from "@heroui/react";
 import { Card } from "@heroui/react/card";
 import { Modal } from "@heroui/react/modal";
 import {
   getAutomationFlow,
   getFormSchema,
+  listDetailForms,
   listAutomationFlowVersions,
   listForms,
   listUsers,
   restoreAutomationFlowVersion,
   updateAutomationFlow,
   type AutomationFlowVersionSummary,
+  type ApiDetailForm,
   type FormSummary,
 } from "../../../../lib/api-client";
 import {
@@ -105,6 +108,7 @@ type FieldValueType = "value" | "field" | "formula";
 type DataSourceMode = "form" | "data-node" | "related-form";
 type AddTargetMode = "form" | "subtable";
 type AddRecordMode = "single" | "multiple";
+type UpdateMode = "data-node" | "form";
 
 type FieldOption = {
   label: string;
@@ -133,6 +137,9 @@ type FormSchemaDescriptor = {
 };
 
 type TriggerConfig = {
+  changedFieldMode?: "any" | "specific";
+  changedFieldId?: string;
+  // Used only to migrate existing saved configurations.
   changedFieldsText?: string;
 };
 
@@ -153,6 +160,8 @@ type ConditionConfig = {
 type BranchRule = {
   id: string;
   parentId?: string;
+  isGroup?: boolean;
+  logicalOperator?: "and" | "or";
   fieldKey?: string;
   operator?: BranchRuleOperator;
   rawValue?: string;
@@ -197,7 +206,10 @@ type AddDataConfig = {
 };
 
 type ActionConfig = {
+  updateMode?: UpdateMode;
+  sourceNodeId?: string;
   targetFormUuid?: string;
+  rules?: BranchRule[];
   matchRule?: string;
   rows?: FieldMappingRow[];
   bodyTemplate?: string;
@@ -246,6 +258,7 @@ type FlowState = {
   currentVersion?: number;
   triggerFormUuid: string;
   triggerEvent: TriggerEvent;
+  triggerEvents: TriggerEvent[];
   triggerConfig: TriggerConfig;
   createdAt?: string;
   updatedAt?: string;
@@ -262,6 +275,12 @@ type InsertContext = {
 const edgeTypes = {
   insertable: memo(InsertableEdge),
 };
+
+const triggerEventRows: Array<{ label: string; events: TriggerEvent[] }> = [
+  { label: "创建成功", events: ["before_create", "after_create"] },
+  { label: "编辑成功", events: ["before_update", "after_update"] },
+  { label: "删除成功", events: ["before_delete", "after_delete"] },
+];
 
 const nodeTypes = {
   workflow: memo(WorkflowCardNode),
@@ -342,6 +361,7 @@ function AutomationEditorSurface({
   automationId,
 }: AutomationEditorPageClientProps) {
   const router = useRouter();
+  const { screenToFlowPosition } = useReactFlow();
   const headerDescriptionRef = useRef<HTMLInputElement | null>(null);
   const [flowState, setFlowState] = useState<FlowState>({
     flowType: "trigger",
@@ -351,18 +371,21 @@ function AutomationEditorSurface({
     currentVersion: 1,
     triggerFormUuid: "",
     triggerEvent: "after_create",
+    triggerEvents: ["after_create"],
     triggerConfig: {},
   });
   const [members, setMembers] = useState<MemberOption[]>([]);
   useEffect(() => { void listUsers({ responseStyle: "fields" }).then((result) => { if (result.data?.code === 0 && result.data.data) setMembers(result.data.data.filter((user) => user.status === "active").map((user) => ({ id: user.id, displayName: user.displayName, status: user.status }))); }); }, []);
   const dataNodeMenu = flowState.flowType === "process" ? processDataNodeMenu : triggerDataNodeMenu;
   const [forms, setForms] = useState<FormSummary[]>([]);
+  const [detailForms, setDetailForms] = useState<ApiDetailForm[]>([]);
   const [formSchemas, setFormSchemas] = useState<Record<string, FormSchemaDescriptor>>({});
   const [nodes, setNodes] = useState<WorkflowNode[]>([]);
   const [edges, setEdges] = useState<WorkflowEdge[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [insertContext, setInsertContext] = useState<InsertContext | null>(null);
   const [isHeaderEditing, setIsHeaderEditing] = useState(false);
+  const [canvasZoom, setCanvasZoom] = useState(0.9);
   const [isSchemaModalOpen, setIsSchemaModalOpen] = useState(false);
   const [isVersionModalOpen, setIsVersionModalOpen] = useState(false);
   const [versionItems, setVersionItems] = useState<AutomationFlowVersionSummary[]>([]);
@@ -504,6 +527,7 @@ function AutomationEditorSurface({
         currentVersion: detail.currentVersion,
         triggerFormUuid: detail.triggerFormUuid ?? "",
         triggerEvent: detail.triggerEvent,
+        triggerEvents: detail.triggerEvents,
         triggerConfig: normalizeTriggerConfig(detail.triggerConfig),
         createdAt: detail.createdAt,
         updatedAt: detail.updatedAt,
@@ -516,6 +540,21 @@ function AutomationEditorSurface({
 
       setFlowState(nextFlowState);
       setForms(formsResult.data.data);
+      const detailFormResults = await Promise.all(
+        formsResult.data.data
+          .filter((form) => form.formType !== "detail")
+          .map((form) =>
+            listDetailForms({
+              path: { formUuid: form.id },
+              responseStyle: "fields",
+            }),
+          ),
+      );
+      setDetailForms(
+        detailFormResults.flatMap((result) =>
+          result.data?.code === 0 && result.data.data ? result.data.data : [],
+        ),
+      );
       setNodes(nextNodes);
       setEdges(
         decorateEdges(
@@ -570,6 +609,8 @@ function AutomationEditorSurface({
     ? formSchemas[flowState.triggerFormUuid]?.fields ?? []
     : [];
   const getManySourceOptions = buildGetManySourceOptions(nodes, edges, selectedNodeId);
+  const updateSourceOptions = buildQueryNodeOptions(nodes);
+  const updateTargetFormOptions = buildUpdateTargetFormOptions(forms, detailForms);
   const selectedAddDataConfig =
     selectedNode?.data.kind === "add-data"
       ? normalizeAddDataConfig(selectedNode.data.config)
@@ -628,25 +669,21 @@ function AutomationEditorSurface({
     setInsertContext({
       sourceId: connectionState.fromNode.id,
       sourceHandle: connectionState.fromHandle.id,
-      position: {
+      position: screenToFlowPosition({
         x: clientPoint.clientX,
         y: clientPoint.clientY,
-      },
+      }),
     });
   };
 
   function handleFlowFieldChange<K extends keyof FlowState>(key: K, value: FlowState[K]) {
     setFlowState((current) => {
       const nextState = { ...current, [key]: value };
-      if (key === "triggerEvent" && !isUpdateTriggerEvent(String(value) as TriggerEvent)) {
-        nextState.triggerConfig = {
-          ...nextState.triggerConfig,
-          changedFieldsText: "",
-        };
-      }
       if (key === "triggerFormUuid") {
         nextState.triggerConfig = {
           ...nextState.triggerConfig,
+          changedFieldMode: "any",
+          changedFieldId: "",
           changedFieldsText: "",
         };
       }
@@ -659,14 +696,48 @@ function AutomationEditorSurface({
     }
   }
 
-  function handleTriggerConfigChange(key: keyof TriggerConfig, value: string) {
+  function handleTriggerEventSelection(
+    events: TriggerEvent[],
+    event: TriggerEvent,
+    selected: boolean,
+  ) {
     setFlowState((current) => {
+      const triggerEvents = orderTriggerEvents(
+        selected
+          ? [...current.triggerEvents.filter((item) => !events.includes(item)), event]
+          : current.triggerEvents.filter((item) => item !== event),
+      );
       const nextState = {
         ...current,
-        triggerConfig: {
-          ...current.triggerConfig,
-          [key]: value,
-        },
+        triggerEvent: triggerEvents[0] ?? "after_create",
+        triggerEvents,
+        triggerConfig: hasUpdateTriggerEvent(triggerEvents)
+          ? current.triggerConfig
+          : {
+              ...current.triggerConfig,
+              changedFieldMode: "any" as const,
+              changedFieldId: "",
+              changedFieldsText: "",
+            },
+      };
+      setNodes((currentNodes) => syncTriggerNode(currentNodes, nextState, forms));
+      return nextState;
+    });
+  }
+
+  function handleTriggerConfigChange(key: keyof TriggerConfig, value: string) {
+    setFlowState((current) => {
+      const triggerConfig = {
+        ...current.triggerConfig,
+        [key]: value,
+      };
+      if (key === "changedFieldMode" && value === "any") {
+        triggerConfig.changedFieldId = "";
+        triggerConfig.changedFieldsText = "";
+      }
+      const nextState = {
+        ...current,
+        triggerConfig,
       };
       setNodes((currentNodes) => syncTriggerNode(currentNodes, nextState, forms));
       return nextState;
@@ -876,6 +947,98 @@ function AutomationEditorSurface({
     });
   }
 
+  function handleUpdateConfigChange<K extends keyof ActionConfig>(
+    key: K,
+    value: ActionConfig[K],
+  ) {
+    updateSelectedNodeConfig((config) => ({
+      ...normalizeActionConfig(config),
+      [key]: value,
+    }));
+  }
+
+  function handleUpdateSourceNodeChange(sourceNodeId: string) {
+    const sourceNode = nodes.find(
+      (node) =>
+        node.id === sourceNodeId &&
+        (node.data.kind === "get-one" || node.data.kind === "get-many"),
+    );
+    const sourceConfig = sourceNode
+      ? normalizeGetDataConfig(sourceNode.data.config)
+      : null;
+    const targetFormUuid = sourceConfig?.formUuid ?? "";
+
+    updateSelectedNodeConfig((config) => ({
+      ...normalizeActionConfig(config),
+      sourceNodeId,
+      targetFormUuid,
+    }));
+
+    if (targetFormUuid) {
+      void ensureFormSchema(targetFormUuid);
+    }
+  }
+
+  function handleUpdateRuleChange(
+    ruleId: string,
+    key: keyof BranchRule,
+    value: string,
+  ) {
+    updateSelectedNodeConfig((config) => {
+      const nextConfig = normalizeActionConfig(config);
+      const changedRule = (nextConfig.rules ?? []).find((rule) => rule.id === ruleId);
+      nextConfig.rules = (nextConfig.rules ?? []).map((rule) => {
+        // A condition level has one logical operator. Keep every sibling in sync
+        // because the persisted rule shape stores that operator on each item.
+        if (key === "logicalOperator" && rule.parentId === changedRule?.parentId) {
+          return { ...rule, logicalOperator: value as "and" | "or" };
+        }
+        if (rule.id !== ruleId) return rule;
+        const nextRule = { ...rule, [key]: value };
+        if (key === "fieldKey") {
+          nextRule.rawValue = "";
+        }
+        if (key === "operator" && (value === "hasValue" || value === "noValue")) {
+          nextRule.rawValue = "";
+        }
+        return nextRule;
+      });
+      return nextConfig;
+    });
+  }
+
+  function handleAddUpdateRule(parentId?: string, siblingOfId?: string, count = 1) {
+    updateSelectedNodeConfig((config) => {
+      const nextConfig = normalizeActionConfig(config);
+      const rules = [...(nextConfig.rules ?? [])];
+      if (count === 0 && parentId) {
+        nextConfig.rules = promoteRuleToChildGroup(rules, parentId);
+        return nextConfig;
+      }
+      const nextRules = Array.from({ length: count }, () => createBranchRule(parentId));
+      if (!siblingOfId) {
+        nextConfig.rules = [...rules, ...nextRules];
+        return nextConfig;
+      }
+      const siblingIndex = rules.findIndex((rule) => rule.id === siblingOfId);
+      if (siblingIndex === -1) {
+        nextConfig.rules = [...rules, ...nextRules];
+        return nextConfig;
+      }
+      rules.splice(siblingIndex + 1, 0, ...nextRules);
+      nextConfig.rules = rules;
+      return nextConfig;
+    });
+  }
+
+  function handleRemoveUpdateRule(ruleId: string) {
+    updateSelectedNodeConfig((config) => {
+      const nextConfig = normalizeActionConfig(config);
+      nextConfig.rules = (nextConfig.rules ?? []).filter((rule) => rule.id !== ruleId);
+      return nextConfig;
+    });
+  }
+
   function updateSelectedConditionBranch(
     branchId: string,
     updater: (branch: ConditionBranch) => ConditionBranch,
@@ -933,21 +1096,29 @@ function AutomationEditorSurface({
     });
   }
 
-  function handleAddConditionRule(branchId: string, parentId?: string, siblingOfId?: string) {
+  function handleAddConditionRule(
+    branchId: string,
+    parentId?: string,
+    siblingOfId?: string,
+    count = 1,
+  ) {
     updateSelectedConditionBranch(branchId, (branch) => {
-      const nextRule = createBranchRule(parentId);
+      const nextRules = Array.from({ length: count }, () => createBranchRule(parentId));
       const rules = [...branch.rules];
+      if (count === 0 && parentId) {
+        return { ...branch, rules: promoteRuleToChildGroup(rules, parentId) };
+      }
 
       if (!siblingOfId) {
-        return { ...branch, rules: [...rules, nextRule] };
+        return { ...branch, rules: [...rules, ...nextRules] };
       }
 
       const index = rules.findIndex((item) => item.id === siblingOfId);
       if (index === -1) {
-        return { ...branch, rules: [...rules, nextRule] };
+        return { ...branch, rules: [...rules, ...nextRules] };
       }
 
-      rules.splice(index + 1, 0, nextRule);
+      rules.splice(index + 1, 0, ...nextRules);
       return { ...branch, rules };
     });
   }
@@ -982,10 +1153,14 @@ function AutomationEditorSurface({
     value: string,
   ) {
     updateSelectedConditionBranch(branchId, (branch) => {
+      const changedRule = branch.rules.find((rule) => rule.id === ruleId);
       const rules = branch.rules.map((rule) => {
-        if (rule.id !== ruleId) {
-          return rule;
+        // A condition level has one logical operator. Keep every sibling in sync
+        // because the persisted rule shape stores that operator on each item.
+        if (key === "logicalOperator" && rule.parentId === changedRule?.parentId) {
+          return { ...rule, logicalOperator: value as "and" | "or" };
         }
+        if (rule.id !== ruleId) return rule;
 
         const nextRule = { ...rule, [key]: value };
         if (key === "fieldKey") {
@@ -1133,10 +1308,7 @@ function AutomationEditorSurface({
           y: insertContext.position.y - 32,
         }
       : source && target
-        ? {
-            x: (source.position.x + target.position.x) / 2,
-            y: (source.position.y + target.position.y) / 2,
-          }
+        ? getInsertedNodePosition(source, target, nextNode)
         : nextNode.position;
 
     setNodes((current) => [
@@ -1233,11 +1405,11 @@ function AutomationEditorSurface({
           body: {
             name:
               flowState.name.trim() ||
-              buildAutomationName(forms, flowState.triggerFormUuid, flowState.triggerEvent),
+              buildAutomationName(forms, flowState.triggerFormUuid),
             description: flowState.description.trim() || undefined,
             status: flowState.status,
             triggerFormUuid: flowState.triggerFormUuid || undefined,
-            triggerEvent: flowState.triggerEvent,
+            triggerEvents: flowState.triggerEvents,
             triggerConfig: flowState.triggerConfig,
             nodes: payload.nodes,
             edges: payload.edges,
@@ -1264,12 +1436,13 @@ function AutomationEditorSurface({
     return JSON.stringify(
       {
         automationId,
-        name: flowState.name || buildAutomationName(forms, flowState.triggerFormUuid, flowState.triggerEvent),
+        name: flowState.name || buildAutomationName(forms, flowState.triggerFormUuid),
         description: flowState.description || undefined,
         status: flowState.status,
         currentVersion: flowState.currentVersion,
         triggerFormUuid: flowState.triggerFormUuid || undefined,
         triggerEvent: flowState.triggerEvent,
+        triggerEvents: flowState.triggerEvents,
         triggerConfig: flowState.triggerConfig,
         ...workflow,
       },
@@ -1360,6 +1533,7 @@ function AutomationEditorSurface({
           </div>
 
           <div className="flex items-center gap-2">
+            <CanvasZoomControl zoom={canvasZoom} onZoomChange={setCanvasZoom} />
             <Button
               isIconOnly
               aria-label="查看自动化 Schema"
@@ -1442,9 +1616,10 @@ function AutomationEditorSurface({
               onConnectEnd={handleConnectEnd}
               onEdgesChange={onEdgesChange}
               onNodesChange={onNodesChange}
-              onNodeSelect={(node) => setSelectedNodeId(node.id)}
-              onPaneClick={() => setSelectedNodeId(null)}
-            />
+                  onNodeSelect={(node) => setSelectedNodeId(node.id)}
+                  onPaneClick={() => setSelectedNodeId(null)}
+                  onZoomChange={setCanvasZoom}
+                />
           </WorkflowNodeActionsContext.Provider>
           {selectedNode ? (
             <WorkflowNodeConfigDrawer
@@ -1456,17 +1631,7 @@ function AutomationEditorSurface({
               }}
               title={selectedNode.data.label}
               subtitle={`${nodeKindLabel(selectedNode.data.kind)}节点参数`}
-              headerActions={
-                selectedNode.data.kind !== "trigger" ? (
-                  <IconActionButton
-                    ariaLabel="删除节点"
-                    danger
-                    onClick={handleDeleteSelectedNode}
-                  >
-                    <TrashIcon />
-                  </IconActionButton>
-                ) : null
-              }
+              onDelete={selectedNode.data.kind !== "trigger" ? handleDeleteSelectedNode : undefined}
             >
                 {selectedNode.data.kind === "trigger" ? (
                   <PropertyPanelSection title={flowState.flowType === "process" ? "流程起点" : "触发配置"} description="工作流名称和说明在左上角双击编辑。">
@@ -1503,34 +1668,40 @@ function AutomationEditorSurface({
                         </Select.Popover>
                       </Select>
                     </PropertyField>
-                    <PropertyField label="触发事件">
-                      <Select
-                        aria-label="触发事件"
-                        selectedKey={flowState.triggerEvent}
-                        onSelectionChange={(key) =>
-                          handleFlowFieldChange(
-                            "triggerEvent",
-                            String(key ?? "after_create") as TriggerEvent,
-                          )
-                        }
-                      >
-                        <Select.Trigger>
-                          <Select.Value>
-                            {triggerEvents.find((item) => item.id === flowState.triggerEvent)
-                              ?.label ?? "创建成功后"}
-                          </Select.Value>
-                          <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {triggerEvents.map((item) => (
-                              <ListBox.Item key={item.id} id={item.id} textValue={item.label}>
-                                {item.label}
-                              </ListBox.Item>
+                    <PropertyField label="触发事件" alignStart>
+                      <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
+                        <div className="grid grid-cols-[minmax(0,1fr)_72px_72px] border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-xs font-medium text-[var(--color-text-secondary)]">
+                          <span className="px-3 py-2">类型</span>
+                          <span className="px-3 py-2">前</span>
+                          <span className="px-3 py-2">后</span>
+                        </div>
+                        {triggerEventRows.map((row) => (
+                          <div
+                            key={row.label}
+                            className="grid grid-cols-[minmax(0,1fr)_72px_72px] items-center border-b border-[var(--color-border)] last:border-b-0"
+                          >
+                            <span className="px-3 py-2 text-sm text-[var(--color-text-primary)]">{row.label}</span>
+                            {row.events.map((event) => (
+                              <Checkbox
+                                key={event}
+                                isSelected={flowState.triggerEvents.includes(event)}
+                                onChange={(selected) =>
+                                  handleTriggerEventSelection(row.events, event, selected)
+                                }
+                                className="px-3 py-2"
+                              >
+                                <Checkbox.Control><Checkbox.Indicator /></Checkbox.Control>
+                                <Checkbox.Content className="sr-only">{event}</Checkbox.Content>
+                              </Checkbox>
                             ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
+                          </div>
+                        ))}
+                        <div className="grid grid-cols-[minmax(0,1fr)_72px_72px] items-center bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]">
+                          <span className="px-3 py-2 text-sm">评论成功</span>
+                          <span className="px-3 py-2">-</span>
+                          <span className="px-3 py-2">-</span>
+                        </div>
+                      </div>
                     </PropertyField>
                     </>}
                   </PropertyPanelSection>
@@ -1564,15 +1735,22 @@ function AutomationEditorSurface({
                 <NodeConfigFields
                   forms={forms}
                   getManySourceOptions={getManySourceOptions}
+                  updateSourceOptions={updateSourceOptions}
+                  updateTargetFormOptions={updateTargetFormOptions}
                   multipleSourceFieldChoices={multipleSourceFieldChoices}
                   node={selectedNode}
                   selectedSchema={selectedNodeSchema}
                   sourceFieldChoices={sourceFieldChoices}
-                  triggerEvent={flowState.triggerEvent}
+                  triggerEvents={flowState.triggerEvents}
                   triggerFieldOptions={triggerFieldOptions}
                   members={members}
                   onActionTargetFormChange={handleActionTargetFormChange}
                   onAddDataConfigChange={handleAddDataConfigChange}
+                  onUpdateConfigChange={handleUpdateConfigChange}
+                  onUpdateSourceNodeChange={handleUpdateSourceNodeChange}
+                  onAddUpdateRule={handleAddUpdateRule}
+                  onRemoveUpdateRule={handleRemoveUpdateRule}
+                  onUpdateRuleChange={handleUpdateRuleChange}
                   onAddMappingRow={handleAddMappingRow}
                   onBasicChange={handleBasicNodeConfigChange}
                   onProcessMemberIdsChange={handleProcessMemberIdsChange}
@@ -1764,6 +1942,46 @@ function AutomationEditorSurface({
         </Modal.Backdrop>
       </Modal>
     </Card>
+  );
+}
+
+function CanvasZoomControl({
+  zoom,
+  onZoomChange,
+}: {
+  zoom: number;
+  onZoomChange: (zoom: number) => void;
+}) {
+  const { zoomTo } = useReactFlow();
+  const zoomPercent = Math.round(zoom * 100);
+
+  return (
+    <div
+      className="flex h-9 w-40 items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3"
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <Slider
+        aria-label="画布缩放"
+        className="min-w-0 flex-1"
+        minValue={50}
+        maxValue={200}
+        step={5}
+        value={zoomPercent}
+        onChange={(value) => {
+          const nextZoom = Number(value) / 100;
+          onZoomChange(nextZoom);
+          void zoomTo(nextZoom);
+        }}
+      >
+        <Slider.Track>
+          <Slider.Fill />
+          <Slider.Thumb />
+        </Slider.Track>
+      </Slider>
+      <output className="w-9 shrink-0 text-right text-xs tabular-nums text-[var(--color-text-secondary)]">
+        {zoomPercent}%
+      </output>
+    </div>
   );
 }
 
@@ -2002,14 +2220,21 @@ function NodeConfigFields({
   forms,
   members,
   getManySourceOptions,
+  updateSourceOptions,
+  updateTargetFormOptions,
   multipleSourceFieldChoices,
   node,
   selectedSchema,
   sourceFieldChoices,
-  triggerEvent,
+  triggerEvents,
   triggerFieldOptions,
   onActionTargetFormChange,
   onAddDataConfigChange,
+  onUpdateConfigChange,
+  onUpdateSourceNodeChange,
+  onAddUpdateRule,
+  onRemoveUpdateRule,
+  onUpdateRuleChange,
   onAddMappingRow,
   onBasicChange,
   onProcessMemberIdsChange,
@@ -2030,14 +2255,21 @@ function NodeConfigFields({
   forms: FormSummary[];
   members: MemberOption[];
   getManySourceOptions: Array<{ id: string; label: string; description: string }>;
+  updateSourceOptions: Array<{ id: string; label: string; description: string }>;
+  updateTargetFormOptions: Array<{ id: string; label: string }>;
   multipleSourceFieldChoices: SourceFieldChoice[];
   node: WorkflowNode;
   selectedSchema?: FormSchemaDescriptor;
   sourceFieldChoices: SourceFieldChoice[];
-  triggerEvent: TriggerEvent;
+  triggerEvents: TriggerEvent[];
   triggerFieldOptions: FormFieldDescriptor[];
   onActionTargetFormChange: (formUuid: string) => void;
   onAddDataConfigChange: <K extends keyof AddDataConfig>(key: K, value: AddDataConfig[K]) => void;
+  onUpdateConfigChange: <K extends keyof ActionConfig>(key: K, value: ActionConfig[K]) => void;
+  onUpdateSourceNodeChange: (nodeId: string) => void;
+  onAddUpdateRule: (parentId?: string, siblingOfId?: string) => void;
+  onRemoveUpdateRule: (ruleId: string) => void;
+  onUpdateRuleChange: (ruleId: string, key: keyof BranchRule, value: string) => void;
   onAddMappingRow: () => void;
   onBasicChange: (key: string, value: string) => void;
   onProcessMemberIdsChange: (key: "assigneeIds" | "recipientIds", ids: string[]) => void;
@@ -2053,7 +2285,7 @@ function NodeConfigFields({
   onMoveConditionBranch: (branchId: string, direction: "up" | "down") => void;
   onAddConditionBranch: () => void;
   onRemoveConditionBranch: (branchId: string) => void;
-  onAddConditionRule: (branchId: string, parentId?: string, siblingOfId?: string) => void;
+  onAddConditionRule: (branchId: string, parentId?: string, siblingOfId?: string, count?: number) => void;
   onRemoveConditionRule: (branchId: string, ruleId: string) => void;
   onConditionRuleChange: (
     branchId: string,
@@ -2082,37 +2314,58 @@ function NodeConfigFields({
   if (node.data.kind === "trigger") {
     const config = normalizeTriggerConfig(node.data.config);
     return (
-      isUpdateTriggerEvent(triggerEvent) ? (
+      hasUpdateTriggerEvent(triggerEvents) ? (
         <PropertyPanelSection title="触发字段" description="仅编辑事件支持按单字段触发。">
-          <PropertyField label="变化字段">
+          <PropertyField label="触发范围">
             <Select
-              aria-label="变化字段"
-              selectedKey={config.changedFieldsText || "none"}
+              aria-label="编辑触发范围"
+              selectedKey={config.changedFieldMode ?? "any"}
               onSelectionChange={(key) =>
-                onBasicChange("changedFieldsText", String(key === "none" ? "" : key ?? ""))
+                onBasicChange("changedFieldMode", String(key ?? "any"))
               }
             >
               <Select.Trigger>
                 <Select.Value>
-                  {triggerFieldOptions.find((field) => field.id === config.changedFieldsText)?.label ??
-                    "选择字段"}
+                  {config.changedFieldMode === "specific" ? "指定字段" : "任意字段"}
                 </Select.Value>
                 <Select.Indicator />
               </Select.Trigger>
               <Select.Popover>
                 <ListBox>
-                  <ListBox.Item id="none" textValue="未配置">
-                    未配置
+                  <ListBox.Item id="any" textValue="任意字段">
+                    任意字段
                   </ListBox.Item>
-                  {triggerFieldOptions.map((field) => (
-                    <ListBox.Item key={field.id} id={field.id} textValue={field.label}>
-                      {field.label}
-                    </ListBox.Item>
-                  ))}
+                  <ListBox.Item id="specific" textValue="指定字段">指定字段</ListBox.Item>
                 </ListBox>
               </Select.Popover>
             </Select>
           </PropertyField>
+          {config.changedFieldMode === "specific" ? (
+            <PropertyField label="指定字段">
+              <Select
+                aria-label="指定触发字段"
+                selectedKey={config.changedFieldId || "none"}
+                onSelectionChange={(key) =>
+                  onBasicChange("changedFieldId", String(key === "none" ? "" : key ?? ""))
+                }
+              >
+                <Select.Trigger>
+                  <Select.Value>
+                    {triggerFieldOptions.find((field) => field.id === config.changedFieldId)?.label ?? "选择字段"}
+                  </Select.Value>
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    <ListBox.Item id="none" textValue="选择字段">选择字段</ListBox.Item>
+                    {triggerFieldOptions.map((field) => (
+                      <ListBox.Item key={field.id} id={field.id} textValue={field.label}>{field.label}</ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+            </PropertyField>
+          ) : null}
         </PropertyPanelSection>
       ) : null
     );
@@ -2228,8 +2481,8 @@ function NodeConfigFields({
                 <BranchRulesEditor
                   rules={branch.rules}
                   sourceFieldChoices={sourceFieldChoices}
-                  onAddConditionRule={(parentId, siblingOfId) =>
-                    onAddConditionRule(branch.id, parentId, siblingOfId)
+                  onAddConditionRule={(parentId, siblingOfId, count) =>
+                    onAddConditionRule(branch.id, parentId, siblingOfId, count)
                   }
                   onConditionRuleChange={(ruleId, key, value) =>
                     onConditionRuleChange(branch.id, ruleId, key, value)
@@ -2368,6 +2621,11 @@ function NodeConfigFields({
     const config = normalizeAddDataConfig(node.data.config);
     const rows = config.rows ?? [];
     const targetFields = selectedSchema?.fields ?? [];
+    const hasMultipleSourceNode = getManySourceOptions.some(
+      (item) => item.id === config.multipleSourceNodeId,
+    );
+    const canConfigureFieldMappings =
+      config.recordMode !== "multiple" || hasMultipleSourceNode;
     const activeSourceFields =
       config.recordMode === "multiple" ? multipleSourceFieldChoices : sourceFieldChoices;
     return (
@@ -2478,14 +2736,22 @@ function NodeConfigFields({
           ) : null}
         </PropertyPanelSection>
 
-        <MappingRowsEditor
-          rows={rows}
-          sourceFieldChoices={activeSourceFields}
-          targetFields={targetFields}
-          onAddMappingRow={onAddMappingRow}
-          onRemoveMappingRow={onRemoveMappingRow}
-          onRowChange={onRowChange}
-        />
+        {canConfigureFieldMappings ? (
+          <MappingRowsEditor
+            rows={rows}
+            sourceFieldChoices={activeSourceFields}
+            targetFields={targetFields}
+            onAddMappingRow={onAddMappingRow}
+            onRemoveMappingRow={onRemoveMappingRow}
+            onRowChange={onRowChange}
+          />
+        ) : (
+          <PropertyPanelSection title="字段设置">
+            <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2 text-xs leading-5 text-[var(--color-text-secondary)]">
+              请选择前置的“获取多条数据”节点后再配置字段设置。
+            </div>
+          </PropertyPanelSection>
+        )}
       </div>
     );
   }
@@ -2496,42 +2762,152 @@ function NodeConfigFields({
   ) {
     const config = normalizeActionConfig(node.data.config);
     const targetFields = selectedSchema?.fields ?? [];
+    const directUpdateRuleFieldChoices = targetFields.map((field) => ({
+      key: field.id,
+      label: field.label,
+      fieldType: field.type,
+      options: field.options,
+    }));
+    const hasUpdateSourceNode = updateSourceOptions.some(
+      (item) => item.id === config.sourceNodeId,
+    );
+    const canConfigureUpdateFields =
+      node.data.kind !== "update-data" ||
+      (config.updateMode === "data-node"
+        ? hasUpdateSourceNode && targetFields.length > 0
+        : Boolean(config.targetFormUuid));
     return (
       <div className="space-y-4">
         <PropertyPanelSection title={node.data.kind === "update-data" ? "更新配置" : "删除配置"}>
-          <FormSelect
-            forms={forms}
-            value={config.targetFormUuid ?? ""}
-            placeholder="选择目标表单"
-            onChange={onActionTargetFormChange}
-          />
-          <ExpressionEditor
-            ariaLabel="匹配条件"
-            helperText="匹配条件支持引用触发记录和查询节点字段。"
-            options={sourceFieldChoices}
-            placeholder="匹配条件，例如 {{get-one-1:id}} == id"
-            value={config.matchRule ?? ""}
-            onChange={(value) => onBasicChange("matchRule", value)}
-          />
           {node.data.kind === "update-data" ? (
-            <TextAreaInput
-              ariaLabel="更新说明"
-              placeholder="更新说明，可选"
-              value={config.bodyTemplate ?? ""}
-              onChange={(value) => onBasicChange("bodyTemplate", value)}
-            />
-          ) : null}
+            <>
+              <PropertyField label="更新方式">
+                <Select
+                  aria-label="更新方式"
+                  selectedKey={config.updateMode ?? "form"}
+                  onSelectionChange={(key) =>
+                    onUpdateConfigChange(
+                      "updateMode",
+                      String(key ?? "form") as UpdateMode,
+                    )
+                  }
+                >
+                  <Select.Trigger>
+                    <Select.Value>
+                      {config.updateMode === "data-node"
+                        ? "按节点更新表单数据"
+                        : "直接更新表单数据"}
+                    </Select.Value>
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox>
+                      <ListBox.Item id="data-node" textValue="按节点更新表单数据">
+                        按节点更新表单数据
+                      </ListBox.Item>
+                      <ListBox.Item id="form" textValue="直接更新表单数据">
+                        直接更新表单数据
+                      </ListBox.Item>
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+              </PropertyField>
+              {config.updateMode === "data-node" ? (
+                <PropertyField label="数据源">
+                  <Select
+                    aria-label="更新数据源"
+                    selectedKey={config.sourceNodeId || "none"}
+                    onSelectionChange={(key) =>
+                      onUpdateSourceNodeChange(String(key === "none" ? "" : key ?? ""))
+                    }
+                  >
+                    <Select.Trigger>
+                      <Select.Value>
+                        {updateSourceOptions.find((item) => item.id === config.sourceNodeId)
+                          ?.label ?? "选择查询节点"}
+                      </Select.Value>
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        <ListBox.Item id="none" textValue="未配置">
+                          未配置
+                        </ListBox.Item>
+                        {updateSourceOptions.map((item) => (
+                          <ListBox.Item key={item.id} id={item.id} textValue={item.label}>
+                            <div className="text-sm text-[var(--color-text-primary)]">{item.label}</div>
+                            <div className="text-xs text-[var(--color-text-secondary)]">{item.description}</div>
+                          </ListBox.Item>
+                        ))}
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                  {updateSourceOptions.length === 0 ? (
+                    <div className="mt-2 rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-2 text-xs leading-5 text-[var(--color-warning)]">
+                      请先添加“获取单条数据”或“获取多条数据”节点。
+                    </div>
+                  ) : null}
+                </PropertyField>
+              ) : (
+                <>
+                  <PropertyField label="目标表单">
+                    <UpdateTargetFormSelect
+                      options={updateTargetFormOptions}
+                      value={config.targetFormUuid ?? ""}
+                      onChange={onActionTargetFormChange}
+                    />
+                  </PropertyField>
+                  {config.targetFormUuid ? (
+                    <BranchRulesEditor
+                      rules={config.rules ?? []}
+                      sourceFieldChoices={directUpdateRuleFieldChoices}
+                      onAddConditionRule={onAddUpdateRule}
+                      onConditionRuleChange={onUpdateRuleChange}
+                      onRemoveConditionRule={onRemoveUpdateRule}
+                    />
+                  ) : null}
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <FormSelect
+                forms={forms}
+                value={config.targetFormUuid ?? ""}
+                placeholder="选择目标表单"
+                onChange={onActionTargetFormChange}
+              />
+              <ExpressionEditor
+                ariaLabel="匹配条件"
+                helperText="匹配条件支持引用触发记录和查询节点字段。"
+                options={sourceFieldChoices}
+                placeholder="匹配条件，例如 {{get-one-1:id}} == id"
+                value={config.matchRule ?? ""}
+                onChange={(value) => onBasicChange("matchRule", value)}
+              />
+            </>
+          )}
         </PropertyPanelSection>
         {node.data.kind === "update-data" ? (
-          <MappingRowsEditor
-            lockRequiredRows={false}
-            rows={config.rows ?? []}
-            sourceFieldChoices={sourceFieldChoices}
-            targetFields={targetFields}
-            onAddMappingRow={onAddMappingRow}
-            onRemoveMappingRow={onRemoveMappingRow}
-            onRowChange={onRowChange}
-          />
+          canConfigureUpdateFields ? (
+            <MappingRowsEditor
+              lockRequiredRows={false}
+              rows={config.rows ?? []}
+              sourceFieldChoices={sourceFieldChoices}
+              targetFields={targetFields}
+              onAddMappingRow={onAddMappingRow}
+              onRemoveMappingRow={onRemoveMappingRow}
+              onRowChange={onRowChange}
+            />
+          ) : (
+            <PropertyPanelSection title="字段设置">
+              <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2 text-xs leading-5 text-[var(--color-text-secondary)]">
+                {config.updateMode === "data-node"
+                  ? "请选择可用的查询节点后再配置字段设置。"
+                  : "请选择目标表单后再配置字段设置。"}
+              </div>
+            </PropertyPanelSection>
+          )
         ) : null}
       </div>
     );
@@ -2706,15 +3082,17 @@ function MappingRowsEditor({
 }
 
 function BranchRulesEditor({
+  allowFieldValues = true,
   rules,
   sourceFieldChoices,
   onAddConditionRule,
   onConditionRuleChange,
   onRemoveConditionRule,
 }: {
+  allowFieldValues?: boolean;
   rules: BranchRule[];
   sourceFieldChoices: SourceFieldChoice[];
-  onAddConditionRule: (parentId?: string, siblingOfId?: string) => void;
+  onAddConditionRule: (parentId?: string, siblingOfId?: string, count?: number) => void;
   onConditionRuleChange: (ruleId: string, key: keyof BranchRule, value: string) => void;
   onRemoveConditionRule: (ruleId: string) => void;
 }) {
@@ -2725,42 +3103,87 @@ function BranchRulesEditor({
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-xs font-semibold text-[var(--color-text-primary)]">条件规则</div>
-          <div className="mt-0.5 text-[11px] text-[var(--color-text-secondary)]">支持同级条件和子条件。</div>
+          <div className="mt-0.5 text-[11px] text-[var(--color-text-secondary)]">同级条件通过“且 / 或”连接；子级条件作为当前条件的嵌套条件组。</div>
         </div>
-        <IconActionButton ariaLabel="添加条件" onClick={() => onAddConditionRule()}>
+        <Button
+          variant="secondary"
+          className="h-8 shrink-0 rounded-md px-2.5 text-xs"
+          onClick={() => onAddConditionRule()}
+        >
           <AddIcon />
-        </IconActionButton>
+          添加根条件
+        </Button>
       </div>
-      <div className="space-y-2 overflow-x-auto pb-1">
-        {rootRules.length > 0 ? (
-          rootRules.map((rule) => (
-            <BranchRuleItem
-              key={rule.id}
-              rule={rule}
-              rules={rules}
-              sourceFieldChoices={sourceFieldChoices}
-              depth={0}
-              onAddConditionRule={onAddConditionRule}
-              onConditionRuleChange={onConditionRuleChange}
-              onRemoveConditionRule={onRemoveConditionRule}
-            />
-          ))
-        ) : (
-          <button
-            type="button"
-            className="w-full rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-3 text-xs text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
-            onClick={() => onAddConditionRule()}
-          >
-            添加第一条条件
-          </button>
-        )}
+      <div className="automation-rule-horizontal-scroll w-full max-w-full overflow-x-auto pb-2">
+        <div className="w-max min-w-[590px] space-y-4 pr-1">
+          {rootRules.length > 0 ? (
+            <div
+              className={
+                rootRules.length > 1
+                  ? "relative ml-8 w-max min-w-[568px] rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 py-4 pl-8"
+                  : ""
+              }
+            >
+              {rootRules.length > 1 ? (
+                <Select
+                  aria-label="根条件组逻辑关系"
+                  className="absolute -left-8 top-1/2 z-10 w-16 -translate-y-1/2"
+                  selectedKey={rootRules[0]?.logicalOperator ?? "and"}
+                  onSelectionChange={(key) =>
+                    onConditionRuleChange(
+                      rootRules[0]?.id ?? "",
+                      "logicalOperator",
+                      String(key ?? "and"),
+                    )
+                  }
+                >
+                  <Select.Trigger>
+                    <Select.Value>{rootRules[0]?.logicalOperator === "or" ? "或" : "且"}</Select.Value>
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox>
+                      <ListBox.Item id="and" textValue="且">且</ListBox.Item>
+                      <ListBox.Item id="or" textValue="或">或</ListBox.Item>
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+              ) : null}
+              {rootRules.length > 1 ? (
+                <span className="absolute -left-3 top-1/2 h-px w-3 bg-[var(--color-border)]" />
+              ) : null}
+              <div className="space-y-4">
+                {rootRules.map((rule) => (
+                  <BranchRuleItem
+                    key={rule.id}
+                    allowFieldValues={allowFieldValues}
+                    rule={rule}
+                    rules={rules}
+                    sourceFieldChoices={sourceFieldChoices}
+                    onAddConditionRule={onAddConditionRule}
+                    onConditionRuleChange={onConditionRuleChange}
+                    onRemoveConditionRule={onRemoveConditionRule}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="w-full rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-3 text-xs text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+              onClick={() => onAddConditionRule()}
+            >
+              添加第一条条件
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
 function BranchRuleItem({
-  depth,
+  allowFieldValues,
   rule,
   rules,
   sourceFieldChoices,
@@ -2768,30 +3191,29 @@ function BranchRuleItem({
   onConditionRuleChange,
   onRemoveConditionRule,
 }: {
-  depth: number;
+  allowFieldValues: boolean;
   rule: BranchRule;
   rules: BranchRule[];
   sourceFieldChoices: SourceFieldChoice[];
-  onAddConditionRule: (parentId?: string, siblingOfId?: string) => void;
+  onAddConditionRule: (parentId?: string, siblingOfId?: string, count?: number) => void;
   onConditionRuleChange: (ruleId: string, key: keyof BranchRule, value: string) => void;
   onRemoveConditionRule: (ruleId: string) => void;
 }) {
   const selectedField = sourceFieldChoices.find((item) => item.key === rule.fieldKey);
   const childRules = rules.filter((item) => item.parentId === rule.id);
+  // Structural groups are invisible in the editor and must not make a level
+  // eligible for nesting on their own.
+  const siblingRules = rules.filter(
+    (item) => item.parentId === rule.parentId && !item.isGroup,
+  );
   const operator = rule.operator ?? "eq";
   const hideValue = operator === "hasValue" || operator === "noValue";
   const valueType = rule.valueType ?? "value";
 
   return (
-    <div className="space-y-2">
-      <div
-        className="relative min-w-[620px]"
-        style={{ marginLeft: `${Math.min(depth, 4) * 18}px` }}
-      >
-        {depth > 0 ? (
-          <span className="absolute -left-3 top-1/2 h-px w-3 bg-[var(--color-border)]" />
-        ) : null}
-        <div className="grid grid-cols-[minmax(130px,1.2fr)_92px_86px_minmax(130px,1fr)_28px_28px] items-center gap-2">
+    <div className="w-max min-w-full space-y-4">
+      {!rule.isGroup ? <div className="relative flex w-max min-w-full items-center gap-2">
+        <div className="grid min-w-[520px] shrink-0 grid-cols-[140px_80px_72px_130px_28px_28px] items-center gap-2">
             <SourceFieldSelect
               options={sourceFieldChoices}
               value={rule.fieldKey ?? ""}
@@ -2829,25 +3251,31 @@ function BranchRuleItem({
               </>
             ) : (
               <>
-                <Select
-                  aria-label="条件值类型"
-                  selectedKey={valueType}
-                  onSelectionChange={(key) =>
-                    onConditionRuleChange(rule.id, "valueType", String(key ?? "value"))
-                  }
-                >
-                  <Select.Trigger>
-                    <Select.Value>{valueType === "field" ? "字段" : "值"}</Select.Value>
-                    <Select.Indicator />
-                  </Select.Trigger>
-                  <Select.Popover>
-                    <ListBox>
-                      <ListBox.Item id="value" textValue="值">值</ListBox.Item>
-                      <ListBox.Item id="field" textValue="字段">字段</ListBox.Item>
-                    </ListBox>
-                  </Select.Popover>
-                </Select>
-                {valueType === "field" ? (
+                {allowFieldValues ? (
+                  <Select
+                    aria-label="条件值类型"
+                    selectedKey={valueType}
+                    onSelectionChange={(key) =>
+                      onConditionRuleChange(rule.id, "valueType", String(key ?? "value"))
+                    }
+                  >
+                    <Select.Trigger>
+                      <Select.Value>{valueType === "field" ? "字段" : "值"}</Select.Value>
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        <ListBox.Item id="value" textValue="值">值</ListBox.Item>
+                        <ListBox.Item id="field" textValue="字段">字段</ListBox.Item>
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                ) : (
+                  <div className="flex h-9 items-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2 text-xs text-[var(--color-text-secondary)]">
+                    值
+                  </div>
+                )}
+                {allowFieldValues && valueType === "field" ? (
                   <SourceFieldSelect
                     options={sourceFieldChoices}
                     value={rule.sourceFieldKey ?? ""}
@@ -2881,37 +3309,71 @@ function BranchRuleItem({
               </Dropdown.Trigger>
               <Dropdown.Popover>
                 <Dropdown.Menu
-                  aria-label="添加条件规则方式"
+                  aria-label="添加条件规则"
                   onAction={(key) => {
                     if (key === "child") {
-                      onAddConditionRule(rule.id);
+                      if (siblingRules.length < 2) {
+                        onAddConditionRule(rule.parentId, rule.id);
+                      } else if (childRules.length > 0) {
+                        onAddConditionRule(rule.id);
+                      } else {
+                        onAddConditionRule(rule.id, undefined, 0);
+                      }
                     } else {
-                      onAddConditionRule(undefined, rule.id);
+                      onAddConditionRule(rule.parentId, rule.id);
                     }
                   }}
                 >
-                  <Dropdown.Item id="sibling">同层级条件</Dropdown.Item>
-                  <Dropdown.Item id="child">子级条件</Dropdown.Item>
+                  <Dropdown.Item id="sibling">添加同级条件</Dropdown.Item>
+                  <Dropdown.Item id="child">添加子级条件</Dropdown.Item>
                 </Dropdown.Menu>
               </Dropdown.Popover>
             </Dropdown>
         </div>
-      </div>
+      </div> : null}
 
       {childRules.length > 0 ? (
-        <div className="space-y-2 border-l border-[var(--color-border)] pl-1">
-          {childRules.map((child) => (
-            <BranchRuleItem
-              key={child.id}
-              depth={depth + 1}
-              rule={child}
-              rules={rules}
-              sourceFieldChoices={sourceFieldChoices}
-              onAddConditionRule={onAddConditionRule}
-              onConditionRuleChange={onConditionRuleChange}
-              onRemoveConditionRule={onRemoveConditionRule}
-            />
-          ))}
+        <div className={`relative ml-8 w-max min-w-[568px] rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 py-4 pl-8 ${rule.isGroup ? "mt-0" : "mt-5"}`}>
+          <Select
+            aria-label="父级与子级条件组的逻辑关系"
+            className="absolute -left-8 top-1/2 z-10 w-16 -translate-y-1/2"
+            selectedKey={childRules[0]?.logicalOperator ?? "and"}
+            onSelectionChange={(key) =>
+              onConditionRuleChange(
+                childRules[0]?.id ?? "",
+                "logicalOperator",
+                String(key ?? "and"),
+              )
+            }
+          >
+            <Select.Trigger>
+              <Select.Value>
+                {childRules[0]?.logicalOperator === "or" ? "或" : "且"}
+              </Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                <ListBox.Item id="and" textValue="且">且</ListBox.Item>
+                <ListBox.Item id="or" textValue="或">或</ListBox.Item>
+              </ListBox>
+            </Select.Popover>
+          </Select>
+          <span className="absolute -left-3 top-1/2 h-px w-3 bg-[var(--color-border)]" />
+          <div className="space-y-4">
+            {childRules.map((child) => (
+              <BranchRuleItem
+                key={child.id}
+                allowFieldValues={allowFieldValues}
+                rule={child}
+                rules={rules}
+                sourceFieldChoices={sourceFieldChoices}
+                onAddConditionRule={onAddConditionRule}
+                onConditionRuleChange={onConditionRuleChange}
+                onRemoveConditionRule={onRemoveConditionRule}
+              />
+            ))}
+          </div>
         </div>
       ) : null}
     </div>
@@ -2934,6 +3396,7 @@ function BranchRuleValueInput({
       return (
         <Input
           aria-label="匹配值"
+          className="h-9 min-h-9"
           placeholder="多个选项值用逗号分隔"
           value={value}
           onChange={(event) => onChange(event.currentTarget.value)}
@@ -2983,6 +3446,7 @@ function BranchRuleValueInput({
   return (
     <Input
       aria-label="匹配值"
+      className="h-9 min-h-9"
       placeholder={operator === "inAny" || operator === "notInAny" ? "多个值用逗号分隔" : "输入匹配值"}
       value={value}
       onChange={(event) => onChange(event.currentTarget.value)}
@@ -3203,6 +3667,43 @@ function FormSelect({
   );
 }
 
+function UpdateTargetFormSelect({
+  options,
+  value,
+  onChange,
+}: {
+  options: Array<{ id: string; label: string }>;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Select
+      aria-label="选择更新目标表单"
+      selectedKey={value || "none"}
+      onSelectionChange={(key) => onChange(String(key === "none" ? "" : key ?? ""))}
+    >
+      <Select.Trigger>
+        <Select.Value>
+          {options.find((option) => option.id === value)?.label ?? "选择目标表单"}
+        </Select.Value>
+        <Select.Indicator />
+      </Select.Trigger>
+      <Select.Popover>
+        <ListBox>
+          <ListBox.Item id="none" textValue="未配置">
+            未配置
+          </ListBox.Item>
+          {options.map((option) => (
+            <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
+              {option.label}
+            </ListBox.Item>
+          ))}
+        </ListBox>
+      </Select.Popover>
+    </Select>
+  );
+}
+
 function FieldSelect({
   fields,
   value,
@@ -3355,6 +3856,27 @@ function createWorkflowNode(kind: PaletteNodeKind, index: number): WorkflowNode 
   };
 }
 
+function getInsertedNodePosition(
+  source: WorkflowNode,
+  target: WorkflowNode,
+  nextNode: WorkflowNode,
+) {
+  const sourceWidth = source.measured?.width ?? workflowNodeWidth(source);
+  const targetWidth = target.measured?.width ?? workflowNodeWidth(target);
+  const nextNodeWidth = workflowNodeWidth(nextNode);
+
+  return {
+    x:
+      (source.position.x + sourceWidth / 2 + target.position.x + targetWidth / 2) / 2 -
+      nextNodeWidth / 2,
+    y: (source.position.y + target.position.y) / 2,
+  };
+}
+
+function workflowNodeWidth(node: WorkflowNode) {
+  return node.data.kind === "condition" ? 310 : 250;
+}
+
 function defaultNodeTemplate(kind: WorkflowNodeKind): WorkflowNodeData {
   switch (kind) {
     case "trigger":
@@ -3363,7 +3885,8 @@ function defaultNodeTemplate(kind: WorkflowNodeKind): WorkflowNodeData {
         label: "表单事件触发",
         description: "根据表单记录事件开始执行工作流",
         config: {
-          changedFieldsText: "",
+          changedFieldMode: "any",
+          changedFieldId: "",
         } satisfies TriggerConfig,
       };
     case "condition":
@@ -3396,7 +3919,10 @@ function defaultNodeTemplate(kind: WorkflowNodeKind): WorkflowNodeData {
         label: "更新数据",
         description: "根据匹配条件更新目标表单记录",
         config: {
+          updateMode: "form",
+          sourceNodeId: "",
           targetFormUuid: "",
+          rules: [],
           matchRule: "",
           rows: [],
           bodyTemplate: "",
@@ -3623,15 +4149,17 @@ function buildTriggerNodeData(flowState: FlowState, forms: FormSummary[]): Workf
     forms.find((form) => form.id === flowState.triggerFormUuid)?.name ?? "未配置表单";
   const eventLabel = flowState.flowType === "process"
     ? "表单提交时"
-    :
-    triggerEvents.find((item) => item.id === flowState.triggerEvent)?.label ?? "创建成功后";
+    : flowState.triggerEvents
+        .map((event) => triggerEvents.find((item) => item.id === event)?.label ?? event)
+        .join("、");
 
   return {
     kind: "trigger",
     label: flowState.flowType === "process" ? "表单提交时" : "表单事件触发",
     description: `${formName} / ${eventLabel}`,
     config: {
-      changedFieldsText: flowState.triggerConfig.changedFieldsText ?? "",
+      changedFieldMode: flowState.triggerConfig.changedFieldMode ?? "any",
+      changedFieldId: flowState.triggerConfig.changedFieldId ?? "",
     },
   };
 }
@@ -3639,13 +4167,8 @@ function buildTriggerNodeData(flowState: FlowState, forms: FormSummary[]): Workf
 function buildAutomationName(
   forms: FormSummary[],
   formUuid: string,
-  triggerEvent: TriggerEvent,
 ) {
-  const formName = forms.find((form) => form.id === formUuid)?.name ?? "表单";
-  const eventLabel =
-    triggerEvents.find((item) => item.id === triggerEvent)?.label ?? "创建成功后";
-
-  return `${formName}${eventLabel}`;
+  return forms.find((form) => form.id === formUuid)?.name ?? "未命名自动化";
 }
 
 function serializeWorkflow(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
@@ -3773,6 +4296,40 @@ function buildGetManySourceOptions(
     }));
 }
 
+function buildQueryNodeOptions(nodes: WorkflowNode[]) {
+  return nodes
+    .filter((node) => node.data.kind === "get-one" || node.data.kind === "get-many")
+    .map((node) => ({
+      id: node.id,
+      label: node.data.label || node.id,
+      description:
+        node.data.description ||
+        (node.data.kind === "get-one" ? "获取单条数据" : "获取多条数据"),
+    }));
+}
+
+function buildUpdateTargetFormOptions(
+  forms: FormSummary[],
+  detailForms: ApiDetailForm[],
+) {
+  const mainFormNames = new Map(
+    forms
+      .filter((form) => form.formType !== "detail")
+      .map((form) => [form.id, form.name]),
+  );
+  const detailFormLabels = new Map(
+    detailForms.map((detail) => [
+      detail.detailFormUuid,
+      `${mainFormNames.get(detail.sourceFormUuid) ?? "表单"}.${detail.title}`,
+    ]),
+  );
+
+  return forms.map((form) => ({
+    id: form.id,
+    label: detailFormLabels.get(form.id) ?? form.name,
+  }));
+}
+
 function collectUpstreamNodeIds(edges: WorkflowEdge[], currentNodeId: string | null) {
   const upstreamIds = new Set<string>();
   if (!currentNodeId) {
@@ -3856,12 +4413,36 @@ function createBranchRule(parentId?: string): BranchRule {
   return {
     id: `rule-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     parentId,
+    logicalOperator: "and",
     fieldKey: "",
     operator: "eq",
     rawValue: "",
     valueType: "value",
     sourceFieldKey: "",
   };
+}
+
+function promoteRuleToChildGroup(rules: BranchRule[], ruleId: string): BranchRule[] {
+  const index = rules.findIndex((rule) => rule.id === ruleId);
+  const target = rules[index];
+  if (!target || target.isGroup) return rules;
+
+  const movedRule = {
+    ...target,
+    id: createBranchRule(target.id).id,
+    parentId: target.id,
+    logicalOperator: "and" as const,
+    isGroup: false,
+  };
+  const newRule = createBranchRule(target.id);
+  const group: BranchRule = {
+    id: target.id,
+    parentId: target.parentId,
+    logicalOperator: target.logicalOperator ?? "and",
+    isGroup: true,
+  };
+
+  return [...rules.slice(0, index), group, movedRule, newRule, ...rules.slice(index + 1)];
 }
 
 function createConditionBranch(priority: number): ConditionBranch {
@@ -3948,8 +4529,13 @@ function normalizeNodeConfigByKind(kind: WorkflowNodeKind, value: unknown): Work
 
 function normalizeTriggerConfig(value: unknown): TriggerConfig {
   const current = isRecord(value) ? value : {};
+  const legacyFieldId = readStringValue(current.changedFieldsText);
+  const changedFieldId = readStringValue(current.changedFieldId) || legacyFieldId;
   return {
-    changedFieldsText: readStringValue(current.changedFieldsText),
+    changedFieldMode:
+      current.changedFieldMode === "specific" || changedFieldId ? "specific" : "any",
+    changedFieldId,
+    changedFieldsText: legacyFieldId,
   };
 }
 
@@ -4013,6 +4599,8 @@ function normalizeBranchRule(value: unknown): BranchRule | null {
   return {
     id,
     parentId: readStringValue(value.parentId) || undefined,
+    logicalOperator: value.logicalOperator === "or" ? "or" : "and",
+    isGroup: value.isGroup === true,
     fieldKey: readStringValue(value.fieldKey),
     operator,
     rawValue: readStringValue(value.rawValue),
@@ -4053,8 +4641,14 @@ function normalizeAddDataConfig(value: unknown): AddDataConfig {
 function normalizeActionConfig(value: unknown): ActionConfig {
   const current = isRecord(value) ? value : {};
   const rawRows = Array.isArray(current.rows) ? current.rows : [];
+  const rawRules = Array.isArray(current.rules) ? current.rules : [];
   return {
+    updateMode: normalizeUpdateMode(current.updateMode),
+    sourceNodeId: readStringValue(current.sourceNodeId),
     targetFormUuid: readStringValue(current.targetFormUuid),
+    rules: rawRules
+      .map((item) => normalizeBranchRule(item))
+      .filter((item): item is BranchRule => item !== null),
     matchRule: readStringValue(current.matchRule),
     rows: rawRows
       .map((item) => normalizeFieldMappingRow(item))
@@ -4107,6 +4701,10 @@ function normalizeTargetMode(value: unknown): AddTargetMode {
 
 function normalizeRecordMode(value: unknown): AddRecordMode {
   return value === "multiple" ? "multiple" : "single";
+}
+
+function normalizeUpdateMode(value: unknown): UpdateMode {
+  return value === "data-node" ? "data-node" : "form";
 }
 
 function normalizeValueType(value: unknown): FieldValueType {
@@ -4192,7 +4790,9 @@ function getSchemaForSourceNode(
 function nodeSummary(data: WorkflowNodeData) {
   if (data.kind === "trigger") {
     const config = normalizeTriggerConfig(data.config);
-    return config.changedFieldsText ? `变化字段: ${config.changedFieldsText}` : "按触发事件执行";
+    return config.changedFieldMode === "specific" && config.changedFieldId
+      ? `指定字段: ${config.changedFieldId}`
+      : "任意字段变更时执行";
   }
   if (data.kind === "condition") {
     const config = normalizeConditionConfig(data.config);
@@ -4236,6 +4836,16 @@ function getSourceModeLabel(mode: DataSourceMode) {
 
 function isUpdateTriggerEvent(event: TriggerEvent) {
   return event === "before_update" || event === "after_update";
+}
+
+function hasUpdateTriggerEvent(events: TriggerEvent[]) {
+  return events.some((event) => isUpdateTriggerEvent(event));
+}
+
+function orderTriggerEvents(events: TriggerEvent[]) {
+  return triggerEventRows
+    .flatMap((row) => row.events)
+    .filter((event) => events.includes(event));
 }
 
 function formatDateLabel(value?: string) {

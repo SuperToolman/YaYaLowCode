@@ -8,6 +8,7 @@ pub struct Model {
     #[sea_orm(unique)]
     pub session_uuid: String,
     pub agent_id: String,
+    pub owner_user_id: Option<Uuid>,
     pub title: String,
     pub source: String,
     pub is_pinned: bool,

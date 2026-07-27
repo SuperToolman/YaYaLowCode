@@ -57,7 +57,7 @@ export default function ModelProvidersPage() {
       headerActions={<Button onPress={create}>新增提供商</Button>}
       footer={<><p className="text-xs text-[var(--color-text-secondary)]">{selectedId ? "正在编辑已有提供商" : "正在创建新提供商"}</p><Button type="submit" form="model-provider-form">保存配置</Button></>}
     >
-      <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[160px_minmax(0,1fr)] overflow-hidden rounded-lg border border-[var(--color-border)] lg:grid-cols-[210px_minmax(0,1fr)] lg:grid-rows-1">
+      <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[160px_minmax(0,1fr)] overflow-clip rounded-lg border border-[var(--color-border)] lg:grid-cols-[210px_minmax(0,1fr)] lg:grid-rows-1">
       <aside className="flex min-h-0 flex-col border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-2 lg:border-b-0 lg:border-r">
         <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto">
           {items.map((item) => (
@@ -79,7 +79,7 @@ export default function ModelProvidersPage() {
         </nav>
       </aside>
 
-      <form id="model-provider-form" onSubmit={save} className="flex min-h-0 flex-col overflow-hidden bg-[var(--color-bg-surface)]">
+      <form id="model-provider-form" onSubmit={save} className="flex min-h-0 flex-col overflow-clip bg-[var(--color-bg-surface)]">
         <header className="shrink-0 border-b border-[var(--color-border)] px-5 py-4">
           <div className="min-w-0 max-w-xl">
               <Input

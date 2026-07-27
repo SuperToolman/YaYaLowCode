@@ -95,7 +95,7 @@ export default function OrganizationSettingsPage() {
       subtitle={`查看和检索平台组织层级。当前共 ${units.length} 个组织节点、${units.reduce((total, unit) => total + unit.memberCount, 0)} 个部门成员关系。`}
       className="p-0"
       headerClassName="px-6 pt-6"
-      bodyClassName="mt-5 overflow-hidden"
+      bodyClassName="mt-5 overflow-clip"
       headerActions={<div className="flex flex-wrap items-center gap-2">
           <Input aria-label="搜索组织" className="w-56" placeholder="搜索部门名称" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
           <Button variant="secondary" isDisabled={loading} onPress={() => void loadUnits()}>{loading ? "刷新中…" : "刷新"}</Button>
@@ -106,11 +106,11 @@ export default function OrganizationSettingsPage() {
       {error ? <p className="mx-6 mb-4 rounded-xl bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">{error}</p> : null}
 
       <div className="relative min-h-0 flex-1">
-        <div className="absolute inset-0 flex overflow-hidden">
+        <div className="absolute inset-0 flex overflow-clip">
           <div className="settings-scroll-area h-full min-h-0 min-w-0 flex-1 overflow-y-scroll border-r border-[var(--color-border)] p-3 overscroll-contain">
             <div className="space-y-3">
               {tree.map((source) => (
-                <section key={source.sourceType} className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-control-soft)]">
+                <section key={source.sourceType} className="overflow-clip rounded-xl border border-[var(--color-border)] bg-[var(--color-control-soft)]">
                   <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2.5">
                     <div className="flex items-center gap-2">
                       <SourceTag source={source.sourceType} />

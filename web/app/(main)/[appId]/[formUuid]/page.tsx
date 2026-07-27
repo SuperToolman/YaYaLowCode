@@ -134,6 +134,25 @@ type ApiEnvelope<T> = {
   time: string;
 };
 
+type SystemWorkItem = {
+  id: string;
+  taskType: string;
+  status: string;
+  formUuid: string;
+  formName: string;
+  recordUuid: string;
+  instanceId: string;
+  flowName: string;
+  nodeLabel: string | null;
+  submitter: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+};
+
+type WorkflowAction = { action: string; operator: string; comment: string | null; createdAt: string };
+type WorkflowComment = { id: string; author: string; content: string; createdAt: string };
+
 type FormRecord = {
   id: string;
   formUuid: string;
@@ -771,16 +790,16 @@ function FormHomeRecords({
     }
   }
 
-  async function handleWorkflowAction(record: FormRecord, action: "submit" | "reverse"): Promise<boolean> {
+  async function handleWorkflowAction(record: FormRecord, action: "submit" | "reverse" | "pause" | "resume"): Promise<boolean> {
     try {
-      const response = await fetch(`/api/forms/${encodeURIComponent(formUuid)}/records/${encodeURIComponent(record.id)}/workflow/${action === "submit" ? "submit" : "reverse"}`, { method: "POST" });
+      const response = await fetch(`/api/forms/${encodeURIComponent(formUuid)}/records/${encodeURIComponent(record.id)}/workflow/${action}`, { method: "POST" });
       const result = await response.json() as ApiEnvelope<unknown>;
       if (!response.ok || result.code !== 0) throw new Error(result.message);
       await loadRecords();
-      toast.success(action === "submit" ? "流程已提交" : "反审成功");
+      toast.success(({ submit: "流程已提交", reverse: "反审成功", pause: "流程已暂停", resume: "流程已恢复" } as Record<typeof action, string>)[action]);
       return true;
     } catch (error) {
-      toast.danger(action === "submit" ? "提交流程失败" : "反审失败", { description: error instanceof Error ? error.message : "请稍后重试" });
+      toast.danger("流程操作失败", { description: error instanceof Error ? error.message : "请稍后重试" });
       return false;
     }
   }
@@ -793,8 +812,9 @@ function FormHomeRecords({
         path: { formUuid, recordUuid: recordId },
         responseStyle: "fields",
       });
-      if (error || !data || data.code !== 0) {
-        throw new Error(data?.message || "delete failed");
+      const result = data as ApiEnvelope<unknown> | undefined;
+      if (error || !result || result.code !== 0) {
+        throw new Error(result?.message || "delete failed");
       }
 
       await loadRecords();
@@ -1210,6 +1230,7 @@ function FormHomeRecords({
               canDeleteRecord={canDeleteRecord}
               urlParams={{ appId, formUuid }}
               onRecordSelectionChange={toggleRecordSelection}
+              initialRecordId={searchParams.get("record") ?? undefined}
             />
             </>
           ) : (
@@ -1305,9 +1326,9 @@ function FormHomeRecords({
                   </Button>
                 </div>
               </Drawer.Header>
-              <Drawer.Body className={agentEnabled ? "min-h-0 flex-1 overflow-hidden p-0" : "flex-1 overflow-y-auto bg-[var(--designer-surface-soft)] p-5"}>
+              <Drawer.Body className={agentEnabled ? "min-h-0 flex-1 overflow-hidden" : "flex-1 overflow-y-auto bg-[var(--designer-surface-soft)] p-5"}>
                 <div className={agentEnabled ? "flex h-full min-h-0" : "contents"}>
-                  <div className={agentEnabled ? "min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-6" : "contents"}>
+                  <div className={agentEnabled ? "min-h-0 min-w-0 flex-1 overflow-y-auto mr-2" : "contents"}>
                     {detailSourceFormUuid ? (
                       <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 py-2.5">
                         <div className="min-w-0">
@@ -1363,7 +1384,7 @@ function FormHomeRecords({
                   ) : null}
                 </div>
               </Drawer.Body>
-              <Drawer.Footer className="flex shrink-0 justify-between gap-3 border-t border-[var(--color-border)] px-6 py-4">
+              <Drawer.Footer className="flex shrink-0 justify-between gap-3">
                 <Button variant="ghost" isDisabled={submitting} onPress={saveDraft}>暂存</Button>
                 <div className="flex items-center gap-3">
                   <Button variant="ghost" isDisabled={submitting} onPress={() => setDrawerOpen(false)}>取消</Button>
@@ -1846,7 +1867,7 @@ function FormAgentPanel({ agentId, analysis, appId, currentValues, fields, formN
   }
 
   return (
-    <aside className="flex h-full min-h-0 w-[420px] shrink-0 flex-col border-l border-[var(--color-border)] bg-[var(--color-control-soft)]">
+    <aside className="flex rounded-2xl h-full min-h-0 w-[420px] shrink-0 flex-col border-l border-[var(--color-border)] bg-[var(--color-control-soft)]">
       <div className="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]"><FaceRobot className="h-4 w-4" /></span>
@@ -2064,6 +2085,7 @@ function RecordsTable({
   canDeleteRecord,
   urlParams,
   onRecordSelectionChange,
+  initialRecordId,
 }: {
   builtinFields: readonly { id: string; label: string }[];
   sortableFieldIds: string[];
@@ -2078,15 +2100,17 @@ function RecordsTable({
   submitting: boolean;
   onDeleteRecord: (recordId: string) => Promise<boolean>;
   onUpdateRecord: (recordId: string, values: Record<string, unknown>) => Promise<boolean>;
-  onWorkflowAction: (record: FormRecord, action: "submit" | "reverse") => Promise<boolean>;
+  onWorkflowAction: (record: FormRecord, action: "submit" | "reverse" | "pause" | "resume") => Promise<boolean>;
   canEditRecord: boolean;
   canDeleteRecord: boolean;
   urlParams: Record<string, string>;
   onRecordSelectionChange: (recordId: string, selected: boolean) => void;
+  initialRecordId?: string;
 }) {
   const pageSizeOptions = [10, 20, 30, 40, 50];
   const columns = fields;
   const [detailRecord, setDetailRecord] = useState<FormRecord | null>(null);
+  const autoOpenedRecordIdRef = useRef<string | null>(null);
   const [isDetailEditing, setIsDetailEditing] = useState(false);
   const [detailTab, setDetailTab] = useState<"comments" | "history">("comments");
   const [isDetailFullscreen, setIsDetailFullscreen] = useState(false);
@@ -2312,6 +2336,15 @@ function RecordsTable({
   }
 
   useEffect(() => {
+    if (!initialRecordId || autoOpenedRecordIdRef.current === initialRecordId) return;
+    const record = records.find((item) => item.id === initialRecordId);
+    if (!record) return;
+    autoOpenedRecordIdRef.current = initialRecordId;
+    const timer = window.setTimeout(() => openDetail(record), 0);
+    return () => window.clearTimeout(timer);
+  }, [initialRecordId, records]);
+
+  useEffect(() => {
     const frame = requestAnimationFrame(() => {
       setIsDetailContentReady(Boolean(detailRecord));
     });
@@ -2424,6 +2457,8 @@ function RecordsTable({
                         <Button type="button" variant="ghost" className="h-8 gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-text-primary)]" onClick={() => openDetail(record)}><Eye className="h-3.5 w-3.5" />查看</Button>
                         {formType === "workflow" ? <Button type="button" variant="ghost" className="h-8 rounded-md border border-[var(--color-primary)]/30 bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-primary)]" isDisabled={submitting || record.data.workflowApprovalStatus !== "saved"} onClick={() => void onWorkflowAction(record, "submit")}>提交</Button> : null}
                         {formType === "workflow" ? <Button type="button" variant="ghost" className="h-8 rounded-md border border-[var(--color-warning)]/30 bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-warning)]" isDisabled={submitting || record.data.workflowApprovalStatus !== "approved"} onClick={() => void onWorkflowAction(record, "reverse")}>反审</Button> : null}
+                        {formType === "workflow" ? <Button type="button" variant="ghost" className="h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-text-secondary)]" isDisabled={submitting || record.data.workflowInstanceStatus !== "running"} onClick={() => void onWorkflowAction(record, "pause")}>暂停</Button> : null}
+                        {formType === "workflow" ? <Button type="button" variant="ghost" className="h-8 rounded-md border border-[var(--color-primary)]/30 bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-primary)]" isDisabled={submitting || record.data.workflowInstanceStatus !== "paused"} onClick={() => void onWorkflowAction(record, "resume")}>恢复</Button> : null}
                         {canDeleteRecord ? <Button type="button" variant="ghost" className="h-8 gap-1 rounded-md border border-[var(--color-danger)]/30 bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-danger)]" isDisabled={deletingRecordId === record.id} onClick={() => setDeleteRecordTarget(record)}><TrashBin className="h-3.5 w-3.5" />{deletingRecordId === record.id ? "删除中..." : "删除"}</Button> : null}
                         <details className="relative"><summary aria-label={`记录 ${record.rowNumber} 更多操作`} className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel)] text-[var(--color-text-secondary)] [&::-webkit-details-marker]:hidden"><Ellipsis className="h-3.5 w-3.5" /></summary><div className="absolute right-0 z-50 mt-1 min-w-28 overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg-menu)] py-1 shadow-[var(--shadow-floating)]"><button type="button" className="block w-full px-3 py-2 text-left text-xs hover:bg-[var(--color-bg-panel-soft)]" onClick={() => void navigator.clipboard?.writeText(JSON.stringify(record.data, null, 2))}>复制数据</button><button type="button" disabled className="block w-full cursor-not-allowed px-3 py-2 text-left text-xs text-[var(--color-text-disabled)]">发起流程（开发中）</button></div></details>
                       </div>
@@ -2697,11 +2732,75 @@ function DetailAuxiliaryPanel({
   record: FormRecord;
   onTabChange: (tab: "comments" | "history") => void;
 }) {
+  const [workflowActions, setWorkflowActions] = useState<WorkflowAction[]>([]);
+  const [workflowHistoryLoading, setWorkflowHistoryLoading] = useState(false);
+  const [comments, setComments] = useState<WorkflowComment[]>([]);
+  const [commentContent, setCommentContent] = useState("");
+  const [postingComment, setPostingComment] = useState(false);
   const hasUpdated = record.updatedAt !== record.createdAt;
-  const changes = [
+  const recordChanges = [
     { id: "created", type: "创建", actor: record.createdBy, text: `${record.createdBy} 创建记录`, time: record.createdAt },
     ...(hasUpdated ? [{ id: "updated", type: "更新", actor: record.updatedBy, text: `${record.updatedBy} 更新记录`, time: record.updatedAt }] : []),
   ];
+  const changes = [
+    ...recordChanges,
+    ...workflowActions.map((action, index) => ({
+      id: `workflow-${index}-${action.createdAt}`,
+      type: workflowActionLabel(action.action),
+      actor: action.operator,
+      text: `${action.operator} ${workflowActionLabel(action.action)}${action.comment ? `：${action.comment}` : ""}`,
+      time: action.createdAt,
+    })),
+  ].sort((left, right) => new Date(left.time).getTime() - new Date(right.time).getTime());
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setWorkflowHistoryLoading(true);
+      void fetch(`/api/forms/${encodeURIComponent(record.formUuid)}/records/${encodeURIComponent(record.id)}/workflow`, { signal: controller.signal })
+        .then(async (response) => {
+          const result = await response.json() as ApiEnvelope<{ actions?: WorkflowAction[] }>;
+          if (!response.ok || result.code !== 0) throw new Error(result.message);
+          setWorkflowActions(Array.isArray(result.data?.actions) ? result.data.actions : []);
+        })
+        .catch((error: unknown) => {
+          if ((error as { name?: string }).name !== "AbortError") setWorkflowActions([]);
+        })
+        .finally(() => setWorkflowHistoryLoading(false));
+    }, 0);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [record.formUuid, record.id]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void fetch(`/api/forms/${encodeURIComponent(record.formUuid)}/records/${encodeURIComponent(record.id)}/workflow/comments`, { signal: controller.signal })
+        .then(async (response) => {
+          const result = await response.json() as ApiEnvelope<{ items?: WorkflowComment[] }>;
+          if (!response.ok || result.code !== 0) throw new Error(result.message);
+          setComments(Array.isArray(result.data?.items) ? result.data.items : []);
+        }).catch(() => setComments([]));
+    }, 0);
+    return () => { controller.abort(); window.clearTimeout(timer); };
+  }, [record.formUuid, record.id]);
+
+  async function postComment() {
+    const content = commentContent.trim();
+    if (!content) return;
+    setPostingComment(true);
+    try {
+      const response = await fetch(`/api/forms/${encodeURIComponent(record.formUuid)}/records/${encodeURIComponent(record.id)}/workflow/comments`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content }) });
+      const result = await response.json() as ApiEnvelope<WorkflowComment>;
+      if (!response.ok || result.code !== 0 || !result.data) throw new Error(result.message);
+      setComments((current) => [...current, result.data!]);
+      setCommentContent("");
+    } catch (error) {
+      toast.danger("评论发布失败", { description: error instanceof Error ? error.message : "请稍后重试" });
+    } finally { setPostingComment(false); }
+  }
 
   return (
     <section className="mt-8 border-t border-[var(--color-border)] pt-5">
@@ -2719,13 +2818,15 @@ function DetailAuxiliaryPanel({
           </Tabs.List>
         </Tabs.ListContainer>
         <Tabs.Panel id="comments" className="outline-none">
-          <div className="py-5">
-          <TextArea aria-label="评论" placeholder="请输入评论" disabled className="max-w-2xl" />
-          <p className="mt-2 text-xs text-[var(--color-text-secondary)]">评论将在用户系统接入后启用。</p>
+          <div className="max-w-2xl space-y-4 py-5">
+          {comments.map((comment) => <div key={comment.id} className="border-b border-[var(--color-border)] pb-3"><div className="flex items-center justify-between gap-3 text-sm"><span className="font-medium text-[var(--color-text-primary)]">{comment.author}</span><span className="text-xs text-[var(--color-text-secondary)]">{formatDateTime(comment.createdAt)}</span></div><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[var(--color-text-primary)]">{comment.content}</p></div>)}
+          <TextArea aria-label="评论" placeholder="请输入评论" value={commentContent} onChange={setCommentContent} isDisabled={postingComment} />
+          <div className="flex justify-end"><Button size="sm" isDisabled={postingComment || !commentContent.trim()} onPress={() => void postComment()}>{postingComment ? "发布中..." : "发表评论"}</Button></div>
           </div>
         </Tabs.Panel>
         <Tabs.Panel id="history" className="outline-none">
           <ol className="space-y-4 py-5">
+          {workflowHistoryLoading ? <li className="text-sm text-[var(--color-text-secondary)]">正在加载流程轨迹...</li> : null}
           {changes.map((change) => (
             <li key={change.id} className="grid grid-cols-[10px_minmax(0,1fr)] gap-3">
               <span className="mt-1.5 h-2.5 w-2.5 rounded-full bg-[var(--color-primary)]" />
@@ -2745,6 +2846,10 @@ function DetailAuxiliaryPanel({
   );
 }
 
+function workflowActionLabel(action: string) {
+  return ({ submit: "提交流程", approve: "同意", reject: "拒绝" } as Record<string, string>)[action] ?? action;
+}
+
 function SystemPageView({
   appId,
   pageSlug,
@@ -2754,7 +2859,15 @@ function SystemPageView({
   pageSlug: string;
   pageTitle: string;
 }) {
+  const router = useRouter();
   const [appName, setAppName] = useState("");
+  const [items, setItems] = useState<SystemWorkItem[]>([]);
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ item: SystemWorkItem; kind: "approve" | "reject" | "complete" } | null>(null);
+  const [actionComment, setActionComment] = useState("");
+  const [submittingAction, setSubmittingAction] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -2770,8 +2883,63 @@ function SystemPageView({
     };
   }, [appId]);
 
+  const loadItems = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const response = await fetch(`/api/workflow/tasks?appId=${encodeURIComponent(appId)}&scope=${encodeURIComponent(pageSlug)}`, { cache: "no-store" });
+      const result = await response.json() as ApiEnvelope<{ items?: SystemWorkItem[] }>;
+      if (!response.ok || result.code !== 0) throw new Error(result.message);
+      setItems(Array.isArray(result.data?.items) ? result.data.items : []);
+    } catch (error) {
+      setItems([]);
+      setLoadError(error instanceof Error ? error.message : "加载任务失败");
+    } finally {
+      setLoading(false);
+    }
+  }, [appId, pageSlug]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadItems();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadItems]);
+
   const displayAppName = appName || "当前应用";
-  const rows = buildSystemRows(displayAppName, pageSlug);
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const rows = normalizedQuery ? items.filter((item) => [item.formName, item.flowName, item.nodeLabel, item.submitter, item.instanceId].filter(Boolean).join(" ").toLocaleLowerCase().includes(normalizedQuery)) : items;
+
+  function openTaskAction(item: SystemWorkItem, kind: "approve" | "reject" | "complete") {
+    setActionComment("");
+    setPendingAction({ item, kind });
+  }
+
+  async function submitTaskAction() {
+    if (!pendingAction) return;
+    if (pendingAction.kind === "reject" && !actionComment.trim()) {
+      toast.danger("请填写拒绝意见");
+      return;
+    }
+    setSubmittingAction(true);
+    try {
+      const endpoint = pendingAction.kind === "reject" ? "reject" : "approve";
+      const response = await fetch(`/api/workflow/tasks/${encodeURIComponent(pendingAction.item.id)}/${endpoint}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ comment: actionComment.trim() || undefined }),
+      });
+      const result = await response.json() as ApiEnvelope<unknown>;
+      if (!response.ok || result.code !== 0) throw new Error(result.message);
+      toast.success(pendingAction.kind === "reject" ? "已拒绝任务" : pendingAction.kind === "complete" ? "任务已完成" : "已同意任务");
+      setPendingAction(null);
+      await loadItems();
+    } catch (error) {
+      toast.danger("任务处理失败", { description: error instanceof Error ? error.message : "请稍后重试" });
+    } finally {
+      setSubmittingAction(false);
+    }
+  }
 
   return (
     <div className="h-full min-h-0 overflow-auto">
@@ -2780,7 +2948,7 @@ function SystemPageView({
           <div>
             <h1 className="mt-1 text-2xl font-semibold text-[var(--color-text-primary)]">{pageTitle}</h1>
             <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-              {displayAppName}的内置工作台页面，当前路由为 {pageSlug}。
+              {displayAppName}中的流程任务与审批记录。
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -2788,49 +2956,71 @@ function SystemPageView({
               aria-label={`${pageTitle}搜索`}
               className="w-full min-w-[220px] md:w-[280px]"
               placeholder="搜索标题、流程或发起人"
+              value={query}
+              onChange={(event) => setQuery(event.currentTarget.value)}
             />
-            <Button className="bg-[var(--color-primary)] text-[var(--color-text-on-primary)]">筛选</Button>
+            <Button variant="ghost" onClick={() => void loadItems()}>刷新</Button>
           </div>
         </Card>
 
         <div className="overflow-hidden rounded-xl border border-[var(--color-border)]">
-          <div className="grid grid-cols-[minmax(0,2fr)_120px_160px_180px] gap-4 bg-[var(--color-bg-panel-soft)] px-4 py-3 text-sm font-medium text-[var(--color-text-secondary)]">
+          <div className="grid grid-cols-[minmax(0,2fr)_120px_160px_180px_132px] gap-4 bg-[var(--color-bg-panel-soft)] px-4 py-3 text-sm font-medium text-[var(--color-text-secondary)]">
             <span>标题</span>
             <span>状态</span>
             <span>发起人</span>
             <span>更新时间</span>
+            <span>操作</span>
           </div>
-          {rows.map((row) => (
+          {loading ? <div className="px-4 py-10 text-center text-sm text-[var(--color-text-secondary)]">正在加载任务...</div> : null}
+          {loadError ? <div className="px-4 py-10 text-center text-sm text-[var(--color-danger)]">{loadError}</div> : null}
+          {!loading && !loadError && rows.length === 0 ? <div className="px-4 py-10 text-center text-sm text-[var(--color-text-secondary)]">暂无相关流程任务</div> : null}
+          {!loading && !loadError ? rows.map((row) => (
             <div
               key={row.id}
-              className="grid grid-cols-[minmax(0,2fr)_120px_160px_180px] gap-4 border-t border-[var(--color-border)] px-4 py-4 text-sm text-[var(--color-text-primary)]"
+              className="grid grid-cols-[minmax(0,2fr)_120px_160px_180px_132px] items-center gap-4 border-t border-[var(--color-border)] px-4 py-3 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-panel-soft)]"
             >
-              <div className="min-w-0">
-                <div className="truncate font-medium text-[var(--color-text-primary)]">{row.title}</div>
-                <div className="mt-1 truncate text-xs text-[var(--color-text-secondary)]">{row.description}</div>
+              <button type="button" className="min-w-0 text-left" onClick={() => router.push(`/${appId}/${row.formUuid}?record=${encodeURIComponent(row.recordUuid)}`)}>
+                <div className="truncate font-medium text-[var(--color-text-primary)]">{row.formName}</div>
+                <div className="mt-1 truncate text-xs text-[var(--color-text-secondary)]">{row.flowName} · {row.nodeLabel || "流程处理中"}</div>
+              </button>
+              <span>{workflowTaskStatusLabel(row.status)}</span>
+              <span>{row.submitter}</span>
+              <span>{formatDateTime(row.completedAt || row.updatedAt || row.createdAt)}</span>
+              <div className="flex items-center gap-1">
+                {pageSlug === "todo" && row.status === "pending" && row.taskType === "approval" ? <><Button size="sm" onPress={() => openTaskAction(row, "approve")}>同意</Button><Button size="sm" variant="ghost" className="text-[var(--color-danger)]" onPress={() => openTaskAction(row, "reject")}>拒绝</Button></> : null}
+                {pageSlug === "todo" && row.status === "pending" && row.taskType === "execution" ? <Button size="sm" onPress={() => openTaskAction(row, "complete")}>完成</Button> : null}
+                {pageSlug !== "todo" || row.status !== "pending" ? <span className="text-xs text-[var(--color-text-secondary)]">已处理</span> : null}
               </div>
-              <span>{row.status}</span>
-              <span>{row.owner}</span>
-              <span>{row.updatedAt}</span>
             </div>
-          ))}
+          )) : null}
         </div>
       </div>
+      <Modal isOpen={pendingAction !== null} onOpenChange={(open) => { if (!open && !submittingAction) setPendingAction(null); }}>
+        <Modal.Backdrop className="theme-modal-backdrop" isDismissable={!submittingAction}>
+          <Modal.Container placement="center" size="sm">
+            <Modal.Dialog className="theme-menu-surface rounded-2xl shadow-[var(--shadow-dialog)]">
+              <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
+                <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">{pendingAction?.kind === "reject" ? "拒绝任务" : pendingAction?.kind === "complete" ? "完成任务" : "同意任务"}</Modal.Heading>
+                <Modal.CloseTrigger aria-label="关闭" />
+              </Modal.Header>
+              <Modal.Body className="space-y-3 px-5 py-4">
+                <div className="text-sm text-[var(--color-text-secondary)]">{pendingAction?.item.formName} · {pendingAction?.item.nodeLabel}</div>
+                <TextArea aria-label="审批意见" placeholder={pendingAction?.kind === "reject" ? "请填写拒绝原因" : "可填写审批意见"} value={actionComment} onChange={setActionComment} isDisabled={submittingAction} />
+              </Modal.Body>
+              <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
+                <Button variant="ghost" isDisabled={submittingAction} onPress={() => setPendingAction(null)}>取消</Button>
+                <Button isDisabled={submittingAction || (pendingAction?.kind === "reject" && !actionComment.trim())} onPress={() => void submitTaskAction()} className={pendingAction?.kind === "reject" ? "bg-[var(--color-danger)] text-white" : undefined}>{submittingAction ? "处理中..." : pendingAction?.kind === "reject" ? "确认拒绝" : pendingAction?.kind === "complete" ? "确认完成" : "确认同意"}</Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
     </div>
   );
 }
 
-function buildSystemRows(appName: string, pageSlug: string) {
-  const pageTitle = getSystemPageBySlug(pageSlug)?.title ?? pageSlug;
-
-  return Array.from({ length: 5 }, (_, index) => ({
-    id: `${pageSlug}-${index + 1}`,
-    title: `${pageTitle}事项 ${index + 1}`,
-    description: `来自${appName}的内置页面示例数据，后续可替换为真实待办查询。`,
-    status: index % 2 === 0 ? "处理中" : "待确认",
-    owner: ["张三", "李四", "王五", "赵六", "陈七"][index] ?? "系统",
-    updatedAt: `2026-06-${String(index + 10).padStart(2, "0")} 09:30`,
-  }));
+function workflowTaskStatusLabel(status: string) {
+  return ({ pending: "待处理", approved: "已同意", rejected: "已拒绝", completed: "已完成", running: "进行中", failed: "失败" } as Record<string, string>)[status] ?? status;
 }
 
 function getVisibleDataFields(fields: SchemaField[]) {
@@ -3064,7 +3254,7 @@ function workflowApprovalStatusLabel(value: unknown) {
 }
 
 function workflowInstanceStatusLabel(value: unknown) {
-  return ({ in_progress: "进行中", completed: "已完成", failed: "失败" } as Record<string, string>)[String(value)] ?? "进行中";
+  return ({ in_progress: "进行中", running: "进行中", paused: "已暂停", completed: "已完成", failed: "失败" } as Record<string, string>)[String(value)] ?? "进行中";
 }
 
 function formatDateTime(value: string) {

@@ -16,6 +16,9 @@ pub struct Model {
     pub submitter: String,
     pub started_at: DateTimeUtc,
     pub completed_at: Option<DateTimeUtc>,
+    pub paused_by: Option<String>,
+    pub paused_at: Option<DateTimeUtc>,
+    pub pause_reason: Option<String>,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }

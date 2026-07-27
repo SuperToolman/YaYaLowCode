@@ -2,6 +2,7 @@
 //! repository boundary.
 
 pub mod agent_message_entity;
+pub mod agent_pending_action_entity;
 pub mod agent_run_entity;
 pub mod agent_run_step_entity;
 pub mod agent_session_entity;
@@ -27,6 +28,8 @@ pub mod iam_user_entity;
 pub mod iam_user_role_entity;
 pub mod location_entity;
 pub mod organization_unit_entity;
+pub mod workflow_notification_entity;
 pub mod workflow_action_entity;
+pub mod workflow_comment_entity;
 pub mod workflow_instance_entity;
 pub mod workflow_task_entity;

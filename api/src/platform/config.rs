@@ -80,12 +80,31 @@ fn default_schema_analysis_prompt() -> String {
 pub struct ResolvedAgentRuntime {
     pub agent_id: String,
     pub profile_id: String,
+    pub scope_type: String,
+    pub scope_ref_id: Option<String>,
     pub settings: AgentSettings,
     pub plugins: Vec<AgentPluginDefinition>,
     pub skills: Vec<AgentSkillDefinition>,
     pub knowledge_bases: Vec<AgentKnowledgeBaseDefinition>,
     pub allow_create_forms: bool,
     pub allowed_tools: HashSet<String>,
+}
+
+impl ResolvedAgentRuntime {
+    pub fn validate_scope(
+        &self,
+        app_id: Option<&str>,
+        business_id: Option<&str>,
+    ) -> Result<(), String> {
+        match self.scope_type.as_str() {
+            "platform" => Ok(()),
+            "application" if self.scope_ref_id.as_deref() == app_id => Ok(()),
+            "business" if self.scope_ref_id.as_deref() == business_id => Ok(()),
+            "application" => Err("Agent is restricted to its configured application".to_string()),
+            "business" => Err("Agent is restricted to its configured business scope".to_string()),
+            _ => Err("Agent has an invalid scope configuration".to_string()),
+        }
+    }
 }
 
 #[derive(Clone, Default, Deserialize, Serialize)]
@@ -705,8 +724,8 @@ fn default_agent_skills() -> Vec<AgentSkillDefinition> {
             is_system: true,
             description: "根据业务目标设计可维护的 YaYa 表单结构。".to_string(),
             enabled: true,
-            allowed_tools: vec!["list_apps".to_string(), "list_forms".to_string(), "get_form_schema".to_string(), "create_form_draft".to_string(), "save_form_schema_draft".to_string()],
-            instructions: "分析或设计表单时，先确认业务对象、提交人、关键字段、选项来源、必填规则和审批/自动化触发点。优先复用已有表单的字段命名和结构。给出字段清单时包含字段标签、组件类型、字段 ID 建议、是否必填、选项或约束。仅在配置文件已启用允许创建表单时创建空白草稿；不要声称已经发布表单。".to_string(),
+            allowed_tools: vec!["list_apps".to_string(), "get_application_business_context".to_string(), "list_forms".to_string(), "get_form_schema".to_string(), "get_form_relationships".to_string(), "get_related_records".to_string(), "list_form_records".to_string(), "query_form_records".to_string(), "aggregate_form_records".to_string(), "get_detail_form_definition".to_string(), "list_detail_records".to_string(), "create_form_draft".to_string(), "create_detail_form_draft".to_string(), "save_form_schema_draft".to_string()],
+            instructions: "分析或设计表单时，先确认业务对象、提交人、关键字段、选项来源、必填规则和审批/自动化触发点。优先复用已有表单的字段命名和结构。给出字段清单时包含字段标签、组件类型、字段 ID 建议、是否必填、选项或约束。需要分析业务数据时，先读取应用业务地图；涉及多个表单时，再读取关系图谱确认关联字段和目标表单，逐表按受控条件查询经授权记录。查询结果仅覆盖返回的扫描页，若工具提示可能存在更多匹配项，必须说明分析范围有限。仅基于读取结果总结，不得虚构、泄露或修改数据。分析明细表时，先读取其父表关系，再按需要读取有限明细行。创建明细表必须指定父表的已发布 subform 字段，并等待用户确认；不要声称已经发布表单。".to_string(),
             requires_confirmation: false,
         },
         AgentSkillDefinition {
@@ -733,8 +752,8 @@ fn default_agent_skills() -> Vec<AgentSkillDefinition> {
             is_system: true,
             description: "分析触发器、节点与连线，识别流程风险。".to_string(),
             enabled: true,
-            allowed_tools: vec!["list_automations".to_string(), "get_automation_graph".to_string()],
-            instructions: "审查自动化时，先读取实际流程图。检查触发条件是否过宽、字段引用是否存在、失败重试是否可能重复执行、节点是否存在不可达分支，以及外部请求是否可能暴露敏感数据。只提出修改建议，不执行或发布自动化。".to_string(),
+            allowed_tools: vec!["list_automations".to_string(), "get_automation_graph".to_string(), "get_workflow_process_definition".to_string(), "get_workflow_record_runtime".to_string()],
+            instructions: "审查自动化或工作流时，先读取实际流程图或流程定义。检查触发条件是否过宽、字段引用是否存在、失败重试是否可能重复执行、节点是否存在不可达分支，以及外部请求是否可能暴露敏感数据。分析单条工作流记录时，只根据实例、待办和动作轨迹说明当前状态与阻塞点；不得提交、审批、驳回、撤回或修改流程。只提出修改建议，不执行或发布自动化。".to_string(),
             requires_confirmation: false,
         },
     ]
@@ -876,6 +895,8 @@ fn resolve_agent_runtime_from_registry(
     Ok(ResolvedAgentRuntime {
         agent_id: agent.id.clone(),
         profile_id: profile.id.clone(),
+        scope_type: agent.scope_type.clone(),
+        scope_ref_id: agent.scope_ref_id.clone(),
         settings: AgentSettings {
             enabled: agent.enabled && provider.enabled,
             provider: provider.kind.clone(),
@@ -1033,6 +1054,7 @@ mod tests {
 
         assert_eq!(runtime.agent_id, "robot-form-builder");
         assert_eq!(runtime.profile_id, "profile-form-builder");
+        assert_eq!(runtime.scope_type, "platform");
         assert_eq!(runtime.settings.chat_model, "gpt-test");
         assert_eq!(runtime.settings.system_prompt, "你是表单设计助手。");
         assert_eq!(runtime.plugins.len(), 1);
@@ -1058,6 +1080,21 @@ mod tests {
     }
 
     #[test]
+    fn application_agent_runtime_rejects_another_application_context() {
+        let mut registry = registry();
+        registry.agents[0].scope_type = "application".to_string();
+        registry.agents[0].scope_ref_id = Some("sales".to_string());
+
+        let runtime =
+            resolve_agent_runtime_from_registry(&registry, Some("robot-form-builder"), None, None)
+                .expect("runtime should resolve");
+
+        assert!(runtime.validate_scope(Some("sales"), None).is_ok());
+        assert!(runtime.validate_scope(Some("hr"), None).is_err());
+        assert!(runtime.validate_scope(None, None).is_err());
+    }
+
+    #[test]
     fn system_resources_are_added_without_rebinding_existing_model_setup() {
         let mut registry = registry();
         registry.profiles[0].id = "profile-default".to_string();
@@ -1074,6 +1111,53 @@ mod tests {
                     .allowed_tools
                     .iter()
                     .any(|tool| tool == "create_form_draft")
+                && item
+                    .allowed_tools
+                    .iter()
+                    .any(|tool| tool == "list_form_records")
+                && item
+                    .allowed_tools
+                    .iter()
+                    .any(|tool| tool == "get_form_relationships")
+                && item
+                    .allowed_tools
+                    .iter()
+                    .any(|tool| tool == "get_related_records")
+                && item
+                    .allowed_tools
+                    .iter()
+                    .any(|tool| tool == "query_form_records")
+                && item
+                    .allowed_tools
+                    .iter()
+                    .any(|tool| tool == "aggregate_form_records")
+                && item
+                    .allowed_tools
+                    .iter()
+                    .any(|tool| tool == "get_application_business_context")
+                && item
+                    .allowed_tools
+                    .iter()
+                    .any(|tool| tool == "get_detail_form_definition")
+                && item
+                    .allowed_tools
+                    .iter()
+                    .any(|tool| tool == "list_detail_records")
+                && item
+                    .allowed_tools
+                    .iter()
+                    .any(|tool| tool == "create_detail_form_draft")
+        }));
+        assert!(registry.skills.iter().any(|item| {
+            item.id == "skill-automation-reviewer"
+                && item
+                    .allowed_tools
+                    .iter()
+                    .any(|tool| tool == "get_workflow_process_definition")
+                && item
+                    .allowed_tools
+                    .iter()
+                    .any(|tool| tool == "get_workflow_record_runtime")
         }));
         assert!(
             registry

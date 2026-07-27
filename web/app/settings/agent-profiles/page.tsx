@@ -77,14 +77,14 @@ export default function AgentProfilesPage() {
     headerActions={<Button onPress={startCreate}>添加配置文件</Button>}
     footer={<><p className="text-xs text-[var(--color-text-secondary)]">{selectedId ? "正在编辑已有配置文件" : "正在创建新配置文件"}</p><div className="flex gap-2">{selectedId ? <Button variant="ghost" className="text-[var(--color-danger)]" onPress={() => void remove()}>删除</Button> : null}<Button onPress={() => void save()}>保存配置</Button></div></>}
   >
-    <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[160px_minmax(0,1fr)] overflow-hidden rounded-lg border border-[var(--color-border)] lg:grid-cols-[210px_minmax(0,1fr)] lg:grid-rows-1">
+    <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[160px_minmax(0,1fr)] overflow-clip rounded-lg border border-[var(--color-border)] lg:grid-cols-[210px_minmax(0,1fr)] lg:grid-rows-1">
     <aside className="flex min-h-0 flex-col border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-2 lg:border-b-0 lg:border-r">
       <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto">
         {profiles.map((item) => <Button key={item.id} fullWidth variant="ghost" onPress={() => selectProfile(item)} className={`h-auto min-h-0 justify-start rounded-xl px-3 py-2.5 text-left ${selectedId === item.id ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]" : "text-[var(--color-text-primary)]"}`}><span className="min-w-0"><span className="block truncate text-sm font-medium">{item.name}</span><span className="mt-0.5 block truncate text-[10px] text-[var(--color-text-secondary)]">{providers.find((provider) => provider.id === item.providerId)?.name ?? "未选择模型提供商"}</span></span></Button>)}
       </nav>
     </aside>
 
-    <Tabs variant="secondary" selectedKey={tab} onSelectionChange={(key) => setTab(key as Tab)} className="flex min-h-0 flex-col overflow-hidden bg-[var(--color-bg-surface)]">
+    <Tabs variant="secondary" selectedKey={tab} onSelectionChange={(key) => setTab(key as Tab)} className="flex min-h-0 flex-col overflow-clip bg-[var(--color-bg-surface)]">
       <header className="shrink-0 border-b border-[var(--color-border)] px-5 py-4">
         <div className="min-w-0 max-w-xl">
             <Input aria-label="配置文件名称" fullWidth className="max-w-md text-lg font-semibold" value={form.name} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} />

@@ -647,7 +647,7 @@ fn normalize_form_type(form_type: Option<&str>) -> Result<&str, AppError> {
     }
 }
 
-fn validate_schema_for_form_type(form_type: &str, schema: &Value) -> Result<(), AppError> {
+pub(crate) fn validate_schema_for_form_type(form_type: &str, schema: &Value) -> Result<(), AppError> {
     let Some(fields) = schema.get("fields").and_then(Value::as_array) else {
         return Err(AppError::BadRequest(
             "form schema fields must be an array".to_string(),
@@ -655,6 +655,17 @@ fn validate_schema_for_form_type(form_type: &str, schema: &Value) -> Result<(), 
     };
 
     for field in fields {
+        if let Some(access) = field
+            .get("props")
+            .and_then(|props| props.get("agentDataAccess"))
+            .and_then(Value::as_str)
+        {
+            if !matches!(access, "allow" | "mask" | "deny") {
+                return Err(AppError::BadRequest(
+                    "agentDataAccess must be allow, mask, or deny".to_string(),
+                ));
+            }
+        }
         let component_type = field.get("type").and_then(Value::as_str).unwrap_or("");
         if component_type != "html" && component_type != "tsx" {
             continue;
@@ -1242,7 +1253,7 @@ pub(crate) async fn create_form_record(
         &state.db,
         &definition,
         "after_create",
-        &record.record_data,
+        &automation_trigger_payload(&record.record_data, &record.record_uuid),
         &operator,
         None,
     )
@@ -1325,7 +1336,7 @@ pub(crate) async fn update_form_record(
         &state.db,
         &definition,
         "before_update",
-        &next_data,
+        &automation_trigger_payload(&next_data, &record.record_uuid),
         &operator,
         Some(&changed_fields),
     )
@@ -1339,7 +1350,7 @@ pub(crate) async fn update_form_record(
         &state.db,
         &definition,
         "after_update",
-        &updated.record_data,
+        &automation_trigger_payload(&updated.record_data, &updated.record_uuid),
         &operator,
         Some(&changed_fields),
     )
@@ -1422,7 +1433,7 @@ pub(crate) async fn delete_form_record(
         &state.db,
         &definition,
         "before_delete",
-        &record.record_data,
+        &automation_trigger_payload(&record.record_data, &record.record_uuid),
         &operator,
         None,
     )
@@ -1437,7 +1448,7 @@ pub(crate) async fn delete_form_record(
         &state.db,
         &definition,
         "after_delete",
-        &record.record_data,
+        &automation_trigger_payload(&record.record_data, &record.record_uuid),
         &operator,
         None,
     )
@@ -1660,6 +1671,15 @@ pub(crate) fn collect_changed_fields(previous: &Value, next: &Value) -> HashSet<
     changed
 }
 
+fn automation_trigger_payload(data: &Value, record_uuid: &str) -> Value {
+    let mut payload = data.as_object().cloned().unwrap_or_default();
+    payload.insert(
+        "__automationRecordUuid".to_string(),
+        Value::String(record_uuid.to_string()),
+    );
+    Value::Object(payload)
+}
+
 pub(crate) async fn load_schema_version(
     db: &DatabaseConnection,
     form_uuid: &str,
@@ -1765,6 +1785,26 @@ fn normalize_detail_schema(mut schema: Value) -> Value {
     }
     schema
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn custom_page_components_are_rejected_for_non_defined_forms() {
+        let schema = json!({"fields": [{"type": "html", "props": {"code": "<div />"}}]});
+        assert!(validate_schema_for_form_type("normal", &schema).is_err());
+        assert!(validate_schema_for_form_type("defined", &schema).is_ok());
+    }
+
+    #[test]
+    fn custom_page_scripts_require_sri() {
+        let schema = json!({"fields": [], "pageProps": {"assets": [{"id": "chart", "type": "script", "url": "https://cdn.example.com/chart.js"}]}});
+        assert!(validate_schema_for_form_type("defined", &schema).is_err());
+    }
+}
+
 pub(crate) mod dto;
 
 pub(crate) use dto::*;

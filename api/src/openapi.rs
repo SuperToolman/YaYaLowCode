@@ -40,6 +40,7 @@ use crate::modules::settings::{
     RolePermissionsResponse, UpdateDatabaseSettingsRequest, UpdateIdentitySourceSettingsRequest,
     UpdateRolePermissionsRequest,
 };
+use crate::modules::workflows::{WorkflowCommentRequest, WorkflowTaskActionRequest};
 use crate::platform::api::ApiResponse;
 use crate::platform::config::{IdentitySourceSettings, PlatformAgentAssistantSettings};
 use crate::platform::config::{
@@ -694,6 +695,73 @@ typed_endpoint!(
     ApiResponse<ApiAutomationFlow>
 );
 typed_endpoint!(
+    list_workflow_comments,
+    get,
+    "/api/forms/{formUuid}/records/{recordUuid}/workflow/comments",
+    "listWorkflowComments",
+    (("formUuid" = String, Path), ("recordUuid" = String, Path)),
+    ApiResponse<Value>
+);
+typed_endpoint!(
+    create_workflow_comment,
+    post,
+    "/api/forms/{formUuid}/records/{recordUuid}/workflow/comments",
+    "createWorkflowComment",
+    (("formUuid" = String, Path), ("recordUuid" = String, Path)),
+    WorkflowCommentRequest,
+    ApiResponse<Value>
+);
+typed_endpoint!(
+    list_workflow_tasks,
+    get,
+    "/api/workflow/tasks",
+    "listWorkflowTasks",
+    (("appId" = String, Query), ("scope" = String, Query)),
+    ApiResponse<Value>
+);
+typed_endpoint!(
+    get_workflow_record_runtime,
+    get,
+    "/api/forms/{formUuid}/records/{recordUuid}/workflow",
+    "getWorkflowRecordRuntime",
+    (("formUuid" = String, Path), ("recordUuid" = String, Path)),
+    ApiResponse<Value>
+);
+typed_endpoint!(
+    submit_workflow_record,
+    post,
+    "/api/forms/{formUuid}/records/{recordUuid}/workflow/submit",
+    "submitWorkflowRecord",
+    (("formUuid" = String, Path), ("recordUuid" = String, Path)),
+    ApiResponse<Value>
+);
+typed_endpoint!(
+    reverse_workflow_record,
+    post,
+    "/api/forms/{formUuid}/records/{recordUuid}/workflow/reverse",
+    "reverseWorkflowRecord",
+    (("formUuid" = String, Path), ("recordUuid" = String, Path)),
+    ApiResponse<Value>
+);
+typed_endpoint!(
+    approve_workflow_task,
+    post,
+    "/api/workflow/tasks/{taskUuid}/approve",
+    "approveWorkflowTask",
+    (("taskUuid" = String, Path)),
+    WorkflowTaskActionRequest,
+    ApiResponse<Value>
+);
+typed_endpoint!(
+    reject_workflow_task,
+    post,
+    "/api/workflow/tasks/{taskUuid}/reject",
+    "rejectWorkflowTask",
+    (("taskUuid" = String, Path)),
+    WorkflowTaskActionRequest,
+    ApiResponse<Value>
+);
+typed_endpoint!(
     list_automation_flows,
     get,
     "/api/apps/{appId}/automations",
@@ -830,13 +898,13 @@ typed_endpoint!(
     UpdateFormRecordRequest,
     ApiResponse<ApiFormRecord>
 );
-endpoint!(
+typed_endpoint!(
     delete_form_record,
     delete,
     "/api/forms/{formUuid}/records/{recordUuid}",
     "deleteFormRecord",
-    ("formUuid" = String, Path),
-    ("recordUuid" = String, Path)
+    (("formUuid" = String, Path), ("recordUuid" = String, Path)),
+    ApiResponse<Value>
 );
 typed_endpoint!(
     list_form_versions,
@@ -980,6 +1048,14 @@ endpoint!(
         list_forms,
         create_form,
         ensure_workflow_process_flow,
+        list_workflow_comments,
+        create_workflow_comment,
+        list_workflow_tasks,
+        get_workflow_record_runtime,
+        submit_workflow_record,
+        reverse_workflow_record,
+        approve_workflow_task,
+        reject_workflow_task,
         list_automation_flows,
         create_automation_flow,
         get_automation_flow,
@@ -1036,6 +1112,11 @@ mod tests {
         assert!(value["paths"]["/api/identity/users/{userId}"]["put"].is_object());
         assert!(value["paths"]["/api/forms/{formUuid}/views/{viewUuid}"]["delete"].is_object());
         assert!(value["paths"]["/api/forms/{formUuid}/workflow/process"]["post"].is_object());
+        assert!(value["paths"]["/api/forms/{formUuid}/records/{recordUuid}/workflow"]["get"].is_object());
+        assert!(value["paths"]["/api/forms/{formUuid}/records/{recordUuid}/workflow/submit"]["post"].is_object());
+        assert!(value["paths"]["/api/workflow/tasks/{taskUuid}/approve"]["post"].is_object());
+        assert!(value["paths"]["/api/workflow/tasks"]["get"].is_object());
+        assert!(value["paths"]["/api/forms/{formUuid}/records/{recordUuid}/workflow/comments"]["post"].is_object());
         assert!(value["paths"]["/api/locations"]["get"].is_object());
         assert!(value["paths"]["/api/locations"]["post"].is_object());
         assert!(value["paths"]["/api/apps/{appId}/field-outline"]["get"].is_object());

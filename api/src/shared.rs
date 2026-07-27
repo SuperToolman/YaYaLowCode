@@ -167,6 +167,76 @@ pub(crate) fn normalize_automation_trigger_event(event: &str) -> Result<String, 
     }
 }
 
+pub(crate) fn normalize_automation_trigger_events(
+    events: Vec<String>,
+) -> Result<Vec<String>, AppError> {
+    let mut normalized = Vec::new();
+    for event in events {
+        let event = normalize_automation_trigger_event(&event)?;
+        if !normalized.contains(&event) {
+            normalized.push(event);
+        }
+    }
+
+    // A record operation has one execution point. Different operations may
+    // share a flow, but one operation cannot run both before and after.
+    for pair in [
+        ("before_create", "after_create"),
+        ("before_update", "after_update"),
+        ("before_delete", "after_delete"),
+    ] {
+        if normalized.iter().any(|event| event == pair.0)
+            && normalized.iter().any(|event| event == pair.1)
+        {
+            return Err(AppError::BadRequest(
+                "each automation trigger type must select either before or after".to_string(),
+            ));
+        }
+    }
+
+    Ok(normalized)
+}
+
+pub(crate) fn automation_trigger_events(trigger_event: &str, trigger_config: &Value) -> Vec<String> {
+    let configured_events = trigger_config
+        .get("triggerEvents")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .filter_map(|event| normalize_automation_trigger_event(event).ok())
+                .fold(Vec::new(), |mut events, event| {
+                    if !events.contains(&event) {
+                        events.push(event);
+                    }
+                    events
+                })
+        });
+
+    // An explicit empty array means this automation has no enabled record
+    // event. Only older configurations without this key use the legacy value.
+    configured_events.unwrap_or_else(|| vec![trigger_event.to_string()])
+}
+
+pub(crate) fn with_automation_trigger_events(
+    trigger_config: Value,
+    trigger_events: &[String],
+) -> Value {
+    let mut config = trigger_config.as_object().cloned().unwrap_or_default();
+    config.insert(
+        "triggerEvents".to_string(),
+        Value::Array(
+            trigger_events
+                .iter()
+                .cloned()
+                .map(Value::String)
+                .collect(),
+        ),
+    );
+    Value::Object(config)
+}
+
 pub(crate) fn automation_trigger_label(event: &str) -> &'static str {
     match event {
         "before_create" => "创建成功前",
@@ -177,6 +247,40 @@ pub(crate) fn automation_trigger_label(event: &str) -> &'static str {
         "after_delete" => "删除成功后",
         "form_submit" => "表单提交时",
         _ => "未配置",
+    }
+}
+
+#[cfg(test)]
+mod automation_trigger_event_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn reads_unique_configured_trigger_events_and_falls_back_to_legacy_value() {
+        let config = json!({ "triggerEvents": ["before_create", "after_create", "before_create"] });
+        assert_eq!(
+            automation_trigger_events("after_create", &config),
+            vec!["before_create", "after_create"]
+        );
+        assert_eq!(
+            automation_trigger_events("after_update", &json!({})),
+            vec!["after_update"]
+        );
+        assert!(automation_trigger_events("after_update", &json!({ "triggerEvents": [] })).is_empty());
+    }
+
+    #[test]
+    fn rejects_before_and_after_for_the_same_record_operation() {
+        assert!(normalize_automation_trigger_events(vec![
+            "before_update".to_string(),
+            "after_update".to_string(),
+        ])
+        .is_err());
+        assert!(normalize_automation_trigger_events(vec![
+            "before_create".to_string(),
+            "after_update".to_string(),
+        ])
+        .is_ok());
     }
 }
 

@@ -8,29 +8,40 @@ use std::convert::Infallible;
 use std::time::Duration;
 
 use axum::http::StatusCode;
+use axum::http::HeaderMap;
 use axum::response::Sse;
 use axum::response::sse::{Event, KeepAlive};
 use futures_util::StreamExt;
 use rig_core::completion::Message;
+use sea_orm::{ActiveModelTrait, IntoActiveModel};
+use sea_orm::sea_query::Expr;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::platform::config::{
     load_platform_agent_assistant_settings, resolve_agent_runtime, resolve_agent_runtime_for_scope,
 };
+use crate::platform::authorization;
+use crate::modules::forms::{
+    create_blank_form, dto::CreateDetailFormRequest, validate_schema_for_form_type,
+};
 use crate::platform::prelude::*;
 use crate::shared::success_response;
 
 pub(crate) use self::dto::{
     AgentPageContext, ApiAgentMessage, ApiAgentSession, CreateAgentSessionRequest,
+    ApiPendingAgentAction,
     SendAgentMessageRequest, UpdateAgentSessionRequest,
 };
 use self::runner::execute_agent_run;
 
 pub(crate) async fn list_agent_sessions(
     State(state): State<AppState>,
+    headers: HeaderMap,
 ) -> Result<Json<ApiResponse<Vec<ApiAgentSession>>>, AppError> {
+    let user = authorization::current_user(&headers, &state).await?;
     let sessions = AgentSessionEntity::find()
+        .filter(agent_session_entity::Column::OwnerUserId.eq(Some(user.id)))
         .order_by_desc(agent_session_entity::Column::IsPinned)
         .order_by_desc(agent_session_entity::Column::UpdatedAt)
         .all(&state.db)
@@ -43,13 +54,20 @@ pub(crate) async fn list_agent_sessions(
 
 pub(crate) async fn create_agent_session(
     State(state): State<AppState>,
+    headers: HeaderMap,
     payload: Option<Json<CreateAgentSessionRequest>>,
 ) -> Result<(StatusCode, Json<ApiResponse<ApiAgentSession>>), AppError> {
+    let user = authorization::current_user(&headers, &state).await?;
+    let access = tools::AgentAccessScope::from_grants(authorization::grants(&headers, &state).await?);
     let payload = payload.map(|Json(value)| value);
     let requested_agent_id = payload.as_ref().and_then(|value| value.agent_id.clone());
     let source =
         normalize_session_source(payload.as_ref().and_then(|value| value.source.as_deref()));
     let context = payload.and_then(|value| value.context).unwrap_or_default();
+    if let Some(app_id) = context.app_id.as_deref() {
+        access.require_app_access(app_id).map_err(AppError::Forbidden)?;
+    }
+    validate_context_resources(&state.db, &context).await?;
     let runtime = if source == "general" {
         let navigation_agent_id = load_platform_agent_assistant_settings()
             .and_then(|settings| settings.navigation_agent_id)
@@ -63,11 +81,18 @@ pub(crate) async fn create_agent_session(
         )
     }
     .map_err(AppError::BadRequest)?;
+    runtime
+        .validate_scope(context.app_id.as_deref(), context.business_id.as_deref())
+        .map_err(AppError::Forbidden)?;
+    if !runtime.settings.enabled {
+        return Err(AppError::BadRequest("agent is disabled".to_string()));
+    }
     let now = Utc::now();
     let session = agent_session_entity::ActiveModel {
         id: Set(Uuid::new_v4()),
         session_uuid: Set(format!("ASESSION-{}", Uuid::new_v4().simple())),
         agent_id: Set(runtime.agent_id),
+        owner_user_id: Set(Some(user.id)),
         title: Set("新对话".to_string()),
         source: Set(source.to_string()),
         is_pinned: Set(false),
@@ -91,10 +116,12 @@ pub(crate) async fn create_agent_session(
 
 pub(crate) async fn update_agent_session(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(session_uuid): Path<String>,
     Json(payload): Json<UpdateAgentSessionRequest>,
 ) -> Result<Json<ApiResponse<ApiAgentSession>>, AppError> {
-    let session = find_session(&state.db, &session_uuid).await?;
+    let user = authorization::current_user(&headers, &state).await?;
+    let session = find_owned_session(&state.db, &session_uuid, user.id).await?;
     let mut active: agent_session_entity::ActiveModel = session.into();
     if let Some(title) = payload.title {
         let title = title.trim();
@@ -118,20 +145,142 @@ pub(crate) async fn update_agent_session(
 
 pub(crate) async fn delete_agent_session(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(session_uuid): Path<String>,
 ) -> Result<StatusCode, AppError> {
-    let session = find_session(&state.db, &session_uuid).await?;
+    let user = authorization::current_user(&headers, &state).await?;
+    let session = find_owned_session(&state.db, &session_uuid, user.id).await?;
     AgentSessionEntity::delete_by_id(session.id)
         .exec(&state.db)
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
+pub(crate) async fn confirm_pending_action(
+    State(state): State<AppState>, headers: HeaderMap,
+    Path((session_uuid, action_uuid)): Path<(String, String)>,
+) -> Result<Json<ApiResponse<Value>>, AppError> {
+    let user = authorization::current_user(&headers, &state).await?;
+    let access = tools::AgentAccessScope::from_grants(authorization::grants(&headers, &state).await?);
+    let session = find_owned_session(&state.db, &session_uuid, user.id).await?;
+    let action = AgentPendingActionEntity::find()
+        .filter(agent_pending_action_entity::Column::SessionId.eq(session.id))
+        .filter(agent_pending_action_entity::Column::ActionUuid.eq(action_uuid))
+        .one(&state.db).await?
+        .ok_or_else(|| AppError::NotFound("pending action not found".to_string()))?;
+    if action.status != "pending" || action.expires_at < Utc::now() {
+        return Err(AppError::BadRequest("pending action is no longer available".to_string()));
+    }
+    let claimed = AgentPendingActionEntity::update_many()
+        .filter(agent_pending_action_entity::Column::Id.eq(action.id))
+        .filter(agent_pending_action_entity::Column::Status.eq("pending"))
+        .filter(agent_pending_action_entity::Column::ExpiresAt.gte(Utc::now()))
+        .col_expr(agent_pending_action_entity::Column::Status, Expr::value("executing"))
+        .col_expr(agent_pending_action_entity::Column::ConfirmedAt, Expr::value(Utc::now()))
+        .exec(&state.db)
+        .await?;
+    if claimed.rows_affected != 1 {
+        return Err(AppError::BadRequest("pending action was already handled".to_string()));
+    }
+    let execution = async {
+    let result = match action.action_type.as_str() {
+        "create_form_draft" => {
+            let app_id = action.payload_json.get("appId").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
+            let name = action.payload_json.get("name").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
+            access.require_app_access(app_id).map_err(AppError::Forbidden)?;
+            if !access.can_create_form(app_id) { return Err(AppError::Forbidden("form creation permission denied".to_string())); }
+            let form_type = action.payload_json.get("formType").and_then(Value::as_str).unwrap_or("normal");
+            if !matches!(form_type, "normal" | "workflow" | "defined") { return Err(AppError::BadRequest("invalid form type".to_string())); }
+            let form = create_blank_form(&state.db, app_id, Some(name.to_string()), form_type).await?;
+            json!({"id": form.form_uuid, "appId": form.app_route_app_id, "name": form.name, "formType": form.form_type, "status": form.status})
+        }
+        "create_detail_form_draft" => {
+            let source_form_uuid = action.payload_json.get("sourceFormUuid").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
+            let subform_field_id = action.payload_json.get("subformFieldId").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
+            let definition = FormDefinitionEntity::find().filter(form_definition_entity::Column::FormUuid.eq(source_form_uuid)).one(&state.db).await?
+                .ok_or_else(|| AppError::NotFound("source form not found".to_string()))?;
+            access.require_app_access(&definition.app_route_app_id).map_err(AppError::Forbidden)?;
+            if !access.can_create_form(&definition.app_route_app_id) { return Err(AppError::Forbidden("form creation permission denied".to_string())); }
+            let (_, Json(response)) = crate::modules::forms::create_detail_form(
+                State(state.clone()),
+                Path(source_form_uuid.to_string()),
+                Json(CreateDetailFormRequest {
+                    subform_field_id: subform_field_id.to_string(),
+                    title: action.payload_json.get("title").and_then(Value::as_str).map(ToString::to_string),
+                    primary_display_field_id: action.payload_json.get("primaryDisplayFieldId").and_then(Value::as_str).map(ToString::to_string),
+                    secondary_display_field_id: action.payload_json.get("secondaryDisplayFieldId").and_then(Value::as_str).map(ToString::to_string),
+                }),
+            ).await?;
+            let detail = response.data.ok_or_else(|| AppError::BadRequest("detail form response missing data".to_string()))?;
+            json!({"id": detail.detail_form_uuid, "sourceFormUuid": detail.source_form_uuid, "subformFieldId": detail.subform_field_id, "title": detail.title, "status": "published"})
+        }
+        "save_form_schema_draft" => {
+            let form_uuid = action.payload_json.get("formUuid").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
+            let schema = action.payload_json.get("schema").cloned().ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
+            let definition = FormDefinitionEntity::find().filter(form_definition_entity::Column::FormUuid.eq(form_uuid)).one(&state.db).await?
+                .ok_or_else(|| AppError::NotFound("form not found".to_string()))?;
+            access.require_app_access(&definition.app_route_app_id).map_err(AppError::Forbidden)?;
+            if !access.can_edit_form(&definition.app_route_app_id) { return Err(AppError::Forbidden("form edit permission denied".to_string())); }
+            validate_schema_for_form_type(&definition.form_type, &schema)?;
+            let now = Utc::now(); let version = definition.latest_schema_version + 1;
+            form_schema_entity::ActiveModel { id: Set(Uuid::new_v4()), form_uuid: Set(form_uuid.to_string()), version: Set(version), schema_json: Set(schema), change_log: Set(Some("Agent confirmed schema draft".to_string())), published: Set(false), created_at: Set(now.into()), updated_at: Set(now.into()) }.insert(&state.db).await?;
+            let mut form: form_definition_entity::ActiveModel = definition.into_active_model();
+            form.draft_schema_version = Set(version); form.latest_schema_version = Set(version); form.updated_at = Set(now.into()); form.update(&state.db).await?;
+            json!({"formUuid": form_uuid, "version": version, "status": "draft"})
+        }
+        _ => return Err(AppError::BadRequest("unsupported pending action".to_string())),
+    };
+    Ok::<Value, AppError>(result)
+    }.await;
+    let mut active: agent_pending_action_entity::ActiveModel = action.into();
+    match execution {
+        Ok(result) => {
+            active.status = Set("completed".to_string()); active.completed_at = Set(Some(Utc::now().into()));
+            active.update(&state.db).await?;
+            Ok(Json(success_response("pending action completed", result)))
+        }
+        Err(error) => {
+            active.status = Set("failed".to_string()); active.error_message = Set(Some(format!("{error:?}"))); active.completed_at = Set(Some(Utc::now().into()));
+            active.update(&state.db).await?;
+            Err(error)
+        }
+    }
+}
+
+pub(crate) async fn cancel_pending_action(
+    State(state): State<AppState>, headers: HeaderMap,
+    Path((session_uuid, action_uuid)): Path<(String, String)>,
+) -> Result<StatusCode, AppError> {
+    let user = authorization::current_user(&headers, &state).await?;
+    let session = find_owned_session(&state.db, &session_uuid, user.id).await?;
+    let updated = AgentPendingActionEntity::update_many()
+        .filter(agent_pending_action_entity::Column::SessionId.eq(session.id))
+        .filter(agent_pending_action_entity::Column::ActionUuid.eq(action_uuid))
+        .filter(agent_pending_action_entity::Column::Status.eq("pending"))
+        .col_expr(agent_pending_action_entity::Column::Status, Expr::value("cancelled"))
+        .col_expr(agent_pending_action_entity::Column::CompletedAt, Expr::value(Utc::now()))
+        .exec(&state.db).await?;
+    if updated.rows_affected != 1 { return Err(AppError::BadRequest("pending action cannot be cancelled".to_string())); }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) async fn list_pending_actions(
+    State(state): State<AppState>, headers: HeaderMap, Path(session_uuid): Path<String>,
+) -> Result<Json<ApiResponse<Vec<ApiPendingAgentAction>>>, AppError> {
+    let user = authorization::current_user(&headers, &state).await?;
+    let session = find_owned_session(&state.db, &session_uuid, user.id).await?;
+    let actions = AgentPendingActionEntity::find().filter(agent_pending_action_entity::Column::SessionId.eq(session.id))
+        .filter(agent_pending_action_entity::Column::Status.eq("pending")).order_by_desc(agent_pending_action_entity::Column::CreatedAt).all(&state.db).await?;
+    Ok(Json(success_response("pending actions loaded", actions.into_iter().map(|action| ApiPendingAgentAction { id: action.action_uuid, action_type: action.action_type, summary: action.summary, status: action.status, expires_at: crate::shared::format_date(action.expires_at) }).collect())))
+}
+
 pub(crate) async fn list_agent_messages(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(session_uuid): Path<String>,
 ) -> Result<Json<ApiResponse<Vec<ApiAgentMessage>>>, AppError> {
-    let session = find_session(&state.db, &session_uuid).await?;
+    let user = authorization::current_user(&headers, &state).await?;
+    let session = find_owned_session(&state.db, &session_uuid, user.id).await?;
     let messages = AgentMessageEntity::find()
         .filter(agent_message_entity::Column::SessionId.eq(session.id))
         .order_by_asc(agent_message_entity::Column::CreatedAt)
@@ -145,6 +294,7 @@ pub(crate) async fn list_agent_messages(
 
 pub(crate) async fn send_agent_message(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(session_uuid): Path<String>,
     Json(payload): Json<SendAgentMessageRequest>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, AppError> {
@@ -154,7 +304,9 @@ pub(crate) async fn send_agent_message(
             "agent message is required".to_string(),
         ));
     }
-    let session = find_session(&state.db, &session_uuid).await?;
+    let user = authorization::current_user(&headers, &state).await?;
+    let access = tools::AgentAccessScope::from_grants(authorization::grants(&headers, &state).await?);
+    let session = find_owned_session(&state.db, &session_uuid, user.id).await?;
     if session.source == "general" {
         let navigation_agent_id = load_platform_agent_assistant_settings()
             .and_then(|settings| settings.navigation_agent_id)
@@ -188,6 +340,13 @@ pub(crate) async fn send_agent_message(
         .context
         .or_else(|| serde_json::from_value::<AgentPageContext>(session.context_json.clone()).ok())
         .unwrap_or_default();
+    if let Some(app_id) = context.app_id.as_deref() {
+        access.require_app_access(app_id).map_err(AppError::Forbidden)?;
+    }
+    validate_context_resources(&state.db, &context).await?;
+    runtime
+        .validate_scope(context.app_id.as_deref(), context.business_id.as_deref())
+        .map_err(AppError::Forbidden)?;
     let now = Utc::now();
 
     agent_message_entity::ActiveModel {
@@ -236,7 +395,9 @@ pub(crate) async fn send_agent_message(
         match execute_agent_run(
             db.clone(),
             run.id,
+            session.id,
             runtime,
+            access,
             context,
             content.clone(),
             history,
@@ -331,15 +492,48 @@ pub(crate) async fn send_agent_message(
     ))
 }
 
-async fn find_session(
+async fn find_owned_session(
     db: &DatabaseConnection,
     session_uuid: &str,
+    owner_user_id: Uuid,
 ) -> Result<agent_session_entity::Model, AppError> {
     AgentSessionEntity::find()
         .filter(agent_session_entity::Column::SessionUuid.eq(session_uuid))
+        .filter(agent_session_entity::Column::OwnerUserId.eq(Some(owner_user_id)))
         .one(db)
         .await?
         .ok_or_else(|| AppError::NotFound("agent session not found".to_string()))
+}
+
+async fn validate_context_resources(
+    db: &DatabaseConnection,
+    context: &AgentPageContext,
+) -> Result<(), AppError> {
+    if let Some(form_uuid) = context.form_uuid.as_deref() {
+        let form = FormDefinitionEntity::find()
+            .filter(form_definition_entity::Column::FormUuid.eq(form_uuid))
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound("form not found".to_string()))?;
+        if context.app_id.as_deref() != Some(form.app_route_app_id.as_str()) {
+            return Err(AppError::BadRequest(
+                "form context must include its owning application".to_string(),
+            ));
+        }
+    }
+    if let Some(automation_id) = context.automation_id.as_deref() {
+        let automation = AutomationFlowEntity::find()
+            .filter(automation_flow_entity::Column::FlowUuid.eq(automation_id))
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound("automation not found".to_string()))?;
+        if context.app_id.as_deref() != Some(automation.app_route_app_id.as_str()) {
+            return Err(AppError::BadRequest(
+                "automation context must include its owning application".to_string(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn truncate_title(content: &str) -> String {

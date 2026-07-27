@@ -21,12 +21,7 @@ import {
   type FormSummary,
 } from "../../../lib/api-client";
 import { AddIcon, FormIcon, ListIcon, MoreIcon } from "../../../components/app-icons";
-import {
-  statusMeta,
-  triggerEvents,
-  type AutomationStatus,
-  type ManualTriggerEvent,
-} from "./automation-shared";
+import { statusMeta, type AutomationStatus } from "./automation-shared";
 
 type AutomationsPageClientProps = {
   appId: string;
@@ -34,20 +29,6 @@ type AutomationsPageClientProps = {
 
 type RunLogFilter = "all" | "failed" | "success" | "running";
 type AutomationTypeFilter = "all" | "trigger" | "process";
-type TriggerAction = "create" | "update" | "delete";
-type TriggerTiming = "before" | "after";
-
-const triggerActions: Array<{ id: TriggerAction; label: string }> = [
-  { id: "create", label: "创建成功" },
-  { id: "update", label: "更新成功" },
-  { id: "delete", label: "删除成功" },
-];
-
-const triggerTimings: Array<{ id: TriggerTiming; label: string }> = [
-  { id: "after", label: "后" },
-  { id: "before", label: "前" },
-];
-
 const emptyAutomationList: AutomationFlowList = {
   items: [],
   total: 0,
@@ -68,8 +49,6 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
   const [deleteTarget, setDeleteTarget] = useState<AutomationFlow | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createFormUuid, setCreateFormUuid] = useState("");
-  const [createTriggerAction, setCreateTriggerAction] = useState<TriggerAction>("create");
-  const [createTriggerTiming, setCreateTriggerTiming] = useState<TriggerTiming>("after");
   const [createAutomationName, setCreateAutomationName] = useState("");
   const [logsTarget, setLogsTarget] = useState<AutomationFlow | null>(null);
   const [runLogs, setRunLogs] = useState<ApiAutomationRun[]>([]);
@@ -171,34 +150,14 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
   function openCreateModal() {
     const formUuid = forms[0]?.id ?? "";
     setCreateFormUuid(formUuid);
-    setCreateTriggerAction("create");
-    setCreateTriggerTiming("after");
-    setCreateAutomationName(buildDefaultAutomationName(forms, formUuid, "after_create"));
+    setCreateAutomationName(buildDefaultAutomationName(forms, formUuid));
     setCreateOpen(true);
   }
 
   function updateCreateForm(formUuid: string) {
     setCreateFormUuid(formUuid);
     setCreateAutomationName(
-      buildDefaultAutomationName(
-        forms,
-        formUuid,
-        toManualTriggerEvent(createTriggerAction, createTriggerTiming),
-      ),
-    );
-  }
-
-  function updateCreateTriggerAction(action: TriggerAction) {
-    setCreateTriggerAction(action);
-    setCreateAutomationName(
-      buildDefaultAutomationName(forms, createFormUuid, toManualTriggerEvent(action, createTriggerTiming)),
-    );
-  }
-
-  function updateCreateTriggerTiming(timing: TriggerTiming) {
-    setCreateTriggerTiming(timing);
-    setCreateAutomationName(
-      buildDefaultAutomationName(forms, createFormUuid, toManualTriggerEvent(createTriggerAction, timing)),
+      buildDefaultAutomationName(forms, formUuid),
     );
   }
 
@@ -222,7 +181,6 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
           body: {
             name,
             triggerFormUuid: createFormUuid,
-            triggerEvent: toManualTriggerEvent(createTriggerAction, createTriggerTiming),
           },
           responseStyle: "fields",
         });
@@ -540,7 +498,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                   </Modal.Heading>
                 </Modal.Header>
                 <Modal.Body className="space-y-4 px-5 py-4">
-                  <div className="grid gap-3 md:grid-cols-3">
+                  <div className="grid gap-4">
                     <div className="grid gap-1.5">
                       <span className="text-sm font-medium text-[var(--color-text-primary)]">表单</span>
                       <Select
@@ -567,61 +525,6 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                       </Select>
                     </div>
 
-                    <div className="grid gap-1.5">
-                      <span className="text-sm font-medium text-[var(--color-text-primary)]">触发类型</span>
-                      <Select
-                        aria-label="触发类型"
-                        selectedKey={createTriggerAction}
-                        onSelectionChange={(key) =>
-                          updateCreateTriggerAction(String(key ?? "create") as TriggerAction)
-                        }
-                      >
-                        <Select.Trigger>
-                          <Select.Value>
-                            {triggerActions.find((action) => action.id === createTriggerAction)
-                              ?.label ?? "创建成功"}
-                          </Select.Value>
-                          <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {triggerActions.map((action) => (
-                              <ListBox.Item key={action.id} id={action.id} textValue={action.label}>
-                                {action.label}
-                              </ListBox.Item>
-                            ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
-                    </div>
-
-                    <div className="grid gap-1.5">
-                      <span className="text-sm font-medium text-[var(--color-text-primary)]">前后</span>
-                      <Select
-                        aria-label="前后"
-                        selectedKey={createTriggerTiming}
-                        onSelectionChange={(key) =>
-                          updateCreateTriggerTiming(String(key ?? "after") as TriggerTiming)
-                        }
-                      >
-                        <Select.Trigger>
-                          <Select.Value>
-                            {triggerTimings.find((timing) => timing.id === createTriggerTiming)
-                              ?.label ?? "后"}
-                          </Select.Value>
-                          <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {triggerTimings.map((timing) => (
-                              <ListBox.Item key={timing.id} id={timing.id} textValue={timing.label}>
-                                {timing.label}
-                              </ListBox.Item>
-                            ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
-                    </div>
                   </div>
                   <div className="grid w-full gap-1.5">
                     <span className="text-sm font-medium text-[var(--color-text-primary)]">自动化标题</span>
@@ -670,7 +573,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                 </AlertDialog.Heading>
               </AlertDialog.Header>
               <AlertDialog.Body className="px-5 py-4 text-sm leading-6 text-[var(--color-text-secondary)]">
-                删除后，该自动化定义将不再出现在规则列表中。当前版本尚未接入执行日志，所以没有运行记录需要保留。
+                删除后，该自动化定义及其运行日志将一并删除，且不可恢复。
               </AlertDialog.Body>
               <AlertDialog.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
                 <Button
@@ -1054,20 +957,8 @@ function getTriggerFormName(
 function buildDefaultAutomationName(
   forms: FormSummary[],
   formUuid: string,
-  triggerEvent: ManualTriggerEvent,
 ) {
-  const formName = forms.find((form) => form.id === formUuid)?.name ?? "表单";
-  const eventLabel =
-    triggerEvents.find((event) => event.id === triggerEvent)?.label ?? "创建成功后";
-
-  return `${formName}${eventLabel}`;
-}
-
-function toManualTriggerEvent(
-  action: TriggerAction,
-  timing: TriggerTiming,
-): ManualTriggerEvent {
-  return `${timing}_${action}` as ManualTriggerEvent;
+  return forms.find((form) => form.id === formUuid)?.name ?? "未命名自动化";
 }
 
 function formatDateTime(value: string) {

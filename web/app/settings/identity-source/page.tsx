@@ -233,7 +233,7 @@ export default function IdentitySourceSettingsPage() {
       subtitle="配置平台账号或第三方组织身份源。所有配置由后端保存，修改后立即生效。"
       className="p-0"
       headerClassName="px-6 pt-6"
-      bodyClassName="mt-5 overflow-hidden"
+      bodyClassName="mt-5 overflow-clip"
       footerClassName="px-6 pb-5"
       footer={<><p className="text-xs leading-5 text-[var(--color-text-secondary)]">配置保存在后端本地设置文件中。</p><Button isDisabled={loading || saving || activeTab === "wecom" || activeTab === "feishu"} onPress={() => void saveSettings()}>{saving ? "正在保存…" : "保存配置"}</Button></>}
     >

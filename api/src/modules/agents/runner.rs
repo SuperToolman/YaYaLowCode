@@ -15,8 +15,10 @@ use crate::modules::agents::capabilities;
 use crate::modules::agents::dto::AgentPageContext;
 use crate::modules::agents::plugins::PluginTool;
 use crate::modules::agents::tools::{
-    CreateFormDraftTool, GetAutomationGraphTool, GetFormSchemaTool, ListAppsTool,
-    ListAutomationsTool, ListFormsTool, SaveFormSchemaDraftTool,
+    AgentAccessScope, AggregateFormRecordsTool, CreateDetailFormDraftTool, CreateFormDraftTool, GetApplicationBusinessContextTool, GetAutomationGraphTool,
+    GetDetailFormDefinitionTool, GetFormRelationshipsTool, GetFormSchemaTool, GetRelatedRecordsTool, GetWorkflowProcessDefinitionTool,
+    GetWorkflowRecordRuntimeTool, ListAppsTool, ListDetailRecordsTool, ListFormRecordsTool,
+    ListAutomationsTool, ListFormsTool, QueryFormRecordsTool, SaveFormSchemaDraftTool,
 };
 use crate::platform::config::ResolvedAgentRuntime;
 
@@ -29,7 +31,9 @@ pub(crate) struct AgentRunOutput {
 pub(crate) async fn execute_agent_run(
     db: DatabaseConnection,
     run_id: Uuid,
+    session_id: Uuid,
     runtime: ResolvedAgentRuntime,
+    access: AgentAccessScope,
     context: AgentPageContext,
     prompt: String,
     history: Vec<Message>,
@@ -62,36 +66,63 @@ pub(crate) async fn execute_agent_run(
         .temperature(settings.temperature)
         .tool(ListAppsTool {
             db: db.clone(),
+            access: access.clone(),
             enabled: runtime.allowed_tools.contains("list_apps"),
         })
+        .tool(GetApplicationBusinessContextTool { db: db.clone(), access: access.clone(), allowed_app_id: allowed_app_id.clone(), enabled: runtime.allowed_tools.contains("get_application_business_context") })
         .tool(ListFormsTool {
             db: db.clone(),
+            access: access.clone(),
             allowed_app_id: allowed_app_id.clone(),
             enabled: runtime.allowed_tools.contains("list_forms"),
         })
         .tool(GetFormSchemaTool {
             db: db.clone(),
+            access: access.clone(),
             allowed_app_id: allowed_app_id.clone(),
             enabled: runtime.allowed_tools.contains("get_form_schema"),
         })
+        .tool(GetFormRelationshipsTool { db: db.clone(), access: access.clone(), allowed_app_id: allowed_app_id.clone(), enabled: runtime.allowed_tools.contains("get_form_relationships") })
+        .tool(GetRelatedRecordsTool { db: db.clone(), access: access.clone(), allowed_app_id: allowed_app_id.clone(), enabled: runtime.allowed_tools.contains("get_related_records") })
+        .tool(ListFormRecordsTool { db: db.clone(), access: access.clone(), allowed_app_id: allowed_app_id.clone(), enabled: runtime.allowed_tools.contains("list_form_records") })
+        .tool(QueryFormRecordsTool { db: db.clone(), access: access.clone(), allowed_app_id: allowed_app_id.clone(), enabled: runtime.allowed_tools.contains("query_form_records") })
+        .tool(AggregateFormRecordsTool { db: db.clone(), access: access.clone(), allowed_app_id: allowed_app_id.clone(), enabled: runtime.allowed_tools.contains("aggregate_form_records") })
+        .tool(GetDetailFormDefinitionTool { db: db.clone(), access: access.clone(), allowed_app_id: allowed_app_id.clone(), enabled: runtime.allowed_tools.contains("get_detail_form_definition") })
+        .tool(ListDetailRecordsTool { db: db.clone(), access: access.clone(), allowed_app_id: allowed_app_id.clone(), enabled: runtime.allowed_tools.contains("list_detail_records") })
+        .tool(GetWorkflowProcessDefinitionTool { db: db.clone(), access: access.clone(), allowed_app_id: allowed_app_id.clone(), enabled: runtime.allowed_tools.contains("get_workflow_process_definition") })
+        .tool(GetWorkflowRecordRuntimeTool { db: db.clone(), access: access.clone(), allowed_app_id: allowed_app_id.clone(), enabled: runtime.allowed_tools.contains("get_workflow_record_runtime") })
         .tool(ListAutomationsTool {
             db: db.clone(),
+            access: access.clone(),
             allowed_app_id: allowed_app_id.clone(),
             enabled: runtime.allowed_tools.contains("list_automations"),
         })
         .tool(GetAutomationGraphTool {
             db: db.clone(),
+            access: access.clone(),
             allowed_app_id,
             enabled: runtime.allowed_tools.contains("get_automation_graph"),
         })
         .tool(CreateFormDraftTool {
             db: db.clone(),
+            session_id,
+            access: access.clone(),
             allowed_app_id: context.app_id.clone(),
             enabled: runtime.allow_create_forms
                 && runtime.allowed_tools.contains("create_form_draft"),
         })
+        .tool(CreateDetailFormDraftTool {
+            db: db.clone(),
+            session_id,
+            access: access.clone(),
+            allowed_app_id: context.app_id.clone(),
+            enabled: runtime.allow_create_forms
+                && runtime.allowed_tools.contains("create_detail_form_draft"),
+        })
         .tool(SaveFormSchemaDraftTool {
             db: db.clone(),
+            session_id,
+            access,
             allowed_app_id: context.app_id.clone(),
             enabled: runtime.allow_create_forms
                 && runtime.allowed_tools.contains("save_form_schema_draft"),

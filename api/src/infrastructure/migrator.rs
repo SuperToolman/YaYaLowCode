@@ -38,7 +38,116 @@ impl MigratorTrait for Migrator {
             Box::new(m20260723_000029_convert_locations_to_tree::Migration),
             Box::new(m20260723_000030_repair_locations_tree_schema::Migration),
             Box::new(m20260724_000031_extend_agent_sessions::Migration),
+            Box::new(m20260727_000032_add_agent_session_owner::Migration),
+            Box::new(m20260727_000033_create_agent_pending_actions::Migration),
+            Box::new(m20260727_000034_create_workflow_comments::Migration),
+            Box::new(m20260727_000035_create_workflow_notifications::Migration),
+            Box::new(m20260727_000036_add_workflow_pause_fields::Migration),
         ]
+    }
+}
+
+mod m20260727_000036_add_workflow_pause_fields {
+    use sea_orm_migration::prelude::*;
+    #[derive(DeriveMigrationName)] pub struct Migration;
+    #[async_trait::async_trait] impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> { manager.get_connection().execute_unprepared("ALTER TABLE workflow_instances ADD COLUMN IF NOT EXISTS paused_by VARCHAR(120), ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS pause_reason TEXT;").await?; Ok(()) }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> { manager.get_connection().execute_unprepared("ALTER TABLE workflow_instances DROP COLUMN IF EXISTS paused_by, DROP COLUMN IF EXISTS paused_at, DROP COLUMN IF EXISTS pause_reason;").await?; Ok(()) }
+    }
+}
+
+mod m20260727_000035_create_workflow_notifications {
+    use sea_orm_migration::prelude::*;
+    #[derive(DeriveMigrationName)] pub struct Migration;
+    #[async_trait::async_trait] impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(r#"CREATE TABLE IF NOT EXISTS workflow_notifications (
+                id UUID PRIMARY KEY, notification_uuid VARCHAR(64) NOT NULL UNIQUE,
+                recipient_user_id UUID REFERENCES iam_users(id) ON DELETE SET NULL, recipient VARCHAR(120) NOT NULL,
+                form_uuid VARCHAR(64) NOT NULL, record_uuid VARCHAR(64) NOT NULL,
+                instance_id UUID NOT NULL REFERENCES workflow_instances(id) ON DELETE CASCADE,
+                task_id UUID REFERENCES workflow_tasks(id) ON DELETE SET NULL,
+                notification_type VARCHAR(24) NOT NULL, title VARCHAR(200) NOT NULL, content TEXT NOT NULL,
+                read_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL
+            ); CREATE INDEX IF NOT EXISTS idx_workflow_notifications_recipient_read ON workflow_notifications (recipient_user_id, read_at, created_at DESC);"#).await?; Ok(())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> { manager.get_connection().execute_unprepared("DROP TABLE IF EXISTS workflow_notifications;").await?; Ok(()) }
+    }
+}
+
+mod m20260727_000034_create_workflow_comments {
+    use sea_orm_migration::prelude::*;
+    #[derive(DeriveMigrationName)] pub struct Migration;
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(r#"
+                CREATE TABLE IF NOT EXISTS workflow_comments (
+                    id UUID PRIMARY KEY,
+                    comment_uuid VARCHAR(64) NOT NULL UNIQUE,
+                    form_uuid VARCHAR(64) NOT NULL,
+                    record_uuid VARCHAR(64) NOT NULL,
+                    author_user_id UUID NOT NULL REFERENCES iam_users(id) ON DELETE RESTRICT,
+                    author VARCHAR(120) NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_workflow_comments_record
+                    ON workflow_comments (form_uuid, record_uuid, created_at ASC);
+            "#).await?;
+            Ok(())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("DROP TABLE IF EXISTS workflow_comments;").await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260727_000033_create_agent_pending_actions {
+    use sea_orm_migration::prelude::*;
+    #[derive(DeriveMigrationName)] pub struct Migration;
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(r#"
+                CREATE TABLE IF NOT EXISTS agent_pending_actions (
+                    id UUID PRIMARY KEY, action_uuid VARCHAR(64) NOT NULL UNIQUE,
+                    session_id UUID NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+                    action_type VARCHAR(64) NOT NULL, payload_json JSONB NOT NULL,
+                    summary TEXT NOT NULL, status VARCHAR(24) NOT NULL,
+                    expires_at TIMESTAMPTZ NOT NULL, confirmed_at TIMESTAMPTZ,
+                    error_message TEXT, created_at TIMESTAMPTZ NOT NULL, completed_at TIMESTAMPTZ
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_pending_actions_session_status
+                    ON agent_pending_actions (session_id, status, created_at DESC);
+            "#).await?; Ok(())
+        }
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> { Ok(()) }
+    }
+}
+
+mod m20260727_000032_add_agent_session_owner {
+    use sea_orm_migration::prelude::*;
+
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(r#"
+                ALTER TABLE agent_sessions
+                    ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES iam_users(id) ON DELETE CASCADE;
+                CREATE INDEX IF NOT EXISTS idx_agent_sessions_owner_updated_at
+                    ON agent_sessions (owner_user_id, is_pinned DESC, updated_at DESC);
+            "#).await?;
+            Ok(())
+        }
+
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
     }
 }
 

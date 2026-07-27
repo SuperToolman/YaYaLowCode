@@ -157,6 +157,13 @@ pub(crate) async fn list_platform_tools(
                 risk_level: "read",
             },
             PlatformToolResponse {
+                id: "get_application_business_context",
+                name: "读取应用业务地图",
+                description: "读取应用说明、表单、字段摘要、关联关系和明细父表关系。",
+                category: "app",
+                risk_level: "read",
+            },
+            PlatformToolResponse {
                 id: "list_forms",
                 name: "读取表单列表",
                 description: "查询应用内表单元数据。",
@@ -171,9 +178,65 @@ pub(crate) async fn list_platform_tools(
                 risk_level: "read",
             },
             PlatformToolResponse {
+                id: "get_form_relationships",
+                name: "读取表单关系",
+                description: "读取 Schema 中的关联字段、目标表单和填充规则。",
+                category: "form",
+                risk_level: "read",
+            },
+            PlatformToolResponse {
+                id: "get_related_records",
+                name: "追溯关联记录",
+                description: "沿已配置关联字段批量读取目标表单记录。",
+                category: "form",
+                risk_level: "read",
+            },
+            PlatformToolResponse {
+                id: "list_form_records",
+                name: "读取表单记录",
+                description: "读取已授权表单最近的有限记录，用于业务分析。",
+                category: "form",
+                risk_level: "read",
+            },
+            PlatformToolResponse {
+                id: "query_form_records",
+                name: "条件查询表单记录",
+                description: "在指定页的有限记录中按字段条件筛选，用于分析。",
+                category: "form",
+                risk_level: "read",
+            },
+            PlatformToolResponse {
+                id: "aggregate_form_records",
+                name: "汇总表单记录",
+                description: "对有限页范围内的记录执行计数、求和、平均值或分组计数。",
+                category: "form",
+                risk_level: "read",
+            },
+            PlatformToolResponse {
+                id: "get_detail_form_definition",
+                name: "读取明细表定义",
+                description: "读取明细表与父表、子表字段的关联。",
+                category: "form",
+                risk_level: "read",
+            },
+            PlatformToolResponse {
+                id: "list_detail_records",
+                name: "读取明细表记录",
+                description: "读取父表子表字段中的有限明细行。",
+                category: "form",
+                risk_level: "read",
+            },
+            PlatformToolResponse {
                 id: "create_form_draft",
                 name: "创建表单草稿",
                 description: "创建空白表单草稿；还要求 Profile 开启创建表单能力。",
+                category: "form",
+                risk_level: "write",
+            },
+            PlatformToolResponse {
+                id: "create_detail_form_draft",
+                name: "生成明细表配置",
+                description: "为父表的 subform 字段生成明细表，需用户确认且要求 Profile 允许创建表单。",
                 category: "form",
                 risk_level: "write",
             },
@@ -196,6 +259,20 @@ pub(crate) async fn list_platform_tools(
                 name: "读取自动化流程",
                 description: "读取自动化的触发器、节点和连线。",
                 category: "automation",
+                risk_level: "read",
+            },
+            PlatformToolResponse {
+                id: "get_workflow_process_definition",
+                name: "读取工作流定义",
+                description: "读取工作流表单的流程节点和连线。",
+                category: "workflow",
+                risk_level: "read",
+            },
+            PlatformToolResponse {
+                id: "get_workflow_record_runtime",
+                name: "读取工作流运行态",
+                description: "读取一条工作流记录的实例、待办和动作轨迹。",
+                category: "workflow",
                 risk_level: "read",
             },
             PlatformToolResponse {
@@ -849,6 +926,16 @@ fn validate_agent(registry: &AgentRegistry, payload: &AgentRequest) -> Result<()
     {
         return Err(AppError::BadRequest(
             "invalid agent configuration".to_string(),
+        ));
+    }
+    if matches!(payload.scope_type.as_str(), "application" | "business")
+        && payload
+            .scope_ref_id
+            .as_deref()
+            .is_none_or(|scope_ref_id| scope_ref_id.trim().is_empty())
+    {
+        return Err(AppError::BadRequest(
+            "application and business Agent scopes require a scope reference".to_string(),
         ));
     }
     Ok(())

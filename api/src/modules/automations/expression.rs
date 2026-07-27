@@ -55,6 +55,115 @@ pub(super) fn filter_records_by_expression(
         .collect()
 }
 
+pub(super) fn filter_records_by_rules(
+    records: Vec<StoredFormRecord>,
+    rules: Option<&Value>,
+    legacy_expression: Option<&Value>,
+    context: &AutomationExecutionContext,
+) -> Vec<StoredFormRecord> {
+    let Some(rules) = rules.and_then(Value::as_array) else {
+        return filter_records_by_expression(records, legacy_expression, context);
+    };
+    if rules.is_empty() {
+        return filter_records_by_expression(records, legacy_expression, context);
+    }
+
+    records
+        .into_iter()
+        .filter(|record| evaluate_record_rule_group(rules, None, &record.record_data))
+        .collect()
+}
+
+fn evaluate_record_rule_group(rules: &[Value], parent_id: Option<&str>, record_data: &Value) -> bool {
+    let siblings = rules
+        .iter()
+        .filter(|rule| read_json_string(rule.get("parentId")).as_deref() == parent_id)
+        .collect::<Vec<_>>();
+
+    if siblings.is_empty() {
+        return true;
+    }
+
+    let group_operator = siblings[0]
+        .get("logicalOperator")
+        .and_then(Value::as_str)
+        .unwrap_or("and");
+    let mut result = true;
+    for (index, rule) in siblings.into_iter().enumerate() {
+        let rule_id = read_json_string(rule.get("id"));
+        let child_rules = rule_id
+            .as_deref()
+            .map(|id| {
+                rules
+                    .iter()
+                    .filter(|candidate| read_json_string(candidate.get("parentId")).as_deref() == Some(id))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let matches = if rule.get("isGroup").and_then(Value::as_bool) == Some(true) {
+            evaluate_record_rule_group(rules, rule_id.as_deref(), record_data)
+        } else if child_rules.is_empty() {
+            evaluate_record_rule(rule, record_data)
+        } else {
+            let children_match = evaluate_record_rule_group(rules, rule_id.as_deref(), record_data);
+            if child_rules[0].get("logicalOperator").and_then(Value::as_str) == Some("or") {
+                evaluate_record_rule(rule, record_data) || children_match
+            } else {
+                evaluate_record_rule(rule, record_data) && children_match
+            }
+        };
+
+        if index == 0 {
+            result = matches;
+        } else if group_operator == "or" {
+            result = result || matches;
+        } else {
+            result = result && matches;
+        }
+    }
+    result
+}
+
+fn evaluate_record_rule(rule: &Value, record_data: &Value) -> bool {
+    let field_key = read_json_string(rule.get("fieldKey")).unwrap_or_default();
+    let operator = read_json_string(rule.get("operator")).unwrap_or_else(|| "eq".to_string());
+    let expected = read_json_string(rule.get("rawValue")).unwrap_or_default();
+    let actual_values = record_data
+        .get(&field_key)
+        .cloned()
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    match operator.as_str() {
+        "hasValue" => actual_values.iter().any(value_has_content),
+        "noValue" => {
+            actual_values.is_empty() || actual_values.iter().all(|value| !value_has_content(value))
+        }
+        "neq" => {
+            actual_values.is_empty()
+                || actual_values
+                    .iter()
+                    .all(|value| normalize_scalar(value) != expected)
+        }
+        "inAny" => {
+            let expected_items = parse_multi_values(&expected);
+            actual_values
+                .iter()
+                .any(|value| expected_items.contains(&normalize_scalar(value)))
+        }
+        "notInAny" => {
+            let expected_items = parse_multi_values(&expected);
+            actual_values.is_empty()
+                || actual_values
+                    .iter()
+                    .all(|value| !expected_items.contains(&normalize_scalar(value)))
+        }
+        _ => actual_values
+            .iter()
+            .any(|value| normalize_scalar(value) == expected),
+    }
+}
+
 pub(super) fn evaluate_context_expression(
     expression: &str,
     context: &AutomationExecutionContext,

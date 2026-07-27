@@ -64,6 +64,16 @@ pub(crate) struct ApiAgentMessage {
     pub(crate) created_at: String,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ApiPendingAgentAction {
+    pub(crate) id: String,
+    pub(crate) action_type: String,
+    pub(crate) summary: String,
+    pub(crate) status: String,
+    pub(crate) expires_at: String,
+}
+
 impl From<agent_session_entity::Model> for ApiAgentSession {
     fn from(value: agent_session_entity::Model) -> Self {
         Self {

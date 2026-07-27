@@ -285,6 +285,23 @@ export function FieldPropertyPanel({
             </PropertyFold>
           ) : null}
 
+          {field.type !== "groupContainer" && field.type !== "description" && field.type !== "button" && field.type !== "link" ? (
+            <PropertyFold title="Agent 数据访问">
+              <PropertyRow label="读取策略">
+                <select
+                  aria-label="Agent 数据读取策略"
+                  value={field.props.agentDataAccess ?? "allow"}
+                  onChange={(event) => onPropsChange(field.id, { agentDataAccess: event.currentTarget.value as "allow" | "mask" | "deny" })}
+                  className="h-8 min-w-0 flex-1 rounded-md border border-[var(--designer-border)] bg-[var(--designer-surface-solid)] px-2 text-xs text-[var(--color-text-primary)]"
+                >
+                  <option value="allow">允许读取</option>
+                  <option value="mask">脱敏显示</option>
+                  <option value="deny">禁止读取</option>
+                </select>
+              </PropertyRow>
+            </PropertyFold>
+          ) : null}
+
           <PropertyFold title="HeroUI 组件属性" rightIcon={<CodeToken />}>
             <PropertyRow label="禁用">
               <PanelSwitch

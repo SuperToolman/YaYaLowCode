@@ -5,7 +5,7 @@ use crate::platform::automation_runs::{
     finalize_automation_run_node_log,
 };
 use crate::platform::prelude::*;
-use crate::platform::records::RecordRepository;
+use crate::platform::records::{RecordRepository, StoredFormRecord};
 use crate::shared::*;
 use axum::http::StatusCode;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -56,15 +56,18 @@ pub(crate) async fn create_automation_flow(
             description: None,
             trigger_form_uuid: None,
             trigger_event: None,
+            trigger_events: None,
             operator: None,
         });
     let now = Utc::now();
     let operator = normalize_operator(payload.operator);
     let trigger_form_uuid = normalize_optional_text(payload.trigger_form_uuid);
-    let trigger_event = normalize_automation_trigger_event(
-        payload.trigger_event.as_deref().unwrap_or("after_create"),
+    let trigger_events = normalize_automation_trigger_events(
+        payload
+            .trigger_events
+            .unwrap_or_else(|| vec![payload.trigger_event.unwrap_or_else(|| "after_create".to_string())]),
     )?;
-    if trigger_event == "form_submit" {
+    if trigger_events.iter().any(|event| event == "form_submit") {
         return Err(AppError::BadRequest(
             "process flows are created only with workflow forms".to_string(),
         ));
@@ -86,8 +89,18 @@ pub(crate) async fn create_automation_flow(
         current_version: Set(1),
         flow_type: Set("trigger".to_string()),
         trigger_form_uuid: Set(trigger_form_uuid),
-        trigger_event: Set(trigger_event),
-        trigger_config: Set(json!({})),
+        // The database keeps a legacy non-null event column. An explicit empty
+        // triggerEvents array is the source of truth for an unconfigured flow.
+        trigger_event: Set(
+            trigger_events
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "after_create".to_string()),
+        ),
+        trigger_config: Set(with_automation_trigger_events(
+            normalize_automation_trigger_config(json!({}), &trigger_events)?,
+            &trigger_events,
+        )),
         nodes_json: Set(json!([])),
         edges_json: Set(json!([])),
         created_by: Set(operator.clone()),
@@ -350,6 +363,8 @@ pub(crate) async fn update_automation_flow(
     let next_version = flow.current_version + 1;
     let existing_nodes_json = flow.nodes_json.clone();
     let existing_edges_json = flow.edges_json.clone();
+    let existing_trigger_events = automation_trigger_events(&flow.trigger_event, &flow.trigger_config);
+    let existing_trigger_event = flow.trigger_event.clone();
     let mut active_model: automation_flow_entity::ActiveModel = flow.into();
     let mut should_create_version = false;
     let mut next_nodes_json = existing_nodes_json.clone();
@@ -375,14 +390,34 @@ pub(crate) async fn update_automation_flow(
         should_create_version = true;
     }
 
-    if let Some(trigger_event) = payload.trigger_event {
-        let trigger_event = normalize_automation_trigger_event(&trigger_event)?;
+    let requested_trigger_events = payload
+        .trigger_events
+        .map(normalize_automation_trigger_events)
+        .transpose()?;
+    let requested_trigger_event = payload
+        .trigger_event
+        .map(|event| normalize_automation_trigger_event(&event))
+        .transpose()?;
+    if let Some(trigger_events) = requested_trigger_events.as_ref() {
+        if is_process_flow && trigger_events.as_slice() != ["form_submit"] {
+            return Err(AppError::BadRequest(
+                "process flow trigger is fixed to form_submit".to_string(),
+            ));
+        }
+        active_model.trigger_event = Set(
+            trigger_events
+                .first()
+                .cloned()
+                .unwrap_or_else(|| existing_trigger_event.clone()),
+        );
+        should_create_version = true;
+    } else if let Some(trigger_event) = requested_trigger_event.as_ref() {
         if is_process_flow && trigger_event != "form_submit" {
             return Err(AppError::BadRequest(
                 "process flow trigger is fixed to form_submit".to_string(),
             ));
         }
-        active_model.trigger_event = Set(trigger_event);
+        active_model.trigger_event = Set(trigger_event.clone());
         should_create_version = true;
     }
 
@@ -403,6 +438,35 @@ pub(crate) async fn update_automation_flow(
     if let Some(trigger_config) = payload.trigger_config {
         active_model.trigger_config = Set(normalize_json_object(trigger_config));
         should_create_version = true;
+    }
+
+    let effective_trigger_events = if let Some(trigger_events) = requested_trigger_events.as_ref() {
+        let trigger_config = active_model
+            .trigger_config
+            .clone()
+            .unwrap();
+        active_model.trigger_config = Set(with_automation_trigger_events(trigger_config, trigger_events));
+        trigger_events.clone()
+    } else if let Some(trigger_event) = requested_trigger_event.as_ref() {
+        let trigger_config = active_model
+            .trigger_config
+            .clone()
+            .unwrap();
+        active_model.trigger_config = Set(with_automation_trigger_events(
+            trigger_config,
+            std::slice::from_ref(trigger_event),
+        ));
+        vec![trigger_event.clone()]
+    } else {
+        existing_trigger_events
+    };
+
+    if !is_process_flow {
+        let trigger_config = active_model.trigger_config.clone().unwrap();
+        active_model.trigger_config = Set(with_automation_trigger_events(
+            normalize_automation_trigger_config(trigger_config, &effective_trigger_events)?,
+            &effective_trigger_events,
+        ));
     }
 
     if let Some(nodes) = payload.nodes {
@@ -516,7 +580,6 @@ pub(crate) async fn execute_automation_flows_for_event(
         .filter(
             automation_flow_entity::Column::TriggerFormUuid.eq(Some(definition.form_uuid.clone())),
         )
-        .filter(automation_flow_entity::Column::TriggerEvent.eq(event))
         .filter(automation_flow_entity::Column::FlowType.eq("trigger"))
         .filter(automation_flow_entity::Column::Status.eq("enabled"))
         .all(db)
@@ -524,11 +587,17 @@ pub(crate) async fn execute_automation_flows_for_event(
 
     let mut first_error = None;
     for flow in flows {
-        if !flow_matches_changed_fields(&flow.trigger_config, changed_fields) {
+        if !automation_trigger_events(&flow.trigger_event, &flow.trigger_config)
+            .iter()
+            .any(|configured_event| configured_event == event)
+        {
+            continue;
+        }
+        if !flow_matches_changed_fields(event, &flow.trigger_config, changed_fields) {
             continue;
         }
         if let Err(err) =
-            execute_automation_flow(db, &flow, trigger_payload, operator, None, None, None).await
+            execute_automation_flow(db, &flow, event, trigger_payload, operator, None, None, None).await
         {
             error!(
                 "execute automation flow failed, flow={}: {err:?}",
@@ -633,7 +702,7 @@ async fn execute_get_one_node(
     Ok(matched
         .into_iter()
         .next()
-        .map(|item| item.record_data)
+        .map(record_data_with_automation_identity)
         .unwrap_or(Value::Null))
 }
 
@@ -666,8 +735,20 @@ async fn execute_get_many_node(
     let records = RecordRepository::new(db).list(&form_uuid).await?;
     let matched = filter_records_by_expression(records, config.get("filterExpression"), context);
     Ok(Value::Array(
-        matched.into_iter().map(|item| item.record_data).collect(),
+        matched
+            .into_iter()
+            .map(record_data_with_automation_identity)
+            .collect(),
     ))
+}
+
+fn record_data_with_automation_identity(record: StoredFormRecord) -> Value {
+    let mut data = record.record_data.as_object().cloned().unwrap_or_default();
+    data.insert(
+        "__automationRecordUuid".to_string(),
+        Value::String(record.record_uuid),
+    );
+    Value::Object(data)
 }
 
 async fn execute_update_data_node(
@@ -682,7 +763,39 @@ async fn execute_update_data_node(
     let rows = json_array_items(&config.get("rows").cloned().unwrap_or_else(|| json!([])));
     let repository = RecordRepository::new(db);
     let records = repository.list(&target_form_uuid).await?;
-    let matched = filter_records_by_expression(records, config.get("matchRule"), context);
+    let update_mode = config
+        .get("updateMode")
+        .and_then(Value::as_str)
+        .unwrap_or("form");
+    let matched = if update_mode == "data-node" {
+        let source_node_id = read_json_string(config.get("sourceNodeId")).unwrap_or_default();
+        let source_records = context.outputs.get(&source_node_id);
+        let source_record_uuids = match source_records {
+            Some(Value::Array(items)) => items
+                .iter()
+                .filter_map(|item| item.get("__automationRecordUuid"))
+                .filter_map(Value::as_str)
+                .collect::<std::collections::HashSet<_>>(),
+            Some(item) => item
+                .get("__automationRecordUuid")
+                .and_then(Value::as_str)
+                .into_iter()
+                .collect(),
+            None => std::collections::HashSet::new(),
+        };
+
+        records
+            .into_iter()
+            .filter(|record| source_record_uuids.contains(record.record_uuid.as_str()))
+            .collect()
+    } else {
+        filter_records_by_rules(
+            records,
+            config.get("rules"),
+            config.get("matchRule"),
+            context,
+        )
+    };
     let patch = build_record_data_from_rows(&rows, &context.outputs);
     let now = Utc::now();
     let mut updated_items = Vec::new();
@@ -1173,7 +1286,8 @@ fn normalize_automation_node_config(kind: &str, config: Value) -> Result<Value, 
 
     let normalized = match kind {
         "trigger" => json!({
-            "changedFieldsText": read_json_string(object.get("changedFieldsText")),
+            "changedFieldMode": if object.get("changedFieldMode").and_then(Value::as_str) == Some("specific") { "specific" } else { "any" },
+            "changedFieldId": read_json_string(object.get("changedFieldId")).or_else(|| read_json_string(object.get("changedFieldsText"))),
         }),
         "condition" => {
             if object
@@ -1214,7 +1328,19 @@ fn normalize_automation_node_config(kind: &str, config: Value) -> Result<Value, 
             "multipleSourceNodeId": read_json_string(object.get("multipleSourceNodeId")),
             "multipleFormula": read_json_string(object.get("multipleFormula")),
         }),
-        "update-data" | "delete-data" | "http-request" => json!({
+        "update-data" => json!({
+            "updateMode": normalize_update_mode(object.get("updateMode").and_then(Value::as_str)),
+            "sourceNodeId": read_json_string(object.get("sourceNodeId")),
+            "targetFormUuid": read_json_string(object.get("targetFormUuid")),
+            "rules": normalize_branch_rules(object.get("rules").cloned().unwrap_or_else(|| json!([])))?,
+            "matchRule": read_json_string(object.get("matchRule")),
+            "rows": normalize_field_mapping_rows(object.get("rows").cloned().unwrap_or_else(|| json!([]))),
+            "bodyTemplate": read_json_string(object.get("bodyTemplate")),
+            "method": read_json_string(object.get("method")),
+            "url": read_json_string(object.get("url")),
+            "headersText": read_json_string(object.get("headersText")),
+        }),
+        "delete-data" | "http-request" => json!({
             "targetFormUuid": read_json_string(object.get("targetFormUuid")),
             "matchRule": read_json_string(object.get("matchRule")),
             "rows": normalize_field_mapping_rows(object.get("rows").cloned().unwrap_or_else(|| json!([]))),
@@ -1260,6 +1386,8 @@ fn normalize_branch_rules(data: Value) -> Result<Value, AppError> {
         rules.push(json!({
             "id": rule_id,
             "parentId": read_json_string(raw.get("parentId")),
+            "isGroup": raw.get("isGroup").and_then(Value::as_bool).unwrap_or(false),
+            "logicalOperator": if raw.get("logicalOperator").and_then(Value::as_str) == Some("or") { "or" } else { "and" },
             "fieldKey": read_json_string(raw.get("fieldKey")),
             "operator": operator,
             "valueType": if raw.get("valueType").and_then(Value::as_str) == Some("field") { "field" } else { "value" },
@@ -1382,6 +1510,13 @@ fn normalize_add_record_mode(value: Option<&str>) -> &'static str {
     }
 }
 
+fn normalize_update_mode(value: Option<&str>) -> &'static str {
+    match value.unwrap_or("form").trim() {
+        "data-node" => "data-node",
+        _ => "form",
+    }
+}
+
 fn normalize_multiple_source_mode(value: Option<&str>) -> &'static str {
     match value.unwrap_or("data-node").trim() {
         "form" => "form",
@@ -1436,6 +1571,7 @@ fn default_node_description(kind: &str) -> &'static str {
 async fn execute_automation_flow(
     db: &DatabaseConnection,
     flow: &automation_flow_entity::Model,
+    trigger_event: &str,
     trigger_data: &Value,
     operator: &str,
     retry_source: Option<RetrySource>,
@@ -1445,6 +1581,7 @@ async fn execute_automation_flow(
     let run = create_automation_run(
         db,
         flow,
+        trigger_event,
         trigger_data,
         retry_source,
         retry_run_uuid,
@@ -1501,6 +1638,7 @@ async fn execute_automation_flow(
 async fn execute_automation_flow_from_snapshot(
     db: &DatabaseConnection,
     flow: &automation_flow_entity::Model,
+    trigger_event: &str,
     trigger_data: &Value,
     operator: &str,
     start_node_key: &str,
@@ -1510,6 +1648,7 @@ async fn execute_automation_flow_from_snapshot(
     let run = create_automation_run(
         db,
         flow,
+        trigger_event,
         trigger_data,
         Some(RetrySource::Node),
         Some(retry_run_uuid),
@@ -1881,12 +2020,66 @@ fn evaluate_condition_branch(branch: &Value, context: &AutomationExecutionContex
 }
 
 fn evaluate_branch_rules(rules: Value, context: &AutomationExecutionContext) -> bool {
-    for item in json_array_items(&rules) {
-        if !evaluate_branch_rule(&item, context) {
-            return false;
+    let rules = json_array_items(&rules);
+    evaluate_branch_rule_group(&rules, None, context)
+}
+
+fn evaluate_branch_rule_group(
+    rules: &[Value],
+    parent_id: Option<&str>,
+    context: &AutomationExecutionContext,
+) -> bool {
+    let siblings = rules
+        .iter()
+        .filter(|rule| read_json_string(rule.get("parentId")).as_deref() == parent_id)
+        .collect::<Vec<_>>();
+
+    if siblings.is_empty() {
+        return true;
+    }
+
+    let group_operator = siblings[0]
+        .get("logicalOperator")
+        .and_then(Value::as_str)
+        .unwrap_or("and");
+    let mut result = true;
+    for (index, rule) in siblings.into_iter().enumerate() {
+        let rule_id = read_json_string(rule.get("id"));
+        let child_rules = rule_id
+            .as_deref()
+            .map(|id| {
+                rules
+                    .iter()
+                    .filter(|candidate| read_json_string(candidate.get("parentId")).as_deref() == Some(id))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let matches = if rule.get("isGroup").and_then(Value::as_bool) == Some(true) {
+            evaluate_branch_rule_group(rules, rule_id.as_deref(), context)
+        } else if child_rules.is_empty() {
+            evaluate_branch_rule(rule, context)
+        } else {
+            let children_match = evaluate_branch_rule_group(
+                rules,
+                rule_id.as_deref(),
+                context,
+            );
+            if child_rules[0].get("logicalOperator").and_then(Value::as_str) == Some("or") {
+                evaluate_branch_rule(rule, context) || children_match
+            } else {
+                evaluate_branch_rule(rule, context) && children_match
+            }
+        };
+
+        if index == 0 {
+            result = matches;
+        } else if group_operator == "or" {
+            result = result || matches;
+        } else {
+            result = result && matches;
         }
     }
-    true
+    result
 }
 
 fn evaluate_branch_rule(rule: &Value, context: &AutomationExecutionContext) -> bool {
@@ -1972,6 +2165,7 @@ async fn retry_automation_run_internal(
         execute_automation_flow_from_snapshot(
             db,
             &flow,
+            &run.trigger_event,
             &run.trigger_payload,
             "管理员",
             &node_key,
@@ -1983,6 +2177,7 @@ async fn retry_automation_run_internal(
         execute_automation_flow(
             db,
             &flow,
+            &run.trigger_event,
             &run.trigger_payload,
             "管理员",
             Some(RetrySource::Flow),
@@ -2015,11 +2210,19 @@ async fn ensure_form_belongs_to_app(
 }
 
 fn flow_matches_changed_fields(
+    event: &str,
     trigger_config: &Value,
     changed_fields: Option<&HashSet<String>>,
 ) -> bool {
+    // The field selector refines only record edits. Create and delete events
+    // have no changed-field set, so they must remain eligible when enabled.
+    if !matches!(event, "before_update" | "after_update") {
+        return true;
+    }
+
     let configured = trigger_config
-        .get("changedFieldsText")
+        .get("changedFieldId")
+        .or_else(|| trigger_config.get("changedFieldsText"))
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty());
@@ -2031,11 +2234,42 @@ fn flow_matches_changed_fields(
     }
 }
 
+fn normalize_automation_trigger_config(
+    config: Value,
+    trigger_events: &[String],
+) -> Result<Value, AppError> {
+    let object = normalize_json_object(config);
+    let source = object.as_object().cloned().unwrap_or_default();
+    let has_update_event = trigger_events
+        .iter()
+        .any(|event| matches!(event.as_str(), "before_update" | "after_update"));
+    let legacy_field_id = read_json_string(source.get("changedFieldsText"));
+    let requested_field_id = read_json_string(source.get("changedFieldId")).or(legacy_field_id);
+    let requested_specific = source.get("changedFieldMode").and_then(Value::as_str) == Some("specific")
+        || requested_field_id.is_some();
+    let (mode, changed_field_id) = if has_update_event && requested_specific {
+        let field_id = requested_field_id.ok_or_else(|| {
+            AppError::BadRequest("a specific changed field must be selected".to_string())
+        })?;
+        ("specific", Some(field_id))
+    } else {
+        ("any", None)
+    };
+
+    Ok(json!({
+        "changedFieldMode": mode,
+        "changedFieldId": changed_field_id,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::net::IpAddr;
 
-    use super::validate_public_http_address;
+    use serde_json::json;
+
+    use super::{flow_matches_changed_fields, validate_public_http_address};
 
     #[test]
     fn blocks_private_http_targets() {
@@ -2043,6 +2277,16 @@ mod tests {
             assert!(validate_public_http_address(address.parse::<IpAddr>().unwrap()).is_err());
         }
         assert!(validate_public_http_address("8.8.8.8".parse::<IpAddr>().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn field_monitoring_applies_only_to_update_events() {
+        let config = json!({ "changedFieldMode": "specific", "changedFieldId": "is_default" });
+        let changed = HashSet::from(["name".to_string()]);
+
+        assert!(flow_matches_changed_fields("before_create", &config, None));
+        assert!(flow_matches_changed_fields("after_delete", &config, None));
+        assert!(!flow_matches_changed_fields("before_update", &config, Some(&changed)));
     }
 }
 pub(crate) mod dto;

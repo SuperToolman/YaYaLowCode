@@ -26,6 +26,7 @@ type WorkflowCanvasProps<NodeType extends Node, EdgeType extends Edge> = {
   onEdgesChange: (changes: EdgeChange<EdgeType>[]) => void;
   onNodeSelect: (node: NodeType) => void;
   onPaneClick: () => void;
+  onZoomChange?: (zoom: number) => void;
 };
 
 export function WorkflowCanvas<NodeType extends Node, EdgeType extends Edge>({
@@ -39,6 +40,7 @@ export function WorkflowCanvas<NodeType extends Node, EdgeType extends Edge>({
   onNodeSelect,
   onNodesChange,
   onPaneClick,
+  onZoomChange,
 }: WorkflowCanvasProps<NodeType, EdgeType>) {
   return (
     <ReactFlow<NodeType, EdgeType>
@@ -53,6 +55,10 @@ export function WorkflowCanvas<NodeType extends Node, EdgeType extends Edge>({
       onNodesChange={onNodesChange}
       onNodeClick={(_event, node) => onNodeSelect(node)}
       onPaneClick={onPaneClick}
+      onInit={(instance) => void instance.zoomTo(0.9)}
+      onMove={(_event, viewport) => onZoomChange?.(viewport.zoom)}
+      minZoom={0.5}
+      maxZoom={2}
       defaultEdgeOptions={{
         type: "insertable",
         markerEnd: { type: MarkerType.ArrowClosed },

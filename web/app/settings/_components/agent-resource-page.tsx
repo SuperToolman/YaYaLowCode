@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Checkbox, Input, Select, Switch, TextArea } from "@heroui/react";
+import { Pencil, TrashBin } from "@gravity-ui/icons";
+import { Button, Checkbox, Input, Modal, Popover, Select, Switch, TextArea, Tooltip } from "@heroui/react";
 import { Field } from "./field";
 import type { ApiEnvelope } from "../agent-types";
 
@@ -54,6 +55,7 @@ export function AgentResourcePage({ kind }: { kind: Kind }) {
   const config = meta[kind];
   const [items, setItems] = useState<Resource[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [isSkillEditorOpen, setIsSkillEditorOpen] = useState(false);
   const [form, setForm] = useState<Omit<Resource, "id">>(() => empty(kind));
   const [message, setMessage] = useState("");
   const [query, setQuery] = useState("");
@@ -85,8 +87,9 @@ export function AgentResourcePage({ kind }: { kind: Kind }) {
     return () => window.clearTimeout(timer);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function create() { setSelectedId(null); setForm(empty(kind)); setMessage(""); }
+  function create() { setSelectedId(null); setForm(empty(kind)); setMessage(""); if (kind === "skill") setIsSkillEditorOpen(true); }
   function select(item: Resource) { const { id, ...next } = item; setSelectedId(id); setForm(next); setMessage(""); }
+  function editSkill(item: Resource) { select(item); setIsSkillEditorOpen(true); }
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -96,6 +99,7 @@ export function AgentResourcePage({ kind }: { kind: Kind }) {
     const payload = (await response.json()) as ApiEnvelope<Resource>;
     if (!response.ok || !payload.data) return setMessage(payload.message);
     setMessage(`${config.title}已保存`); setSelectedId(payload.data.id); await load(payload.data.id);
+    if (kind === "skill") setIsSkillEditorOpen(false);
   }
 
   async function remove(id = selectedId) {
@@ -103,7 +107,7 @@ export function AgentResourcePage({ kind }: { kind: Kind }) {
     const response = await fetch(`${config.endpoint}/${encodeURIComponent(id)}`, { method: "DELETE" });
     const payload = (await response.json()) as ApiEnvelope<unknown>;
     if (!response.ok) return setMessage(payload.message);
-    if (selectedId === id) { setSelectedId(null); setForm(empty(kind)); }
+    if (selectedId === id) { setSelectedId(null); setForm(empty(kind)); if (kind === "skill") setIsSkillEditorOpen(false); }
     setMessage(`${config.title}已删除`); await load(selectedId === id ? null : selectedId);
   }
 
@@ -145,27 +149,35 @@ export function AgentResourcePage({ kind }: { kind: Kind }) {
     return <section className="h-full min-h-0 overflow-y-auto p-1">
       <header className="mx-auto border-b border-[var(--color-border)]">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div><h2 className="text-xl font-semibold text-[var(--color-text-primary)]">Skills</h2><p className="mt-2 max-w-4xl text-sm leading-6 text-[var(--color-text-secondary)]">本地 Skill 配置会作为 Agent 的可复用工作流加载。Skill 只能调用管理员批准的平台工具；外部执行能力仍须通过受控插件提供。</p></div>
-          <div className="flex gap-2"><input ref={importInputRef} className="sr-only" type="file" accept=".zip,application/zip" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void importSkill(file); }} /><Button variant="secondary" onPress={() => importInputRef.current?.click()}>导入 ZIP</Button><Button onPress={create}>新建 Skill</Button></div>
+          <div><h2 className="text-xl font-semibold text-[var(--color-text-primary)]">Skills</h2><p className="mt-2 max-w-4xl text-sm leading-6 text-[var(--color-text-secondary)]">平台 Skill 会作为 Agent 的可复用工作流加载。Skill 只能调用管理员批准的平台工具；外部执行能力仍须通过受控插件提供。</p></div>
+          <div className="flex flex-wrap items-center justify-end gap-2"><input ref={importInputRef} className="sr-only" type="file" accept=".zip,application/zip" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void importSkill(file); }} /><Button variant="secondary" onPress={() => importInputRef.current?.click()}>导入 ZIP</Button><Button onPress={create}>新建本地 Skill</Button><Input aria-label="搜索 Skills" className="w-full sm:w-64" placeholder="搜索名称或描述" value={query} onChange={(event) => setQuery(event.currentTarget.value)} /><SkillTypeHelp /></div>
         </div>
-        <Input aria-label="搜索 Skills" className="mt-4 max-w-sm" placeholder="搜索名称或描述" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
       </header>
       {message ? <p className="mx-auto mt-4 max-w-6xl rounded-md bg-[var(--color-bg-subtle)] p-3 text-sm text-[var(--color-text-primary)]">{message}</p> : null}
       <div className="mx-auto mt-4">
         <div className="space-y-3">
-          {visibleItems.map((item) => <SkillPackageCard key={item.id} item={item} selected={item.id === selectedId} onSelect={() => select(item)} onToggle={(enabled) => void setSkillEnabled(item, enabled)} onDelete={() => void remove(item.id)} />)}
+          {visibleItems.map((item) => <SkillPackageCard key={item.id} item={item} onEdit={() => editSkill(item)} onToggle={(enabled) => void setSkillEnabled(item, enabled)} onDelete={() => void remove(item.id)} />)}
           {!visibleItems.length ? <p className="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-10 text-center text-sm text-[var(--color-text-secondary)]">{items.length ? "没有匹配的 Skill" : "尚未安装 Skill"}</p> : null}
         </div>
-        <form onSubmit={save} className="mt-6 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] shadow-[var(--shadow-card)]">
-          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] px-5 py-4"><div><h3 className="text-base font-semibold text-[var(--color-text-primary)]">{selectedId ? `配置 ${form.name || "Skill"}` : "新建本地 Skill"}</h3><p className="mt-1 text-xs text-[var(--color-text-secondary)]">当前版本将运行指令和受控工具授权作为一个本地 Skill 配置保存。</p></div><div className="flex gap-2">{selectedId ? <Button type="button" variant="ghost" className="text-[var(--color-danger)]" onPress={() => void remove()}>删除</Button> : null}<Button type="submit">保存</Button></div></header>
-          <div className="space-y-5 p-5"><section className="grid gap-4 sm:grid-cols-2"><Field label="名称"><Input fullWidth value={form.name} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} /></Field><Field label="描述"><Input fullWidth value={form.description} onChange={(event) => setForm({ ...form, description: event.currentTarget.value })} /></Field></section><SkillFields form={form} setForm={setForm} tools={platformTools} /><section className="flex flex-wrap gap-6 border-t border-[var(--color-border)] pt-5"><Switch isSelected={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })}><Switch.Content>启用 Skill</Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control></Switch><Switch isSelected={Boolean(form.requiresConfirmation)} onChange={(requiresConfirmation) => setForm({ ...form, requiresConfirmation })}><Switch.Content>执行前需确认</Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control></Switch></section></div>
-        </form>
       </div>
+      <Modal isOpen={isSkillEditorOpen} onOpenChange={setIsSkillEditorOpen}>
+        <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
+          <Modal.Container placement="center" size="lg">
+            <Modal.Dialog className="flex max-h-[calc(100dvh-2rem)] w-[min(880px,96vw)] flex-col overflow-clip rounded-2xl bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]">
+              <form onSubmit={save} className="flex min-h-0 flex-1 flex-col">
+                <Modal.Header className="shrink-0 border-b border-[var(--color-border)] px-5 py-4"><div><Modal.Heading className="text-lg font-semibold">{selectedId ? `编辑 ${form.name || "Skill"}` : "新建本地 Skill"}</Modal.Heading><p className="mt-1 text-xs text-[var(--color-text-secondary)]">配置运行指令和受控工具授权。</p></div><Modal.CloseTrigger aria-label="关闭" /></Modal.Header>
+                <Modal.Body className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5"><section className="grid gap-4 sm:grid-cols-2"><Field label="名称"><Input autoFocus fullWidth value={form.name} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} /></Field><Field label="描述"><Input fullWidth value={form.description} onChange={(event) => setForm({ ...form, description: event.currentTarget.value })} /></Field></section><SkillFields form={form} setForm={setForm} tools={platformTools} /><section className="flex flex-wrap gap-6 border-t border-[var(--color-border)] pt-5"><Switch isSelected={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })}><Switch.Content>启用 Skill</Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control></Switch><Switch isSelected={Boolean(form.requiresConfirmation)} onChange={(requiresConfirmation) => setForm({ ...form, requiresConfirmation })}><Switch.Content>执行前需确认</Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control></Switch></section></Modal.Body>
+                <Modal.Footer className="shrink-0 justify-between border-t border-[var(--color-border)] px-5 py-3">{selectedId ? <Button type="button" variant="ghost" className="text-[var(--color-danger)]" onPress={() => void remove()}>删除</Button> : <span />}<div className="flex gap-2"><Button type="button" variant="ghost" onPress={() => setIsSkillEditorOpen(false)}>取消</Button><Button type="submit">保存</Button></div></Modal.Footer>
+              </form>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
     </section>;
   }
 
   return <section className="grid h-full min-h-0 grid-cols-1 gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
-    <aside className="theme-panel flex min-h-[280px] min-w-0 flex-col overflow-hidden rounded-lg shadow-[var(--shadow-card)] xl:min-h-0">
+    <aside className="theme-panel flex min-h-[280px] min-w-0 flex-col overflow-clip rounded-lg shadow-[var(--shadow-card)] xl:min-h-0">
       <header className="shrink-0 border-b border-[var(--color-border)] px-4 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0"><h2 className="text-sm font-semibold text-[var(--color-text-primary)]">{config.title}</h2><p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">{config.description}</p></div>
@@ -181,7 +193,7 @@ export function AgentResourcePage({ kind }: { kind: Kind }) {
       </nav>
     </aside>
 
-    <form onSubmit={save} className="theme-panel flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg shadow-[var(--shadow-card)]">
+    <form onSubmit={save} className="theme-panel flex min-h-0 min-w-0 flex-col overflow-clip rounded-lg shadow-[var(--shadow-card)]">
       <header className="flex shrink-0 items-center justify-between gap-4 border-b border-[var(--color-border)] px-5 py-4">
         <div className="min-w-0"><h2 className="truncate text-base font-semibold text-[var(--color-text-primary)]">{selectedId ? form.name || `未命名${config.title}` : `新增${config.title}`}</h2><p className="mt-1 text-xs text-[var(--color-text-secondary)]">{selectedId ? "编辑资源配置" : "创建新的资源配置"}</p></div>
         <div className="flex shrink-0 gap-2">{selectedId ? <Button variant="ghost" className="text-[var(--color-danger)]" onPress={() => void remove()}>删除</Button> : null}<Button type="submit">保存</Button></div>
@@ -205,15 +217,31 @@ function ResourceListItem({ item, kind, selected, onSelect }: { item: Resource; 
 
 function StatusBadge({ enabled }: { enabled: boolean }) { return <span className={enabled ? "shrink-0 rounded-md bg-[var(--color-success-soft)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-success)]" : "shrink-0 rounded-md bg-[var(--color-danger-soft)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-danger)]"}>{enabled ? "已启用" : "已停用"}</span>; }
 
-function SkillPackageCard({ item, selected, onSelect, onToggle, onDelete }: { item: Resource; selected: boolean; onSelect: () => void; onToggle: (enabled: boolean) => void; onDelete: () => void }) {
-  return <article className={`rounded-lg border bg-[var(--color-bg-surface)] px-4 py-4 transition ${selected ? "border-[var(--color-primary)] shadow-[var(--shadow-card)]" : "border-[var(--color-border)] hover:border-[var(--color-primary)]"}`}>
+function SkillTypeHelp() {
+  return <Popover>
+    <Popover.Trigger>
+      <Button isIconOnly type="button" variant="ghost" aria-label="说明 Skill 类型" className="shrink-0 text-sm font-semibold">!</Button>
+    </Popover.Trigger>
+    <Popover.Content className="max-w-[calc(100vw-2rem)] rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-0 shadow-[var(--shadow-floating)]">
+      <Popover.Dialog aria-label="Skill 类型说明" className="w-80 space-y-3 p-4 text-sm text-[var(--color-text-secondary)]">
+        <p className="font-medium text-[var(--color-text-primary)]">Skill 类型说明</p>
+        <p><strong className="text-[var(--color-text-primary)]">系统 Skill</strong>：随平台内置，用于标准能力与工作流。</p>
+        <p><strong className="text-[var(--color-text-primary)]">本地 Skill</strong>：由管理员新建或导入，保存在当前部署环境中。</p>
+        <p><strong className="text-[var(--color-text-primary)]">平台 Skill</strong>：不是另一种来源，而是指可在平台内被多个 Agent 配置复用的 Skill；系统和本地 Skill 都属于这一作用域。</p>
+      </Popover.Dialog>
+    </Popover.Content>
+  </Popover>;
+}
+
+function SkillPackageCard({ item, onEdit, onToggle, onDelete }: { item: Resource; onEdit: () => void; onToggle: (enabled: boolean) => void; onDelete: () => void }) {
+  return <article className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-4 py-4 transition hover:border-[var(--color-primary)]">
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-      <button type="button" onClick={onSelect} className="min-w-0 flex-1 text-left" aria-pressed={selected}>
+      <div className="min-w-0 flex-1 text-left">
         <span className="flex flex-wrap items-center gap-2"><span className="text-base font-semibold text-[var(--color-text-primary)]">{item.name}</span><span className="rounded-md bg-[var(--color-info-soft)] px-2 py-0.5 text-xs font-medium text-[var(--color-info)]">{item.source === "system" ? "系统 Skill" : "本地 Skill"}</span></span>
         <span className="mt-2 block truncate text-sm text-[var(--color-text-secondary)]">{item.description || "暂无描述"}</span>
         <span className="mt-3 block truncate font-mono text-xs text-[var(--color-text-secondary)]">路径: {item.packagePath || "待初始化"} · {item.allowedTools?.length ?? 0} 个已授权工具</span>
-      </button>
-      <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto"><Button type="button" variant="ghost" aria-label={`编辑 ${item.name}`} onPress={onSelect}>编辑</Button><Button type="button" variant="ghost" aria-label={`删除 ${item.name}`} className="text-[var(--color-danger)]" onPress={onDelete}>删除</Button><Switch aria-label={`启用 ${item.name}`} isSelected={item.enabled} onChange={onToggle}><Switch.Control><Switch.Thumb /></Switch.Control></Switch></div>
+      </div>
+      <div className="flex shrink-0 items-center gap-1 self-end sm:self-auto"><Tooltip><Tooltip.Trigger><Button isIconOnly type="button" variant="ghost" aria-label={`编辑 ${item.name}`} onPress={onEdit}><Pencil className="h-4 w-4" /></Button></Tooltip.Trigger><Tooltip.Content>编辑</Tooltip.Content></Tooltip><Tooltip><Tooltip.Trigger><Button isIconOnly type="button" variant="ghost" aria-label={`删除 ${item.name}`} className="text-[var(--color-danger)]" onPress={onDelete}><TrashBin className="h-4 w-4" /></Button></Tooltip.Trigger><Tooltip.Content>删除</Tooltip.Content></Tooltip><Switch aria-label={`启用 ${item.name}`} isSelected={item.enabled} onChange={onToggle}><Switch.Control><Switch.Thumb /></Switch.Control></Switch></div>
     </div>
   </article>;
 }

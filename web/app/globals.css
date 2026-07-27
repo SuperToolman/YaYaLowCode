@@ -367,6 +367,28 @@ body::-webkit-scrollbar-thumb,
   background: var(--color-border) !important;
 }
 
+/* Automation rule trees retain a visible horizontal rail as nested groups grow. */
+.automation-rule-horizontal-scroll {
+  -ms-overflow-style: auto !important;
+  scrollbar-color: var(--color-border) var(--color-bg-subtle) !important;
+  scrollbar-width: thin !important;
+}
+
+.automation-rule-horizontal-scroll::-webkit-scrollbar {
+  display: block !important;
+  width: 8px !important;
+  height: 8px !important;
+  background: var(--color-bg-subtle) !important;
+}
+
+.automation-rule-horizontal-scroll::-webkit-scrollbar-thumb {
+  display: block !important;
+  min-width: 32px;
+  border: 2px solid var(--color-bg-subtle);
+  border-radius: 999px;
+  background: var(--color-border) !important;
+}
+
 /* Record tables expose their horizontal overflow so wide, content-sized columns stay discoverable. */
 .data-table-horizontal-scroll {
   -ms-overflow-style: auto !important;
@@ -431,6 +453,11 @@ body::-webkit-scrollbar-thumb,
 
 .automation-property-panel :is(input, textarea) {
   padding: 0.25rem 0.5rem;
+}
+
+.automation-property-panel [data-slot="input-wrapper"],
+.automation-property-panel [data-slot="select-trigger"] {
+  min-height: 2.25rem;
 }
 
 .automation-property-panel input,
@@ -525,8 +552,8 @@ select {
   flex-direction: column;
 }
 
-.app-main-glass:has(> .theme-page-shell) {
-  overflow: hidden;
+.app-main-glass:has(.theme-page-shell.settings-page-shell) {
+  overflow: clip;
 }
 
 .theme-page-shell {
@@ -537,7 +564,7 @@ select {
 .theme-page-shell.settings-page-shell {
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+  overflow: clip;
 }
 
 .theme-panel {

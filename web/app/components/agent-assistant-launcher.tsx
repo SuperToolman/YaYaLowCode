@@ -22,6 +22,7 @@ type AgentMessage = {
   createdAt?: string;
   toolActivities?: AgentToolActivity[];
   attachments?: AttachedImage[];
+  pendingAction?: { id: string; summary: string; type?: string; status: "pending" | "executing" | "completed" | "cancelled" | "failed" };
 };
 
 type AttachedImage = { id: string; name: string; previewUrl: string };
@@ -55,6 +56,8 @@ type ApiEnvelope<T> = {
   message: string;
   data: T | null;
 };
+
+type PendingAction = { id: string; actionType: string; summary: string; status: "pending"; expiresAt: string };
 
 const suggestions = [
   "帮我分析当前应用结构",
@@ -120,7 +123,12 @@ export default function AgentAssistantLauncher() {
     }
     shouldAutoScrollRef.current = true;
     setIsNearMessagesBottom(true);
-    setMessages(payload.data);
+    const pendingResponse = await fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}/pending-actions`, { cache: "no-store" });
+    const pendingPayload = (await pendingResponse.json()) as ApiEnvelope<PendingAction[]>;
+    const restored = pendingResponse.ok && pendingPayload.code === 0 && pendingPayload.data
+      ? pendingPayload.data.map((action) => ({ id: `pending-action-${action.id}`, role: "assistant" as const, content: "", createdAt: action.expiresAt, pendingAction: { id: action.id, summary: action.summary, type: action.actionType, status: action.status } }))
+      : [];
+    setMessages([...payload.data, ...restored]);
   }, []);
 
   const loadSessions = useCallback(async (preferredSessionId?: string) => {
@@ -244,11 +252,11 @@ export default function AgentAssistantLauncher() {
         const frames = buffer.split("\n\n");
         buffer = frames.pop() ?? "";
         frames.forEach((frame) =>
-          handleSseFrame(frame, assistantMessageId, setMessages, setStatusText, setErrorMessage),
+          handleSseFrame(frame, assistantMessageId, sessionId, setMessages, setStatusText, setErrorMessage),
         );
         if (done) {
           if (buffer.trim()) {
-            handleSseFrame(buffer, assistantMessageId, setMessages, setStatusText, setErrorMessage);
+            handleSseFrame(buffer, assistantMessageId, sessionId, setMessages, setStatusText, setErrorMessage);
           }
           break;
         }
@@ -433,7 +441,12 @@ export default function AgentAssistantLauncher() {
                       ) : (
                         <div className="mx-auto w-full max-w-[888px] space-y-6 py-6">
                           {messages.map((message) => (
-                            <MessageRow key={message.id} message={message} userName={user?.displayName ?? user?.username ?? "我"} />
+                            <MessageRow key={message.id} message={message} userName={user?.displayName ?? user?.username ?? "我"} onPendingAction={async (action, operation) => {
+                              const endpoint = `/api/agent/sessions/${encodeURIComponent(activeSessionId ?? "")}/pending-actions/${encodeURIComponent(action.id)}/${operation}`;
+                              const response = await fetch(endpoint, { method: "POST" });
+                              if (!response.ok) throw new Error("操作未完成");
+                              setMessages((current) => current.map((item) => item.pendingAction?.id === action.id ? { ...item, pendingAction: { ...action, status: operation === "confirm" ? "completed" : "cancelled" } } : item));
+                            }} />
                           ))}
                         </div>
                       )}
@@ -462,7 +475,7 @@ export default function AgentAssistantLauncher() {
   );
 }
 
-function MessageRow({ message, userName }: { message: AgentMessage; userName: string }) {
+function MessageRow({ message, userName, onPendingAction }: { message: AgentMessage; userName: string; onPendingAction: (action: NonNullable<AgentMessage["pendingAction"]>, operation: "confirm" | "cancel") => Promise<void> }) {
   const isUser = message.role === "user";
   return (
     <div className="relative w-full px-[44px]">
@@ -479,11 +492,19 @@ function MessageRow({ message, userName }: { message: AgentMessage; userName: st
           {message.content ? (
             <MessageContent content={message.content} compact={isUser} />
           ) : <span className="inline-flex items-center gap-2 text-[var(--color-text-secondary)]"><span className="h-2 w-2 animate-pulse rounded-full bg-[var(--color-primary)]" />正在思考…</span>}
-          {message.role === "assistant" && message.toolActivities?.length ? <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-3">{message.toolActivities.map((tool) => <span key={tool.id} className={tool.status === "completed" ? "inline-flex items-center gap-1.5 rounded-md bg-[var(--color-success-soft)] px-2 py-1 text-[11px] text-[var(--color-success)]" : "inline-flex items-center gap-1.5 rounded-md bg-[var(--color-primary-soft)] px-2 py-1 text-[11px] text-[var(--color-primary)]"}><span className={`h-1.5 w-1.5 rounded-full ${tool.status === "completed" ? "bg-[var(--color-success)]" : "animate-pulse bg-[var(--color-primary)]"}`} />{tool.status === "completed" ? "已查询" : "查询中"} {toolLabel(tool.name)}</span>)}</div> : null}
+           {message.role === "assistant" && message.toolActivities?.length ? <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-3">{message.toolActivities.map((tool) => <span key={tool.id} className={tool.status === "completed" ? "inline-flex items-center gap-1.5 rounded-md bg-[var(--color-success-soft)] px-2 py-1 text-[11px] text-[var(--color-success)]" : "inline-flex items-center gap-1.5 rounded-md bg-[var(--color-primary-soft)] px-2 py-1 text-[11px] text-[var(--color-primary)]"}><span className={`h-1.5 w-1.5 rounded-full ${tool.status === "completed" ? "bg-[var(--color-success)]" : "animate-pulse bg-[var(--color-primary)]"}`} />{tool.status === "completed" ? "已查询" : "查询中"} {toolLabel(tool.name)}</span>)}</div> : null}
+          {message.pendingAction ? <PendingActionPanel action={message.pendingAction} onAction={onPendingAction} /> : null}
         </div>
       </div>
     </div>
   );
+}
+
+function PendingActionPanel({ action, onAction }: { action: NonNullable<AgentMessage["pendingAction"]>; onAction: (action: NonNullable<AgentMessage["pendingAction"]>, operation: "confirm" | "cancel") => Promise<void> }) {
+  const pending = action.status === "pending";
+  const [error, setError] = useState("");
+  const perform = (operation: "confirm" | "cancel") => void onAction(action, operation).catch((reason) => setError(reason instanceof Error ? reason.message : "操作失败"));
+  return <div className="mt-3 border border-[var(--color-warning)]/30 bg-[var(--color-warning-soft)] p-3 text-sm"><p className="font-medium">待确认操作</p><p className="mt-1 text-xs text-[var(--color-text-secondary)]">{action.summary}</p>{action.type === "save_form_schema_draft" ? <p className="mt-2 text-xs text-[var(--color-text-secondary)]">将创建一个未发布的新 Schema 草稿版本。</p> : null}{error ? <p className="mt-2 text-xs text-[var(--color-danger)]">{error}</p> : null}{pending ? <div className="mt-3 flex gap-2"><Button size="sm" onPress={() => perform("confirm")}>确认执行</Button><Button size="sm" variant="ghost" onPress={() => perform("cancel")}>取消</Button></div> : <p className="mt-3 text-xs">{action.status === "completed" ? "已完成" : "已取消"}</p>}</div>;
 }
 
 function MessageContent({ content, compact = false }: { content: string; compact?: boolean }) {
@@ -620,6 +641,7 @@ function buildPageContext(pathname: string): AgentPageContext {
 function handleSseFrame(
   frame: string,
   assistantMessageId: string,
+  sessionId: string,
   setMessages: Dispatch<SetStateAction<AgentMessage[]>>,
   setStatusText: Dispatch<SetStateAction<string>>,
   setErrorMessage: Dispatch<SetStateAction<string>>,
@@ -649,6 +671,9 @@ function handleSseFrame(
       if (index >= 0) activities[index] = { ...activities[index], status: "completed" };
       return { ...message, toolActivities: activities };
     }));
+    const result = payload.result as { pendingAction?: { id?: string; summary?: string; type?: string } } | undefined;
+    const action = result?.pendingAction;
+    if (action?.id) setMessages((current) => current.map((message) => message.id === assistantMessageId ? { ...message, pendingAction: { id: action.id, summary: action.summary ?? "Agent 提议执行写操作", type: action.type, status: "pending" } } : message));
   } else if (eventName === "status") {
     setStatusText("正在思考");
   } else if (eventName === "run.completed") {

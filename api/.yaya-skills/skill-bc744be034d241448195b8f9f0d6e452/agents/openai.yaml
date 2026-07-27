@@ -1,0 +1,4 @@
+interface:
+  display_name: "BOM Quote"
+  short_description: "Query supplier websites and generate BOM quotation workbooks."
+  default_prompt: "Use $bom-quote to query supplier pricing for a BOM and generate an Excel quotation."

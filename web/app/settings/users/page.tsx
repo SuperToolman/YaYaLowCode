@@ -250,7 +250,7 @@ export default function UsersSettingsPage() {
     <SettingsContentCard
       title="用户管理"
       subtitle={`管理平台账号与组织身份源。共 ${users.length} 人，其中 ${users.filter((user) => user.status === "active").length} 人已启用。`}
-      bodyClassName="flex flex-col overflow-hidden"
+      bodyClassName="flex flex-col overflow-clip"
       headerActions={<div className="flex flex-wrap items-center justify-end gap-2"><Input aria-label="搜索用户" className="w-64" placeholder="搜索姓名、部门、角色或手机号" value={query} onChange={(event) => setQuery(event.currentTarget.value)} /><Button variant="secondary" onPress={() => setCreating(true)}>添加用户</Button><Button variant="secondary" isDisabled={loading} onPress={() => void loadUsers()}><RefreshIcon />{loading ? "刷新中…" : "刷新"}</Button></div>}
     >
       <div className="hidden">
@@ -480,7 +480,7 @@ export default function UsersSettingsPage() {
       >
         <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
           <Modal.Container placement="center" size="lg">
-            <Modal.Dialog className="max-h-[calc(100dvh-2rem)] overflow-hidden rounded-2xl bg-[var(--color-bg-surface)]">
+            <Modal.Dialog className="max-h-[calc(100dvh-2rem)] overflow-clip rounded-2xl bg-[var(--color-bg-surface)]">
               <Modal.Header>
                 <Modal.Heading>编辑用户</Modal.Heading>
                 <Modal.CloseTrigger aria-label="关闭" />

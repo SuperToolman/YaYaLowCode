@@ -2,9 +2,11 @@
 
 import type { ReactNode } from "react";
 import { Drawer } from "@heroui/react/drawer";
+import { TrashIcon } from "../app-icons";
 
 type WorkflowNodeConfigDrawerProps = {
   children: ReactNode;
+  onDelete?: () => void;
   headerActions?: ReactNode;
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
@@ -16,6 +18,7 @@ export function WorkflowNodeConfigDrawer({
   children,
   headerActions,
   isOpen,
+  onDelete,
   onOpenChange,
   subtitle,
   title,
@@ -24,7 +27,7 @@ export function WorkflowNodeConfigDrawer({
     <Drawer isOpen={isOpen} onOpenChange={onOpenChange}>
       <Drawer.Backdrop isDismissable>
         <Drawer.Content placement="right">
-          <Drawer.Dialog className="automation-property-panel w-[430px] max-w-[85vw] overflow-hidden p-0">
+          <Drawer.Dialog className="automation-property-panel w-[630px] max-w-[85vw] overflow-hidden p-0">
             <Drawer.Header className="border-b border-[var(--color-border)] bg-[var(--color-control-soft)] px-3 py-2.5">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
@@ -37,6 +40,17 @@ export function WorkflowNodeConfigDrawer({
                 </div>
                 <div className="flex items-center gap-2">
                   {headerActions}
+                  {onDelete ? (
+                    <button
+                      type="button"
+                      aria-label="删除节点"
+                      title="删除节点"
+                      className="flex h-8 w-8 items-center justify-center rounded-md border border-transparent text-[var(--color-danger)] transition-colors hover:border-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
+                      onClick={onDelete}
+                    >
+                      <TrashIcon />
+                    </button>
+                  ) : null}
                   <Drawer.CloseTrigger
                     aria-label="关闭属性配置"
                     className="flex h-8 min-w-8 items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2 text-[var(--color-text-secondary)]"

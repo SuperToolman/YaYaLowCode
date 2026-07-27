@@ -21,6 +21,7 @@ pub(crate) use tracing::{error, info};
 pub(crate) use uuid::Uuid;
 
 pub(crate) use crate::infrastructure::entities::{
+    agent_pending_action_entity, agent_pending_action_entity::Entity as AgentPendingActionEntity,
     agent_message_entity, agent_message_entity::Entity as AgentMessageEntity, agent_run_entity,
     agent_session_entity, agent_session_entity::Entity as AgentSessionEntity, app_entity,
     app_entity::Entity as AppEntity, app_navigation_entity,

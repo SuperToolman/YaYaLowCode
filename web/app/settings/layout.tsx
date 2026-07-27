@@ -107,9 +107,9 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   const canView = (permission: string) => permissions.includes("*") || permissions.includes(permission);
 
   return (
-    <div className="theme-page-shell settings-page-shell h-full min-h-0 overflow-hidden">
+    <div className="theme-page-shell settings-page-shell h-full min-h-0 overflow-clip">
       <main className="mx-auto grid h-full min-h-0 w-full grid-cols-[232px_minmax(0,1fr)] gap-4">
-          <Card className="theme-panel min-h-0 overflow-hidden p-2.5 shadow-[var(--shadow-card)]">
+          <Card className="theme-panel min-h-0 overflow-clip p-2.5 shadow-[var(--shadow-card)]">
             <div className="flex h-full min-h-0 flex-col">
               <div className="shrink-0 border-b border-[var(--color-border)] px-3 py-3 text-xs font-semibold text-[var(--color-text-secondary)]">
                 设置
@@ -119,7 +119,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                 const visibleItems = permissionsReady ? group.items.filter((item) => canView(item.permission)) : [];
                 if (!visibleItems.length) return null;
                 return (
-                <section key={group.label} className="overflow-hidden rounded-lg border border-[var(--color-border)]">
+                <section key={group.label} className="overflow-clip rounded-lg border border-[var(--color-border)]">
                   <div className="border-b border-[var(--color-border)] bg-[var(--color-control-soft)] px-3 py-2">
                     <h2 className="text-xs font-semibold text-[var(--color-text-secondary)]">
                       {group.label}
@@ -156,8 +156,8 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
             </div>
           </Card>
 
-          <div className="flex min-h-0 min-w-0 flex-col gap-4 overflow-hidden">
-            <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="flex min-h-0 min-w-0 flex-col gap-4 overflow-clip">
+            <div className="min-h-0 flex-1 overflow-clip">
               {children}
             </div>
           </div>

@@ -24,6 +24,7 @@ pub(crate) enum RetrySource {
 pub(crate) async fn create_automation_run<C>(
     db: &C,
     flow: &automation_flow_entity::Model,
+    trigger_event: &str,
     trigger_data: &Value,
     retry_source: Option<RetrySource>,
     retry_run_uuid: Option<&str>,
@@ -38,7 +39,7 @@ where
         run_uuid: Set(generate_automation_run_uuid()),
         flow_id: Set(flow.id),
         flow_version: Set(flow.current_version),
-        trigger_event: Set(flow.trigger_event.clone()),
+        trigger_event: Set(trigger_event.to_string()),
         trigger_payload: Set(trigger_data.clone()),
         status: Set("running".to_string()),
         retry_source: Set(retry_source.map(retry_source_label)),

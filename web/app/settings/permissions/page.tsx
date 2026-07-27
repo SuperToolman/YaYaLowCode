@@ -360,11 +360,11 @@ export default function PermissionsSettingsPage() {
       title="权限设置"
       subtitle="按角色配置应用、表单与平台功能的访问范围。"
       bodyScrollable={false}
-      bodyClassName="flex min-h-0 flex-1 flex-col !overflow-hidden"
+      bodyClassName="flex min-h-0 flex-1 flex-col !overflow-clip"
       footer={<><p className="text-xs leading-5 text-[var(--color-text-secondary)]">{message || (activeRole ? isSystemAdministrator ? "系统管理员拥有全部权限，权限不可修改。" : `正在配置「${activeRole.name}」的 RBAC 权限。` : "请先选择需要配置的角色。")}</p><Button variant="primary" isDisabled={!roleId || saving || isSystemAdministrator} onPress={() => void save()}>{saving ? "正在保存…" : "保存权限"}</Button></>}
     >
-    <section className="grid min-h-0 w-full flex-1 grid-cols-[180px_minmax(0,1fr)] overflow-hidden">
-      <aside className="flex min-h-0 flex-col overflow-hidden border-r border-[var(--color-border)] pr-4">
+    <section className="grid min-h-0 w-full flex-1 grid-cols-[180px_minmax(0,1fr)] overflow-clip">
+      <aside className="flex min-h-0 flex-col overflow-clip border-r border-[var(--color-border)] pr-4">
         <h2 className="text-base font-semibold text-[var(--color-text-primary)]">
           授权角色
         </h2>
@@ -427,7 +427,7 @@ export default function PermissionsSettingsPage() {
           ) : null}
         </div>
       </aside>
-      <div className="flex min-h-0 flex-col overflow-hidden pl-4">
+      <div className="flex min-h-0 flex-col overflow-clip pl-4">
         <header className="shrink-0 pb-4">
           <div>
               <p className="text-sm text-[var(--color-text-secondary)]">
@@ -468,11 +468,11 @@ export default function PermissionsSettingsPage() {
             {message}
           </p>
         ) : null}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-clip">
           {!activeRole ? (
             <div className="flex h-full items-center justify-center"><Empty text="选择角色后可设置应用权限和平台权限。" /></div>
           ) : tab === "apps" ? (
-            <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)] overflow-hidden rounded-lg border border-[var(--color-border)]">
+            <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)] overflow-clip rounded-lg border border-[var(--color-border)]">
               <AppTree
                 apps={apps}
                 tree={tree}
@@ -1025,7 +1025,7 @@ function PlatformPermissions({
           const keys = group.items.map(([key]) => key);
           const status = stateFor(keys);
           return (
-            <div key={group.key} className="overflow-hidden rounded-xl border border-[var(--color-border)]">
+            <div key={group.key} className="overflow-clip rounded-xl border border-[var(--color-border)]">
               <div className="flex items-center gap-3 bg-[var(--color-control-soft)] px-4 py-3">
                 <PermissionCheckbox
                   label={`授予${group.label}下全部权限`}

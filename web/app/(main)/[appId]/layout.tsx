@@ -12,6 +12,7 @@ import {
 import { AppMainContent, AppShell } from "./components/app-shell";
 import { AppHeaderTitle } from "./components/app-header-title";
 import { AppTopNav } from "./components/app-top-nav";
+import { WorkflowNotificationMenu } from "./components/workflow-notification-menu";
 import { FormSidebar } from "./components/form-sidebar";
 
 export default async function AppLayout({
@@ -63,7 +64,7 @@ export default async function AppLayout({
               </span>
             </div>
 
-            <AppTopNav appId={routeAppId} />
+            <div className="flex items-center"><AppTopNav appId={routeAppId} /><WorkflowNotificationMenu appId={routeAppId} /></div>
           </div>
         </header>
         <AppMainContent>{children}</AppMainContent>
