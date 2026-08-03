@@ -10,6 +10,7 @@ import {
   removeAuthStorage,
   writeAuthStorage,
 } from "../lib/auth";
+import { clearAppResourceCache } from "../lib/app-resources";
 
 type AuthContextValue = {
   isAuthenticated: boolean;
@@ -26,6 +27,11 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 const authListeners = new Set<() => void>();
+
+type SessionResponse = {
+  code: number;
+  data: { token: string; user: AuthUser } | null;
+};
 
 function subscribeToAuth(listener: () => void) {
   authListeners.add(listener);
@@ -45,13 +51,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     () => null,
   );
-  const isReady = useSyncExternalStore(subscribeToAuth, () => true, () => false);
+  const [sessionReady, setSessionReady] = useState(false);
   const user = useMemo(() => (token ? readStoredUser() : null), [token]);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [permissionsLoadedFor, setPermissionsLoadedFor] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!token) return;
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === AUTH_TOKEN_STORAGE_KEY || event.key === AUTH_USER_STORAGE_KEY) {
+        emitAuthChange();
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/auth/session", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = (await response.json()) as SessionResponse;
+        if (!response.ok || payload.code !== 0 || !payload.data || !isTokenUsable(payload.data.token)) {
+          throw new Error("未登录");
+        }
+        writeAuthStorage(AUTH_TOKEN_STORAGE_KEY, payload.data.token);
+        writeAuthStorage(AUTH_USER_STORAGE_KEY, JSON.stringify(payload.data.user));
+        emitAuthChange();
+      })
+      .catch(() => {
+        removeAuthStorage(AUTH_TOKEN_STORAGE_KEY);
+        removeAuthStorage(AUTH_USER_STORAGE_KEY);
+        emitAuthChange();
+      })
+      .finally(() => {
+        if (!cancelled) setSessionReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    clearAppResourceCache();
+    if (!sessionReady || !token) return;
     let cancelled = false;
     void fetch("/api/authorization/grants", { cache: "no-store" })
       .then(async (response) => {
@@ -71,9 +113,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [sessionReady, token]);
 
-  const permissionsReady = !token || permissionsLoadedFor === token;
+  const permissionsReady = sessionReady && (!token || permissionsLoadedFor === token);
 
   useEffect(() => {
     if (!token) return;
@@ -104,7 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       isAuthenticated: isTokenUsable(token),
-      isReady,
+      isReady: sessionReady,
       token,
       user,
       permissions,
@@ -114,7 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       completeLogin,
       logout,
     }),
-    [isReady, permissions, permissionsReady, token, user],
+    [permissions, permissionsReady, sessionReady, token, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

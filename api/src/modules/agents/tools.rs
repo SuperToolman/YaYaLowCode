@@ -3,17 +3,19 @@ use std::fmt::{Display, Formatter};
 
 use rig_core::tool::Tool;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::infrastructure::entities::{
     agent_pending_action_entity, app_entity, automation_flow_entity, form_definition_entity,
-    form_detail_definition_entity, form_schema_entity,
-    workflow_action_entity, workflow_instance_entity, workflow_task_entity,
+    form_detail_definition_entity, form_schema_entity, iam_organization_membership_entity,
+    iam_user_entity, organization_unit_entity, workflow_action_entity, workflow_instance_entity,
+    workflow_task_entity,
 };
+use crate::platform::config::load_application_business_context_settings;
 use crate::platform::records::RecordRepository;
 
 #[derive(Debug)]
@@ -36,11 +38,15 @@ pub(crate) fn tool_error(message: impl Into<String>) -> AgentToolError {
 #[derive(Clone)]
 pub(crate) struct AgentAccessScope {
     grants: HashSet<String>,
+    principal_user_id: Option<uuid::Uuid>,
 }
 
 impl AgentAccessScope {
-    pub(crate) fn from_grants(grants: HashSet<String>) -> Self {
-        Self { grants }
+    pub(crate) fn for_user(grants: HashSet<String>, principal_user_id: uuid::Uuid) -> Self {
+        Self {
+            grants,
+            principal_user_id: Some(principal_user_id),
+        }
     }
 
     pub(crate) fn require_app_access(&self, app_id: &str) -> Result<(), String> {
@@ -51,10 +57,34 @@ impl AgentAccessScope {
         }
     }
 
+    pub(crate) fn require_agent_use(&self, agent_id: &str) -> Result<(), String> {
+        if self.grants.contains("*")
+            || self.grants.contains("settings.agent")
+            || self.grants.contains(&format!("agent:{agent_id}:use"))
+        {
+            Ok(())
+        } else {
+            Err("agent use permission denied".to_string())
+        }
+    }
+
     fn can_access_app(&self, app_id: &str) -> bool {
         self.grants.contains("*")
             || self.grants.contains("apps.manage")
             || self.grants.contains(&format!("app:{app_id}:display"))
+    }
+
+    fn can_access_form(&self, form_uuid: &str) -> bool {
+        self.grants.contains("*") || self.grants.contains(&format!("form:{form_uuid}:display"))
+    }
+
+    pub(crate) fn require_form_access(&self, app_id: &str, form_uuid: &str) -> Result<(), String> {
+        self.require_app_access(app_id)?;
+        if self.can_access_form(form_uuid) {
+            Ok(())
+        } else {
+            Err("form visibility permission denied".to_string())
+        }
     }
 
     pub(crate) fn can_create_form(&self, app_id: &str) -> bool {
@@ -64,6 +94,42 @@ impl AgentAccessScope {
     pub(crate) fn can_edit_form(&self, app_id: &str) -> bool {
         self.grants.contains("*") || self.grants.contains(&format!("app:{app_id}:edit_form"))
     }
+
+    pub(crate) fn can_manage_automations(&self, app_id: &str) -> bool {
+        self.grants.contains("*") || self.grants.contains(&format!("app:{app_id}:automation"))
+    }
+
+    fn record_data_scope(&self, form_uuid: &str) -> AgentRecordDataScope {
+        if self.grants.contains("*") {
+            return AgentRecordDataScope::All;
+        }
+        let prefix = format!("form:{form_uuid}:data_scope:");
+        let has = |value| self.grants.contains(&format!("{prefix}{value}"));
+        if has("none") {
+            AgentRecordDataScope::None
+        } else if has("self") {
+            AgentRecordDataScope::SelfOnly
+        } else if has("department") {
+            AgentRecordDataScope::Department
+        } else if has("sub_department") {
+            AgentRecordDataScope::SubDepartment
+        } else {
+            AgentRecordDataScope::All
+        }
+    }
+
+    fn has_restricted_record_data_scope(&self, form_uuid: &str) -> bool {
+        self.record_data_scope(form_uuid) != AgentRecordDataScope::All
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AgentRecordDataScope {
+    All,
+    SelfOnly,
+    Department,
+    SubDepartment,
+    None,
 }
 
 fn resolve_app_id(
@@ -80,6 +146,119 @@ fn resolve_app_id(
     }
 }
 
+async fn filter_agent_records_by_data_scope(
+    db: &DatabaseConnection,
+    access: &AgentAccessScope,
+    form_uuid: &str,
+    records: Vec<crate::platform::records::StoredFormRecord>,
+) -> Result<Vec<crate::platform::records::StoredFormRecord>, AgentToolError> {
+    let scope = access.record_data_scope(form_uuid);
+    if scope == AgentRecordDataScope::All {
+        return Ok(records);
+    }
+    if scope == AgentRecordDataScope::None {
+        return Err(tool_error("record data permission denied"));
+    }
+    let principal_user_id = access.principal_user_id.ok_or_else(|| {
+        tool_error("current user context is required for restricted record access")
+    })?;
+    let creator_names = records
+        .iter()
+        .map(|record| record.created_by.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    if creator_names.is_empty() {
+        return Ok(records);
+    }
+    let users = iam_user_entity::Entity::find()
+        .filter(iam_user_entity::Column::DisplayName.is_in(creator_names))
+        .all(db)
+        .await
+        .map_err(|error| tool_error(error.to_string()))?;
+    let mut user_ids_by_name = std::collections::HashMap::<String, Vec<uuid::Uuid>>::new();
+    for user in users {
+        user_ids_by_name
+            .entry(user.display_name)
+            .or_default()
+            .push(user.id);
+    }
+    let creator_ids = user_ids_by_name
+        .values()
+        .filter(|ids| ids.len() == 1)
+        .map(|ids| ids[0])
+        .collect::<HashSet<_>>();
+    let visible_creator_ids = match scope {
+        AgentRecordDataScope::SelfOnly => HashSet::from([principal_user_id]),
+        AgentRecordDataScope::Department | AgentRecordDataScope::SubDepartment => {
+            let principal_units = iam_organization_membership_entity::Entity::find()
+                .filter(iam_organization_membership_entity::Column::UserId.eq(principal_user_id))
+                .all(db)
+                .await
+                .map_err(|error| tool_error(error.to_string()))?
+                .into_iter()
+                .map(|membership| membership.organization_unit_id)
+                .collect::<HashSet<_>>();
+            if principal_units.is_empty() {
+                HashSet::new()
+            } else {
+                let allowed_units = if scope == AgentRecordDataScope::Department {
+                    principal_units
+                } else {
+                    let units = organization_unit_entity::Entity::find()
+                        .all(db)
+                        .await
+                        .map_err(|error| tool_error(error.to_string()))?;
+                    let mut allowed = principal_units.clone();
+                    let mut frontier = units
+                        .iter()
+                        .filter(|unit| principal_units.contains(&unit.id))
+                        .map(|unit| (unit.source_type.clone(), unit.external_id.clone()))
+                        .collect::<Vec<_>>();
+                    while !frontier.is_empty() {
+                        let parents = frontier.drain(..).collect::<HashSet<_>>();
+                        let children = units
+                            .iter()
+                            .filter(|unit| {
+                                unit.parent_external_id.as_ref().is_some_and(|parent| {
+                                    parents.contains(&(unit.source_type.clone(), parent.clone()))
+                                }) && allowed.insert(unit.id)
+                            })
+                            .collect::<Vec<_>>();
+                        frontier = children
+                            .into_iter()
+                            .map(|unit| (unit.source_type.clone(), unit.external_id.clone()))
+                            .collect();
+                    }
+                    allowed
+                };
+                let memberships = iam_organization_membership_entity::Entity::find()
+                    .filter(
+                        iam_organization_membership_entity::Column::UserId
+                            .is_in(creator_ids.into_iter().collect::<Vec<_>>()),
+                    )
+                    .all(db)
+                    .await
+                    .map_err(|error| tool_error(error.to_string()))?;
+                memberships
+                    .into_iter()
+                    .filter(|membership| allowed_units.contains(&membership.organization_unit_id))
+                    .map(|membership| membership.user_id)
+                    .collect()
+            }
+        }
+        AgentRecordDataScope::All | AgentRecordDataScope::None => unreachable!(),
+    };
+    Ok(records
+        .into_iter()
+        .filter(|record| {
+            user_ids_by_name
+                .get(&record.created_by)
+                .is_some_and(|ids| ids.len() == 1 && visible_creator_ids.contains(&ids[0]))
+        })
+        .collect())
+}
+
 async fn create_pending_action(
     db: &DatabaseConnection,
     session_id: uuid::Uuid,
@@ -90,12 +269,25 @@ async fn create_pending_action(
     let now = chrono::Utc::now();
     let action_uuid = format!("AACT-{}", uuid::Uuid::new_v4().simple());
     agent_pending_action_entity::ActiveModel {
-        id: Set(uuid::Uuid::new_v4()), action_uuid: Set(action_uuid.clone()), session_id: Set(session_id),
-        action_type: Set(action_type.to_string()), payload_json: Set(payload), summary: Set(summary.clone()),
-        status: Set("pending".to_string()), expires_at: Set((now + chrono::Duration::minutes(15)).into()),
-        confirmed_at: Set(None), error_message: Set(None), created_at: Set(now.into()), completed_at: Set(None),
-    }.insert(db).await.map_err(|error| tool_error(error.to_string()))?;
-    Ok(json!({"pendingAction": {"id": action_uuid, "type": action_type, "summary": summary, "expiresInSeconds": 900}}))
+        id: Set(uuid::Uuid::new_v4()),
+        action_uuid: Set(action_uuid.clone()),
+        session_id: Set(session_id),
+        action_type: Set(action_type.to_string()),
+        payload_json: Set(payload),
+        summary: Set(summary.clone()),
+        status: Set("pending".to_string()),
+        expires_at: Set((now + chrono::Duration::hours(24)).into()),
+        confirmed_at: Set(None),
+        error_message: Set(None),
+        created_at: Set(now.into()),
+        completed_at: Set(None),
+    }
+    .insert(db)
+    .await
+    .map_err(|error| tool_error(error.to_string()))?;
+    Ok(
+        json!({"pendingAction": {"id": action_uuid, "type": action_type, "summary": summary, "expiresInSeconds": 86400}}),
+    )
 }
 
 #[derive(Clone)]
@@ -144,29 +336,60 @@ impl Tool for GetApplicationBusinessContextTool {
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         ensure_enabled(self.enabled, Self::NAME)?;
         let app_id = resolve_app_id(&self.allowed_app_id, args.app_id)?;
-        self.access.require_app_access(&app_id).map_err(tool_error)?;
+        self.access
+            .require_app_access(&app_id)
+            .map_err(tool_error)?;
         let app = app_entity::Entity::find()
             .filter(app_entity::Column::RouteAppId.eq(app_id.clone()))
-            .one(&self.db).await.map_err(|error| tool_error(error.to_string()))?
+            .one(&self.db)
+            .await
+            .map_err(|error| tool_error(error.to_string()))?
             .ok_or_else(|| tool_error("application not found"))?;
         let forms = form_definition_entity::Entity::find()
             .filter(form_definition_entity::Column::AppRouteAppId.eq(app_id.clone()))
             .order_by_desc(form_definition_entity::Column::UpdatedAt)
-            .all(&self.db).await.map_err(|error| tool_error(error.to_string()))?;
-        let form_names = forms.iter().map(|form| (form.form_uuid.clone(), form.name.clone())).collect::<std::collections::HashMap<_, _>>();
-        let detail_form_ids = forms.iter().map(|form| form.form_uuid.clone()).collect::<Vec<_>>();
-        let detail_relations = if detail_form_ids.is_empty() { Vec::new() } else {
+            .all(&self.db)
+            .await
+            .map_err(|error| tool_error(error.to_string()))?
+            .into_iter()
+            .filter(|form| self.access.can_access_form(&form.form_uuid))
+            .collect::<Vec<_>>();
+        let form_names = forms
+            .iter()
+            .map(|form| (form.form_uuid.clone(), form.name.clone()))
+            .collect::<std::collections::HashMap<_, _>>();
+        let detail_form_ids = forms
+            .iter()
+            .map(|form| form.form_uuid.clone())
+            .collect::<Vec<_>>();
+        let detail_relations = if detail_form_ids.is_empty() {
+            Vec::new()
+        } else {
             form_detail_definition_entity::Entity::find()
-                .filter(form_detail_definition_entity::Column::DetailFormUuid.is_in(detail_form_ids))
-                .all(&self.db).await.map_err(|error| tool_error(error.to_string()))?
-        }.into_iter().map(|relation| (relation.detail_form_uuid.clone(), relation)).collect::<std::collections::HashMap<_, _>>();
+                .filter(
+                    form_detail_definition_entity::Column::DetailFormUuid.is_in(detail_form_ids),
+                )
+                .all(&self.db)
+                .await
+                .map_err(|error| tool_error(error.to_string()))?
+        }
+        .into_iter()
+        .map(|relation| (relation.detail_form_uuid.clone(), relation))
+        .collect::<std::collections::HashMap<_, _>>();
         let mut form_summaries = Vec::new();
         for form in forms {
             let schema = form_schema_entity::Entity::find()
                 .filter(form_schema_entity::Column::FormUuid.eq(form.form_uuid.clone()))
                 .filter(form_schema_entity::Column::Version.eq(form.draft_schema_version))
-                .one(&self.db).await.map_err(|error| tool_error(error.to_string()))?;
-            let fields = schema.as_ref().and_then(|schema| schema.schema_json.get("fields")).and_then(Value::as_array).cloned().unwrap_or_default();
+                .one(&self.db)
+                .await
+                .map_err(|error| tool_error(error.to_string()))?;
+            let fields = schema
+                .as_ref()
+                .and_then(|schema| schema.schema_json.get("fields"))
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
             let field_summaries = fields.iter().take(50).map(|field| {
                 let props = field.get("props");
                 let target_id = props.and_then(|props| props.get("associationFormId")).and_then(Value::as_str);
@@ -183,7 +406,14 @@ impl Tool for GetApplicationBusinessContextTool {
                 "detailParent": detail_relation.map(|relation| json!({"formId": relation.source_form_uuid, "formName": form_names.get(&relation.source_form_uuid), "subformFieldId": relation.subform_field_id})),
             }));
         }
-        Ok(json!({"application": {"id": app.route_app_id, "name": app.name, "description": app.description, "status": app.status}, "forms": form_summaries}))
+        let business_context = load_application_business_context_settings()
+            .and_then(|settings| settings.applications.get(&app_id).cloned())
+            .filter(|context| !context.is_empty());
+        Ok(json!({
+            "application": {"id": app.route_app_id, "name": app.name, "description": app.description, "status": app.status},
+            "businessContext": business_context,
+            "forms": form_summaries,
+        }))
     }
 }
 #[derive(Deserialize)]
@@ -246,7 +476,9 @@ impl Tool for ListFormsTool {
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         ensure_enabled(self.enabled, Self::NAME)?;
         let app_id = resolve_app_id(&self.allowed_app_id, args.app_id)?;
-        self.access.require_app_access(&app_id).map_err(tool_error)?;
+        self.access
+            .require_app_access(&app_id)
+            .map_err(tool_error)?;
         let forms = form_definition_entity::Entity::find()
             .filter(form_definition_entity::Column::AppRouteAppId.eq(app_id.clone()))
             .order_by_desc(form_definition_entity::Column::UpdatedAt)
@@ -255,7 +487,7 @@ impl Tool for ListFormsTool {
             .map_err(|error| tool_error(error.to_string()))?;
         Ok(json!({
             "appId": app_id,
-            "forms": forms.into_iter().map(|form| json!({
+            "forms": forms.into_iter().filter(|form| self.access.can_access_form(&form.form_uuid)).map(|form| json!({
                 "id": form.form_uuid,
                 "name": form.name,
                 "slug": form.slug,
@@ -295,7 +527,8 @@ impl Tool for GetFormRelationshipsTool {
     type Output = Value;
 
     fn description(&self) -> String {
-        "读取表单 Schema 中配置的关联字段及其目标表单，用于规划跨表查询；不执行关联写入。".to_string()
+        "读取表单 Schema 中配置的关联字段及其目标表单，用于规划跨表查询；不执行关联写入。"
+            .to_string()
     }
 
     fn parameters(&self) -> Value {
@@ -310,10 +543,16 @@ impl Tool for GetFormRelationshipsTool {
             .await
             .map_err(|error| tool_error(error.to_string()))?
             .ok_or_else(|| tool_error("form not found"))?;
-        if self.allowed_app_id.as_deref().is_some_and(|app_id| app_id != source.app_route_app_id) {
+        if self
+            .allowed_app_id
+            .as_deref()
+            .is_some_and(|app_id| app_id != source.app_route_app_id)
+        {
             return Err(tool_error("form is outside the current Agent context"));
         }
-        self.access.require_app_access(&source.app_route_app_id).map_err(tool_error)?;
+        self.access
+            .require_form_access(&source.app_route_app_id, &source.form_uuid)
+            .map_err(tool_error)?;
         let schema = form_schema_entity::Entity::find()
             .filter(form_schema_entity::Column::FormUuid.eq(source.form_uuid.clone()))
             .filter(form_schema_entity::Column::Version.eq(source.draft_schema_version))
@@ -322,13 +561,21 @@ impl Tool for GetFormRelationshipsTool {
             .map_err(|error| tool_error(error.to_string()))?
             .ok_or_else(|| tool_error("form schema not found"))?;
         let mut relationships = Vec::new();
-        for field in schema.schema_json.get("fields").and_then(Value::as_array).into_iter().flatten() {
+        for field in schema
+            .schema_json
+            .get("fields")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
             let props = field.get("props").and_then(Value::as_object);
             let target_form_uuid = props
                 .and_then(|props| props.get("associationFormId"))
                 .and_then(Value::as_str)
                 .filter(|value| !value.trim().is_empty());
-            let Some(target_form_uuid) = target_form_uuid else { continue; };
+            let Some(target_form_uuid) = target_form_uuid else {
+                continue;
+            };
             let target = form_definition_entity::Entity::find()
                 .filter(form_definition_entity::Column::FormUuid.eq(target_form_uuid))
                 .one(&self.db)
@@ -336,7 +583,7 @@ impl Tool for GetFormRelationshipsTool {
                 .map_err(|error| tool_error(error.to_string()))?;
             let target_info = target.filter(|form| {
                 form.app_route_app_id == source.app_route_app_id
-                    && self.access.can_access_app(&form.app_route_app_id)
+                    && self.access.can_access_form(&form.form_uuid)
             });
             relationships.push(json!({
                 "fieldId": field.get("id").and_then(Value::as_str),
@@ -350,7 +597,9 @@ impl Tool for GetFormRelationshipsTool {
                 "subformFills": props.and_then(|value| value.get("associationSubformFills")),
             }));
         }
-        Ok(json!({"formId": source.form_uuid, "formName": source.name, "relationships": relationships}))
+        Ok(
+            json!({"formId": source.form_uuid, "formName": source.name, "relationships": relationships}),
+        )
     }
 }
 
@@ -387,62 +636,167 @@ impl Tool for GetRelatedRecordsTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         ensure_enabled(self.enabled, Self::NAME)?;
-        if args.record_uuids.is_empty() || args.record_uuids.len() > 20 || args.target_field_ids.len() > 20 {
+        if args.record_uuids.is_empty()
+            || args.record_uuids.len() > 20
+            || args.target_field_ids.len() > 20
+        {
             return Err(tool_error("invalid related record request size"));
         }
         let source = form_definition_entity::Entity::find()
             .filter(form_definition_entity::Column::FormUuid.eq(&args.source_form_uuid))
-            .one(&self.db).await.map_err(|error| tool_error(error.to_string()))?
+            .one(&self.db)
+            .await
+            .map_err(|error| tool_error(error.to_string()))?
             .ok_or_else(|| tool_error("source form not found"))?;
-        if source.form_type == "detail" { return Err(tool_error("detail forms do not own association records")); }
-        if self.allowed_app_id.as_deref().is_some_and(|app_id| app_id != source.app_route_app_id) { return Err(tool_error("source form is outside the current Agent context")); }
-        self.access.require_app_access(&source.app_route_app_id).map_err(tool_error)?;
+        if source.form_type == "detail" {
+            return Err(tool_error("detail forms do not own association records"));
+        }
+        if self
+            .allowed_app_id
+            .as_deref()
+            .is_some_and(|app_id| app_id != source.app_route_app_id)
+        {
+            return Err(tool_error(
+                "source form is outside the current Agent context",
+            ));
+        }
+        self.access
+            .require_form_access(&source.app_route_app_id, &source.form_uuid)
+            .map_err(tool_error)?;
         let source_schema = form_schema_entity::Entity::find()
             .filter(form_schema_entity::Column::FormUuid.eq(source.form_uuid.clone()))
             .filter(form_schema_entity::Column::Version.eq(source.draft_schema_version))
-            .one(&self.db).await.map_err(|error| tool_error(error.to_string()))?
+            .one(&self.db)
+            .await
+            .map_err(|error| tool_error(error.to_string()))?
             .ok_or_else(|| tool_error("source form schema not found"))?;
-        let relationship = source_schema.schema_json.get("fields").and_then(Value::as_array).into_iter().flatten().find(|field| {
-            field.get("id").and_then(Value::as_str) == Some(args.relationship_field_id.as_str())
-                && field.get("type").and_then(Value::as_str) == Some("associationFormField")
-        }).ok_or_else(|| tool_error("relationship field not found"))?;
-        let target_form_uuid = relationship.get("props").and_then(|props| props.get("associationFormId")).and_then(Value::as_str)
-            .filter(|value| !value.trim().is_empty()).ok_or_else(|| tool_error("relationship field has no target form"))?;
+        let relationship = source_schema
+            .schema_json
+            .get("fields")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .find(|field| {
+                field.get("id").and_then(Value::as_str) == Some(args.relationship_field_id.as_str())
+                    && field.get("type").and_then(Value::as_str) == Some("associationFormField")
+            })
+            .ok_or_else(|| tool_error("relationship field not found"))?;
+        let target_form_uuid = relationship
+            .get("props")
+            .and_then(|props| props.get("associationFormId"))
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| tool_error("relationship field has no target form"))?;
         let target = form_definition_entity::Entity::find()
             .filter(form_definition_entity::Column::FormUuid.eq(target_form_uuid))
-            .one(&self.db).await.map_err(|error| tool_error(error.to_string()))?
+            .one(&self.db)
+            .await
+            .map_err(|error| tool_error(error.to_string()))?
             .ok_or_else(|| tool_error("relationship target form not found"))?;
-        if self.allowed_app_id.as_deref().is_some_and(|app_id| app_id != target.app_route_app_id) { return Err(tool_error("relationship target is outside the current Agent context")); }
-        self.access.require_app_access(&target.app_route_app_id).map_err(tool_error)?;
+        if self
+            .allowed_app_id
+            .as_deref()
+            .is_some_and(|app_id| app_id != target.app_route_app_id)
+        {
+            return Err(tool_error(
+                "relationship target is outside the current Agent context",
+            ));
+        }
+        self.access
+            .require_form_access(&target.app_route_app_id, &target.form_uuid)
+            .map_err(tool_error)?;
         let target_schema = form_schema_entity::Entity::find()
             .filter(form_schema_entity::Column::FormUuid.eq(target.form_uuid.clone()))
             .filter(form_schema_entity::Column::Version.eq(target.draft_schema_version))
-            .one(&self.db).await.map_err(|error| tool_error(error.to_string()))?
+            .one(&self.db)
+            .await
+            .map_err(|error| tool_error(error.to_string()))?
             .ok_or_else(|| tool_error("target form schema not found"))?;
-        let target_fields = target_schema.schema_json.get("fields").and_then(Value::as_array).into_iter().flatten()
-            .filter_map(|field| field.get("id").and_then(Value::as_str)).collect::<HashSet<_>>();
-        if args.target_field_ids.iter().any(|field_id| !target_fields.contains(field_id.as_str())) { return Err(tool_error("unknown target form field")); }
-        ensure_agent_fields_queryable(&agent_field_privacy(&target_schema.schema_json), &args.target_field_ids)?;
+        let target_fields = target_schema
+            .schema_json
+            .get("fields")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|field| field.get("id").and_then(Value::as_str))
+            .collect::<HashSet<_>>();
+        if args
+            .target_field_ids
+            .iter()
+            .any(|field_id| !target_fields.contains(field_id.as_str()))
+        {
+            return Err(tool_error("unknown target form field"));
+        }
+        ensure_agent_fields_queryable(
+            &agent_field_privacy(&target_schema.schema_json),
+            &args.target_field_ids,
+        )?;
         let source_repository = RecordRepository::new(&self.db);
         let target_repository = RecordRepository::new(&self.db);
         let mut items = Vec::new();
         for source_record_uuid in args.record_uuids {
-            let source_record = source_repository.find(&source.form_uuid, &source_record_uuid).await
+            let source_record = source_repository
+                .find(&source.form_uuid, &source_record_uuid)
+                .await
                 .map_err(|error| tool_error(format!("source record query failed: {error:?}")))?;
-            let related_record_uuid = source_record.record_data.get(&args.relationship_field_id).and_then(Value::as_str).filter(|value| !value.is_empty());
+            if filter_agent_records_by_data_scope(
+                &self.db,
+                &self.access,
+                &source.form_uuid,
+                vec![source_record.clone()],
+            )
+            .await?
+            .is_empty()
+            {
+                return Err(tool_error("source record data permission denied"));
+            }
+            let related_record_uuid = source_record
+                .record_data
+                .get(&args.relationship_field_id)
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty());
             let related = match related_record_uuid {
-                Some(record_uuid) => target_repository.find(&target.form_uuid, record_uuid).await.ok(),
+                Some(record_uuid) => target_repository
+                    .find(&target.form_uuid, record_uuid)
+                    .await
+                    .ok(),
                 None => None,
             };
             let privacy = agent_field_privacy(&target_schema.schema_json);
-            let related_data = related.map(|record| {
-                if args.target_field_ids.is_empty() { record.record_data } else {
-                    Value::Object(args.target_field_ids.iter().filter_map(|field_id| record.record_data.get(field_id).cloned().map(|value| (field_id.clone(), value))).collect())
-                }
-            }).map(|data| mask_agent_record_data(data, &privacy));
+            let related = filter_agent_records_by_data_scope(
+                &self.db,
+                &self.access,
+                &target.form_uuid,
+                related.into_iter().collect(),
+            )
+            .await?
+            .into_iter()
+            .next();
+            let related_data = related
+                .map(|record| {
+                    if args.target_field_ids.is_empty() {
+                        record.record_data
+                    } else {
+                        Value::Object(
+                            args.target_field_ids
+                                .iter()
+                                .filter_map(|field_id| {
+                                    record
+                                        .record_data
+                                        .get(field_id)
+                                        .cloned()
+                                        .map(|value| (field_id.clone(), value))
+                                })
+                                .collect(),
+                        )
+                    }
+                })
+                .map(|data| mask_agent_record_data(data, &privacy));
             items.push(json!({"sourceRecordId": source_record_uuid, "relatedRecordId": related_record_uuid, "record": related_data}));
         }
-        Ok(json!({"sourceFormId": source.form_uuid, "targetForm": {"id": target.form_uuid, "name": target.name}, "relationshipFieldId": args.relationship_field_id, "items": items}))
+        Ok(
+            json!({"sourceFormId": source.form_uuid, "targetForm": {"id": target.form_uuid, "name": target.name}, "relationshipFieldId": args.relationship_field_id, "items": items}),
+        )
     }
 }
 
@@ -483,9 +837,17 @@ impl Tool for GetWorkflowProcessDefinitionTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         ensure_enabled(self.enabled, Self::NAME)?;
-        let definition = workflow_form_definition(&self.db, &self.access, &self.allowed_app_id, &args.form_uuid).await?;
+        let definition = workflow_form_definition(
+            &self.db,
+            &self.access,
+            &self.allowed_app_id,
+            &args.form_uuid,
+        )
+        .await?;
         let flow = automation_flow_entity::Entity::find()
-            .filter(automation_flow_entity::Column::TriggerFormUuid.eq(definition.form_uuid.clone()))
+            .filter(
+                automation_flow_entity::Column::TriggerFormUuid.eq(definition.form_uuid.clone()),
+            )
             .filter(automation_flow_entity::Column::FlowType.eq("process"))
             .one(&self.db)
             .await
@@ -528,7 +890,8 @@ impl Tool for GetWorkflowRecordRuntimeTool {
     type Output = Value;
 
     fn description(&self) -> String {
-        "读取一条工作流记录最新流程实例的状态、待办和动作轨迹，仅用于分析，不执行审批操作。".to_string()
+        "读取一条工作流记录最新流程实例的状态、待办和动作轨迹，仅用于分析，不执行审批操作。"
+            .to_string()
     }
 
     fn parameters(&self) -> Value {
@@ -537,7 +900,28 @@ impl Tool for GetWorkflowRecordRuntimeTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         ensure_enabled(self.enabled, Self::NAME)?;
-        let definition = workflow_form_definition(&self.db, &self.access, &self.allowed_app_id, &args.form_uuid).await?;
+        let definition = workflow_form_definition(
+            &self.db,
+            &self.access,
+            &self.allowed_app_id,
+            &args.form_uuid,
+        )
+        .await?;
+        let record = RecordRepository::new(&self.db)
+            .find(&definition.form_uuid, &args.record_uuid)
+            .await
+            .map_err(|error| tool_error(format!("workflow record query failed: {error:?}")))?;
+        if filter_agent_records_by_data_scope(
+            &self.db,
+            &self.access,
+            &definition.form_uuid,
+            vec![record],
+        )
+        .await?
+        .is_empty()
+        {
+            return Err(tool_error("workflow record data permission denied"));
+        }
         let instance = workflow_instance_entity::Entity::find()
             .filter(workflow_instance_entity::Column::FormUuid.eq(definition.form_uuid.clone()))
             .filter(workflow_instance_entity::Column::RecordUuid.eq(args.record_uuid.clone()))
@@ -546,7 +930,9 @@ impl Tool for GetWorkflowRecordRuntimeTool {
             .await
             .map_err(|error| tool_error(error.to_string()))?;
         let Some(instance) = instance else {
-            return Ok(json!({"formId": definition.form_uuid, "recordId": args.record_uuid, "instance": null, "tasks": [], "actions": []}));
+            return Ok(
+                json!({"formId": definition.form_uuid, "recordId": args.record_uuid, "instance": null, "tasks": [], "actions": []}),
+            );
         };
         let tasks = workflow_task_entity::Entity::find()
             .filter(workflow_task_entity::Column::InstanceId.eq(instance.id))
@@ -592,31 +978,76 @@ async fn workflow_form_definition(
         return Err(tool_error("form is outside the current Agent context"));
     }
     access
-        .require_app_access(&definition.app_route_app_id)
+        .require_form_access(&definition.app_route_app_id, &definition.form_uuid)
         .map_err(tool_error)?;
     Ok(definition)
 }
 
 #[derive(Deserialize)]
-pub(crate) struct ListFormRecordsArgs { form_uuid: String, #[serde(default = "default_record_limit")] limit: u64 }
-fn default_record_limit() -> u64 { 20 }
+pub(crate) struct ListFormRecordsArgs {
+    form_uuid: String,
+    #[serde(default = "default_record_limit")]
+    limit: u64,
+}
+fn default_record_limit() -> u64 {
+    20
+}
 
 impl Tool for ListFormRecordsTool {
     const NAME: &'static str = "list_form_records";
     type Error = AgentToolError;
     type Args = ListFormRecordsArgs;
     type Output = Value;
-    fn description(&self) -> String { "读取一个已发布表单最近的记录，最多 100 条，仅用于分析，不修改数据。".to_string() }
-    fn parameters(&self) -> Value { json!({"type":"object","required":["form_uuid"],"properties":{"form_uuid":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":100}}}) }
+    fn description(&self) -> String {
+        "读取一个已发布表单最近的记录，最多 100 条，仅用于分析，不修改数据。".to_string()
+    }
+    fn parameters(&self) -> Value {
+        json!({"type":"object","required":["form_uuid"],"properties":{"form_uuid":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":100}}})
+    }
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         ensure_enabled(self.enabled, Self::NAME)?;
-        let definition = form_definition_entity::Entity::find().filter(form_definition_entity::Column::FormUuid.eq(&args.form_uuid)).one(&self.db).await.map_err(|e| tool_error(e.to_string()))?.ok_or_else(|| tool_error("form not found"))?;
-        if self.allowed_app_id.as_deref().is_some_and(|app_id| app_id != definition.app_route_app_id) { return Err(tool_error("form is outside the current Agent context")); }
-        self.access.require_app_access(&definition.app_route_app_id).map_err(tool_error)?;
-        let schema = form_schema_entity::Entity::find().filter(form_schema_entity::Column::FormUuid.eq(definition.form_uuid.clone())).filter(form_schema_entity::Column::Version.eq(definition.draft_schema_version)).one(&self.db).await.map_err(|error| tool_error(error.to_string()))?.ok_or_else(|| tool_error("form schema not found"))?;
+        let definition = form_definition_entity::Entity::find()
+            .filter(form_definition_entity::Column::FormUuid.eq(&args.form_uuid))
+            .one(&self.db)
+            .await
+            .map_err(|e| tool_error(e.to_string()))?
+            .ok_or_else(|| tool_error("form not found"))?;
+        if self
+            .allowed_app_id
+            .as_deref()
+            .is_some_and(|app_id| app_id != definition.app_route_app_id)
+        {
+            return Err(tool_error("form is outside the current Agent context"));
+        }
+        self.access
+            .require_form_access(&definition.app_route_app_id, &definition.form_uuid)
+            .map_err(tool_error)?;
+        let schema = form_schema_entity::Entity::find()
+            .filter(form_schema_entity::Column::FormUuid.eq(definition.form_uuid.clone()))
+            .filter(form_schema_entity::Column::Version.eq(definition.draft_schema_version))
+            .one(&self.db)
+            .await
+            .map_err(|error| tool_error(error.to_string()))?
+            .ok_or_else(|| tool_error("form schema not found"))?;
         let privacy = agent_field_privacy(&schema.schema_json);
-        let (records, total) = RecordRepository::new(&self.db).list_page(&definition.form_uuid, 1, args.limit.clamp(1, 100)).await.map_err(|e| tool_error(format!("record query failed: {e:?}")))?;
-        Ok(json!({"formId": definition.form_uuid, "formName": definition.name, "total": total, "records": records.into_iter().map(|record| json!({"id":record.record_uuid,"data":mask_agent_record_data(record.record_data, &privacy),"createdAt":record.created_at,"updatedAt":record.updated_at})).collect::<Vec<_>>() }))
+        let (records, total) = RecordRepository::new(&self.db)
+            .list_page(&definition.form_uuid, 1, args.limit.clamp(1, 100))
+            .await
+            .map_err(|e| tool_error(format!("record query failed: {e:?}")))?;
+        let records = filter_agent_records_by_data_scope(
+            &self.db,
+            &self.access,
+            &definition.form_uuid,
+            records,
+        )
+        .await?;
+        let scoped_total = (!self
+            .access
+            .has_restricted_record_data_scope(&definition.form_uuid))
+        .then_some(total);
+        Ok(
+            json!({"formId": definition.form_uuid, "formName": definition.name, "total": scoped_total, "records": records.into_iter().map(|record| json!({"id":record.record_uuid,"data":mask_agent_record_data(record.record_data, &privacy),"createdAt":record.created_at,"updatedAt":record.updated_at})).collect::<Vec<_>>() }),
+        )
     }
 }
 
@@ -649,7 +1080,9 @@ pub(crate) struct QueryFormRecordsArgs {
     page: u64,
 }
 
-fn default_record_page() -> u64 { 1 }
+fn default_record_page() -> u64 {
+    1
+}
 
 impl Tool for QueryFormRecordsTool {
     const NAME: &'static str = "query_form_records";
@@ -679,10 +1112,16 @@ impl Tool for QueryFormRecordsTool {
         if definition.form_type == "detail" {
             return Err(tool_error("use list_detail_records for a detail form"));
         }
-        if self.allowed_app_id.as_deref().is_some_and(|app_id| app_id != definition.app_route_app_id) {
+        if self
+            .allowed_app_id
+            .as_deref()
+            .is_some_and(|app_id| app_id != definition.app_route_app_id)
+        {
             return Err(tool_error("form is outside the current Agent context"));
         }
-        self.access.require_app_access(&definition.app_route_app_id).map_err(tool_error)?;
+        self.access
+            .require_form_access(&definition.app_route_app_id, &definition.form_uuid)
+            .map_err(tool_error)?;
         let schema = form_schema_entity::Entity::find()
             .filter(form_schema_entity::Column::FormUuid.eq(definition.form_uuid.clone()))
             .filter(form_schema_entity::Column::Version.eq(definition.draft_schema_version))
@@ -690,19 +1129,39 @@ impl Tool for QueryFormRecordsTool {
             .await
             .map_err(|error| tool_error(error.to_string()))?
             .ok_or_else(|| tool_error("form schema not found"))?;
-        let valid_fields = schema.schema_json.get("fields").and_then(Value::as_array).into_iter().flatten()
+        let valid_fields = schema
+            .schema_json
+            .get("fields")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
             .filter_map(|field| field.get("id").and_then(Value::as_str))
             .collect::<HashSet<_>>();
         let privacy = agent_field_privacy(&schema.schema_json);
-        ensure_agent_fields_queryable(&privacy, &args.filters.iter().map(|filter| filter.field_id.clone()).chain(args.field_ids.clone()).collect::<Vec<_>>())?;
-        for field_id in args.filters.iter().map(|filter| filter.field_id.as_str()).chain(args.field_ids.iter().map(String::as_str)) {
+        ensure_agent_fields_queryable(
+            &privacy,
+            &args
+                .filters
+                .iter()
+                .map(|filter| filter.field_id.clone())
+                .chain(args.field_ids.clone())
+                .collect::<Vec<_>>(),
+        )?;
+        for field_id in args
+            .filters
+            .iter()
+            .map(|filter| filter.field_id.as_str())
+            .chain(args.field_ids.iter().map(String::as_str))
+        {
             if !valid_fields.contains(field_id) {
                 return Err(tool_error(format!("unknown form field: {field_id}")));
             }
         }
         for filter in &args.filters {
             if !matches!(filter.operator.as_str(), "equals" | "contains" | "is_empty") {
-                return Err(tool_error("filter operator must be equals, contains, or is_empty"));
+                return Err(tool_error(
+                    "filter operator must be equals, contains, or is_empty",
+                ));
             }
             if filter.operator != "is_empty" && filter.value.is_none() {
                 return Err(tool_error("filter value is required"));
@@ -713,6 +1172,13 @@ impl Tool for QueryFormRecordsTool {
             .list_page(&definition.form_uuid, args.page.max(1), scan_size)
             .await
             .map_err(|error| tool_error(format!("record query failed: {error:?}")))?;
+        let records = filter_agent_records_by_data_scope(
+            &self.db,
+            &self.access,
+            &definition.form_uuid,
+            records,
+        )
+        .await?;
         let limit = args.limit.clamp(1, 100) as usize;
         let matched = records.into_iter().filter(|record| args.filters.iter().all(|filter| record_matches_filter(&record.record_data, filter))).take(limit)
             .map(|record| {
@@ -722,7 +1188,12 @@ impl Tool for QueryFormRecordsTool {
                 json!({"id": record.record_uuid, "data": mask_agent_record_data(data, &privacy), "createdAt": record.created_at, "updatedAt": record.updated_at})
             }).collect::<Vec<_>>();
         let scanned_until = args.page.max(1).saturating_mul(scan_size);
-        Ok(json!({"formId": definition.form_uuid, "formName": definition.name, "records": matched, "scannedPage": args.page.max(1), "scannedRecords": scan_size.min(total.max(0) as u64), "totalRecords": total, "mayHaveMoreMatches": total.max(0) as u64 > scanned_until}))
+        let unrestricted = !self
+            .access
+            .has_restricted_record_data_scope(&definition.form_uuid);
+        Ok(
+            json!({"formId": definition.form_uuid, "formName": definition.name, "records": matched, "scannedPage": args.page.max(1), "scannedRecords": if unrestricted { scan_size.min(total.max(0) as u64) } else { scan_size }, "totalRecords": unrestricted.then_some(total), "mayHaveMoreMatches": unrestricted.then_some(total.max(0) as u64 > scanned_until)}),
+        )
     }
 }
 
@@ -750,7 +1221,9 @@ pub(crate) struct AggregateFormRecordsArgs {
     scan_pages: u64,
 }
 
-fn default_scan_pages() -> u64 { 1 }
+fn default_scan_pages() -> u64 {
+    1
+}
 
 impl Tool for AggregateFormRecordsTool {
     const NAME: &'static str = "aggregate_form_records";
@@ -768,27 +1241,102 @@ impl Tool for AggregateFormRecordsTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         ensure_enabled(self.enabled, Self::NAME)?;
-        if !matches!(args.operation.as_str(), "count" | "sum" | "average" | "group_count") { return Err(tool_error("unsupported aggregation operation")); }
-        if matches!(args.operation.as_str(), "sum" | "average") && args.value_field_id.as_deref().is_none_or(str::is_empty) { return Err(tool_error("value_field_id is required for sum and average")); }
-        if args.operation == "group_count" && args.group_field_id.as_deref().is_none_or(str::is_empty) { return Err(tool_error("group_field_id is required for group_count")); }
-        let definition = form_definition_entity::Entity::find().filter(form_definition_entity::Column::FormUuid.eq(&args.form_uuid)).one(&self.db).await
-            .map_err(|error| tool_error(error.to_string()))?.ok_or_else(|| tool_error("form not found"))?;
-        if definition.form_type == "detail" { return Err(tool_error("aggregate detail rows through their parent form or use the detail reader")); }
-        if self.allowed_app_id.as_deref().is_some_and(|app_id| app_id != definition.app_route_app_id) { return Err(tool_error("form is outside the current Agent context")); }
-        self.access.require_app_access(&definition.app_route_app_id).map_err(tool_error)?;
-        let schema = form_schema_entity::Entity::find().filter(form_schema_entity::Column::FormUuid.eq(definition.form_uuid.clone())).filter(form_schema_entity::Column::Version.eq(definition.draft_schema_version)).one(&self.db).await
-            .map_err(|error| tool_error(error.to_string()))?.ok_or_else(|| tool_error("form schema not found"))?;
-        let fields = schema.schema_json.get("fields").and_then(Value::as_array).into_iter().flatten().filter_map(|field| field.get("id").and_then(Value::as_str)).collect::<HashSet<_>>();
+        if !matches!(
+            args.operation.as_str(),
+            "count" | "sum" | "average" | "group_count"
+        ) {
+            return Err(tool_error("unsupported aggregation operation"));
+        }
+        if matches!(args.operation.as_str(), "sum" | "average")
+            && args.value_field_id.as_deref().is_none_or(str::is_empty)
+        {
+            return Err(tool_error("value_field_id is required for sum and average"));
+        }
+        if args.operation == "group_count"
+            && args.group_field_id.as_deref().is_none_or(str::is_empty)
+        {
+            return Err(tool_error("group_field_id is required for group_count"));
+        }
+        let definition = form_definition_entity::Entity::find()
+            .filter(form_definition_entity::Column::FormUuid.eq(&args.form_uuid))
+            .one(&self.db)
+            .await
+            .map_err(|error| tool_error(error.to_string()))?
+            .ok_or_else(|| tool_error("form not found"))?;
+        if definition.form_type == "detail" {
+            return Err(tool_error(
+                "aggregate detail rows through their parent form or use the detail reader",
+            ));
+        }
+        if self
+            .allowed_app_id
+            .as_deref()
+            .is_some_and(|app_id| app_id != definition.app_route_app_id)
+        {
+            return Err(tool_error("form is outside the current Agent context"));
+        }
+        self.access
+            .require_form_access(&definition.app_route_app_id, &definition.form_uuid)
+            .map_err(tool_error)?;
+        let schema = form_schema_entity::Entity::find()
+            .filter(form_schema_entity::Column::FormUuid.eq(definition.form_uuid.clone()))
+            .filter(form_schema_entity::Column::Version.eq(definition.draft_schema_version))
+            .one(&self.db)
+            .await
+            .map_err(|error| tool_error(error.to_string()))?
+            .ok_or_else(|| tool_error("form schema not found"))?;
+        let fields = schema
+            .schema_json
+            .get("fields")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|field| field.get("id").and_then(Value::as_str))
+            .collect::<HashSet<_>>();
         let privacy = agent_field_privacy(&schema.schema_json);
-        if args.filters.len() > 8 { return Err(tool_error("too many filters")); }
-        for field_id in args.filters.iter().map(|filter| filter.field_id.as_str()).chain([args.value_field_id.as_deref(), args.group_field_id.as_deref()].into_iter().flatten()) {
-            if !fields.contains(field_id) { return Err(tool_error(format!("unknown form field: {field_id}"))); }
+        if args.filters.len() > 8 {
+            return Err(tool_error("too many filters"));
+        }
+        for field_id in args
+            .filters
+            .iter()
+            .map(|filter| filter.field_id.as_str())
+            .chain(
+                [
+                    args.value_field_id.as_deref(),
+                    args.group_field_id.as_deref(),
+                ]
+                .into_iter()
+                .flatten(),
+            )
+        {
+            if !fields.contains(field_id) {
+                return Err(tool_error(format!("unknown form field: {field_id}")));
+            }
         }
         for filter in &args.filters {
-            if !matches!(filter.operator.as_str(), "equals" | "contains" | "is_empty") { return Err(tool_error("filter operator must be equals, contains, or is_empty")); }
-            if filter.operator != "is_empty" && filter.value.is_none() { return Err(tool_error("filter value is required")); }
+            if !matches!(filter.operator.as_str(), "equals" | "contains" | "is_empty") {
+                return Err(tool_error(
+                    "filter operator must be equals, contains, or is_empty",
+                ));
+            }
+            if filter.operator != "is_empty" && filter.value.is_none() {
+                return Err(tool_error("filter value is required"));
+            }
         }
-        ensure_agent_fields_queryable(&privacy, &args.filters.iter().map(|filter| filter.field_id.clone()).chain([args.value_field_id.clone(), args.group_field_id.clone()].into_iter().flatten()).collect::<Vec<_>>())?;
+        ensure_agent_fields_queryable(
+            &privacy,
+            &args
+                .filters
+                .iter()
+                .map(|filter| filter.field_id.clone())
+                .chain(
+                    [args.value_field_id.clone(), args.group_field_id.clone()]
+                        .into_iter()
+                        .flatten(),
+                )
+                .collect::<Vec<_>>(),
+        )?;
         let page = args.page.max(1);
         let scan_pages = args.scan_pages.clamp(1, 10);
         let repository = RecordRepository::new(&self.db);
@@ -796,36 +1344,79 @@ impl Tool for AggregateFormRecordsTool {
         let mut total = 0_i64;
         let mut scanned_pages = 0_u64;
         for current_page in page..page.saturating_add(scan_pages) {
-            let (items, current_total) = repository.list_page(&definition.form_uuid, current_page, 100).await
+            let (items, current_total) = repository
+                .list_page(&definition.form_uuid, current_page, 100)
+                .await
                 .map_err(|error| tool_error(format!("record query failed: {error:?}")))?;
             total = current_total;
             scanned_pages += 1;
             let item_count = items.len();
-            records.extend(items);
-            if item_count < 100 { break; }
+            records.extend(
+                filter_agent_records_by_data_scope(
+                    &self.db,
+                    &self.access,
+                    &definition.form_uuid,
+                    items,
+                )
+                .await?,
+            );
+            if item_count < 100 {
+                break;
+            }
         }
         let scanned_record_count = records.len();
-        let records = records.into_iter().filter(|record| args.filters.iter().all(|filter| record_matches_filter(&record.record_data, filter))).collect::<Vec<_>>();
+        let records = records
+            .into_iter()
+            .filter(|record| {
+                args.filters
+                    .iter()
+                    .all(|filter| record_matches_filter(&record.record_data, filter))
+            })
+            .collect::<Vec<_>>();
         let result = match args.operation.as_str() {
             "count" => json!({"count": records.len()}),
             "sum" | "average" => {
-                let values = records.iter().filter_map(|record| record.record_data.get(args.value_field_id.as_deref().unwrap_or_default())).filter_map(Value::as_f64).collect::<Vec<_>>();
+                let values = records
+                    .iter()
+                    .filter_map(|record| {
+                        record
+                            .record_data
+                            .get(args.value_field_id.as_deref().unwrap_or_default())
+                    })
+                    .filter_map(Value::as_f64)
+                    .collect::<Vec<_>>();
                 let sum = values.iter().sum::<f64>();
-                if args.operation == "sum" { json!({"sum": sum, "numericRecordCount": values.len()}) } else { json!({"average": if values.is_empty() { Value::Null } else { json!(sum / values.len() as f64) }, "numericRecordCount": values.len()}) }
+                if args.operation == "sum" {
+                    json!({"sum": sum, "numericRecordCount": values.len()})
+                } else {
+                    json!({"average": if values.is_empty() { Value::Null } else { json!(sum / values.len() as f64) }, "numericRecordCount": values.len()})
+                }
             }
             "group_count" => {
                 let mut groups = std::collections::BTreeMap::<String, u64>::new();
                 for record in &records {
-                    let value = record.record_data.get(args.group_field_id.as_deref().unwrap_or_default()).cloned().unwrap_or(Value::Null);
-                    let key = value.as_str().map(ToString::to_string).unwrap_or_else(|| value.to_string());
+                    let value = record
+                        .record_data
+                        .get(args.group_field_id.as_deref().unwrap_or_default())
+                        .cloned()
+                        .unwrap_or(Value::Null);
+                    let key = value
+                        .as_str()
+                        .map(ToString::to_string)
+                        .unwrap_or_else(|| value.to_string());
                     *groups.entry(key).or_default() += 1;
                 }
                 json!({"groups": groups.into_iter().take(50).map(|(value, count)| json!({"value": value, "count": count})).collect::<Vec<_>>()})
             }
             _ => unreachable!(),
         };
-        let scanned_until = page.saturating_add(scanned_pages).saturating_sub(1).saturating_mul(100);
-        Ok(json!({"formId": definition.form_uuid, "formName": definition.name, "operation": args.operation, "result": result, "scannedRecords": scanned_record_count, "matchedRecords": records.len(), "scannedPageStart": page, "scannedPages": scanned_pages, "totalRecords": total, "mayHaveMoreRecords": total.max(0) as u64 > scanned_until}))
+        let scanned_until = page
+            .saturating_add(scanned_pages)
+            .saturating_sub(1)
+            .saturating_mul(100);
+        Ok(
+            json!({"formId": definition.form_uuid, "formName": definition.name, "operation": args.operation, "result": result, "scannedRecords": scanned_record_count, "matchedRecords": records.len(), "scannedPageStart": page, "scannedPages": scanned_pages, "totalRecords": total, "mayHaveMoreRecords": total.max(0) as u64 > scanned_until}),
+        )
     }
 }
 
@@ -834,51 +1425,118 @@ fn record_matches_filter(record_data: &Value, filter: &FormRecordFilter) -> bool
     match filter.operator.as_str() {
         "equals" => actual == filter.value.as_ref(),
         "contains" => match (actual, filter.value.as_ref()) {
-            (Some(Value::String(actual)), Some(Value::String(expected))) => actual.to_lowercase().contains(&expected.to_lowercase()),
-            (Some(Value::Array(values)), Some(expected)) => values.iter().any(|value| value == expected),
+            (Some(Value::String(actual)), Some(Value::String(expected))) => {
+                actual.to_lowercase().contains(&expected.to_lowercase())
+            }
+            (Some(Value::Array(values)), Some(expected)) => {
+                values.iter().any(|value| value == expected)
+            }
             _ => false,
         },
-        "is_empty" => actual.is_none() || actual.is_some_and(|value| value.is_null() || value == "" || value.as_array().is_some_and(Vec::is_empty)),
+        "is_empty" => {
+            actual.is_none()
+                || actual.is_some_and(|value| {
+                    value.is_null() || value == "" || value.as_array().is_some_and(Vec::is_empty)
+                })
+        }
         _ => false,
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum AgentFieldPrivacy { Allow, Mask, Deny }
-
-fn agent_field_privacy(schema: &Value) -> std::collections::HashMap<String, AgentFieldPrivacy> {
-    schema.get("fields").and_then(Value::as_array).into_iter().flatten().filter_map(|field| {
-        let id = field.get("id").and_then(Value::as_str)?;
-        let explicit = field.get("props").and_then(|props| props.get("agentDataAccess")).and_then(Value::as_str);
-        let normalized = format!("{} {}", id, field.get("label").and_then(Value::as_str).unwrap_or("")).to_lowercase();
-        let privacy = match explicit {
-            Some("allow") => AgentFieldPrivacy::Allow,
-            Some("deny") => AgentFieldPrivacy::Deny,
-            Some("mask") => AgentFieldPrivacy::Mask,
-            _ if ["password", "secret", "token", "apikey", "api_key", "身份证", "银行卡", "bankcard"].iter().any(|term| normalized.contains(term)) => AgentFieldPrivacy::Deny,
-            _ if ["phone", "mobile", "email", "手机号", "手机", "电话", "邮箱"].iter().any(|term| normalized.contains(term)) => AgentFieldPrivacy::Mask,
-            _ => AgentFieldPrivacy::Allow,
-        };
-        (privacy != AgentFieldPrivacy::Allow).then_some((id.to_string(), privacy))
-    }).collect()
+enum AgentFieldPrivacy {
+    Allow,
+    Mask,
+    Deny,
 }
 
-fn mask_agent_record_data(mut data: Value, privacy: &std::collections::HashMap<String, AgentFieldPrivacy>) -> Value {
-    let Some(values) = data.as_object_mut() else { return data; };
+fn agent_field_privacy(schema: &Value) -> std::collections::HashMap<String, AgentFieldPrivacy> {
+    schema
+        .get("fields")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|field| {
+            let id = field.get("id").and_then(Value::as_str)?;
+            let explicit = field
+                .get("props")
+                .and_then(|props| props.get("agentDataAccess"))
+                .and_then(Value::as_str);
+            let normalized = format!(
+                "{} {}",
+                id,
+                field.get("label").and_then(Value::as_str).unwrap_or("")
+            )
+            .to_lowercase();
+            let privacy = match explicit {
+                Some("allow") => AgentFieldPrivacy::Allow,
+                Some("deny") => AgentFieldPrivacy::Deny,
+                Some("mask") => AgentFieldPrivacy::Mask,
+                _ if [
+                    "password",
+                    "secret",
+                    "token",
+                    "apikey",
+                    "api_key",
+                    "身份证",
+                    "银行卡",
+                    "bankcard",
+                ]
+                .iter()
+                .any(|term| normalized.contains(term)) =>
+                {
+                    AgentFieldPrivacy::Deny
+                }
+                _ if ["phone", "mobile", "email", "手机号", "手机", "电话", "邮箱"]
+                    .iter()
+                    .any(|term| normalized.contains(term)) =>
+                {
+                    AgentFieldPrivacy::Mask
+                }
+                _ => AgentFieldPrivacy::Allow,
+            };
+            (privacy != AgentFieldPrivacy::Allow).then_some((id.to_string(), privacy))
+        })
+        .collect()
+}
+
+fn mask_agent_record_data(
+    mut data: Value,
+    privacy: &std::collections::HashMap<String, AgentFieldPrivacy>,
+) -> Value {
+    let Some(values) = data.as_object_mut() else {
+        return data;
+    };
     for (field_id, policy) in privacy {
         match policy {
-            AgentFieldPrivacy::Deny => { values.remove(field_id); }
-            AgentFieldPrivacy::Mask => { if values.contains_key(field_id) { values.insert(field_id.clone(), Value::String("***".to_string())); } }
+            AgentFieldPrivacy::Deny => {
+                values.remove(field_id);
+            }
+            AgentFieldPrivacy::Mask => {
+                if values.contains_key(field_id) {
+                    values.insert(field_id.clone(), Value::String("***".to_string()));
+                }
+            }
             AgentFieldPrivacy::Allow => {}
         }
     }
     data
 }
 
-fn ensure_agent_fields_queryable(privacy: &std::collections::HashMap<String, AgentFieldPrivacy>, field_ids: &[String]) -> Result<(), AgentToolError> {
-    if field_ids.iter().any(|field_id| privacy.get(field_id) == Some(&AgentFieldPrivacy::Deny)) {
-        Err(tool_error("a protected field cannot be queried, grouped, or projected for Agent analysis"))
-    } else { Ok(()) }
+fn ensure_agent_fields_queryable(
+    privacy: &std::collections::HashMap<String, AgentFieldPrivacy>,
+    field_ids: &[String],
+) -> Result<(), AgentToolError> {
+    if field_ids
+        .iter()
+        .any(|field_id| privacy.get(field_id) == Some(&AgentFieldPrivacy::Deny))
+    {
+        Err(tool_error(
+            "a protected field cannot be queried, grouped, or projected for Agent analysis",
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -910,7 +1568,13 @@ impl Tool for GetDetailFormDefinitionTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         ensure_enabled(self.enabled, Self::NAME)?;
-        let (detail_form, relation) = detail_form_relation(&self.db, &self.access, &self.allowed_app_id, &args.detail_form_uuid).await?;
+        let (detail_form, relation) = detail_form_relation(
+            &self.db,
+            &self.access,
+            &self.allowed_app_id,
+            &args.detail_form_uuid,
+        )
+        .await?;
         let parent = form_definition_entity::Entity::find()
             .filter(form_definition_entity::Column::FormUuid.eq(relation.source_form_uuid.clone()))
             .one(&self.db)
@@ -958,13 +1622,35 @@ impl Tool for ListDetailRecordsTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         ensure_enabled(self.enabled, Self::NAME)?;
-        let (_, relation) = detail_form_relation(&self.db, &self.access, &self.allowed_app_id, &args.detail_form_uuid).await?;
+        let (detail_form, relation) = detail_form_relation(
+            &self.db,
+            &self.access,
+            &self.allowed_app_id,
+            &args.detail_form_uuid,
+        )
+        .await?;
+        let detail_schema = form_schema_entity::Entity::find()
+            .filter(form_schema_entity::Column::FormUuid.eq(detail_form.form_uuid.clone()))
+            .filter(form_schema_entity::Column::Version.eq(detail_form.draft_schema_version))
+            .one(&self.db)
+            .await
+            .map_err(|error| tool_error(error.to_string()))?
+            .ok_or_else(|| tool_error("detail form schema not found"))?;
+        let privacy = agent_field_privacy(&detail_schema.schema_json);
         let limit = args.limit.clamp(1, 100) as usize;
-        let parents = if let Some(parent_record_uuid) = args.parent_record_uuid.as_deref().filter(|value| !value.trim().is_empty()) {
-            vec![RecordRepository::new(&self.db)
-                .find(&relation.source_form_uuid, parent_record_uuid)
-                .await
-                .map_err(|error| tool_error(format!("parent record query failed: {error:?}")))?]
+        let parents = if let Some(parent_record_uuid) = args
+            .parent_record_uuid
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            vec![
+                RecordRepository::new(&self.db)
+                    .find(&relation.source_form_uuid, parent_record_uuid)
+                    .await
+                    .map_err(|error| {
+                        tool_error(format!("parent record query failed: {error:?}"))
+                    })?,
+            ]
         } else {
             RecordRepository::new(&self.db)
                 .list_page(&relation.source_form_uuid, 1, 100)
@@ -972,19 +1658,35 @@ impl Tool for ListDetailRecordsTool {
                 .map_err(|error| tool_error(format!("parent record query failed: {error:?}")))?
                 .0
         };
+        let parents = filter_agent_records_by_data_scope(
+            &self.db,
+            &self.access,
+            &relation.source_form_uuid,
+            parents,
+        )
+        .await?;
         let mut records = Vec::new();
         for parent in parents {
-            for (row_index, row) in parent.record_data.get(&relation.subform_field_id).and_then(Value::as_array).into_iter().flatten().enumerate() {
+            for (row_index, row) in parent
+                .record_data
+                .get(&relation.subform_field_id)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .enumerate()
+            {
                 if records.len() == limit {
                     break;
                 }
-                records.push(json!({"id": format!("{}:{}", parent.record_uuid, row_index), "parentRecordId": parent.record_uuid, "rowIndex": row_index, "data": row, "createdAt": parent.created_at, "updatedAt": parent.updated_at}));
+                records.push(json!({"id": format!("{}:{}", parent.record_uuid, row_index), "parentRecordId": parent.record_uuid, "rowIndex": row_index, "data": mask_agent_record_data(row.clone(), &privacy), "createdAt": parent.created_at, "updatedAt": parent.updated_at}));
             }
             if records.len() == limit {
                 break;
             }
         }
-        Ok(json!({"detailFormId": args.detail_form_uuid, "parentFormId": relation.source_form_uuid, "subformFieldId": relation.subform_field_id, "records": records, "limit": limit, "truncated": records.len() == limit}))
+        Ok(
+            json!({"detailFormId": args.detail_form_uuid, "parentFormId": relation.source_form_uuid, "subformFieldId": relation.subform_field_id, "records": records, "limit": limit, "truncated": records.len() == limit}),
+        )
     }
 }
 
@@ -993,7 +1695,13 @@ async fn detail_form_relation(
     access: &AgentAccessScope,
     allowed_app_id: &Option<String>,
     detail_form_uuid: &str,
-) -> Result<(form_definition_entity::Model, form_detail_definition_entity::Model), AgentToolError> {
+) -> Result<
+    (
+        form_definition_entity::Model,
+        form_detail_definition_entity::Model,
+    ),
+    AgentToolError,
+> {
     let detail_form = form_definition_entity::Entity::find()
         .filter(form_definition_entity::Column::FormUuid.eq(detail_form_uuid))
         .one(db)
@@ -1003,16 +1711,32 @@ async fn detail_form_relation(
     if detail_form.form_type != "detail" {
         return Err(tool_error("form is not a detail form"));
     }
-    if allowed_app_id.as_deref().is_some_and(|app_id| app_id != detail_form.app_route_app_id) {
-        return Err(tool_error("detail form is outside the current Agent context"));
+    if allowed_app_id
+        .as_deref()
+        .is_some_and(|app_id| app_id != detail_form.app_route_app_id)
+    {
+        return Err(tool_error(
+            "detail form is outside the current Agent context",
+        ));
     }
-    access.require_app_access(&detail_form.app_route_app_id).map_err(tool_error)?;
+    access
+        .require_form_access(&detail_form.app_route_app_id, &detail_form.form_uuid)
+        .map_err(tool_error)?;
     let relation = form_detail_definition_entity::Entity::find()
         .filter(form_detail_definition_entity::Column::DetailFormUuid.eq(detail_form_uuid))
         .one(db)
         .await
         .map_err(|error| tool_error(error.to_string()))?
         .ok_or_else(|| tool_error("detail form definition not found"))?;
+    let parent = form_definition_entity::Entity::find()
+        .filter(form_definition_entity::Column::FormUuid.eq(&relation.source_form_uuid))
+        .one(db)
+        .await
+        .map_err(|error| tool_error(error.to_string()))?
+        .ok_or_else(|| tool_error("detail parent form not found"))?;
+    access
+        .require_form_access(&parent.app_route_app_id, &parent.form_uuid)
+        .map_err(tool_error)?;
     Ok((detail_form, relation))
 }
 
@@ -1057,7 +1781,7 @@ impl Tool for GetFormSchemaTool {
             return Err(tool_error("form is outside the current Agent context"));
         }
         self.access
-            .require_app_access(&definition.app_route_app_id)
+            .require_form_access(&definition.app_route_app_id, &definition.form_uuid)
             .map_err(tool_error)?;
         let schema = form_schema_entity::Entity::find()
             .filter(form_schema_entity::Column::FormUuid.eq(definition.form_uuid.clone()))
@@ -1110,7 +1834,9 @@ impl Tool for ListAutomationsTool {
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         ensure_enabled(self.enabled, Self::NAME)?;
         let app_id = resolve_app_id(&self.allowed_app_id, args.app_id)?;
-        self.access.require_app_access(&app_id).map_err(tool_error)?;
+        self.access
+            .require_app_access(&app_id)
+            .map_err(tool_error)?;
         let flows = automation_flow_entity::Entity::find()
             .filter(automation_flow_entity::Column::AppRouteAppId.eq(app_id.clone()))
             .order_by_desc(automation_flow_entity::Column::UpdatedAt)
@@ -1160,6 +1886,57 @@ pub(crate) struct CreateDetailFormDraftTool {
 }
 
 #[derive(Clone)]
+pub(crate) struct CreateAutomationDraftTool {
+    pub(crate) db: DatabaseConnection,
+    pub(crate) session_id: uuid::Uuid,
+    pub(crate) access: AgentAccessScope,
+    pub(crate) allowed_app_id: Option<String>,
+    pub(crate) enabled: bool,
+}
+#[derive(Deserialize)]
+pub(crate) struct CreateAutomationDraftArgs {
+    app_id: Option<String>,
+    name: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    trigger_form_uuid: Option<String>,
+    #[serde(default = "default_automation_event")]
+    trigger_event: String,
+    nodes: Value,
+    edges: Value,
+}
+fn default_automation_event() -> String {
+    "after_create".to_string()
+}
+impl Tool for CreateAutomationDraftTool {
+    const NAME: &'static str = "create_automation_draft";
+    type Error = AgentToolError;
+    type Args = CreateAutomationDraftArgs;
+    type Output = Value;
+    fn description(&self) -> String {
+        "创建普通事件触发自动化草稿提案；需用户确认，确认后仍保持 draft，不自动启用。".to_string()
+    }
+    fn parameters(&self) -> Value {
+        json!({"type":"object","required":["name","nodes","edges"],"properties":{"app_id":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"trigger_form_uuid":{"type":"string"},"trigger_event":{"type":"string","enum":["before_create","after_create","before_update","after_update","before_delete","after_delete"]},"nodes":{"type":"array"},"edges":{"type":"array"}}})
+    }
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        ensure_enabled(self.enabled, Self::NAME)?;
+        let app_id = resolve_app_id(&self.allowed_app_id, args.app_id)?;
+        self.access
+            .require_app_access(&app_id)
+            .map_err(tool_error)?;
+        if !self.access.can_manage_automations(&app_id) {
+            return Err(tool_error("automation permission denied"));
+        }
+        if args.name.trim().is_empty() || !args.nodes.is_array() || !args.edges.is_array() {
+            return Err(tool_error("automation name, nodes and edges are required"));
+        }
+        create_pending_action(&self.db, self.session_id, "create_automation_draft", json!({"appId":app_id,"name":args.name.trim(),"description":args.description,"triggerFormUuid":args.trigger_form_uuid,"triggerEvent":args.trigger_event,"nodes":args.nodes,"edges":args.edges}), format!("在应用 {} 中创建自动化草稿“{}”", app_id, args.name.trim())).await
+    }
+}
+
+#[derive(Clone)]
 pub(crate) struct SaveFormSchemaDraftTool {
     pub(crate) db: DatabaseConnection,
     pub(crate) session_id: uuid::Uuid,
@@ -1205,7 +1982,14 @@ impl Tool for SaveFormSchemaDraftTool {
         if !self.access.can_edit_form(&definition.app_route_app_id) {
             return Err(tool_error("form edit permission denied"));
         }
-        create_pending_action(&self.db, self.session_id, "save_form_schema_draft", json!({"formUuid": args.form_uuid, "schema": args.schema}), format!("保存表单“{}”的 Schema 草稿", definition.name)).await
+        create_pending_action(
+            &self.db,
+            self.session_id,
+            "save_form_schema_draft",
+            json!({"formUuid": args.form_uuid, "schema": args.schema}),
+            format!("保存表单“{}”的 Schema 草稿", definition.name),
+        )
+        .await
     }
 }
 
@@ -1217,7 +2001,9 @@ pub(crate) struct CreateFormDraftArgs {
     form_type: String,
 }
 
-fn default_form_type() -> String { "normal".to_string() }
+fn default_form_type() -> String {
+    "normal".to_string()
+}
 
 impl Tool for CreateFormDraftTool {
     const NAME: &'static str = "create_form_draft";
@@ -1245,7 +2031,9 @@ impl Tool for CreateFormDraftTool {
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         ensure_enabled(self.enabled, Self::NAME)?;
         let app_id = resolve_app_id(&self.allowed_app_id, args.app_id)?;
-        self.access.require_app_access(&app_id).map_err(tool_error)?;
+        self.access
+            .require_app_access(&app_id)
+            .map_err(tool_error)?;
         if !self.access.can_create_form(&app_id) {
             return Err(tool_error("form creation permission denied"));
         }
@@ -1253,9 +2041,23 @@ impl Tool for CreateFormDraftTool {
             return Err(tool_error("form name is required"));
         }
         if !matches!(args.form_type.as_str(), "normal" | "workflow" | "defined") {
-            return Err(tool_error("form_type must be normal, workflow, or defined; detail forms require a parent form"));
+            return Err(tool_error(
+                "form_type must be normal, workflow, or defined; detail forms require a parent form",
+            ));
         }
-        create_pending_action(&self.db, self.session_id, "create_form_draft", json!({"appId": app_id, "name": args.name.trim(), "formType": args.form_type}), format!("在应用 {} 中创建{}草稿“{}”", app_id, form_type_label(&args.form_type), args.name.trim())).await
+        create_pending_action(
+            &self.db,
+            self.session_id,
+            "create_form_draft",
+            json!({"appId": app_id, "name": args.name.trim(), "formType": args.form_type}),
+            format!(
+                "在应用 {} 中创建{}草稿“{}”",
+                app_id,
+                form_type_label(&args.form_type),
+                args.name.trim()
+            ),
+        )
+        .await
     }
 }
 
@@ -1299,10 +2101,18 @@ impl Tool for CreateDetailFormDraftTool {
         if source.form_type == "detail" {
             return Err(tool_error("a detail form cannot own another detail form"));
         }
-        if self.allowed_app_id.as_deref().is_some_and(|app_id| app_id != source.app_route_app_id) {
-            return Err(tool_error("source form is outside the current Agent context"));
+        if self
+            .allowed_app_id
+            .as_deref()
+            .is_some_and(|app_id| app_id != source.app_route_app_id)
+        {
+            return Err(tool_error(
+                "source form is outside the current Agent context",
+            ));
         }
-        self.access.require_app_access(&source.app_route_app_id).map_err(tool_error)?;
+        self.access
+            .require_app_access(&source.app_route_app_id)
+            .map_err(tool_error)?;
         if !self.access.can_create_form(&source.app_route_app_id) {
             return Err(tool_error("form creation permission denied"));
         }
@@ -1313,16 +2123,29 @@ impl Tool for CreateDetailFormDraftTool {
             .await
             .map_err(|error| tool_error(error.to_string()))?
             .ok_or_else(|| tool_error("published source form schema not found"))?;
-        let has_subform = schema.schema_json.get("fields").and_then(Value::as_array).is_some_and(|fields| fields.iter().any(|field| {
-            field.get("id").and_then(Value::as_str) == Some(args.subform_field_id.trim())
-                && field.get("type").and_then(Value::as_str) == Some("subform")
-        }));
+        let has_subform = schema
+            .schema_json
+            .get("fields")
+            .and_then(Value::as_array)
+            .is_some_and(|fields| {
+                fields.iter().any(|field| {
+                    field.get("id").and_then(Value::as_str) == Some(args.subform_field_id.trim())
+                        && field.get("type").and_then(Value::as_str) == Some("subform")
+                })
+            });
         if !has_subform {
-            return Err(tool_error("subform field not found in the published schema"));
+            return Err(tool_error(
+                "subform field not found in the published schema",
+            ));
         }
         let exists = form_detail_definition_entity::Entity::find()
-            .filter(form_detail_definition_entity::Column::SourceFormUuid.eq(source.form_uuid.clone()))
-            .filter(form_detail_definition_entity::Column::SubformFieldId.eq(args.subform_field_id.trim()))
+            .filter(
+                form_detail_definition_entity::Column::SourceFormUuid.eq(source.form_uuid.clone()),
+            )
+            .filter(
+                form_detail_definition_entity::Column::SubformFieldId
+                    .eq(args.subform_field_id.trim()),
+            )
             .one(&self.db)
             .await
             .map_err(|error| tool_error(error.to_string()))?
@@ -1330,7 +2153,12 @@ impl Tool for CreateDetailFormDraftTool {
         if exists {
             return Err(tool_error("a detail form already exists for this subform"));
         }
-        let title = args.title.as_deref().map(str::trim).filter(|value| !value.is_empty()).map(ToString::to_string);
+        let title = args
+            .title
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string);
         create_pending_action(
             &self.db,
             self.session_id,
@@ -1342,7 +2170,11 @@ impl Tool for CreateDetailFormDraftTool {
 }
 
 fn form_type_label(form_type: &str) -> &'static str {
-    match form_type { "workflow" => "流程表单", "defined" => "自定义页面", _ => "普通表单" }
+    match form_type {
+        "workflow" => "流程表单",
+        "defined" => "自定义页面",
+        _ => "普通表单",
+    }
 }
 
 #[derive(Deserialize)]
@@ -1447,10 +2279,13 @@ mod tests {
 
     #[test]
     fn access_scope_limits_application_visibility() {
-        let scope = AgentAccessScope::from_grants(HashSet::from([
-            "app:sales:display".to_string(),
-            "app:sales:create_form".to_string(),
-        ]));
+        let scope = AgentAccessScope::for_user(
+            HashSet::from([
+                "app:sales:display".to_string(),
+                "app:sales:create_form".to_string(),
+            ]),
+            uuid::Uuid::nil(),
+        );
 
         assert!(scope.require_app_access("sales").is_ok());
         assert!(scope.require_app_access("hr").is_err());
@@ -1460,7 +2295,7 @@ mod tests {
 
     #[test]
     fn administrator_scope_allows_all_application_actions() {
-        let scope = AgentAccessScope::from_grants(HashSet::from(["*".to_string()]));
+        let scope = AgentAccessScope::for_user(HashSet::from(["*".to_string()]), uuid::Uuid::nil());
 
         assert!(scope.require_app_access("any-app").is_ok());
         assert!(scope.can_create_form("any-app"));
@@ -1468,12 +2303,91 @@ mod tests {
     }
 
     #[test]
+    fn form_visibility_is_not_granted_by_application_visibility_alone() {
+        let scope = AgentAccessScope::for_user(
+            HashSet::from(["app:sales:display".to_string()]),
+            uuid::Uuid::nil(),
+        );
+        assert!(scope.require_app_access("sales").is_ok());
+        assert!(scope.require_form_access("sales", "FORM-ORDERS").is_err());
+
+        let form_scope = AgentAccessScope::for_user(
+            HashSet::from([
+                "app:sales:display".to_string(),
+                "form:FORM-ORDERS:display".to_string(),
+            ]),
+            uuid::Uuid::nil(),
+        );
+        assert!(
+            form_scope
+                .require_form_access("sales", "FORM-ORDERS")
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn record_data_scope_uses_the_most_restrictive_role_grant() {
+        let scope = AgentAccessScope::for_user(
+            HashSet::from([
+                "form:orders:data_scope:all".to_string(),
+                "form:orders:data_scope:department".to_string(),
+                "form:orders:data_scope:self".to_string(),
+            ]),
+            uuid::Uuid::nil(),
+        );
+        assert_eq!(
+            scope.record_data_scope("orders"),
+            AgentRecordDataScope::SelfOnly
+        );
+
+        let denied = AgentAccessScope::for_user(
+            HashSet::from([
+                "form:orders:data_scope:none".to_string(),
+                "form:orders:data_scope:all".to_string(),
+            ]),
+            uuid::Uuid::nil(),
+        );
+        assert_eq!(
+            denied.record_data_scope("orders"),
+            AgentRecordDataScope::None
+        );
+    }
+
+    #[test]
     fn record_filters_support_exact_contains_and_empty_values() {
         let record = json!({"status": "open", "tags": ["priority", "sales"], "note": ""});
-        assert!(record_matches_filter(&record, &FormRecordFilter { field_id: "status".to_string(), operator: "equals".to_string(), value: Some(json!("open")) }));
-        assert!(record_matches_filter(&record, &FormRecordFilter { field_id: "tags".to_string(), operator: "contains".to_string(), value: Some(json!("sales")) }));
-        assert!(record_matches_filter(&record, &FormRecordFilter { field_id: "note".to_string(), operator: "is_empty".to_string(), value: None }));
-        assert!(!record_matches_filter(&record, &FormRecordFilter { field_id: "status".to_string(), operator: "equals".to_string(), value: Some(json!("closed")) }));
+        assert!(record_matches_filter(
+            &record,
+            &FormRecordFilter {
+                field_id: "status".to_string(),
+                operator: "equals".to_string(),
+                value: Some(json!("open"))
+            }
+        ));
+        assert!(record_matches_filter(
+            &record,
+            &FormRecordFilter {
+                field_id: "tags".to_string(),
+                operator: "contains".to_string(),
+                value: Some(json!("sales"))
+            }
+        ));
+        assert!(record_matches_filter(
+            &record,
+            &FormRecordFilter {
+                field_id: "note".to_string(),
+                operator: "is_empty".to_string(),
+                value: None
+            }
+        ));
+        assert!(!record_matches_filter(
+            &record,
+            &FormRecordFilter {
+                field_id: "status".to_string(),
+                operator: "equals".to_string(),
+                value: Some(json!("closed"))
+            }
+        ));
     }
 
     #[test]
@@ -1484,7 +2398,10 @@ mod tests {
             {"id": "privateNote", "props": {"agentDataAccess": "deny"}},
             {"id": "publicName", "label": "名称"}
         ]});
-        let result = mask_agent_record_data(json!({"password": "p", "phone": "13800000000", "privateNote": "x", "publicName": "采购单"}), &agent_field_privacy(&schema));
+        let result = mask_agent_record_data(
+            json!({"password": "p", "phone": "13800000000", "privateNote": "x", "publicName": "采购单"}),
+            &agent_field_privacy(&schema),
+        );
         assert_eq!(result.get("password"), None);
         assert_eq!(result.get("phone"), Some(&json!("***")));
         assert_eq!(result.get("privateNote"), None);

@@ -17,8 +17,7 @@ use crate::infrastructure::entities::{
 };
 use crate::modules::settings::default_identity_source_settings;
 use crate::platform::config::{
-    IdentitySourceSettings, load_identity_source_settings, load_rbac_permission_settings,
-    save_identity_source_settings, save_rbac_permission_settings,
+    IdentitySourceSettings, load_identity_source_settings, save_identity_source_settings,
 };
 use crate::platform::prelude::{ApiResponse, AppError, AppState};
 use crate::shared::success_response;
@@ -155,14 +154,7 @@ pub(crate) async fn clear_dingtalk_data(
         .await?;
     transaction.commit().await?;
 
-    let mut permissions = load_rbac_permission_settings().unwrap_or_default();
-    let deleted_role_permissions = roles
-        .iter()
-        .filter(|role| permissions.grants.remove(&role.id.to_string()).is_some())
-        .count();
-    if deleted_role_permissions > 0 {
-        save_rbac_permission_settings(&permissions).map_err(AppError::Server)?;
-    }
+    let deleted_role_permissions = roles.len();
 
     Ok(Json(success_response(
         "dingtalk synchronized data cleared",

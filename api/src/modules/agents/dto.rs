@@ -3,7 +3,7 @@ use serde_json::Value;
 use utoipa::ToSchema;
 
 use crate::infrastructure::entities::{agent_message_entity, agent_session_entity};
-use crate::shared::format_date;
+use crate::shared::format_datetime;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -61,7 +61,28 @@ pub(crate) struct ApiAgentMessage {
     pub(crate) role: String,
     pub(crate) content: String,
     pub(crate) metadata: Value,
+    pub(crate) run_id: Option<String>,
     pub(crate) created_at: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ApiAgentRunTrace {
+    pub(crate) run_id: String,
+    pub(crate) status: String,
+    pub(crate) started_at: String,
+    pub(crate) completed_at: Option<String>,
+    pub(crate) steps: Vec<ApiAgentRunTraceStep>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ApiAgentRunTraceStep {
+    pub(crate) index: i32,
+    pub(crate) tool: String,
+    pub(crate) arguments: Value,
+    pub(crate) summary: Value,
+    pub(crate) status: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -71,6 +92,7 @@ pub(crate) struct ApiPendingAgentAction {
     pub(crate) action_type: String,
     pub(crate) summary: String,
     pub(crate) status: String,
+    pub(crate) created_at: String,
     pub(crate) expires_at: String,
 }
 
@@ -86,20 +108,26 @@ impl From<agent_session_entity::Model> for ApiAgentSession {
             app_id: value.app_route_app_id,
             context: value.context_json,
             status: value.status,
-            created_at: format_date(value.created_at),
-            updated_at: format_date(value.updated_at),
+            created_at: format_datetime(value.created_at),
+            updated_at: format_datetime(value.updated_at),
         }
     }
 }
 
 impl From<agent_message_entity::Model> for ApiAgentMessage {
     fn from(value: agent_message_entity::Model) -> Self {
+        let run_id = value
+            .metadata_json
+            .get("runId")
+            .and_then(Value::as_str)
+            .map(str::to_string);
         Self {
             id: value.message_uuid,
             role: value.role,
             content: value.content,
             metadata: value.metadata_json,
-            created_at: format_date(value.created_at),
+            run_id,
+            created_at: format_datetime(value.created_at),
         }
     }
 }

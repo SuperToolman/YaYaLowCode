@@ -15,6 +15,7 @@ import {
   getRolePermissions,
   listAppNavigation,
   listApps,
+  listAgents,
   listRoles,
   updateRolePermissions,
 } from "../../lib/api-client";
@@ -30,6 +31,7 @@ type Role = {
   memberCount: number;
 };
 type App = { id: string; name: string; status: string };
+type Agent = { id: string; name: string; description?: string; enabled: boolean };
 type NavigationItem = {
   id: string;
   itemType: "group" | "form" | string;
@@ -128,8 +130,7 @@ const platformPermissionGroups = [
     items: [
       ["settings.database", "数据库连接", "管理 PostgreSQL 连接配置"],
       ["settings.agent", "Agent 配置", "管理模型提供商、Agent 与扩展能力"],
-      ["settings.identity-source", "身份源配置", "管理平台账号与身份源"],
-      ["settings.organization", "组织架构", "查看组织与部门结构"],
+      ["settings.identity-source", "身份源与组织架构", "管理身份源并查看组织与部门结构"],
       ["settings.roles", "角色管理", "查看角色和成员绑定"],
       ["settings.users", "用户管理", "查看平台用户与状态"],
     ],
@@ -139,6 +140,7 @@ const platformPermissionGroups = [
 export default function PermissionsSettingsPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [apps, setApps] = useState<App[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [tree, setTree] = useState<Record<string, NavigationItem[]>>({});
   const [roleSearch, setRoleSearch] = useState("");
   const [roleSourceFilter, setRoleSourceFilter] = useState<RoleSourceFilter>("all");
@@ -180,12 +182,14 @@ export default function PermissionsSettingsPage() {
     setLoading(true);
     setError("");
     try {
-      const [rolesResult, appsResult] = await Promise.all([
+      const [rolesResult, appsResult, agentsResult] = await Promise.all([
         listRoles({ responseStyle: "fields" }),
         listApps({ responseStyle: "fields" }),
+        listAgents({ responseStyle: "fields" }),
       ]);
       const rolesData = rolesResult.data;
       const appsData = appsResult.data;
+      const agentsData = agentsResult.data;
       if (
         rolesResult.error ||
         !rolesData ||
@@ -195,6 +199,10 @@ export default function PermissionsSettingsPage() {
         !appsData ||
         appsData.code !== 0 ||
         !appsData.data
+        || agentsResult.error
+        || !agentsData
+        || agentsData.code !== 0
+        || !agentsData.data
       ) {
         throw new Error("无法加载权限资源");
       }
@@ -204,6 +212,7 @@ export default function PermissionsSettingsPage() {
       const nextApps = appsData.data;
       setRoles(nextRoles);
       setApps(nextApps);
+      setAgents(agentsData.data);
       const navigation = await mapWithConcurrency(nextApps, 6, async (app) => {
           try {
             const { data, error } = await listAppNavigation({
@@ -273,19 +282,31 @@ export default function PermissionsSettingsPage() {
     checked: boolean,
   ) {
     if (isSystemAdministrator) return;
+    const childFormIds = prefix.startsWith("app:")
+      ? (tree[prefix.slice(4)] ?? [])
+          .filter((item) => item.itemType === "form" && item.targetFormUuid)
+          .map((item) => item.targetFormUuid!)
+      : [];
     setGrants((current) => {
-      const without = current.filter(
-        (grant) => !actions.some((action) => grant === `${prefix}:${action}`),
+      const grantsToReplace = [
+        ...actions.map((action) => `${prefix}:${action}`),
+        ...childFormIds.flatMap((formId) =>
+          formActions.map((action) => `form:${formId}:${action}`),
+        ),
+      ];
+      const next = new Set(
+        current.filter((grant) => !grantsToReplace.includes(grant)),
       );
-      return checked
-        ? [
-            ...without,
-            ...actions.map((action) => `${prefix}:${action}`),
-            ...(prefix.startsWith("form:") && formAppIds.get(prefix.slice(5))
-              ? [`app:${formAppIds.get(prefix.slice(5))}:display`]
-              : []),
-          ]
-        : without;
+      if (!checked) return [...next];
+
+      actions.forEach((action) => next.add(`${prefix}:${action}`));
+      childFormIds.forEach((formId) => {
+        formActions.forEach((action) => next.add(`form:${formId}:${action}`));
+      });
+      if (prefix.startsWith("form:") && formAppIds.get(prefix.slice(5))) {
+        next.add(`app:${formAppIds.get(prefix.slice(5))}:display`);
+      }
+      return [...next];
     });
   }
   function toggle(grant: string) {
@@ -409,11 +430,11 @@ export default function PermissionsSettingsPage() {
               onPress={() => selectRole(role.id)}
               className={`h-auto justify-start rounded-xl px-3 py-3 text-left ${role.id === roleId ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]" : "text-[var(--color-text-primary)]"}`}
             >
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-medium">
+              <span className="flex w-full min-w-0 items-start gap-2">
+                <span className="block min-w-0 flex-1 truncate text-sm font-medium">
                   {role.name}
                 </span>
-                <span className="mt-1 flex items-center gap-2 text-[11px] text-[var(--color-text-secondary)]">
+                <span className="ml-auto flex shrink-0 flex-col items-end gap-1 text-[11px] leading-none text-[var(--color-text-secondary)]">
                   <SourceTag source={role.sourceType} />
                   <span>{role.memberCount} 名成员</span>
                 </span>
@@ -484,7 +505,7 @@ export default function PermissionsSettingsPage() {
               <div className="min-h-0 overflow-y-auto overscroll-contain"><ResourcePermissions resource={selectedResource} grants={grantSet} state={resourceState} onToggle={toggle} onSetScope={setScope} onSetVisibleViews={setVisibleViews} /></div>
             </div>
           ) : (
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"><PlatformPermissions grants={grantSet} onToggle={toggle} onSetGroup={setPlatformGroup} /></div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"><PlatformPermissions agents={agents} grants={grantSet} onToggle={toggle} onSetGroup={setPlatformGroup} /></div>
           )}
         </div>
       </div>
@@ -550,7 +571,7 @@ function AppTree({
           height={480}
           indent={14}
           rowHeight={40}
-          openByDefault
+          openByDefault={false}
           disableDrag
           disableDrop
         >
@@ -999,34 +1020,44 @@ function ViewScopePanel({
   );
 }
 function PlatformPermissions({
+  agents,
   grants,
   onToggle,
   onSetGroup,
 }: {
+  agents: Agent[];
   grants: Set<string>;
   onToggle: (grant: string) => void;
   onSetGroup: (keys: readonly string[], checked: boolean) => void;
 }) {
   const locked = grants.has("*");
   const stateFor = (keys: readonly string[]) => {
+    if (!keys.length) return "none";
     if (locked || keys.every((key) => grants.has(key))) return "all";
     return keys.some((key) => grants.has(key)) ? "partial" : "none";
   };
+  const agentKeys = agents
+    .filter((agent) => agent.enabled)
+    .map((agent) => `agent:${agent.id}:use`);
   return (
-    <section className="mx-auto max-w-3xl">
-      <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">
-        平台权限
-      </h2>
-      <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-        按平台导航层级配置访问范围；一级菜单可批量设置其全部二级页面。
-      </p>
-      <div className="mt-5 space-y-3">
+    <section className="w-full pb-5">
+      <div className="flex items-baseline justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">
+            平台权限
+          </h2>
+          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+            按功能分组配置访问范围，可在组标题处批量授权。
+          </p>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
         {platformPermissionGroups.map((group) => {
           const keys = group.items.map(([key]) => key);
           const status = stateFor(keys);
           return (
-            <div key={group.key} className="overflow-clip rounded-xl border border-[var(--color-border)]">
-              <div className="flex items-center gap-3 bg-[var(--color-control-soft)] px-4 py-3">
+            <div key={group.key} className="overflow-clip rounded-lg border border-[var(--color-border)]">
+              <div className="flex items-center gap-3 bg-[var(--color-control-soft)] px-3 py-2.5">
                 <PermissionCheckbox
                   label={`授予${group.label}下全部权限`}
                   state={status}
@@ -1039,7 +1070,7 @@ function PlatformPermissions({
                 </div>
                 <StatusTag value={status === "all" ? "全部授权" : status === "partial" ? "部分授权" : "未授权"} tone={status} />
               </div>
-              <div className="divide-y divide-[var(--color-border)]">
+              <div className="grid gap-px border-t border-[var(--color-border)] bg-[var(--color-border)] sm:grid-cols-2">
                 {group.items.map(([key, label, description]) => {
                   const granted = locked || grants.has(key);
                   return (
@@ -1048,16 +1079,15 @@ function PlatformPermissions({
                       isSelected={granted}
                       isDisabled={locked}
                       onChange={() => onToggle(key)}
-                      className="flex items-start justify-between px-4 py-3 pl-11 hover:bg-[var(--color-bg-hover)]"
+                      aria-label={`${label}：${description}`}
+                      className="min-w-0 bg-[var(--color-bg)] px-3 py-2.5 hover:bg-[var(--color-bg-hover)]"
                     >
-                      <span className="flex items-start gap-3">
-                        <Checkbox.Control className="mt-0.5"><Checkbox.Indicator /></Checkbox.Control>
-                        <Checkbox.Content>
-                          <span className="block text-sm font-medium">{label}</span>
-                          <span className="mt-1 block text-xs text-[var(--color-text-secondary)]">{description}</span>
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Checkbox.Control><Checkbox.Indicator /></Checkbox.Control>
+                        <Checkbox.Content className="truncate text-sm">
+                          <span title={description}>{label}</span>
                         </Checkbox.Content>
                       </span>
-                      <StatusTag value={granted ? "已授权" : "未授权"} tone={granted ? "all" : "none"} />
                     </Checkbox>
                   );
                 })}
@@ -1065,6 +1095,45 @@ function PlatformPermissions({
             </div>
           );
         })}
+        {agents.length ? (
+          <div className="overflow-clip rounded-lg border border-[var(--color-border)] lg:col-span-2">
+            <div className="flex items-center gap-3 bg-[var(--color-control-soft)] px-3 py-2.5">
+              <PermissionCheckbox
+                label="授予全部 Agent 使用权限"
+                state={stateFor(agentKeys)}
+                isDisabled={locked}
+                onChange={(checked) => onSetGroup(agentKeys, checked)}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-[var(--color-text-primary)]">Agent 使用权限</p>
+                <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">允许调用已授权的 Agent。</p>
+              </div>
+              <StatusTag value={stateFor(agentKeys) === "all" ? "全部授权" : stateFor(agentKeys) === "partial" ? "部分授权" : "未授权"} tone={stateFor(agentKeys)} />
+            </div>
+            <div className="grid gap-px border-t border-[var(--color-border)] bg-[var(--color-border)] sm:grid-cols-2 xl:grid-cols-3">
+              {agents.map((agent) => {
+                const key = `agent:${agent.id}:use`;
+                return (
+                  <Checkbox
+                    key={agent.id}
+                    isSelected={locked || grants.has(key)}
+                    isDisabled={locked || !agent.enabled}
+                    onChange={() => onToggle(key)}
+                    aria-label={agent.description || `允许调用 ${agent.name}`}
+                    className="min-w-0 bg-[var(--color-bg)] px-3 py-2.5 hover:bg-[var(--color-bg-hover)]"
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <Checkbox.Control><Checkbox.Indicator /></Checkbox.Control>
+                      <Checkbox.Content className="truncate text-sm">
+                        <span title={agent.description}>{agent.name}</span>
+                      </Checkbox.Content>
+                    </span>
+                  </Checkbox>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
       </div>
     </section>
   );

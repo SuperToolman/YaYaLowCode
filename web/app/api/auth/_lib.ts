@@ -28,10 +28,17 @@ export function setAuthCookie(response: NextResponse, token: string) {
   response.cookies.set("yaya-auth-token", token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: shouldUseSecureCookie(),
     path: "/",
     maxAge: TOKEN_TTL_SECONDS,
   });
+}
+
+export function shouldUseSecureCookie() {
+  const configured = process.env.AUTH_COOKIE_SECURE?.trim().toLowerCase();
+  if (configured === "true") return true;
+  if (configured === "false") return false;
+  return process.env.NODE_ENV === "production";
 }
 
 export function signToken(payload: Record<string, unknown>, secret: string) {

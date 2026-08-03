@@ -188,16 +188,17 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
         if (error || !data || data.code !== 0 || !data.data) {
           throw new Error("create automation flow failed");
         }
+        const createdFlow = data.data as AutomationFlow;
 
         setAutomationList((current) => ({
           ...current,
-          items: [data.data, ...current.items],
+          items: [createdFlow, ...current.items],
           total: current.total + 1,
           draft: current.draft + 1,
         }));
         setCreateOpen(false);
         toast.success("集成自动化已创建");
-        router.push(`/${appId}/automations/${data.data.id}`);
+        router.push(`/${appId}/automations/${createdFlow.id}`);
       } catch {
         setErrorMessage("创建集成自动化失败，请检查触发表单配置。");
       }
@@ -221,8 +222,9 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
       if (error || !data || data.code !== 0 || !data.data) {
         throw new Error("update automation status failed");
       }
+      const updatedFlow = data.data as AutomationFlow;
 
-      setAutomationList((current) => rebuildAutomationList(current, data.data));
+      setAutomationList((current) => rebuildAutomationList(current, updatedFlow));
       toast.success(nextStatus === "enabled" ? "自动化已启用" : "自动化已停用");
     } catch {
       setErrorMessage("更新自动化状态失败。");
@@ -245,7 +247,8 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
         responseStyle: "fields",
       });
 
-      if (error || !data || data.code !== 0) {
+      const result = data as { code?: number } | undefined;
+      if (error || !result || result.code !== 0) {
         throw new Error("delete automation flow failed");
       }
 
@@ -925,6 +928,7 @@ function rebuildAutomationList(
 
   return buildAutomationList(items);
 }
+
 
 function removeAutomationFromList(
   current: AutomationFlowList,

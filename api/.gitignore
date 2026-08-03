@@ -1,4 +1,8 @@
 /target
 /.run/
+/runtime/
 *.log
 .yaya-lowcode-settings.json
+.yaya-valkey-settings.json
+.yaya-communication-module.json
+.yaya-license.json

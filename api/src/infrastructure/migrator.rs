@@ -43,23 +43,385 @@ impl MigratorTrait for Migrator {
             Box::new(m20260727_000034_create_workflow_comments::Migration),
             Box::new(m20260727_000035_create_workflow_notifications::Migration),
             Box::new(m20260727_000036_add_workflow_pause_fields::Migration),
+            Box::new(m20260728_000037_repair_agent_pending_actions::Migration),
+            Box::new(m20260731_000038_create_agent_configuration_tables::Migration),
+            Box::new(m20260731_000039_create_agent_resources_table::Migration),
+            Box::new(m20260731_000040_add_agent_provider_website_url::Migration),
+            Box::new(m20260731_000041_create_role_permissions::Migration),
+            Box::new(m20260731_000042_create_platform_agent_assistant_settings::Migration),
+            Box::new(m20260731_000043_create_platform_logs::Migration),
+            Box::new(m20260803_000044_create_recycle_bin_entries::Migration),
         ]
+    }
+}
+
+mod m20260803_000044_create_recycle_bin_entries {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260803_000044_create_recycle_bin_entries"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(r#"
+                CREATE TABLE IF NOT EXISTS form_recycle_bin_entries (
+                    id UUID PRIMARY KEY,
+                    form_uuid VARCHAR(40) NOT NULL,
+                    record_uuid VARCHAR(80) NOT NULL,
+                    source_form_name VARCHAR(160) NOT NULL,
+                    form_type VARCHAR(24) NOT NULL,
+                    record_data JSONB NOT NULL,
+                    deleted_at TIMESTAMPTZ NOT NULL,
+                    detail_source_form_uuid VARCHAR(40) NULL,
+                    detail_subform_field_id VARCHAR(120) NULL,
+                    detail_row_index INTEGER NULL,
+                    UNIQUE(form_uuid, record_uuid)
+                );
+                CREATE INDEX IF NOT EXISTS idx_form_recycle_bin_deleted_at ON form_recycle_bin_entries (deleted_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_form_recycle_bin_form_uuid ON form_recycle_bin_entries (form_uuid);
+                DO $$ DECLARE item RECORD; BEGIN
+                    FOR item IN SELECT physical_table FROM form_storage_definitions LOOP
+                        EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ NULL', item.physical_table);
+                    END LOOP;
+                END $$;
+            "#).await?;
+            Ok(())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE IF EXISTS form_recycle_bin_entries;")
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260731_000043_create_platform_logs {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260731_000043_create_platform_logs"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(r#"
+                CREATE TABLE IF NOT EXISTS platform_logs (
+                    id UUID PRIMARY KEY,
+                    occurred_at TIMESTAMPTZ NOT NULL,
+                    level VARCHAR(8) NOT NULL CHECK (level IN ('debug', 'info', 'warn', 'error')),
+                    target VARCHAR(255) NOT NULL,
+                    message TEXT NOT NULL,
+                    fields JSONB NOT NULL DEFAULT '{}'::jsonb
+                );
+                CREATE INDEX IF NOT EXISTS idx_platform_logs_occurred_at ON platform_logs (occurred_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_platform_logs_level_occurred_at ON platform_logs (level, occurred_at DESC);
+            "#).await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE IF EXISTS platform_logs;")
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260731_000042_create_platform_agent_assistant_settings {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260731_000042_create_platform_agent_assistant_settings"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(r#"
+                CREATE TABLE IF NOT EXISTS platform_agent_assistant_settings (
+                    id SMALLINT PRIMARY KEY CHECK (id = 1),
+                    navigation_agent_id VARCHAR(96) REFERENCES agent_definitions(id) ON DELETE SET NULL,
+                    schema_analysis_prompt TEXT NOT NULL DEFAULT '',
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                );
+            "#).await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE IF EXISTS platform_agent_assistant_settings;")
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260731_000041_create_role_permissions {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260731_000041_create_role_permissions"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                CREATE TABLE IF NOT EXISTS iam_role_permissions (
+                    id UUID PRIMARY KEY,
+                    role_id UUID NOT NULL REFERENCES iam_roles(id) ON DELETE CASCADE,
+                    permission VARCHAR(255) NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    UNIQUE (role_id, permission)
+                );
+                CREATE INDEX IF NOT EXISTS idx_iam_role_permissions_role_id
+                    ON iam_role_permissions(role_id);
+            "#,
+                )
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE IF EXISTS iam_role_permissions;")
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260731_000039_create_agent_resources_table {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260731_000039_create_agent_resources_table"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                CREATE TABLE IF NOT EXISTS agent_resources (
+                    id VARCHAR(96) PRIMARY KEY,
+                    kind VARCHAR(32) NOT NULL,
+                    name VARCHAR(160) NOT NULL,
+                    configuration_json JSONB NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_resources_kind ON agent_resources(kind);
+            "#,
+                )
+                .await?;
+            Ok(())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE IF EXISTS agent_resources;")
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260731_000040_add_agent_provider_website_url {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260731_000040_add_agent_provider_website_url"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(
+                "ALTER TABLE agent_model_providers ADD COLUMN IF NOT EXISTS website_url TEXT NOT NULL DEFAULT '';",
+            ).await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "ALTER TABLE agent_model_providers DROP COLUMN IF EXISTS website_url;",
+                )
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260731_000038_create_agent_configuration_tables {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260731_000038_create_agent_configuration_tables"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(r#"
+                CREATE TABLE IF NOT EXISTS agent_model_providers (
+                    id VARCHAR(96) PRIMARY KEY, name VARCHAR(160) NOT NULL, kind VARCHAR(80) NOT NULL,
+                    enabled BOOLEAN NOT NULL, api_base_url TEXT NOT NULL, api_key TEXT NOT NULL DEFAULT '', website_url TEXT NOT NULL DEFAULT '',
+                    default_chat_model VARCHAR(200) NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                );
+                CREATE TABLE IF NOT EXISTS agent_provider_models (
+                    id UUID PRIMARY KEY, provider_id VARCHAR(96) NOT NULL REFERENCES agent_model_providers(id) ON DELETE CASCADE,
+                    model_id VARCHAR(200) NOT NULL, capability VARCHAR(40) NOT NULL, enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    is_default BOOLEAN NOT NULL DEFAULT FALSE, UNIQUE(provider_id, model_id, capability)
+                );
+                CREATE TABLE IF NOT EXISTS agent_config_profiles (
+                    id VARCHAR(96) PRIMARY KEY, name VARCHAR(160) NOT NULL,
+                    provider_id VARCHAR(96) NOT NULL REFERENCES agent_model_providers(id) ON DELETE RESTRICT,
+                    configuration_json JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                );
+                CREATE TABLE IF NOT EXISTS agent_definitions (
+                    id VARCHAR(96) PRIMARY KEY, name VARCHAR(160) NOT NULL, enabled BOOLEAN NOT NULL,
+                    is_default BOOLEAN NOT NULL DEFAULT FALSE, scope_type VARCHAR(40) NOT NULL, scope_ref_id VARCHAR(120),
+                    profile_id VARCHAR(96) NOT NULL REFERENCES agent_config_profiles(id) ON DELETE RESTRICT,
+                    configuration_json JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_profiles_provider ON agent_config_profiles(provider_id);
+                CREATE INDEX IF NOT EXISTS idx_agent_definitions_profile ON agent_definitions(profile_id);
+                CREATE INDEX IF NOT EXISTS idx_agent_definitions_scope ON agent_definitions(scope_type, scope_ref_id);
+            "#).await?;
+            Ok(())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("DROP TABLE IF EXISTS agent_definitions; DROP TABLE IF EXISTS agent_config_profiles; DROP TABLE IF EXISTS agent_provider_models; DROP TABLE IF EXISTS agent_model_providers;").await?;
+            Ok(())
+        }
+    }
+}
+
+// The older migrations in this file all derive the file name ("migrator") as
+// their migration name. New migrations must declare a unique name explicitly.
+mod m20260728_000037_repair_agent_pending_actions {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260728_000037_repair_agent_pending_actions"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                    DO $$
+                    BEGIN
+                        IF to_regclass('agent_sessions') IS NOT NULL THEN
+                            CREATE TABLE IF NOT EXISTS agent_pending_actions (
+                                id UUID PRIMARY KEY,
+                                action_uuid VARCHAR(64) NOT NULL UNIQUE,
+                                session_id UUID NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+                                action_type VARCHAR(64) NOT NULL,
+                                payload_json JSONB NOT NULL,
+                                summary TEXT NOT NULL,
+                                status VARCHAR(24) NOT NULL,
+                                expires_at TIMESTAMPTZ NOT NULL,
+                                confirmed_at TIMESTAMPTZ,
+                                error_message TEXT,
+                                created_at TIMESTAMPTZ NOT NULL,
+                                completed_at TIMESTAMPTZ
+                            );
+                            CREATE INDEX IF NOT EXISTS idx_agent_pending_actions_session_status
+                                ON agent_pending_actions (session_id, status, created_at DESC);
+                        END IF;
+                    END $$;
+                    "#,
+                )
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE IF EXISTS agent_pending_actions;")
+                .await?;
+            Ok(())
+        }
     }
 }
 
 mod m20260727_000036_add_workflow_pause_fields {
     use sea_orm_migration::prelude::*;
-    #[derive(DeriveMigrationName)] pub struct Migration;
-    #[async_trait::async_trait] impl MigrationTrait for Migration {
-        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> { manager.get_connection().execute_unprepared("ALTER TABLE workflow_instances ADD COLUMN IF NOT EXISTS paused_by VARCHAR(120), ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS pause_reason TEXT;").await?; Ok(()) }
-        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> { manager.get_connection().execute_unprepared("ALTER TABLE workflow_instances DROP COLUMN IF EXISTS paused_by, DROP COLUMN IF EXISTS paused_at, DROP COLUMN IF EXISTS pause_reason;").await?; Ok(()) }
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("ALTER TABLE workflow_instances ADD COLUMN IF NOT EXISTS paused_by VARCHAR(120), ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS pause_reason TEXT;").await?;
+            Ok(())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("ALTER TABLE workflow_instances DROP COLUMN IF EXISTS paused_by, DROP COLUMN IF EXISTS paused_at, DROP COLUMN IF EXISTS pause_reason;").await?;
+            Ok(())
+        }
     }
 }
 
 mod m20260727_000035_create_workflow_notifications {
     use sea_orm_migration::prelude::*;
-    #[derive(DeriveMigrationName)] pub struct Migration;
-    #[async_trait::async_trait] impl MigrationTrait for Migration {
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
         async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
             manager.get_connection().execute_unprepared(r#"CREATE TABLE IF NOT EXISTS workflow_notifications (
                 id UUID PRIMARY KEY, notification_uuid VARCHAR(64) NOT NULL UNIQUE,
@@ -69,19 +431,30 @@ mod m20260727_000035_create_workflow_notifications {
                 task_id UUID REFERENCES workflow_tasks(id) ON DELETE SET NULL,
                 notification_type VARCHAR(24) NOT NULL, title VARCHAR(200) NOT NULL, content TEXT NOT NULL,
                 read_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL
-            ); CREATE INDEX IF NOT EXISTS idx_workflow_notifications_recipient_read ON workflow_notifications (recipient_user_id, read_at, created_at DESC);"#).await?; Ok(())
+            ); CREATE INDEX IF NOT EXISTS idx_workflow_notifications_recipient_read ON workflow_notifications (recipient_user_id, read_at, created_at DESC);"#).await?;
+            Ok(())
         }
-        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> { manager.get_connection().execute_unprepared("DROP TABLE IF EXISTS workflow_notifications;").await?; Ok(()) }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE IF EXISTS workflow_notifications;")
+                .await?;
+            Ok(())
+        }
     }
 }
 
 mod m20260727_000034_create_workflow_comments {
     use sea_orm_migration::prelude::*;
-    #[derive(DeriveMigrationName)] pub struct Migration;
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
         async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-            manager.get_connection().execute_unprepared(r#"
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
                 CREATE TABLE IF NOT EXISTS workflow_comments (
                     id UUID PRIMARY KEY,
                     comment_uuid VARCHAR(64) NOT NULL UNIQUE,
@@ -94,11 +467,16 @@ mod m20260727_000034_create_workflow_comments {
                 );
                 CREATE INDEX IF NOT EXISTS idx_workflow_comments_record
                     ON workflow_comments (form_uuid, record_uuid, created_at ASC);
-            "#).await?;
+            "#,
+                )
+                .await?;
             Ok(())
         }
         async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-            manager.get_connection().execute_unprepared("DROP TABLE IF EXISTS workflow_comments;").await?;
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE IF EXISTS workflow_comments;")
+                .await?;
             Ok(())
         }
     }
@@ -106,11 +484,15 @@ mod m20260727_000034_create_workflow_comments {
 
 mod m20260727_000033_create_agent_pending_actions {
     use sea_orm_migration::prelude::*;
-    #[derive(DeriveMigrationName)] pub struct Migration;
+    #[derive(DeriveMigrationName)]
+    pub struct Migration;
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
         async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-            manager.get_connection().execute_unprepared(r#"
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
                 CREATE TABLE IF NOT EXISTS agent_pending_actions (
                     id UUID PRIMARY KEY, action_uuid VARCHAR(64) NOT NULL UNIQUE,
                     session_id UUID NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
@@ -121,9 +503,14 @@ mod m20260727_000033_create_agent_pending_actions {
                 );
                 CREATE INDEX IF NOT EXISTS idx_agent_pending_actions_session_status
                     ON agent_pending_actions (session_id, status, created_at DESC);
-            "#).await?; Ok(())
+            "#,
+                )
+                .await?;
+            Ok(())
         }
-        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> { Ok(()) }
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
     }
 }
 

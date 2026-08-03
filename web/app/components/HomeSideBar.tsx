@@ -2,19 +2,24 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Dropdown } from "@heroui/react";
+import { Badge, Dropdown } from "@heroui/react";
 import {
+  Comment,
   Gear,
   House,
-  LayoutHeaderCellsLarge,
   Person,
   SquareListUl,
+  TrashBin,
 } from "@gravity-ui/icons";
 import AgentAssistantLauncher from "./agent-assistant-launcher";
 import { useAuth } from "./auth-provider";
+import { WorkflowNotificationItems } from "./workflow-notification-items";
+import { listCommunicationConversations, type CommunicationConversationResponse } from "../lib/api-client";
 
 type NavItem = {
+  badgeCount?: number;
   href: string;
   label: string;
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
@@ -29,18 +34,22 @@ const primaryNavItems: NavItem[] = [
     match: (pathname) => pathname === "/",
   },
   {
-    href: "/myApp",
-    label: "应用",
-    icon: LayoutHeaderCellsLarge,
-    match: (pathname) =>
-      pathname.startsWith("/myApp") ||
-      (/^\/[^/]+$/.test(pathname) && !["/designer", "/settings", "/login"].includes(pathname)),
+    href: "/messages",
+    label: "消息",
+    icon: Comment,
+    match: (pathname) => pathname.startsWith("/messages"),
   },
   {
     href: "/designer",
     label: "大纲",
     icon: SquareListUl,
     match: (pathname) => pathname.startsWith("/designer"),
+  },
+  {
+    href: "/recycle-bin",
+    label: "回收站",
+    icon: TrashBin,
+    match: (pathname) => pathname.startsWith("/recycle-bin"),
   },
 ];
 
@@ -67,15 +76,49 @@ export default function HomeSideBar() {
   const pathname = usePathname();
   const router = useRouter();
   const { logout, user, permissions, permissionsReady, hasPermission } = useAuth();
-  const canUseApplications =
-    hasPermission("apps.access") ||
-    hasPermission("apps.manage") ||
-    permissions.some((permission) => permission.startsWith("app:") && permission.endsWith(":display"));
+  const [messageUnreadCount, setMessageUnreadCount] = useState(0);
+  const [communicationEnabled, setCommunicationEnabled] = useState(false);
+  useEffect(() => {
+    if (!permissionsReady) {
+      return;
+    }
+    let cancelled = false;
+    void fetch("/api/communication/status", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json() as { code: number; data: { enabled?: boolean } | null };
+        if (!cancelled) setCommunicationEnabled(response.ok && payload.code === 0 && payload.data?.enabled === true);
+      })
+      .catch(() => { if (!cancelled) setCommunicationEnabled(false); });
+    return () => { cancelled = true; };
+  }, [permissionsReady]);
+  useEffect(() => {
+    if (!permissionsReady || !communicationEnabled) return;
+    let cancelled = false;
+    let unavailable = false;
+    const load = () => void listCommunicationConversations().then((result) => {
+      const payload = result.data as { data?: CommunicationConversationResponse[] | null } | undefined;
+      if (result.error || !payload?.data) {
+        unavailable = true;
+        if (!cancelled) setMessageUnreadCount(0);
+        return;
+      }
+      if (!cancelled) setMessageUnreadCount(payload.data.reduce((total, item) => total + item.unreadCount, 0));
+    }).catch(() => { unavailable = true; });
+    load();
+    const timer = window.setInterval(() => { if (!unavailable) load(); }, 30_000);
+    window.addEventListener("yaya-communication-read-updated", load);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener("yaya-communication-read-updated", load);
+    };
+  }, [communicationEnabled, permissionsReady]);
   const visiblePrimaryNavItems = !permissionsReady
     ? []
     : primaryNavItems.filter((item) => {
-        if (item.href === "/myApp") return canUseApplications;
         if (item.href === "/designer") return hasPermission("designer.access");
+        if (item.href === "/messages") return communicationEnabled;
+        if (item.href === "/recycle-bin") return hasPermission("settings.database");
         return true;
       });
   const canUseSettings =
@@ -97,7 +140,7 @@ export default function HomeSideBar() {
 
         <div className="flex flex-1 flex-col justify-between">
           <div className="flex flex-col gap-2">
-            <NavGroup items={visiblePrimaryNavItems} pathname={pathname} />
+            <NavGroup items={visiblePrimaryNavItems.map((item) => item.href === "/messages" ? { ...item, badgeCount: messageUnreadCount } : item)} pathname={pathname} />
             {permissionsReady && hasPermission("agent.window") ? <AgentAssistantLauncher /> : null}
             <ThemeSwitcherMenu />
           </div>
@@ -150,6 +193,7 @@ function UserMenu({
                 </span>
               </span>
             </Dropdown.Item>
+            <WorkflowNotificationItems />
             <Dropdown.Item id="logout" textValue="退出登录" className="rounded-lg text-[var(--color-danger)] data-[hover=true]:bg-[var(--color-danger-soft)]">
               <span className="flex items-center gap-3"><LogoutIcon /><span>退出登录</span></span>
             </Dropdown.Item>
@@ -190,15 +234,18 @@ function NavGroup({
                 : "border-transparent text-[var(--color-text-secondary)] hover:border-[var(--sidebar-soft-border)] hover:bg-[var(--sidebar-soft-bg)] hover:text-[var(--color-text-primary)]",
             ].join(" ")}
           >
-            <span
-              className={[
-                "flex h-10 w-10 items-center justify-center rounded-xl transition-colors",
-                isActive
-                  ? "bg-[var(--color-control-selected)] text-[var(--color-primary)]"
-                  : "bg-[var(--color-control-soft)] text-[var(--color-text-secondary)] group-hover:bg-[var(--color-control-soft-hover)] group-hover:text-[var(--color-text-primary)]",
-              ].join(" ")}
-            >
-              <Icon className="h-5 w-5" />
+            <span className="relative">
+              <span
+                className={[
+                  "flex h-10 w-10 items-center justify-center rounded-xl transition-colors",
+                  isActive
+                    ? "bg-[var(--color-control-selected)] text-[var(--color-primary)]"
+                    : "bg-[var(--color-control-soft)] text-[var(--color-text-secondary)] group-hover:bg-[var(--color-control-soft-hover)] group-hover:text-[var(--color-text-primary)]",
+                ].join(" ")}
+              >
+                <Icon className="h-5 w-5" />
+              </span>
+              {item.badgeCount ? <Badge color="danger" size="sm" className="absolute -right-1 -top-1">{item.badgeCount > 99 ? "99+" : item.badgeCount}</Badge> : null}
             </span>
             <span className="text-[11px] font-medium leading-4">{item.label}</span>
           </Link>

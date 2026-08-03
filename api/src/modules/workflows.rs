@@ -9,6 +9,7 @@ use axum::{
     http::HeaderMap,
 };
 use chrono::Utc;
+use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, EntityTrait, PaginatorTrait,
     QueryFilter, QueryOrder, QuerySelect, QueryTrait,
@@ -20,13 +21,13 @@ use uuid::Uuid;
 use crate::{
     infrastructure::entities::{
         automation_flow_entity, automation_flow_version_entity, form_definition_entity,
-        workflow_action_entity, workflow_comment_entity, workflow_instance_entity, workflow_notification_entity,
-        workflow_task_entity,
+        workflow_action_entity, workflow_comment_entity, workflow_instance_entity,
+        workflow_notification_entity, workflow_task_entity,
     },
     modules::{automations, forms::find_form_definition},
     platform::{
-        api::ApiResponse, authorization, error::AppError, records::RecordRepository,
-        runtime::AppState,
+        api::ApiResponse, authorization, config::load_notification_settings, error::AppError,
+        records::RecordRepository, runtime::AppState,
     },
     shared::success_response,
 };
@@ -44,69 +45,259 @@ pub(crate) struct WorkflowTaskListQuery {
 }
 
 #[derive(serde::Deserialize, utoipa::ToSchema)]
-pub(crate) struct WorkflowCommentRequest { pub(crate) content: String }
-#[derive(serde::Deserialize, utoipa::ToSchema)] pub(crate) struct WorkflowPauseRequest { pub(crate) reason: Option<String> }
+pub(crate) struct WorkflowCommentRequest {
+    pub(crate) content: String,
+}
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub(crate) struct WorkflowPauseRequest {
+    pub(crate) reason: Option<String>,
+}
 
-pub(crate) async fn pause_workflow_record(State(state): State<AppState>, headers: HeaderMap, Path((form_uuid, record_uuid)): Path<(String, String)>, Json(payload): Json<WorkflowPauseRequest>) -> Result<Json<ApiResponse<Value>>, AppError> {
+pub(crate) async fn pause_workflow_record(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((form_uuid, record_uuid)): Path<(String, String)>,
+    Json(payload): Json<WorkflowPauseRequest>,
+) -> Result<Json<ApiResponse<Value>>, AppError> {
     let user = authorization::current_user(&headers, &state).await?;
     let instance = latest_workflow_instance(&state, &form_uuid, &record_uuid).await?;
-    if instance.submitter != user.display_name { return Err(AppError::Forbidden("only the submitter can pause this workflow".to_string())); }
-    if instance.status != "running" { return Err(AppError::BadRequest("only running workflows can be paused".to_string())); }
-    let now = Utc::now(); let mut active: workflow_instance_entity::ActiveModel = instance.clone().into(); active.status = Set("paused".to_string()); active.paused_by = Set(Some(user.display_name.clone())); active.paused_at = Set(Some(now.into())); active.pause_reason = Set(payload.reason.clone().filter(|value| !value.trim().is_empty())); active.updated_at = Set(now.into()); active.update(&state.db).await?;
-    write_action(&state, instance.id, None, "pause", &user.display_name, payload.reason).await?;
-    let record = RecordRepository::new(&state.db).find(&form_uuid, &record_uuid).await?; update_record_state(&state, &record, &user.display_name, "reviewing", "paused", "流程已暂停").await?;
-    Ok(Json(success_response("流程已暂停", json!({ "instanceId": instance.instance_uuid }))))
+    if instance.submitter != user.display_name {
+        return Err(AppError::Forbidden(
+            "only the submitter can pause this workflow".to_string(),
+        ));
+    }
+    if instance.status != "running" {
+        return Err(AppError::BadRequest(
+            "only running workflows can be paused".to_string(),
+        ));
+    }
+    let now = Utc::now();
+    let mut active: workflow_instance_entity::ActiveModel = instance.clone().into();
+    active.status = Set("paused".to_string());
+    active.paused_by = Set(Some(user.display_name.clone()));
+    active.paused_at = Set(Some(now.into()));
+    active.pause_reason = Set(payload
+        .reason
+        .clone()
+        .filter(|value| !value.trim().is_empty()));
+    active.updated_at = Set(now.into());
+    active.update(&state.db).await?;
+    write_action(
+        &state,
+        instance.id,
+        None,
+        "pause",
+        &user.display_name,
+        payload.reason,
+    )
+    .await?;
+    let record = RecordRepository::new(&state.db)
+        .find(&form_uuid, &record_uuid)
+        .await?;
+    update_record_state(
+        &state,
+        &record,
+        &user.display_name,
+        "reviewing",
+        "paused",
+        "流程已暂停",
+    )
+    .await?;
+    Ok(Json(success_response(
+        "流程已暂停",
+        json!({ "instanceId": instance.instance_uuid }),
+    )))
 }
 
-pub(crate) async fn resume_workflow_record(State(state): State<AppState>, headers: HeaderMap, Path((form_uuid, record_uuid)): Path<(String, String)>) -> Result<Json<ApiResponse<Value>>, AppError> {
-    let user = authorization::current_user(&headers, &state).await?; let instance = latest_workflow_instance(&state, &form_uuid, &record_uuid).await?;
-    if instance.submitter != user.display_name { return Err(AppError::Forbidden("only the submitter can resume this workflow".to_string())); }
-    if instance.status != "paused" { return Err(AppError::BadRequest("only paused workflows can be resumed".to_string())); }
-    let mut active: workflow_instance_entity::ActiveModel = instance.clone().into(); active.status = Set("running".to_string()); active.paused_by = Set(None); active.paused_at = Set(None); active.pause_reason = Set(None); active.updated_at = Set(Utc::now().into()); active.update(&state.db).await?;
-    write_action(&state, instance.id, None, "resume", &user.display_name, None).await?; let record = RecordRepository::new(&state.db).find(&form_uuid, &record_uuid).await?; update_record_state(&state, &record, &user.display_name, "reviewing", "running", instance.current_node_key.as_deref().unwrap_or("流程处理中")).await?;
-    Ok(Json(success_response("流程已恢复", json!({ "instanceId": instance.instance_uuid }))))
-}
-
-async fn latest_workflow_instance(state: &AppState, form_uuid: &str, record_uuid: &str) -> Result<workflow_instance_entity::Model, AppError> { workflow_instance_entity::Entity::find().filter(workflow_instance_entity::Column::FormUuid.eq(form_uuid)).filter(workflow_instance_entity::Column::RecordUuid.eq(record_uuid)).order_by_desc(workflow_instance_entity::Column::StartedAt).one(&state.db).await?.ok_or_else(|| AppError::NotFound("workflow instance not found".to_string())) }
-
-pub(crate) async fn list_workflow_notifications(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<ApiResponse<Value>>, AppError> {
+pub(crate) async fn resume_workflow_record(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((form_uuid, record_uuid)): Path<(String, String)>,
+) -> Result<Json<ApiResponse<Value>>, AppError> {
     let user = authorization::current_user(&headers, &state).await?;
-    let items = workflow_notification_entity::Entity::find().filter(Condition::any().add(workflow_notification_entity::Column::RecipientUserId.eq(user.id)).add(workflow_notification_entity::Column::Recipient.eq(&user.display_name))).order_by_desc(workflow_notification_entity::Column::CreatedAt).all(&state.db).await?;
+    let instance = latest_workflow_instance(&state, &form_uuid, &record_uuid).await?;
+    if instance.submitter != user.display_name {
+        return Err(AppError::Forbidden(
+            "only the submitter can resume this workflow".to_string(),
+        ));
+    }
+    if instance.status != "paused" {
+        return Err(AppError::BadRequest(
+            "only paused workflows can be resumed".to_string(),
+        ));
+    }
+    let mut active: workflow_instance_entity::ActiveModel = instance.clone().into();
+    active.status = Set("running".to_string());
+    active.paused_by = Set(None);
+    active.paused_at = Set(None);
+    active.pause_reason = Set(None);
+    active.updated_at = Set(Utc::now().into());
+    active.update(&state.db).await?;
+    write_action(
+        &state,
+        instance.id,
+        None,
+        "resume",
+        &user.display_name,
+        None,
+    )
+    .await?;
+    let record = RecordRepository::new(&state.db)
+        .find(&form_uuid, &record_uuid)
+        .await?;
+    update_record_state(
+        &state,
+        &record,
+        &user.display_name,
+        "reviewing",
+        "running",
+        instance.current_node_key.as_deref().unwrap_or("流程处理中"),
+    )
+    .await?;
+    Ok(Json(success_response(
+        "流程已恢复",
+        json!({ "instanceId": instance.instance_uuid }),
+    )))
+}
+
+async fn latest_workflow_instance(
+    state: &AppState,
+    form_uuid: &str,
+    record_uuid: &str,
+) -> Result<workflow_instance_entity::Model, AppError> {
+    workflow_instance_entity::Entity::find()
+        .filter(workflow_instance_entity::Column::FormUuid.eq(form_uuid))
+        .filter(workflow_instance_entity::Column::RecordUuid.eq(record_uuid))
+        .order_by_desc(workflow_instance_entity::Column::StartedAt)
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("workflow instance not found".to_string()))
+}
+
+pub(crate) async fn list_workflow_notifications(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<ApiResponse<Value>>, AppError> {
+    let user = authorization::current_user(&headers, &state).await?;
+    let items = workflow_notification_entity::Entity::find()
+        .filter(
+            Condition::any()
+                .add(workflow_notification_entity::Column::RecipientUserId.eq(user.id))
+                .add(workflow_notification_entity::Column::Recipient.eq(&user.display_name)),
+        )
+        .order_by_desc(workflow_notification_entity::Column::CreatedAt)
+        .all(&state.db)
+        .await?;
     let unread = items.iter().filter(|item| item.read_at.is_none()).count();
-    Ok(Json(success_response("获取流程通知成功", json!({ "unread": unread, "items": items.into_iter().map(|item| json!({ "id": item.notification_uuid, "type": item.notification_type, "title": item.title, "content": item.content, "formUuid": item.form_uuid, "recordUuid": item.record_uuid, "readAt": item.read_at, "createdAt": item.created_at })).collect::<Vec<_>>() }))))
+    let form_uuids = items
+        .iter()
+        .map(|item| item.form_uuid.clone())
+        .collect::<Vec<_>>();
+    let app_ids = form_definition_entity::Entity::find()
+        .filter(form_definition_entity::Column::FormUuid.is_in(form_uuids))
+        .all(&state.db)
+        .await?
+        .into_iter()
+        .map(|form| (form.form_uuid, form.app_route_app_id))
+        .collect::<HashMap<_, _>>();
+    Ok(Json(success_response(
+        "获取流程通知成功",
+        json!({ "unread": unread, "items": items.into_iter().map(|item| json!({ "id": item.notification_uuid, "type": item.notification_type, "title": item.title, "content": item.content, "appId": app_ids.get(&item.form_uuid), "formUuid": item.form_uuid, "recordUuid": item.record_uuid, "readAt": item.read_at, "createdAt": item.created_at })).collect::<Vec<_>>() }),
+    )))
 }
 
-pub(crate) async fn read_workflow_notification(State(state): State<AppState>, headers: HeaderMap, Path(notification_uuid): Path<String>) -> Result<Json<ApiResponse<Value>>, AppError> {
+pub(crate) async fn get_notification_preferences() -> Json<ApiResponse<Value>> {
+    let settings = load_notification_settings().unwrap_or_default();
+    Json(success_response(
+        "notification preferences loaded",
+        json!({
+            "inAppEnabled": settings.in_app_enabled,
+            "pollIntervalSeconds": settings.poll_interval_seconds,
+        }),
+    ))
+}
+
+pub(crate) async fn read_workflow_notification(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(notification_uuid): Path<String>,
+) -> Result<Json<ApiResponse<Value>>, AppError> {
     let user = authorization::current_user(&headers, &state).await?;
-    let notification = workflow_notification_entity::Entity::find().filter(workflow_notification_entity::Column::NotificationUuid.eq(notification_uuid)).one(&state.db).await?.ok_or_else(|| AppError::NotFound("workflow notification not found".to_string()))?;
-    if notification.recipient_user_id != Some(user.id) && notification.recipient != user.display_name { return Err(AppError::Forbidden("notification belongs to another user".to_string())); }
-    let mut active: workflow_notification_entity::ActiveModel = notification.into(); active.read_at = Set(Some(Utc::now().into())); active.update(&state.db).await?;
+    let notification = workflow_notification_entity::Entity::find()
+        .filter(workflow_notification_entity::Column::NotificationUuid.eq(notification_uuid))
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("workflow notification not found".to_string()))?;
+    if notification.recipient_user_id != Some(user.id)
+        && notification.recipient != user.display_name
+    {
+        return Err(AppError::Forbidden(
+            "notification belongs to another user".to_string(),
+        ));
+    }
+    let mut active: workflow_notification_entity::ActiveModel = notification.into();
+    active.read_at = Set(Some(Utc::now().into()));
+    active.update(&state.db).await?;
     Ok(Json(success_response("流程通知已读", json!({}))))
 }
 
 pub(crate) async fn list_workflow_comments(
-    State(state): State<AppState>, headers: HeaderMap, Path((form_uuid, record_uuid)): Path<(String, String)>,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((form_uuid, record_uuid)): Path<(String, String)>,
 ) -> Result<Json<ApiResponse<Value>>, AppError> {
-    authorization::current_user(&headers, &state).await?;
+    ensure_workflow_record_display_permission(&headers, &state, &form_uuid).await?;
     let comments = workflow_comment_entity::Entity::find()
         .filter(workflow_comment_entity::Column::FormUuid.eq(form_uuid))
         .filter(workflow_comment_entity::Column::RecordUuid.eq(record_uuid))
-        .order_by_asc(workflow_comment_entity::Column::CreatedAt).all(&state.db).await?;
-    Ok(Json(success_response("获取流程评论成功", json!({ "items": comments.into_iter().map(|comment| json!({ "id": comment.comment_uuid, "author": comment.author, "content": comment.content, "createdAt": comment.created_at })).collect::<Vec<_>>() }))))
+        .order_by_asc(workflow_comment_entity::Column::CreatedAt)
+        .all(&state.db)
+        .await?;
+    Ok(Json(success_response(
+        "获取流程评论成功",
+        json!({ "items": comments.into_iter().map(|comment| json!({ "id": comment.comment_uuid, "author": comment.author, "content": comment.content, "createdAt": comment.created_at })).collect::<Vec<_>>() }),
+    )))
 }
 
 pub(crate) async fn create_workflow_comment(
-    State(state): State<AppState>, headers: HeaderMap, Path((form_uuid, record_uuid)): Path<(String, String)>, Json(payload): Json<WorkflowCommentRequest>,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((form_uuid, record_uuid)): Path<(String, String)>,
+    Json(payload): Json<WorkflowCommentRequest>,
 ) -> Result<Json<ApiResponse<Value>>, AppError> {
     let user = authorization::current_user(&headers, &state).await?;
     let definition = find_form_definition(&state.db, &form_uuid).await?;
     ensure_workflow_form(&definition.form_type)?;
-    RecordRepository::new(&state.db).find(&form_uuid, &record_uuid).await?;
+    ensure_workflow_record_display_permission(&headers, &state, &form_uuid).await?;
+    RecordRepository::new(&state.db)
+        .find(&form_uuid, &record_uuid)
+        .await?;
     let content = payload.content.trim();
-    if content.is_empty() || content.chars().count() > 2_000 { return Err(AppError::BadRequest("comment must contain 1 to 2000 characters".to_string())); }
+    if content.is_empty() || content.chars().count() > 2_000 {
+        return Err(AppError::BadRequest(
+            "comment must contain 1 to 2000 characters".to_string(),
+        ));
+    }
     let now = Utc::now();
-    let comment = workflow_comment_entity::ActiveModel { id: Set(Uuid::new_v4()), comment_uuid: Set(format!("WFC-{}", Uuid::new_v4().simple().to_string().to_uppercase())), form_uuid: Set(form_uuid), record_uuid: Set(record_uuid), author_user_id: Set(user.id), author: Set(user.display_name), content: Set(content.to_string()), created_at: Set(now.into()) }.insert(&state.db).await?;
-    Ok(Json(success_response("流程评论已发布", json!({ "id": comment.comment_uuid, "author": comment.author, "content": comment.content, "createdAt": comment.created_at }))))
+    let comment = workflow_comment_entity::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        comment_uuid: Set(format!(
+            "WFC-{}",
+            Uuid::new_v4().simple().to_string().to_uppercase()
+        )),
+        form_uuid: Set(form_uuid),
+        record_uuid: Set(record_uuid),
+        author_user_id: Set(user.id),
+        author: Set(user.display_name),
+        content: Set(content.to_string()),
+        created_at: Set(now.into()),
+    }
+    .insert(&state.db)
+    .await?;
+    Ok(Json(success_response(
+        "流程评论已发布",
+        json!({ "id": comment.comment_uuid, "author": comment.author, "content": comment.content, "createdAt": comment.created_at }),
+    )))
 }
 
 pub(crate) async fn list_workflow_tasks(
@@ -117,7 +308,9 @@ pub(crate) async fn list_workflow_tasks(
     let user = authorization::current_user(&headers, &state).await?;
     let scope = query.scope.as_str();
     if !matches!(scope, "todo" | "processed" | "created" | "copied") {
-        return Err(AppError::BadRequest("unsupported workflow task scope".to_string()));
+        return Err(AppError::BadRequest(
+            "unsupported workflow task scope".to_string(),
+        ));
     }
 
     let flows = automation_flow_entity::Entity::find()
@@ -127,9 +320,15 @@ pub(crate) async fn list_workflow_tasks(
         .await?;
     let flow_ids = flows.iter().map(|flow| flow.id).collect::<Vec<_>>();
     if flow_ids.is_empty() {
-        return Ok(Json(success_response("获取流程任务成功", json!({ "items": [] }))));
+        return Ok(Json(success_response(
+            "获取流程任务成功",
+            json!({ "items": [] }),
+        )));
     }
-    let flows_by_id = flows.into_iter().map(|flow| (flow.id, flow)).collect::<HashMap<_, _>>();
+    let flows_by_id = flows
+        .into_iter()
+        .map(|flow| (flow.id, flow))
+        .collect::<HashMap<_, _>>();
 
     let instances = if scope == "created" {
         workflow_instance_entity::Entity::find()
@@ -140,21 +339,26 @@ pub(crate) async fn list_workflow_tasks(
             .await?
     } else {
         let mut task_query = workflow_task_entity::Entity::find()
-            .filter(workflow_task_entity::Column::InstanceId.in_subquery(
-                workflow_instance_entity::Entity::find()
-                    .select_only()
-                    .column(workflow_instance_entity::Column::Id)
-                    .filter(workflow_instance_entity::Column::ProcessFlowId.is_in(flow_ids))
-                    .into_query(),
-            ))
-            .filter(Condition::any()
-                .add(workflow_task_entity::Column::AssigneeUserId.eq(user.id))
-                .add(workflow_task_entity::Column::Assignee.eq(&user.display_name)));
+            .filter(
+                workflow_task_entity::Column::InstanceId.in_subquery(
+                    workflow_instance_entity::Entity::find()
+                        .select_only()
+                        .column(workflow_instance_entity::Column::Id)
+                        .filter(workflow_instance_entity::Column::ProcessFlowId.is_in(flow_ids))
+                        .into_query(),
+                ),
+            )
+            .filter(
+                Condition::any()
+                    .add(workflow_task_entity::Column::AssigneeUserId.eq(user.id))
+                    .add(workflow_task_entity::Column::Assignee.eq(&user.display_name)),
+            );
         task_query = match scope {
             "todo" => task_query
                 .filter(workflow_task_entity::Column::Status.eq("pending"))
                 .filter(workflow_task_entity::Column::TaskType.ne("copy")),
-            "processed" => task_query.filter(workflow_task_entity::Column::Status.is_in(["approved", "rejected"])),
+            "processed" => task_query
+                .filter(workflow_task_entity::Column::Status.is_in(["approved", "rejected"])),
             "copied" => task_query.filter(workflow_task_entity::Column::TaskType.eq("copy")),
             _ => unreachable!(),
         };
@@ -162,7 +366,10 @@ pub(crate) async fn list_workflow_tasks(
             .order_by_desc(workflow_task_entity::Column::UpdatedAt)
             .all(&state.db)
             .await?;
-        let instance_ids = tasks.iter().map(|task| task.instance_id).collect::<Vec<_>>();
+        let instance_ids = tasks
+            .iter()
+            .map(|task| task.instance_id)
+            .collect::<Vec<_>>();
         let instances_by_id = workflow_instance_entity::Entity::find()
             .filter(workflow_instance_entity::Column::Id.is_in(instance_ids))
             .all(&state.db)
@@ -190,7 +397,10 @@ pub(crate) async fn list_workflow_tasks(
                 "completedAt": task.completed_at,
             }))
         }).collect::<Vec<_>>();
-        return Ok(Json(success_response("获取流程任务成功", json!({ "items": items }))));
+        return Ok(Json(success_response(
+            "获取流程任务成功",
+            json!({ "items": items }),
+        )));
     };
 
     let form_names = load_workflow_form_names(&state, instances.iter()).await?;
@@ -212,14 +422,19 @@ pub(crate) async fn list_workflow_tasks(
             "completedAt": instance.completed_at,
         }))
     }).collect::<Vec<_>>();
-    Ok(Json(success_response("获取流程任务成功", json!({ "items": items }))))
+    Ok(Json(success_response(
+        "获取流程任务成功",
+        json!({ "items": items }),
+    )))
 }
 
 async fn load_workflow_form_names<'a>(
     state: &AppState,
     instances: impl Iterator<Item = &'a workflow_instance_entity::Model>,
 ) -> Result<HashMap<String, String>, AppError> {
-    let form_uuids = instances.map(|instance| instance.form_uuid.clone()).collect::<Vec<_>>();
+    let form_uuids = instances
+        .map(|instance| instance.form_uuid.clone())
+        .collect::<Vec<_>>();
     Ok(form_definition_entity::Entity::find()
         .filter(form_definition_entity::Column::FormUuid.is_in(form_uuids))
         .all(&state.db)
@@ -250,6 +465,11 @@ pub(crate) async fn submit_workflow_record(
         ));
     }
     let mut flow = process_flow(&state, &form_uuid).await?;
+    if flow.status != "enabled" {
+        return Err(AppError::BadRequest(
+            "workflow definition is disabled; new records cannot be submitted".to_string(),
+        ));
+    }
     let flow_version = flow.current_version;
     apply_instance_flow_snapshot(&state, &mut flow, flow_version).await?;
     let now = Utc::now();
@@ -303,8 +523,10 @@ pub(crate) async fn submit_workflow_record(
 
 pub(crate) async fn get_workflow_record_runtime(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path((form_uuid, record_uuid)): Path<(String, String)>,
 ) -> Result<Json<ApiResponse<Value>>, AppError> {
+    ensure_workflow_record_display_permission(&headers, &state, &form_uuid).await?;
     let instance = workflow_instance_entity::Entity::find()
         .filter(workflow_instance_entity::Column::FormUuid.eq(form_uuid))
         .filter(workflow_instance_entity::Column::RecordUuid.eq(record_uuid))
@@ -335,6 +557,29 @@ pub(crate) async fn get_workflow_record_runtime(
             "actions": actions.into_iter().map(|action| json!({ "action": action.action, "operator": action.operator, "comment": action.comment, "createdAt": action.created_at })).collect::<Vec<_>>(),
         }),
     )))
+}
+
+/// Record detail, comments and history must follow the same form + application
+/// visibility boundary as normal form reads, rather than merely accepting a JWT.
+async fn ensure_workflow_record_display_permission(
+    headers: &HeaderMap,
+    state: &AppState,
+    form_uuid: &str,
+) -> Result<(), AppError> {
+    let grants = authorization::grants(headers, state).await?;
+    if grants.contains("*") {
+        return Ok(());
+    }
+    let definition = find_form_definition(&state.db, form_uuid).await?;
+    if grants.contains(&format!("form:{form_uuid}:display"))
+        && grants.contains(&format!("app:{}:display", definition.app_route_app_id))
+    {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "form record display permission denied".to_string(),
+        ))
+    }
 }
 
 pub(crate) async fn reverse_workflow_record(
@@ -421,7 +666,11 @@ async fn complete_task(
         .one(&state.db)
         .await?
         .ok_or_else(|| AppError::NotFound("workflow instance not found".to_string()))?;
-    if instance.status != "running" { return Err(AppError::BadRequest("workflow is paused or already completed".to_string())); }
+    if instance.status != "running" {
+        return Err(AppError::BadRequest(
+            "workflow is paused or already completed".to_string(),
+        ));
+    }
     let now = Utc::now();
     let mut active: workflow_task_entity::ActiveModel = task.clone().into();
     active.status = Set(if approved { "approved" } else { "rejected" }.to_string());
@@ -444,6 +693,11 @@ async fn complete_task(
         .find(&instance.form_uuid, &instance.record_uuid)
         .await?;
     if !approved {
+        if !claim_node_advance(&state, &instance, &task.node_key).await? {
+            return Err(AppError::BadRequest(
+                "workflow has already advanced from this node".to_string(),
+            ));
+        }
         complete_instance(
             &state,
             &instance,
@@ -464,7 +718,17 @@ async fn complete_task(
         .await?
         .ok_or_else(|| AppError::NotFound("process flow not found".to_string()))?;
     apply_instance_flow_snapshot(&state, &mut flow, instance.flow_version).await?;
-    let approval_mode = flow.nodes_json.as_array().and_then(|nodes| nodes.iter().find(|node| node.get("id").and_then(Value::as_str) == Some(task.node_key.as_str()))).and_then(|node| node.pointer("/data/config/approvalMode")).and_then(Value::as_str).unwrap_or("all");
+    let approval_mode = flow
+        .nodes_json
+        .as_array()
+        .and_then(|nodes| {
+            nodes
+                .iter()
+                .find(|node| node.get("id").and_then(Value::as_str) == Some(task.node_key.as_str()))
+        })
+        .and_then(|node| node.pointer("/data/config/approvalMode"))
+        .and_then(Value::as_str)
+        .unwrap_or("all");
     if task.task_type == "approval" && approval_mode == "any" {
         let remaining = workflow_task_entity::Entity::find()
             .filter(workflow_task_entity::Column::InstanceId.eq(instance.id))
@@ -488,7 +752,7 @@ async fn complete_task(
         .filter(workflow_task_entity::Column::Status.eq("pending"))
         .count(&state.db)
         .await?;
-    if pending == 0 {
+    if pending == 0 && claim_node_advance(&state, &instance, &task.node_key).await? {
         advance_from(
             &state,
             &flow,
@@ -502,6 +766,31 @@ async fn complete_task(
         "任务已同意",
         json!({ "instanceId": instance.instance_uuid }),
     )))
+}
+
+/// Atomically claims the current node before progressing it. This is the optimistic
+/// concurrency guard for multi-worker deployments: only one completion request can
+/// move an instance past a given node, even when "any" approvers act simultaneously.
+async fn claim_node_advance(
+    state: &AppState,
+    instance: &workflow_instance_entity::Model,
+    node_key: &str,
+) -> Result<bool, AppError> {
+    let result = workflow_instance_entity::Entity::update_many()
+        .col_expr(
+            workflow_instance_entity::Column::Status,
+            Expr::value("advancing"),
+        )
+        .col_expr(
+            workflow_instance_entity::Column::UpdatedAt,
+            Expr::value(Utc::now()),
+        )
+        .filter(workflow_instance_entity::Column::Id.eq(instance.id))
+        .filter(workflow_instance_entity::Column::Status.eq("running"))
+        .filter(workflow_instance_entity::Column::CurrentNodeKey.eq(node_key))
+        .exec(&state.db)
+        .await?;
+    Ok(result.rows_affected == 1)
 }
 
 async fn advance(
@@ -558,9 +847,11 @@ async fn advance_from(
                     .unwrap_or_else(|| return_complete(state, instance))
             }
             "condition" => {
-                current = next_node(&edges, &current, Some(data))
-                    .or_else(|| next_node(&edges, &current, None))
-                    .unwrap_or_else(|| return_complete(state, instance))
+                let next = select_condition_edge(&edges, &current, node, data);
+                let Some(next) = next else {
+                    return fail_instance(state, instance, "no condition branch matched").await;
+                };
+                current = next;
             }
             "add-data" | "update-data" | "get-one" | "get-many" | "delete-data"
             | "http-request" => {
@@ -673,6 +964,157 @@ fn next_node(edges: &[Value], source: &str, _data: Option<&Value>) -> Option<Str
         .and_then(Value::as_str)
         .map(ToString::to_string)
 }
+
+fn select_condition_edge(
+    edges: &[Value],
+    source: &str,
+    node: &Value,
+    data: &Value,
+) -> Option<String> {
+    let branches = node.pointer("/data/config/branches")?.as_array()?;
+    let mut ordered = branches.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|branch| branch.get("priority").and_then(Value::as_i64).unwrap_or(0));
+    let branch_id = ordered
+        .into_iter()
+        .find(|branch| workflow_condition_matches(branch, data))?
+        .get("id")?
+        .as_str()?;
+    let handle = format!("condition-branch:{branch_id}");
+    edges
+        .iter()
+        .find(|edge| {
+            edge.get("source").and_then(Value::as_str) == Some(source)
+                && edge.get("sourceHandle").and_then(Value::as_str) == Some(handle.as_str())
+        })
+        .and_then(|edge| edge.get("target"))
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+}
+
+fn workflow_condition_matches(branch: &Value, data: &Value) -> bool {
+    match branch.get("mode").and_then(Value::as_str).unwrap_or("all") {
+        "all" => true,
+        "expression" => branch
+            .get("expression")
+            .and_then(Value::as_str)
+            .map(|expression| simple_condition_expression(expression, data))
+            .unwrap_or(false),
+        "rules" => branch
+            .get("rules")
+            .and_then(Value::as_array)
+            .map(|rules| workflow_condition_rule_group(rules, None, data))
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
+fn simple_condition_rule(rule: &Value, data: &Value) -> bool {
+    let field = rule
+        .get("fieldKey")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let actual = data.get(field).map(condition_scalar).unwrap_or_default();
+    let expected = if rule.get("valueType").and_then(Value::as_str) == Some("field") {
+        rule.get("sourceFieldKey")
+            .and_then(Value::as_str)
+            .and_then(|key| data.get(key))
+            .map(condition_scalar)
+            .unwrap_or_default()
+    } else {
+        rule.get("rawValue")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    match rule.get("operator").and_then(Value::as_str).unwrap_or("eq") {
+        "hasValue" => !actual.trim().is_empty(),
+        "noValue" => actual.trim().is_empty(),
+        "neq" => actual != expected,
+        "inAny" => expected
+            .split(',')
+            .map(str::trim)
+            .any(|value| value == actual),
+        "notInAny" => expected
+            .split(',')
+            .map(str::trim)
+            .all(|value| value != actual),
+        _ => actual == expected,
+    }
+}
+
+fn workflow_condition_rule_group(rules: &[Value], parent_id: Option<&str>, data: &Value) -> bool {
+    let siblings = rules
+        .iter()
+        .filter(|rule| rule.get("parentId").and_then(Value::as_str) == parent_id)
+        .collect::<Vec<_>>();
+    if siblings.is_empty() {
+        return true;
+    }
+    let logical_operator = siblings[0]
+        .get("logicalOperator")
+        .and_then(Value::as_str)
+        .unwrap_or("and");
+    siblings
+        .into_iter()
+        .enumerate()
+        .fold(true, |result, (index, rule)| {
+            let rule_id = rule.get("id").and_then(Value::as_str);
+            let first_child = rule_id.and_then(|id| {
+                rules
+                    .iter()
+                    .find(|candidate| candidate.get("parentId").and_then(Value::as_str) == Some(id))
+            });
+            let matches = if rule.get("isGroup").and_then(Value::as_bool) == Some(true) {
+                workflow_condition_rule_group(rules, rule_id, data)
+            } else if let Some(child) = first_child {
+                let children_match = workflow_condition_rule_group(rules, rule_id, data);
+                if child.get("logicalOperator").and_then(Value::as_str) == Some("or") {
+                    simple_condition_rule(rule, data) || children_match
+                } else {
+                    simple_condition_rule(rule, data) && children_match
+                }
+            } else {
+                simple_condition_rule(rule, data)
+            };
+            if index == 0 {
+                matches
+            } else if logical_operator == "or" {
+                result || matches
+            } else {
+                result && matches
+            }
+        })
+}
+
+fn simple_condition_expression(expression: &str, data: &Value) -> bool {
+    let expression = expression.trim();
+    let (operator, left, right) = if let Some((left, right)) = expression.split_once("!=") {
+        ("!=", left, right)
+    } else if let Some((left, right)) = expression.split_once("==") {
+        ("==", left, right)
+    } else {
+        return false;
+    };
+    let field = left
+        .trim()
+        .trim_start_matches("{{")
+        .trim_end_matches("}}")
+        .trim_start_matches("record.");
+    let expected = right.trim().trim_matches(|c| c == '\'' || c == '\"');
+    let actual = data.get(field).map(condition_scalar).unwrap_or_default();
+    if operator == "==" {
+        actual == expected
+    } else {
+        actual != expected
+    }
+}
+
+fn condition_scalar(value: &Value) -> String {
+    value
+        .as_str()
+        .map(ToString::to_string)
+        .unwrap_or_else(|| value.to_string().trim_matches('\"').to_string())
+}
 async fn create_task(
     state: &AppState,
     instance: &workflow_instance_entity::Model,
@@ -709,16 +1151,37 @@ async fn create_task(
     }
     .insert(&state.db)
     .await?;
+    if !load_notification_settings()
+        .unwrap_or_default()
+        .in_app_enabled
+    {
+        return Ok(());
+    }
     let notification_type = if task_type == "copy" { "copy" } else { "task" };
     workflow_notification_entity::ActiveModel {
         id: Set(Uuid::new_v4()),
-        notification_uuid: Set(format!("WFN-{}", Uuid::new_v4().simple().to_string().to_uppercase())),
-        recipient_user_id: Set(assignee_user_id), recipient: Set(assignee.to_string()),
-        form_uuid: Set(instance.form_uuid.clone()), record_uuid: Set(instance.record_uuid.clone()),
-        instance_id: Set(instance.id), task_id: Set(Some(task.id)), notification_type: Set(notification_type.to_string()),
-        title: Set(if task_type == "copy" { "收到流程抄送".to_string() } else { format!("待处理：{}", label) }),
-        content: Set(format!("{} 的流程记录已到达 {}", instance.submitter, label)), read_at: Set(None), created_at: Set(now.into()),
-    }.insert(&state.db).await?;
+        notification_uuid: Set(format!(
+            "WFN-{}",
+            Uuid::new_v4().simple().to_string().to_uppercase()
+        )),
+        recipient_user_id: Set(assignee_user_id),
+        recipient: Set(assignee.to_string()),
+        form_uuid: Set(instance.form_uuid.clone()),
+        record_uuid: Set(instance.record_uuid.clone()),
+        instance_id: Set(instance.id),
+        task_id: Set(Some(task.id)),
+        notification_type: Set(notification_type.to_string()),
+        title: Set(if task_type == "copy" {
+            "收到流程抄送".to_string()
+        } else {
+            format!("待处理：{}", label)
+        }),
+        content: Set(format!("{} 的流程记录已到达 {}", instance.submitter, label)),
+        read_at: Set(None),
+        created_at: Set(now.into()),
+    }
+    .insert(&state.db)
+    .await?;
     Ok(())
 }
 async fn set_instance_node(
@@ -727,6 +1190,9 @@ async fn set_instance_node(
     node: &str,
 ) -> Result<(), AppError> {
     let mut a: workflow_instance_entity::ActiveModel = instance.clone().into();
+    // `claim_node_advance` temporarily marks the instance as advancing. Re-open it
+    // only after the next human task has been durably created.
+    a.status = Set("running".to_string());
     a.current_node_key = Set(Some(node.to_string()));
     a.updated_at = Set(Utc::now().into());
     a.update(&state.db).await?;
@@ -844,4 +1310,65 @@ async fn write_action(
     .insert(&state.db)
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn condition_selects_the_first_matching_branch_by_priority() {
+        let node = json!({
+            "data": { "config": { "branches": [
+                { "id": "high", "priority": 1, "mode": "rules", "rules": [{ "id": "r1", "fieldKey": "amount", "operator": "eq", "rawValue": "100" }] },
+                { "id": "fallback", "priority": 2, "mode": "all" }
+            ] } }
+        });
+        let edges = vec![
+            json!({ "source": "condition-1", "sourceHandle": "condition-branch:high", "target": "approved" }),
+            json!({ "source": "condition-1", "sourceHandle": "condition-branch:fallback", "target": "manual" }),
+        ];
+        assert_eq!(
+            select_condition_edge(&edges, "condition-1", &node, &json!({ "amount": 100 })),
+            Some("approved".to_string())
+        );
+        assert_eq!(
+            select_condition_edge(&edges, "condition-1", &node, &json!({ "amount": 20 })),
+            Some("manual".to_string())
+        );
+    }
+
+    #[test]
+    fn condition_rules_support_nested_or_groups_and_field_values() {
+        let branch = json!({
+            "mode": "rules",
+            "rules": [
+                { "id": "group", "isGroup": true, "logicalOperator": "and" },
+                { "id": "priority", "parentId": "group", "fieldKey": "priority", "operator": "eq", "rawValue": "high", "logicalOperator": "or" },
+                { "id": "same-owner", "parentId": "group", "fieldKey": "owner", "operator": "eq", "valueType": "field", "sourceFieldKey": "approver", "logicalOperator": "or" }
+            ]
+        });
+        assert!(workflow_condition_matches(
+            &branch,
+            &json!({ "priority": "low", "owner": "u-1", "approver": "u-1" })
+        ));
+        assert!(!workflow_condition_matches(
+            &branch,
+            &json!({ "priority": "low", "owner": "u-1", "approver": "u-2" })
+        ));
+    }
+
+    #[test]
+    fn condition_expressions_compare_record_values() {
+        let branch =
+            json!({ "mode": "expression", "expression": "{{record.status}} == 'approved'" });
+        assert!(workflow_condition_matches(
+            &branch,
+            &json!({ "status": "approved" })
+        ));
+        assert!(!workflow_condition_matches(
+            &branch,
+            &json!({ "status": "draft" })
+        ));
+    }
 }

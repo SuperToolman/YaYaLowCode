@@ -1,20 +1,18 @@
 [CmdletBinding()]
 param(
-    [int]$BackendPort = 8787
+    [int]$BackendPort = 8787,
+    [int]$FrontendPort = 3000,
+    [string]$LicensePublicKeyPath = $env:YAYA_LICENSE_PUBLIC_KEY_PATH
 )
 
 $ErrorActionPreference = "Stop"
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $apiRoot = Join-Path $repositoryRoot "api"
-$webRoot = Join-Path $repositoryRoot "web"
 $backendHealthUrl = "http://127.0.0.1:$BackendPort/healthz"
-$backendOpenApiUrl = "http://127.0.0.1:$BackendPort/openapi.json"
-$backendLog = Join-Path $apiRoot ".dev-backend.log"
-$backendErrorLog = Join-Path $apiRoot ".dev-backend-error.log"
-$openApiPath = Join-Path $webRoot "openapi\openapi.json"
-$openApiBasePath = Join-Path $webRoot "openapi\openapi.base.json"
-$openApiGeneratedPath = Join-Path $webRoot "openapi\openapi.generated.json"
+$backendLogDirectory = Join-Path $apiRoot "runtime\dev"
+$backendLog = Join-Path $backendLogDirectory "backend.log"
+$backendErrorLog = Join-Path $backendLogDirectory "backend-error.log"
 
 function Test-BackendReady {
     try {
@@ -25,33 +23,18 @@ function Test-BackendReady {
     }
 }
 
-function Test-BackendBinaryStale {
-    $binaryPath = Join-Path $apiRoot "target\debug\yaya-api.exe"
-    if (-not (Test-Path $binaryPath)) {
-        return $true
-    }
-    $latestSource = @(
-        Get-ChildItem -Path (Join-Path $apiRoot "src") -Recurse -File
-        Get-Item (Join-Path $apiRoot "Cargo.toml"), (Join-Path $apiRoot "Cargo.lock") -ErrorAction SilentlyContinue
-    ) | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    return $latestSource.LastWriteTime -gt (Get-Item $binaryPath).LastWriteTime
-}
+function Assert-PortAvailable {
+    param(
+        [int]$Port,
+        [string]$ServiceName
+    )
 
-function Stop-StaleBackend {
-    $listener = Get-NetTCPConnection -State Listen -LocalPort $BackendPort -ErrorAction SilentlyContinue | Select-Object -First 1
+    $listener = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $listener) {
         return
     }
     $process = Get-Process -Id $listener.OwningProcess -ErrorAction Stop
-    if ($process.ProcessName -ne "yaya-api") {
-        throw "Port $BackendPort is occupied by $($process.ProcessName), not yaya-api. Stop it before starting the development backend."
-    }
-    Write-Host "Restarting stale backend..."
-    Stop-Process -Id $process.Id -ErrorAction Stop
-    $deadline = (Get-Date).AddSeconds(10)
-    while ((Get-Date) -lt $deadline -and (Test-BackendReady)) {
-        Start-Sleep -Milliseconds 200
-    }
+    throw "$ServiceName port $Port is occupied by $($process.ProcessName) (PID $($process.Id)). Stop it explicitly or select another port."
 }
 
 if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
@@ -63,19 +46,27 @@ if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
 
 $startedBackend = $false
 $backendProcess = $null
+$env:RUST_LOG = "yaya_api=debug,tower_http=info"
 if (Test-BackendReady) {
-    if (Test-BackendBinaryStale) {
-        Stop-StaleBackend
-    } else {
-        Write-Host "Backend is already running: $backendHealthUrl"
-    }
+    Write-Host "Backend is already running: $backendHealthUrl"
 }
+
 if (-not (Test-BackendReady)) {
+    Assert-PortAvailable -Port $BackendPort -ServiceName "Backend"
+    New-Item -ItemType Directory -Force -Path $backendLogDirectory | Out-Null
     Remove-Item -Force $backendLog, $backendErrorLog -ErrorAction SilentlyContinue
     Write-Host "Starting backend..."
+    $backendCommand = "cargo run"
+    if ($LicensePublicKeyPath) {
+        if (-not (Test-Path -LiteralPath $LicensePublicKeyPath)) {
+            throw "License verification public key was not found: $LicensePublicKeyPath"
+        }
+        $escapedPublicKeyPath = $LicensePublicKeyPath.Replace("'", "''")
+        $backendCommand = "`$env:YAYA_LICENSE_PUBLIC_KEY_PATH = '$escapedPublicKeyPath'; cargo run"
+    }
     $backendProcess = Start-Process `
-        -FilePath "cargo" `
-        -ArgumentList @("run") `
+        -FilePath "powershell.exe" `
+        -ArgumentList @("-NoProfile", "-Command", $backendCommand) `
         -WorkingDirectory $apiRoot `
         -WindowStyle Hidden `
         -RedirectStandardOutput $backendLog `
@@ -99,31 +90,13 @@ if (-not (Test-BackendReady)) {
 }
 
 try {
-    Write-Host "Downloading the current OpenAPI document..."
-    try {
-        Invoke-WebRequest -UseBasicParsing -TimeoutSec 15 $backendOpenApiUrl -OutFile $openApiGeneratedPath
-    } catch {
-        throw "The running backend does not expose $backendOpenApiUrl. Restart it with the current code before starting the frontend."
-    }
-    Get-Content $openApiGeneratedPath -Raw | ConvertFrom-Json | Out-Null
-    & node (Join-Path $webRoot "scripts\merge-openapi.mjs") $openApiBasePath $openApiGeneratedPath $openApiPath
-    if ($LASTEXITCODE -ne 0) {
-        throw "OpenAPI merge failed."
-    }
-
-    Write-Host "Generating the HeyAPI client from web/openapi/openapi.json..."
-    & pnpm --dir $webRoot codegen:api
-    if ($LASTEXITCODE -ne 0) {
-        throw "HeyAPI client generation failed."
-    }
-
-    Write-Host "Starting frontend: http://127.0.0.1:3000"
-    & pnpm --dir $webRoot exec next dev
+    Assert-PortAvailable -Port $FrontendPort -ServiceName "Frontend"
+    Write-Host "Starting frontend: http://127.0.0.1:$FrontendPort"
+    & pnpm --dir $repositoryRoot dev:web -- --port $FrontendPort
     if ($LASTEXITCODE -ne 0) {
         throw "Frontend exited with code $LASTEXITCODE."
     }
 } finally {
-    Remove-Item -Force $openApiGeneratedPath -ErrorAction SilentlyContinue
     if ($startedBackend -and $backendProcess -and -not $backendProcess.HasExited) {
         Stop-Process -Id $backendProcess.Id
     }

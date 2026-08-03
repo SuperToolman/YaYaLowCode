@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button, Input, Modal, Switch, Tabs } from "@heroui/react";
 import { Field } from "../_components/field";
 import { SettingsContentCard } from "../_components/settings-content-card";
+import { OrganizationArchitectureSection } from "../_components/organization-architecture-section";
 
 type ProviderTab = "local" | "dingtalk" | "wecom" | "feishu";
 type ApiEnvelope<T> = { code: number; message: string; data: T | null };
@@ -229,8 +230,8 @@ export default function IdentitySourceSettingsPage() {
 
   return (
     <SettingsContentCard
-      title="身份源设置"
-      subtitle="配置平台账号或第三方组织身份源。所有配置由后端保存，修改后立即生效。"
+      title="身份源与组织架构"
+      subtitle="配置平台账号或第三方身份源，并查看各来源同步的组织架构。所有配置由后端保存，修改后立即生效。"
       className="p-0"
       headerClassName="px-6 pt-6"
       bodyClassName="mt-5 overflow-clip"
@@ -265,6 +266,7 @@ export default function IdentitySourceSettingsPage() {
                   <p className="mt-1 max-w-xl text-sm leading-6 text-[var(--color-text-secondary)]">用户由管理员创建，组织和角色均在平台内维护，不提供公开注册入口。平台账号与已配置的第三方身份源可以同时登录。</p>
                 </div>
               </div>
+              <OrganizationArchitectureSection sourceType="local" sourceLabel="平台" />
             </div>
           </Tabs.Panel>
 
@@ -335,6 +337,7 @@ export default function IdentitySourceSettingsPage() {
                   </Field>
                 </div>
               </div>
+              <OrganizationArchitectureSection sourceType="dingtalk" sourceLabel="钉钉" />
             </div>
           </Tabs.Panel>
 

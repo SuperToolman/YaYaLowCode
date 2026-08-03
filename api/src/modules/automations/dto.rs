@@ -7,7 +7,10 @@ use utoipa::ToSchema;
 use crate::infrastructure::entities::{
     automation_flow_entity, automation_flow_version_entity, automation_run_node_entity,
 };
-use crate::shared::{automation_trigger_events, automation_trigger_label, calculate_duration_ms};
+use crate::shared::{
+    automation_trigger_events, automation_trigger_label, calculate_duration_ms,
+    AutomationFlowType, AutomationStatus, AutomationTriggerEvent,
+};
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -16,11 +19,15 @@ pub(crate) struct ApiAutomationFlow {
     pub(crate) app_id: String,
     pub(crate) name: String,
     pub(crate) description: Option<String>,
+    #[schema(value_type = AutomationStatus)]
     pub(crate) status: String,
     pub(crate) current_version: i32,
+    #[schema(value_type = AutomationFlowType)]
     pub(crate) flow_type: String,
     pub(crate) trigger_form_uuid: Option<String>,
+    #[schema(value_type = AutomationTriggerEvent)]
     pub(crate) trigger_event: String,
+    #[schema(value_type = Vec<AutomationTriggerEvent>)]
     pub(crate) trigger_events: Vec<String>,
     pub(crate) trigger_label: String,
     pub(crate) nodes_count: usize,
@@ -37,11 +44,15 @@ pub(crate) struct ApiAutomationFlowDetail {
     pub(crate) app_id: String,
     pub(crate) name: String,
     pub(crate) description: Option<String>,
+    #[schema(value_type = AutomationStatus)]
     pub(crate) status: String,
     pub(crate) current_version: i32,
+    #[schema(value_type = AutomationFlowType)]
     pub(crate) flow_type: String,
     pub(crate) trigger_form_uuid: Option<String>,
+    #[schema(value_type = AutomationTriggerEvent)]
     pub(crate) trigger_event: String,
+    #[schema(value_type = Vec<AutomationTriggerEvent>)]
     pub(crate) trigger_events: Vec<String>,
     pub(crate) trigger_label: String,
     pub(crate) trigger_config: Value,
@@ -59,6 +70,7 @@ pub(crate) struct ApiAutomationFlowDetail {
 pub(crate) struct ApiAutomationFlowVersionSummary {
     pub(crate) version: i32,
     pub(crate) name: String,
+    #[schema(value_type = AutomationStatus)]
     pub(crate) status: String,
     pub(crate) created_by: String,
     pub(crate) created_at: String,
@@ -115,7 +127,9 @@ pub(crate) struct CreateAutomationFlowRequest {
     pub(crate) name: Option<String>,
     pub(crate) description: Option<String>,
     pub(crate) trigger_form_uuid: Option<String>,
+    #[schema(value_type = Option<AutomationTriggerEvent>)]
     pub(crate) trigger_event: Option<String>,
+    #[schema(value_type = Option<Vec<AutomationTriggerEvent>>)]
     pub(crate) trigger_events: Option<Vec<String>>,
     pub(crate) operator: Option<String>,
 }
@@ -125,9 +139,12 @@ pub(crate) struct CreateAutomationFlowRequest {
 pub(crate) struct UpdateAutomationFlowRequest {
     pub(crate) name: Option<String>,
     pub(crate) description: Option<String>,
+    #[schema(value_type = Option<AutomationStatus>)]
     pub(crate) status: Option<String>,
     pub(crate) trigger_form_uuid: Option<String>,
+    #[schema(value_type = Option<AutomationTriggerEvent>)]
     pub(crate) trigger_event: Option<String>,
+    #[schema(value_type = Option<Vec<AutomationTriggerEvent>>)]
     pub(crate) trigger_events: Option<Vec<String>>,
     pub(crate) trigger_config: Option<Value>,
     pub(crate) nodes: Option<Value>,

@@ -1,5 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+use argon2::{
+    Argon2,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
+};
 use axum::Json;
 use axum::extract::{Path, State};
 use sea_orm::ActiveValue::Set;
@@ -42,12 +46,18 @@ pub(crate) struct OrganizationMemberResponse {
     status: String,
 }
 
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CreateLocalOrganizationUnitRequest {
+    name: String,
+    parent_external_id: Option<String>,
+}
+
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct UserResponse {
     id: String,
     username: Option<String>,
-    password: Option<String>,
     display_name: String,
     mobile: Option<String>,
     state_code: Option<String>,
@@ -155,6 +165,22 @@ pub(crate) struct CreateLocalUserRequest {
     title: Option<String>,
     role_ids: Vec<String>,
 }
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct InitializeLocalCredentialsResponse {
+    initialized: usize,
+    already_configured: usize,
+    skipped: Vec<InitializeLocalCredentialSkip>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct InitializeLocalCredentialSkip {
+    user_id: String,
+    display_name: String,
+    reason: String,
+}
 #[derive(Deserialize, ToSchema)]
 pub(crate) struct LocalLoginRequest {
     username: String,
@@ -224,6 +250,63 @@ pub(crate) async fn list_organization_units(
     )))
 }
 
+pub(crate) async fn create_local_organization_unit(
+    State(state): State<AppState>,
+    Json(payload): Json<CreateLocalOrganizationUnitRequest>,
+) -> Result<Json<ApiResponse<OrganizationUnitResponse>>, AppError> {
+    let name = payload.name.trim();
+    if name.is_empty() {
+        return Err(AppError::BadRequest("组织名称不能为空".to_string()));
+    }
+    if name.len() > 160 {
+        return Err(AppError::BadRequest(
+            "组织名称不能超过 160 个字符".to_string(),
+        ));
+    }
+    let parent_external_id = payload
+        .parent_external_id
+        .and_then(|value| optional_text(&value));
+    if let Some(parent_external_id) = &parent_external_id {
+        let parent_exists = organization_unit_entity::Entity::find()
+            .filter(organization_unit_entity::Column::SourceType.eq("local"))
+            .filter(organization_unit_entity::Column::ExternalId.eq(parent_external_id))
+            .one(&state.db)
+            .await?
+            .is_some();
+        if !parent_exists {
+            return Err(AppError::BadRequest("所选上级组织不存在".to_string()));
+        }
+    }
+    let now = chrono::Utc::now();
+    let unit = organization_unit_entity::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        source_type: Set("local".to_string()),
+        external_id: Set(format!("local:{}", Uuid::new_v4())),
+        parent_external_id: Set(parent_external_id),
+        name: Set(name.to_string()),
+        sort_order: Set(now.timestamp_millis()),
+        status: Set("active".to_string()),
+        raw_json: Set(serde_json::json!({ "source": "local" })),
+        created_at: Set(now.into()),
+        updated_at: Set(now.into()),
+    }
+    .insert(&state.db)
+    .await?;
+    Ok(Json(success_response(
+        "local organization unit created",
+        OrganizationUnitResponse {
+            id: unit.id.to_string(),
+            source_type: unit.source_type,
+            external_id: unit.external_id,
+            parent_external_id: unit.parent_external_id,
+            name: unit.name,
+            status: unit.status,
+            member_count: 0,
+            members: Vec::new(),
+        },
+    )))
+}
+
 pub(crate) async fn create_local_user(
     State(state): State<AppState>,
     Json(payload): Json<CreateLocalUserRequest>,
@@ -268,7 +351,7 @@ pub(crate) async fn create_local_user(
     iam_local_credential_entity::ActiveModel {
         user_id: Set(id),
         username: Set(username.to_string()),
-        password: Set(password.to_string()),
+        password: Set(hash_password(password)?),
         created_at: Set(now.into()),
         updated_at: Set(now.into()),
     }
@@ -294,6 +377,78 @@ pub(crate) async fn create_local_user(
         },
     )))
 }
+
+pub(crate) async fn initialize_local_credentials(
+    State(state): State<AppState>,
+) -> Result<Json<ApiResponse<InitializeLocalCredentialsResponse>>, AppError> {
+    let users = iam_user_entity::Entity::find()
+        .order_by_asc(iam_user_entity::Column::DisplayName)
+        .all(&state.db)
+        .await?;
+    let credentials = iam_local_credential_entity::Entity::find()
+        .all(&state.db)
+        .await?;
+    let configured_user_ids = credentials
+        .iter()
+        .map(|credential| credential.user_id)
+        .collect::<HashSet<_>>();
+    let mut used_usernames = credentials
+        .into_iter()
+        .map(|credential| credential.username)
+        .collect::<HashSet<_>>();
+    let transaction = state.db.begin().await?;
+    let now = chrono::Utc::now();
+    let mut initialized = 0;
+    let mut already_configured = 0;
+    let mut skipped = Vec::new();
+
+    for user in users {
+        if configured_user_ids.contains(&user.id) {
+            already_configured += 1;
+            continue;
+        }
+        let credential_value = user
+            .email
+            .as_deref()
+            .and_then(optional_text)
+            .or_else(|| user.mobile.as_deref().and_then(optional_text));
+        let Some(credential_value) = credential_value else {
+            skipped.push(InitializeLocalCredentialSkip {
+                user_id: user.id.to_string(),
+                display_name: user.display_name,
+                reason: "未设置主邮箱或手机号".to_string(),
+            });
+            continue;
+        };
+        if !used_usernames.insert(credential_value.clone()) {
+            skipped.push(InitializeLocalCredentialSkip {
+                user_id: user.id.to_string(),
+                display_name: user.display_name,
+                reason: format!("账号“{credential_value}”已被其他用户使用"),
+            });
+            continue;
+        }
+        iam_local_credential_entity::ActiveModel {
+            user_id: Set(user.id),
+            username: Set(credential_value.clone()),
+            password: Set(hash_password(&credential_value)?),
+            created_at: Set(now.into()),
+            updated_at: Set(now.into()),
+        }
+        .insert(&transaction)
+        .await?;
+        initialized += 1;
+    }
+    transaction.commit().await?;
+    Ok(Json(success_response(
+        "local credentials initialized",
+        InitializeLocalCredentialsResponse {
+            initialized,
+            already_configured,
+            skipped,
+        },
+    )))
+}
 pub(crate) async fn local_login(
     State(state): State<AppState>,
     Json(payload): Json<LocalLoginRequest>,
@@ -303,7 +458,7 @@ pub(crate) async fn local_login(
         .one(&state.db)
         .await?
         .ok_or_else(|| AppError::BadRequest("账号或密码错误".to_string()))?;
-    if credential.password != payload.password {
+    if !verify_password(&credential.password, &payload.password) {
         return Err(AppError::BadRequest("账号或密码错误".to_string()));
     }
     let user = iam_user_entity::Entity::find_by_id(credential.user_id)
@@ -313,6 +468,12 @@ pub(crate) async fn local_login(
     if user.status != "active" {
         return Err(AppError::BadRequest("用户已停用".to_string()));
     }
+    if !credential.password.starts_with("$argon2") {
+        let mut upgraded: iam_local_credential_entity::ActiveModel = credential.clone().into();
+        upgraded.password = Set(hash_password(&payload.password)?);
+        upgraded.updated_at = Set(chrono::Utc::now().into());
+        upgraded.update(&state.db).await?;
+    }
     Ok(Json(success_response(
         "login verified",
         DingTalkLoginUserResponse {
@@ -321,6 +482,26 @@ pub(crate) async fn local_login(
             display_name: user.display_name,
         },
     )))
+}
+
+fn hash_password(password: &str) -> Result<String, AppError> {
+    let salt = SaltString::generate(&mut OsRng);
+    Argon2::default()
+        .hash_password(password.as_bytes(), &salt)
+        .map(|hash| hash.to_string())
+        .map_err(|_| AppError::Server(std::io::Error::other("password hashing failed")))
+}
+
+fn verify_password(stored: &str, provided: &str) -> bool {
+    if let Ok(parsed) = PasswordHash::new(stored) {
+        return Argon2::default()
+            .verify_password(provided.as_bytes(), &parsed)
+            .is_ok();
+    }
+
+    // Existing development installations used plaintext credentials. Upgrade after
+    // a successful login, then never return the value through the API.
+    stored == provided
 }
 
 pub(crate) async fn list_users(
@@ -394,12 +575,7 @@ pub(crate) async fn list_users(
     let mut email_addresses_by_user = HashMap::<_, Vec<EmailAddressResponse>>::new();
     let credentials_by_user = credentials
         .into_iter()
-        .map(|credential| {
-            (
-                credential.user_id,
-                (credential.username, credential.password),
-            )
-        })
+        .map(|credential| (credential.user_id, credential.username))
         .collect::<HashMap<_, _>>();
     for item in email_addresses {
         email_addresses_by_user
@@ -417,12 +593,7 @@ pub(crate) async fn list_users(
             .into_iter()
             .map(|user| UserResponse {
                 id: user.id.to_string(),
-                username: credentials_by_user
-                    .get(&user.id)
-                    .map(|value| value.0.clone()),
-                password: credentials_by_user
-                    .get(&user.id)
-                    .map(|value| value.1.clone()),
+                username: credentials_by_user.get(&user.id).cloned(),
                 display_name: user.display_name,
                 mobile: user.mobile,
                 state_code: user.state_code,
@@ -619,7 +790,6 @@ pub(crate) async fn update_user(
         UserResponse {
             id: updated.id.to_string(),
             username: None,
-            password: None,
             display_name: updated.display_name,
             mobile: updated.mobile,
             state_code: updated.state_code,

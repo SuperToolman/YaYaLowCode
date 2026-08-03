@@ -57,7 +57,7 @@ where
             .query_all_raw(Statement::from_string(
                 DbBackend::Postgres,
                 format!(
-                    "SELECT {} FROM \"{}\" ORDER BY created_at DESC",
+                    "SELECT {} FROM \"{}\" WHERE deleted_at IS NULL ORDER BY created_at DESC",
                     base_select_columns(&plan),
                     plan.main_table
                 ),
@@ -81,7 +81,7 @@ where
             .query_all_raw(Statement::from_sql_and_values(
                 DbBackend::Postgres,
                 format!(
-                    "SELECT {} FROM \"{}\" ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+                    "SELECT {} FROM \"{}\" WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT $1 OFFSET $2",
                     base_select_columns(&plan),
                     plan.main_table
                 ),
@@ -95,7 +95,10 @@ where
             .db
             .query_one_raw(Statement::from_string(
                 DbBackend::Postgres,
-                format!("SELECT COUNT(*) AS total FROM \"{}\"", plan.main_table),
+                format!(
+                    "SELECT COUNT(*) AS total FROM \"{}\" WHERE deleted_at IS NULL",
+                    plan.main_table
+                ),
             ))
             .await?
             .ok_or_else(|| {
@@ -120,7 +123,7 @@ where
             .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Postgres,
                 format!(
-                    "SELECT {} FROM \"{}\" WHERE record_uuid = $1",
+                    "SELECT {} FROM \"{}\" WHERE record_uuid = $1 AND deleted_at IS NULL",
                     base_select_columns(&plan),
                     plan.main_table
                 ),
@@ -228,13 +231,23 @@ where
         Ok(stored_record_from_row(&row, &record.form_uuid)?)
     }
 
-    pub(crate) async fn delete(&self, record: &StoredFormRecord) -> Result<(), AppError> {
+    pub(crate) async fn soft_delete(
+        &self,
+        record: &StoredFormRecord,
+        now: DateTime<Utc>,
+    ) -> Result<(), AppError> {
         let plan = self.storage_plan(&record.form_uuid).await?;
         self.db
             .execute_raw(Statement::from_sql_and_values(
                 DbBackend::Postgres,
-                format!("DELETE FROM \"{}\" WHERE id = $1", plan.main_table),
-                vec![SeaValue::Uuid(Some(record.id))],
+                format!(
+                    "UPDATE \"{}\" SET deleted_at = $1 WHERE id = $2 AND deleted_at IS NULL",
+                    plan.main_table
+                ),
+                vec![
+                    SeaValue::ChronoDateTimeUtc(Some(now)),
+                    SeaValue::Uuid(Some(record.id)),
+                ],
             ))
             .await?;
         Ok(())

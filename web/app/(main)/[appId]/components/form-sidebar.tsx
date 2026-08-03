@@ -41,7 +41,6 @@ import {
   ProcessedIcon,
   TodoIcon,
 } from "../../../components/app-icons";
-import type { AppForm } from "../../../lib/apps";
 import {
   createForm,
   createNavigationGroup,
@@ -59,7 +58,6 @@ import {
 } from "./app-navigation-events";
 
 type FormSidebarProps = {
-  initialForms: AppForm[];
   routeAppId: string;
 };
 
@@ -101,15 +99,13 @@ type NavigationDropData = {
 
 const ROOT_PARENT_VALUE = "__root__";
 
-export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
+export function FormSidebar({ routeAppId }: FormSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { hasPermission } = useAuth();
+  const { hasPermission, permissionsReady } = useAuth();
   const canCreateForm = hasPermission(`app:${routeAppId}:create_form`);
   const canCreateGroup = hasPermission(`app:${routeAppId}:create_group`);
-  const [items, setItems] = useState<NavigationItem[]>(() =>
-    buildStaticNavigationItems(routeAppId, initialForms),
-  );
+  const [items, setItems] = useState<NavigationItem[]>([]);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [isPending, startTransition] = useTransition();
   const [errorMessage, setErrorMessage] = useState("");
@@ -127,10 +123,14 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
     }),
   );
 
-  const tree = useMemo(() => buildNavigationTree(routeAppId, items), [routeAppId, items]);
+  const tree = useMemo(
+    () => buildNavigationTree(routeAppId, permissionsReady ? items as unknown as NavigationItem[] : []),
+    [permissionsReady, routeAppId, items],
+  );
   const groupOptions = useMemo(() => flattenGroups(tree), [tree]);
 
   useEffect(() => {
+    if (!permissionsReady) return;
     let cancelled = false;
 
     void (async () => {
@@ -139,11 +139,11 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
           getAppNavigation(routeAppId),
           getAppForms(routeAppId),
         ]);
-        const nextItems = applyFormTypes(navigation, forms);
+        const nextItems = applyFormTypes(navigation as unknown as NavigationItem[], forms);
         if (!cancelled) {
           startTransition(() => {
-            setItems(nextItems);
-            setExpandedGroups((current) => expandGroupsFromItems(nextItems, current));
+            setItems(nextItems as unknown as NavigationItem[]);
+            setExpandedGroups((current) => expandGroupsFromItems(nextItems as unknown as NavigationItem[], current));
           });
         }
       } catch {
@@ -156,7 +156,7 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
     return () => {
       cancelled = true;
     };
-  }, [routeAppId]);
+  }, [permissionsReady, routeAppId]);
 
   const refreshNavigation = useCallback(() => {
     void (async () => {
@@ -165,10 +165,10 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
           getAppNavigation(routeAppId, true),
           getAppForms(routeAppId, true),
         ]);
-        const nextItems = applyFormTypes(navigation, forms);
+        const nextItems = applyFormTypes(navigation as unknown as NavigationItem[], forms);
         startTransition(() => {
-          setItems(nextItems);
-          setExpandedGroups((current) => expandGroupsFromItems(nextItems, current));
+          setItems(nextItems as unknown as NavigationItem[]);
+          setExpandedGroups((current) => expandGroupsFromItems(nextItems as unknown as NavigationItem[], current));
         });
       } catch {
         setErrorMessage("导航刷新失败，请稍后重试。");
@@ -310,11 +310,11 @@ export function FormSidebar({ initialForms, routeAppId }: FormSidebarProps) {
           responseStyle: "fields",
         });
         if (!error && data?.code === 0 && data.data) {
-          const nextItems = data.data;
+          const nextItems = data.data as NavigationItem[];
           invalidateAppResources(routeAppId, ["navigation"]);
           startTransition(() => {
             setItems(nextItems);
-            setExpandedGroups((current) => expandGroupsFromItems(nextItems, current));
+            setExpandedGroups((current) => expandGroupsFromItems(nextItems as unknown as NavigationItem[], current));
           });
         } else {
           setErrorMessage(data?.message || "更新导航顺序失败。");
@@ -892,58 +892,6 @@ function flattenGroups(nodes: SidebarNode[], level = 0): Array<{ id: string; lab
   }
 
   return result;
-}
-
-function buildStaticNavigationItems(routeAppId: string, forms: AppForm[]): NavigationItem[] {
-  return [
-    {
-      id: `system-${routeAppId}-todo`,
-      itemType: "system",
-      title: "待我处理",
-      pathSlug: "todo",
-      sortOrder: 0,
-      isDefaultEntry: true,
-      parentId: null,
-    },
-    {
-      id: `system-${routeAppId}-processed`,
-      itemType: "system",
-      title: "我处理的",
-      pathSlug: "processed",
-      sortOrder: 1,
-      isDefaultEntry: false,
-      parentId: null,
-    },
-    {
-      id: `system-${routeAppId}-created`,
-      itemType: "system",
-      title: "我创建的",
-      pathSlug: "created",
-      sortOrder: 2,
-      isDefaultEntry: false,
-      parentId: null,
-    },
-    {
-      id: `system-${routeAppId}-copied`,
-      itemType: "system",
-      title: "抄送我的",
-      pathSlug: "copied",
-      sortOrder: 3,
-      isDefaultEntry: false,
-      parentId: null,
-    },
-    ...forms.map((form, index) => ({
-      id: form.id,
-      itemType: "form" as const,
-      title: form.name,
-      targetFormUuid: form.id,
-      pathSlug: `form-${index + 1}`,
-      sortOrder: 100 + index,
-      isDefaultEntry: false,
-      parentId: null,
-      formType: form.formType ?? "normal",
-    })),
-  ];
 }
 
 function applyFormTypes(

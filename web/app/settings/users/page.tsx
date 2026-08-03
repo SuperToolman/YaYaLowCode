@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Avatar, Button, Checkbox, Dropdown, Input, Modal } from "@heroui/react";
+import { Avatar, Button, Checkbox, Dropdown, Input, Modal, Tooltip } from "@heroui/react";
 import {
   createLocalUser,
   deleteUser,
@@ -12,6 +12,7 @@ import {
   type UserResponse,
 } from "../../lib/api-client";
 import { SettingsContentCard } from "../_components/settings-content-card";
+import { InfoIcon } from "../../components/app-icons";
 
 type EmailAddressItem = { label: string; email: string };
 type RoleItem = {
@@ -23,7 +24,6 @@ type RoleItem = {
 type UserItem = {
   id: string;
   username: string | null;
-  password: string | null;
   displayName: string;
   mobile: string | null;
   stateCode: string | null;
@@ -52,6 +52,12 @@ type UserItem = {
 };
 type SourceFilter = "all" | "local" | "dingtalk";
 type StatusFilter = "all" | "active" | "inactive";
+type CredentialInitializationResult = {
+  initialized: number;
+  alreadyConfigured: number;
+  skipped: Array<{ userId: string; displayName: string; reason: string }>;
+};
+type ApiEnvelope<T> = { code: number; message: string; data: T | null };
 
 function normalizeUser(user: UserResponse): UserItem {
   return {
@@ -62,7 +68,6 @@ function normalizeUser(user: UserResponse): UserItem {
     jobNumber: user.jobNumber ?? null,
     managerName: user.managerName ?? null,
     mobile: user.mobile ?? null,
-    password: user.password ?? null,
     primaryDepartment: user.primaryDepartment ?? null,
     remark: user.remark ?? null,
     stateCode: user.stateCode ?? null,
@@ -102,6 +107,8 @@ export default function UsersSettingsPage() {
   const [newPassword, setNewPassword] = useState("");
   const [newName, setNewName] = useState("");
   const [newRoleIds, setNewRoleIds] = useState<string[]>([]);
+  const [initializingCredentials, setInitializingCredentials] = useState(false);
+  const [credentialInitializationResult, setCredentialInitializationResult] = useState<CredentialInitializationResult | null>(null);
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -245,13 +252,30 @@ export default function UsersSettingsPage() {
       setError(reason instanceof Error ? reason.message : "创建用户失败");
     }
   }
+  async function initializeCredentials() {
+    setInitializingCredentials(true);
+    setError("");
+    try {
+      const response = await fetch("/api/identity/users/initialize-local-credentials", { method: "POST" });
+      const payload = await response.json() as ApiEnvelope<CredentialInitializationResult>;
+      if (!response.ok || payload.code !== 0 || !payload.data) {
+        throw new Error(payload.message || "初始化账号密码失败");
+      }
+      setCredentialInitializationResult(payload.data);
+      await loadUsers();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "初始化账号密码失败");
+    } finally {
+      setInitializingCredentials(false);
+    }
+  }
 
   return (
     <SettingsContentCard
       title="用户管理"
       subtitle={`管理平台账号与组织身份源。共 ${users.length} 人，其中 ${users.filter((user) => user.status === "active").length} 人已启用。`}
       bodyClassName="flex flex-col overflow-clip"
-      headerActions={<div className="flex flex-wrap items-center justify-end gap-2"><Input aria-label="搜索用户" className="w-64" placeholder="搜索姓名、部门、角色或手机号" value={query} onChange={(event) => setQuery(event.currentTarget.value)} /><Button variant="secondary" onPress={() => setCreating(true)}>添加用户</Button><Button variant="secondary" isDisabled={loading} onPress={() => void loadUsers()}><RefreshIcon />{loading ? "刷新中…" : "刷新"}</Button></div>}
+      headerActions={<div className="flex flex-wrap items-center justify-end gap-2"><Input aria-label="搜索用户" className="w-64" placeholder="搜索姓名、部门、角色或手机号" value={query} onChange={(event) => setQuery(event.currentTarget.value)} /><div className="flex items-center gap-1"><Button variant="secondary" isDisabled={loading || initializingCredentials} onPress={() => void initializeCredentials()}>{initializingCredentials ? "正在初始化…" : "初始化账号密码"}</Button><Tooltip><Tooltip.Trigger><Button isIconOnly variant="ghost" aria-label="账号密码初始化规则"><InfoIcon /></Button></Tooltip.Trigger><Tooltip.Content><div className="max-w-64 space-y-1.5 text-xs leading-5"><p>仅处理尚未设置账号密码的用户。</p><p>有主邮箱：邮箱同时作为账号和密码。</p><p>无主邮箱但有手机号：手机号同时作为账号和密码。</p><p>两者均无则跳过，并在结果中列出。</p></div></Tooltip.Content></Tooltip></div><Button variant="secondary" onPress={() => setCreating(true)}>添加用户</Button><Button variant="secondary" isDisabled={loading} onPress={() => void loadUsers()}><RefreshIcon />{loading ? "刷新中…" : "刷新"}</Button></div>}
     >
       <div className="hidden">
         <div>
@@ -373,10 +397,9 @@ export default function UsersSettingsPage() {
           </div>
 
           <div className="settings-scroll-area h-full min-h-0 min-w-0 flex-1 overflow-y-scroll overscroll-contain">
-            <div className="sticky top-0 z-10 grid min-w-[1120px] grid-cols-[minmax(180px,1.15fr)_110px_110px_80px_minmax(150px,1fr)_minmax(150px,1fr)_90px_110px] gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)]">
+            <div className="sticky top-0 z-10 grid min-w-[1010px] grid-cols-[minmax(180px,1.15fr)_110px_80px_minmax(150px,1fr)_minmax(150px,1fr)_90px_110px] gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)]">
               <div>用户</div>
               <div>账号</div>
-              <div>密码</div>
               <div>来源</div>
               <div>组织</div>
               <div>角色</div>
@@ -388,7 +411,7 @@ export default function UsersSettingsPage() {
                 role="button"
                 tabIndex={0}
                 key={user.id}
-                className={`grid min-w-[1120px] grid-cols-[minmax(180px,1.15fr)_110px_110px_80px_minmax(150px,1fr)_minmax(150px,1fr)_90px_110px] items-center gap-3 border-b border-[var(--color-border)] px-4 py-3 text-left ${selectedId === user.id ? "bg-[var(--color-primary-soft)]" : "hover:bg-[var(--color-bg-hover)]"}`}
+                className={`grid min-w-[1010px] grid-cols-[minmax(180px,1.15fr)_110px_80px_minmax(150px,1fr)_minmax(150px,1fr)_90px_110px] items-center gap-3 border-b border-[var(--color-border)] px-4 py-3 text-left ${selectedId === user.id ? "bg-[var(--color-primary-soft)]" : "hover:bg-[var(--color-bg-hover)]"}`}
                 onClick={() => setSelectedId(user.id)}
               >
                 <div className="flex min-w-0 items-center gap-3">
@@ -408,9 +431,6 @@ export default function UsersSettingsPage() {
                 </div>
                 <div className="truncate text-xs text-[var(--color-text-primary)]">
                   {user.username || "—"}
-                </div>
-                <div className="truncate text-xs text-[var(--color-text-primary)]">
-                  {user.password || "—"}
                 </div>
                 <div>
                   <SourceTag source={user.sourceType} />
@@ -464,8 +484,8 @@ export default function UsersSettingsPage() {
             ) : null}
           </div>
           <aside className="settings-scroll-area h-full w-[300px] shrink-0 overflow-y-auto border-l border-[var(--color-border)] bg-[var(--color-control-soft)] p-5 overscroll-contain">
-            {selectedUser ? (
-              <UserDetails user={selectedUser} />
+            {selectedUser !== null ? (
+              <UserDetails user={selectedUser as UserItem} />
             ) : (
               <div className="text-sm text-[var(--color-text-secondary)]">
                 选择一个用户查看完整资料。
@@ -796,6 +816,7 @@ export default function UsersSettingsPage() {
                 <Input
                   aria-label="密码"
                   placeholder="密码"
+                  type="password"
                   value={newPassword}
                   onChange={(event) =>
                     setNewPassword(event.currentTarget.value)
@@ -826,6 +847,20 @@ export default function UsersSettingsPage() {
           </Modal.Container>
         </Modal.Backdrop>
       </Modal>
+      <Modal isOpen={credentialInitializationResult !== null} onOpenChange={(open) => !open && setCredentialInitializationResult(null)}>
+        <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
+          <Modal.Container placement="center" size="md">
+            <Modal.Dialog className="rounded-2xl bg-[var(--color-bg-surface)]">
+              <Modal.Header><Modal.Heading>账号密码初始化结果</Modal.Heading><Modal.CloseTrigger aria-label="关闭" /></Modal.Header>
+              <Modal.Body className="space-y-4">
+                <div className="grid grid-cols-2 gap-3"><div className="rounded-lg bg-[var(--color-success-soft)] p-3"><p className="text-xs text-[var(--color-success)]">已初始化</p><p className="mt-1 text-xl font-semibold text-[var(--color-success)]">{credentialInitializationResult?.initialized ?? 0}</p></div><div className="rounded-lg bg-[var(--color-control-soft)] p-3"><p className="text-xs text-[var(--color-text-secondary)]">原本已有账号密码</p><p className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">{credentialInitializationResult?.alreadyConfigured ?? 0}</p></div></div>
+                {credentialInitializationResult?.skipped.length ? <div><p className="text-sm font-semibold text-[var(--color-text-primary)]">已跳过 {credentialInitializationResult.skipped.length} 位用户</p><div className="mt-2 max-h-52 space-y-2 overflow-y-auto rounded-lg border border-[var(--color-border)] p-2">{credentialInitializationResult.skipped.map((item) => <div key={item.userId} className="flex items-center justify-between gap-3 px-2 py-1.5 text-sm"><span className="min-w-0 truncate text-[var(--color-text-primary)]">{item.displayName}</span><span className="shrink-0 text-xs text-[var(--color-text-secondary)]">{item.reason}</span></div>)}</div></div> : <p className="text-sm text-[var(--color-text-secondary)]">没有需要跳过的用户。</p>}
+              </Modal.Body>
+              <Modal.Footer><Button onPress={() => setCredentialInitializationResult(null)}>完成</Button></Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
     </SettingsContentCard>
   );
 }
@@ -835,7 +870,7 @@ function FilterChip({ label, count, active, onPress }: { label: string; count: n
 }
 
 function UserActions({ user, onEdit, onToggle, onDelete }: { user: UserItem; onEdit: (user: UserItem) => void; onToggle: (user: UserItem) => void; onDelete: (user: UserItem) => void }) {
-  return <Dropdown><Dropdown.Trigger aria-label={`${user.displayName}更多操作`} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-base text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]">•••</Dropdown.Trigger><Dropdown.Popover><Dropdown.Menu aria-label={`${user.displayName}操作`} className="min-w-52"><Dropdown.Item id="account" isDisabled>账号：{user.username || "未设置"}</Dropdown.Item><Dropdown.Item id="password" isDisabled>密码：{user.password || "未设置"}</Dropdown.Item><Dropdown.Item id="edit" onAction={() => onEdit(user)}>查看并编辑完整资料</Dropdown.Item><Dropdown.Item id="toggle" onAction={() => onToggle(user)}>{user.status === "active" ? "停用用户" : "启用用户"}</Dropdown.Item><Dropdown.Item id="delete" className="text-[var(--color-danger)]" onAction={() => onDelete(user)}>删除用户</Dropdown.Item></Dropdown.Menu></Dropdown.Popover></Dropdown>;
+  return <Dropdown><Dropdown.Trigger aria-label={`${user.displayName}更多操作`} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-base text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]">•••</Dropdown.Trigger><Dropdown.Popover><Dropdown.Menu aria-label={`${user.displayName}操作`} className="min-w-52"><Dropdown.Item id="account" isDisabled>账号：{user.username || "未设置"}</Dropdown.Item><Dropdown.Item id="edit" onAction={() => onEdit(user)}>查看并编辑完整资料</Dropdown.Item><Dropdown.Item id="toggle" onAction={() => onToggle(user)}>{user.status === "active" ? "停用用户" : "启用用户"}</Dropdown.Item><Dropdown.Item id="delete" className="text-[var(--color-danger)]" onAction={() => onDelete(user)}>删除用户</Dropdown.Item></Dropdown.Menu></Dropdown.Popover></Dropdown>;
 }
 
 function FilterGroup({

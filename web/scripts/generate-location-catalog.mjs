@@ -8,7 +8,9 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const outputDirectory = resolve(scriptDirectory, "../public/location-catalog");
+const outputDirectory = resolve(
+  process.env.LOCATION_CATALOG_OUTPUT_DIR ?? resolve(scriptDirectory, "../data/location-catalog"),
+);
 const cacheDirectory = resolve(scriptDirectory, "../.cache/location-catalog");
 
 const sources = {

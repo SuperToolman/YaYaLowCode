@@ -60,7 +60,7 @@ export default async function AppEntryPage({
         </p>
         <div className="mt-6 flex justify-center">
           <Link
-            href="/myApp"
+            href="/"
             className="inline-flex h-10 items-center rounded-lg bg-[var(--color-primary)] px-4 text-sm font-medium text-[var(--color-text-on-primary)] transition-colors hover:brightness-95"
           >
             返回我的应用

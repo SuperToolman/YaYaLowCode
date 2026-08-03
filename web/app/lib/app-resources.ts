@@ -70,3 +70,7 @@ export function getAppNavigation(appId: string, force = false) {
 export function invalidateAppResources(appId: string, resources: ResourceKind[] = ["app", "forms", "navigation"]) {
   for (const resource of resources) resourceCache.delete(cacheKey(appId, resource));
 }
+
+export function clearAppResourceCache() {
+  resourceCache.clear();
+}

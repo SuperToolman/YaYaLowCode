@@ -10,10 +10,16 @@ export type AccessTokenResponse = {
     expiresIn: number;
 };
 
+export type ActivatePlatformLicenseRequest = {
+    license: string;
+    licenseCenterUrl: string;
+};
+
 export type AgentConfigProfile = {
     allowCreateApps?: boolean;
     allowCreateAutomations?: boolean;
     allowCreateForms?: boolean;
+    approvalMode?: string;
     chatModel: string;
     contextCompressionPrompt?: string;
     contextCompressionProviderId?: string | null;
@@ -71,6 +77,16 @@ export type AgentPageContext = {
     route?: string | null;
 };
 
+export type AgentPersonaDefinition = {
+    description: string;
+    id: string;
+    knowledgeBaseIds?: Array<string>;
+    name: string;
+    pluginIds?: Array<string>;
+    skillIds?: Array<string>;
+    systemPrompt: string;
+};
+
 export type AgentPluginDefinition = {
     description?: string;
     enabled: boolean;
@@ -86,13 +102,13 @@ export type AgentRequest = {
     description: string;
     enabled: boolean;
     isDefault: boolean;
-    knowledgeBaseIds: Array<string>;
+    knowledgeBaseIds?: Array<string>;
     name: string;
-    pluginIds: Array<string>;
+    pluginIds?: Array<string>;
     profileId: string;
     scopeRefId?: string | null;
     scopeType: string;
-    skillIds: Array<string>;
+    skillIds?: Array<string>;
     systemPrompt: string;
 };
 
@@ -117,6 +133,7 @@ export type ApiAgentMessage = {
     id: string;
     metadata: unknown;
     role: string;
+    runId?: string | null;
 };
 
 export type ApiAgentSession = {
@@ -125,6 +142,9 @@ export type ApiAgentSession = {
     context: unknown;
     createdAt: string;
     id: string;
+    isPinned: boolean;
+    modelProvider?: string | null;
+    source: string;
     status: string;
     title: string;
     updatedAt: string;
@@ -141,7 +161,7 @@ export type ApiApp = {
     owner: string;
     ownerAvatarUrl?: string | null;
     records: number;
-    status: string;
+    status: AppStatus;
 };
 
 export type ApiAppFieldOutline = {
@@ -156,12 +176,13 @@ export type ApiAutomationFlow = {
     createdBy: string;
     currentVersion: number;
     description?: string | null;
-    flowType: string;
+    flowType: AutomationFlowType;
     id: string;
     name: string;
     nodesCount: number;
-    status: string;
-    triggerEvent: string;
+    status: AutomationStatus;
+    triggerEvent: AutomationTriggerEvent;
+    triggerEvents: Array<AutomationTriggerEvent>;
     triggerFormUuid?: string | null;
     triggerLabel: string;
     updatedAt: string;
@@ -175,14 +196,15 @@ export type ApiAutomationFlowDetail = {
     currentVersion: number;
     description?: string | null;
     edges: unknown;
-    flowType: string;
+    flowType: AutomationFlowType;
     id: string;
     name: string;
     nodes: unknown;
     nodesCount: number;
-    status: string;
+    status: AutomationStatus;
     triggerConfig: unknown;
-    triggerEvent: string;
+    triggerEvent: AutomationTriggerEvent;
+    triggerEvents: Array<AutomationTriggerEvent>;
     triggerFormUuid?: string | null;
     triggerLabel: string;
     updatedAt: string;
@@ -202,7 +224,7 @@ export type ApiAutomationFlowVersionSummary = {
     createdAt: string;
     createdBy: string;
     name: string;
-    status: string;
+    status: AutomationStatus;
     version: number;
 };
 
@@ -238,6 +260,8 @@ export type ApiAutomationRunNode = {
 
 export type ApiDetailForm = {
     detailFormUuid: string;
+    primaryDisplayFieldId?: string | null;
+    secondaryDisplayFieldId?: string | null;
     sourceFormUuid: string;
     subformFieldId: string;
     title: string;
@@ -253,12 +277,12 @@ export type ApiFieldOutlineField = {
 export type ApiFieldOutlineForm = {
     compiledSchemaVersion?: number | null;
     fields: Array<ApiFieldOutlineField>;
-    formType: string;
+    formType: FormType;
     formUuid: string;
     name: string;
     physicalTable?: string | null;
     schemaVersion: number;
-    status: string;
+    status: FormStatus;
 };
 
 export type ApiFormRecord = {
@@ -286,11 +310,11 @@ export type ApiFormSummary = {
     category: string;
     count?: number | null;
     createdAt: string;
-    formType: string;
+    formType: FormType;
     id: string;
     latestSchemaVersion: number;
     name: string;
-    status: string;
+    status: FormStatus;
 };
 
 export type ApiFormVersionSummary = {
@@ -331,6 +355,7 @@ export type ApiResponseAgentConfigProfile = {
         allowCreateApps?: boolean;
         allowCreateAutomations?: boolean;
         allowCreateForms?: boolean;
+        approvalMode?: string;
         chatModel: string;
         contextCompressionPrompt?: string;
         contextCompressionProviderId?: string | null;
@@ -392,6 +417,21 @@ export type ApiResponseAgentKnowledgeBaseDefinition = {
     time: string;
 };
 
+export type ApiResponseAgentPersonaDefinition = {
+    code: number;
+    data?: {
+        description: string;
+        id: string;
+        knowledgeBaseIds?: Array<string>;
+        name: string;
+        pluginIds?: Array<string>;
+        skillIds?: Array<string>;
+        systemPrompt: string;
+    };
+    message: string;
+    time: string;
+};
+
 export type ApiResponseAgentPluginDefinition = {
     code: number;
     data?: {
@@ -436,6 +476,9 @@ export type ApiResponseApiAgentSession = {
         context: unknown;
         createdAt: string;
         id: string;
+        isPinned: boolean;
+        modelProvider?: string | null;
+        source: string;
         status: string;
         title: string;
         updatedAt: string;
@@ -457,7 +500,7 @@ export type ApiResponseApiApp = {
         owner: string;
         ownerAvatarUrl?: string | null;
         records: number;
-        status: string;
+        status: AppStatus;
     };
     message: string;
     time: string;
@@ -482,12 +525,13 @@ export type ApiResponseApiAutomationFlow = {
         createdBy: string;
         currentVersion: number;
         description?: string | null;
-        flowType: string;
+        flowType: AutomationFlowType;
         id: string;
         name: string;
         nodesCount: number;
-        status: string;
-        triggerEvent: string;
+        status: AutomationStatus;
+        triggerEvent: AutomationTriggerEvent;
+        triggerEvents: Array<AutomationTriggerEvent>;
         triggerFormUuid?: string | null;
         triggerLabel: string;
         updatedAt: string;
@@ -506,14 +550,15 @@ export type ApiResponseApiAutomationFlowDetail = {
         currentVersion: number;
         description?: string | null;
         edges: unknown;
-        flowType: string;
+        flowType: AutomationFlowType;
         id: string;
         name: string;
         nodes: unknown;
         nodesCount: number;
-        status: string;
+        status: AutomationStatus;
         triggerConfig: unknown;
-        triggerEvent: string;
+        triggerEvent: AutomationTriggerEvent;
+        triggerEvents: Array<AutomationTriggerEvent>;
         triggerFormUuid?: string | null;
         triggerLabel: string;
         updatedAt: string;
@@ -540,6 +585,8 @@ export type ApiResponseApiDetailForm = {
     code: number;
     data?: {
         detailFormUuid: string;
+        primaryDisplayFieldId?: string | null;
+        secondaryDisplayFieldId?: string | null;
         sourceFormUuid: string;
         subformFieldId: string;
         title: string;
@@ -585,11 +632,11 @@ export type ApiResponseApiFormSummary = {
         category: string;
         count?: number | null;
         createdAt: string;
-        formType: string;
+        formType: FormType;
         id: string;
         latestSchemaVersion: number;
         name: string;
-        status: string;
+        status: FormStatus;
     };
     message: string;
     time: string;
@@ -639,10 +686,121 @@ export type ApiResponseClearDingTalkDataResponse = {
     time: string;
 };
 
+export type ApiResponseCommunicationAvailabilityResponse = {
+    code: number;
+    data?: {
+        enabled: boolean;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseCommunicationCleanupResponse = {
+    code: number;
+    data?: {
+        deletedFiles: number;
+        deletedMessages: number;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseCommunicationConversationResponse = {
+    code: number;
+    data?: {
+        conversationType: string;
+        id: string;
+        lastMessageAt?: string | null;
+        lastMessagePreview?: string | null;
+        lastMessageSequence: number;
+        members: Array<CommunicationMemberResponse>;
+        title: string;
+        unreadCount: number;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseCommunicationMessagePageResponse = {
+    code: number;
+    data?: {
+        items: Array<CommunicationMessageResponse>;
+        nextBeforeSequence?: number | null;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseCommunicationMessageResponse = {
+    code: number;
+    data?: {
+        attachments: Array<CommunicationAttachmentResponse>;
+        content: string;
+        conversationId: string;
+        createdAt: string;
+        emailSubject?: string | null;
+        fileIds: Array<string>;
+        id: string;
+        messageType: string;
+        replacesMessageId?: string | null;
+        senderUserId: string;
+        sequence: number;
+        status: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseCommunicationModuleSettings = {
+    code: number;
+    data?: {
+        allowFileMessages?: boolean;
+        allowedFileExtensions?: string;
+        expiresAt?: number | null;
+        installed?: boolean;
+        licenseId?: string | null;
+        maxFileUploadMb?: number;
+        retentionDays?: number;
+        websocketEnabled?: boolean;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseCommunicationStorageStatsResponse = {
+    code: number;
+    data?: {
+        attachmentBytes: number;
+        attachmentCount: number;
+        conversationCount: number;
+        messageBytes: number;
+        messageCount: number;
+        totalBytes: number;
+    };
+    message: string;
+    time: string;
+};
+
 export type ApiResponseDatabaseConnectionTestResponse = {
     code: number;
     data?: {
         connected: boolean;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseDatabaseSettingsResponse = {
+    code: number;
+    data?: {
+        connectionError?: string | null;
+        connectionStatus: string;
+        database: string;
+        host: string;
+        managedByEnvironment: boolean;
+        password: string;
+        port: number;
+        username: string;
     };
     message: string;
     time: string;
@@ -693,6 +851,33 @@ export type ApiResponseIdentitySourceSettings = {
     time: string;
 };
 
+export type ApiResponseInitializeLocalCredentialsResponse = {
+    code: number;
+    data?: {
+        alreadyConfigured: number;
+        initialized: number;
+        skipped: Array<InitializeLocalCredentialSkip>;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseOrganizationUnitResponse = {
+    code: number;
+    data?: {
+        externalId: string;
+        id: string;
+        memberCount: number;
+        members: Array<OrganizationMemberResponse>;
+        name: string;
+        parentExternalId?: string | null;
+        sourceType: string;
+        status: string;
+    };
+    message: string;
+    time: string;
+};
+
 export type ApiResponsePlatformAgentAssistantSettings = {
     code: number;
     data?: {
@@ -703,15 +888,50 @@ export type ApiResponsePlatformAgentAssistantSettings = {
     time: string;
 };
 
+export type ApiResponsePlatformLicenseStatus = {
+    code: number;
+    data?: {
+        expiresAt?: number | null;
+        licenseCenterUrl?: string | null;
+        licenseId?: string | null;
+        moduleExpiresAt: {
+            [key: string]: number;
+        };
+        moduleStatuses: {
+            [key: string]: string;
+        };
+        modules: Array<string>;
+        platformStatus: string;
+        reason?: string | null;
+        subject?: string | null;
+        valid: boolean;
+    };
+    message: string;
+    time: string;
+};
+
 export type ApiResponseProviderResponse = {
     code: number;
     data?: {
         apiBaseUrl: string;
+        apiKey: string;
         apiKeyConfigured: boolean;
+        defaultChatModel: string;
         enabled: boolean;
         id: string;
         kind: string;
+        models: Array<string>;
         name: string;
+        websiteUrl: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseRecycleBinSettings = {
+    code: number;
+    data?: {
+        retentionDays: number;
     };
     message: string;
     time: string;
@@ -769,7 +989,6 @@ export type ApiResponseUserResponse = {
         jobNumber?: string | null;
         managerName?: string | null;
         mobile?: string | null;
-        password?: string | null;
         primaryDepartment?: string | null;
         realAuthed: boolean;
         remark?: string | null;
@@ -806,6 +1025,23 @@ export type ApiResponseUserSyncResponse = {
     time: string;
 };
 
+export type ApiResponseValkeySettingsResponse = {
+    code: number;
+    data?: {
+        cacheTtlHours: number;
+        connectionError?: string | null;
+        connectionStatus: string;
+        database: number;
+        enabled: boolean;
+        host: string;
+        password: string;
+        port: number;
+        username: string;
+    };
+    message: string;
+    time: string;
+};
+
 export type ApiResponseValue = {
     code: number;
     data?: unknown;
@@ -819,6 +1055,7 @@ export type ApiResponseVecAgentConfigProfile = {
         allowCreateApps?: boolean;
         allowCreateAutomations?: boolean;
         allowCreateForms?: boolean;
+        approvalMode?: string;
         chatModel: string;
         contextCompressionPrompt?: string;
         contextCompressionProviderId?: string | null;
@@ -924,6 +1161,7 @@ export type ApiResponseVecApiAgentMessage = {
         id: string;
         metadata: unknown;
         role: string;
+        runId?: string | null;
     }>;
     message: string;
     time: string;
@@ -937,6 +1175,9 @@ export type ApiResponseVecApiAgentSession = {
         context: unknown;
         createdAt: string;
         id: string;
+        isPinned: boolean;
+        modelProvider?: string | null;
+        source: string;
         status: string;
         title: string;
         updatedAt: string;
@@ -958,7 +1199,7 @@ export type ApiResponseVecApiApp = {
         owner: string;
         ownerAvatarUrl?: string | null;
         records: number;
-        status: string;
+        status: AppStatus;
     }>;
     message: string;
     time: string;
@@ -971,7 +1212,7 @@ export type ApiResponseVecApiAutomationFlowVersionSummary = {
         createdAt: string;
         createdBy: string;
         name: string;
-        status: string;
+        status: AutomationStatus;
         version: number;
     }>;
     message: string;
@@ -1013,6 +1254,22 @@ export type ApiResponseVecApiDetailForm = {
     time: string;
 };
 
+export type ApiResponseVecApiFormSummary = {
+    code: number;
+    data?: Array<{
+        category: string;
+        count?: number | null;
+        createdAt: string;
+        formType: FormType;
+        id: string;
+        latestSchemaVersion: number;
+        name: string;
+        status: FormStatus;
+    }>;
+    message: string;
+    time: string;
+};
+
 export type ApiResponseVecApiFormVersionSummary = {
     code: number;
     data?: Array<{
@@ -1039,6 +1296,33 @@ export type ApiResponseVecApiNavigationItem = {
         targetFormUuid?: string | null;
         title: string;
         visibilityRule?: string | null;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecCommunicationConversationResponse = {
+    code: number;
+    data?: Array<{
+        conversationType: string;
+        id: string;
+        lastMessageAt?: string | null;
+        lastMessagePreview?: string | null;
+        lastMessageSequence: number;
+        members: Array<CommunicationMemberResponse>;
+        title: string;
+        unreadCount: number;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecCommunicationUserResponse = {
+    code: number;
+    data?: Array<{
+        avatarUrl?: string | null;
+        displayName: string;
+        id: string;
     }>;
     message: string;
     time: string;
@@ -1106,11 +1390,31 @@ export type ApiResponseVecProviderResponse = {
     code: number;
     data?: Array<{
         apiBaseUrl: string;
+        apiKey: string;
         apiKeyConfigured: boolean;
+        defaultChatModel: string;
         enabled: boolean;
         id: string;
         kind: string;
+        models: Array<string>;
         name: string;
+        websiteUrl: string;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecRecycleBinEntry = {
+    code: number;
+    data?: Array<{
+        deletedAt: string;
+        expiresAt: string;
+        formType: string;
+        formUuid: string;
+        id: string;
+        recordData: unknown;
+        recordUuid: string;
+        sourceFormName: string;
     }>;
     message: string;
     time: string;
@@ -1146,7 +1450,6 @@ export type ApiResponseVecUserResponse = {
         jobNumber?: string | null;
         managerName?: string | null;
         mobile?: string | null;
-        password?: string | null;
         primaryDepartment?: string | null;
         realAuthed: boolean;
         remark?: string | null;
@@ -1183,6 +1486,14 @@ export type ApiSchemaPayload = {
     version: number;
 };
 
+export type AppStatus = 'enabled' | 'paused' | 'draft';
+
+export type AutomationFlowType = 'trigger' | 'process';
+
+export type AutomationStatus = 'enabled' | 'paused' | 'draft';
+
+export type AutomationTriggerEvent = 'before_create' | 'after_create' | 'before_update' | 'after_update' | 'before_delete' | 'after_delete' | 'form_submit';
+
 export type ClearDingTalkDataResponse = {
     deletedOrganizationUnits: number;
     deletedRolePermissions: number;
@@ -1190,9 +1501,91 @@ export type ClearDingTalkDataResponse = {
     deletedUsers: number;
 };
 
+export type CommunicationAttachmentResponse = {
+    fileId: string;
+    isImage: boolean;
+    mimeType: string;
+    name: string;
+    size: number;
+};
+
+export type CommunicationAvailabilityResponse = {
+    enabled: boolean;
+};
+
+export type CommunicationCleanupResponse = {
+    deletedFiles: number;
+    deletedMessages: number;
+};
+
+export type CommunicationConversationResponse = {
+    conversationType: string;
+    id: string;
+    lastMessageAt?: string | null;
+    lastMessagePreview?: string | null;
+    lastMessageSequence: number;
+    members: Array<CommunicationMemberResponse>;
+    title: string;
+    unreadCount: number;
+};
+
+export type CommunicationMemberResponse = {
+    avatarUrl?: string | null;
+    displayName: string;
+    role: string;
+    userId: string;
+};
+
+export type CommunicationMessagePageResponse = {
+    items: Array<CommunicationMessageResponse>;
+    nextBeforeSequence?: number | null;
+};
+
+export type CommunicationMessageResponse = {
+    attachments: Array<CommunicationAttachmentResponse>;
+    content: string;
+    conversationId: string;
+    createdAt: string;
+    emailSubject?: string | null;
+    fileIds: Array<string>;
+    id: string;
+    messageType: string;
+    replacesMessageId?: string | null;
+    senderUserId: string;
+    sequence: number;
+    status: string;
+};
+
+export type CommunicationModuleSettings = {
+    allowFileMessages?: boolean;
+    allowedFileExtensions?: string;
+    expiresAt?: number | null;
+    installed?: boolean;
+    licenseId?: string | null;
+    maxFileUploadMb?: number;
+    retentionDays?: number;
+    websocketEnabled?: boolean;
+};
+
+export type CommunicationStorageStatsResponse = {
+    attachmentBytes: number;
+    attachmentCount: number;
+    conversationCount: number;
+    messageBytes: number;
+    messageCount: number;
+    totalBytes: number;
+};
+
+export type CommunicationUserResponse = {
+    avatarUrl?: string | null;
+    displayName: string;
+    id: string;
+};
+
 export type CreateAgentSessionRequest = {
     agentId?: string | null;
     context?: null | AgentPageContext;
+    source?: string | null;
 };
 
 export type CreateAppRequest = {
@@ -1203,15 +1596,20 @@ export type CreateAutomationFlowRequest = {
     description?: string | null;
     name?: string | null;
     operator?: string | null;
-    triggerEvent?: string | null;
+    triggerEvent?: null | AutomationTriggerEvent;
+    triggerEvents?: Array<AutomationTriggerEvent> | null;
     triggerFormUuid?: string | null;
 };
 
 export type CreateDetailFormRequest = {
-    subformFieldId: string;
-    title?: string | null;
     primaryDisplayFieldId?: string | null;
     secondaryDisplayFieldId?: string | null;
+    subformFieldId: string;
+    title?: string | null;
+};
+
+export type CreateDirectConversationRequest = {
+    userId: string;
 };
 
 export type CreateFormRecordRequest = {
@@ -1219,7 +1617,17 @@ export type CreateFormRecordRequest = {
 };
 
 export type CreateFormRequest = {
-    formType?: string | null;
+    formType?: null | FormType;
+};
+
+export type CreateGroupConversationRequest = {
+    memberIds: Array<string>;
+    title: string;
+};
+
+export type CreateLocalOrganizationUnitRequest = {
+    name: string;
+    parentExternalId?: string | null;
 };
 
 export type CreateLocalRoleRequest = {
@@ -1243,6 +1651,17 @@ export type CreateNavigationGroupRequest = {
 
 export type DatabaseConnectionTestResponse = {
     connected: boolean;
+};
+
+export type DatabaseSettingsResponse = {
+    connectionError?: string | null;
+    connectionStatus: string;
+    database: string;
+    host: string;
+    managedByEnvironment: boolean;
+    password: string;
+    port: number;
+    username: string;
 };
 
 export type DepartmentSyncResponse = {
@@ -1292,6 +1711,10 @@ export type EmailAddressResponse = {
     label: string;
 };
 
+export type FormStatus = 'draft' | 'published';
+
+export type FormType = 'normal' | 'workflow' | 'defined' | 'detail';
+
 export type FormViewResponse = {
     config: unknown;
     name: string;
@@ -1305,6 +1728,18 @@ export type IdentitySourceSettings = {
 
 export type ImportLocationsRequest = {
     locations: Array<LocationImportItem>;
+};
+
+export type InitializeLocalCredentialSkip = {
+    displayName: string;
+    reason: string;
+    userId: string;
+};
+
+export type InitializeLocalCredentialsResponse = {
+    alreadyConfigured: number;
+    initialized: number;
+    skipped: Array<InitializeLocalCredentialSkip>;
 };
 
 export type KnowledgeBaseRequest = {
@@ -1346,6 +1781,10 @@ export type LocationResponse = {
     parentId?: string | null;
 };
 
+export type MarkConversationReadRequest = {
+    sequence?: number | null;
+};
+
 export type OrganizationMemberResponse = {
     avatarUrl?: string | null;
     displayName: string;
@@ -1365,6 +1804,15 @@ export type OrganizationUnitResponse = {
     status: string;
 };
 
+export type PersonaRequest = {
+    description?: string;
+    knowledgeBaseIds?: Array<string>;
+    name: string;
+    pluginIds?: Array<string>;
+    skillIds?: Array<string>;
+    systemPrompt: string;
+};
+
 export type PlatformAgentAssistantSettings = {
     navigationAgentId?: string | null;
     schemaAnalysisPrompt?: string;
@@ -1373,6 +1821,23 @@ export type PlatformAgentAssistantSettings = {
 export type PlatformAgentAssistantSettingsRequest = {
     navigationAgentId?: string | null;
     schemaAnalysisPrompt?: string;
+};
+
+export type PlatformLicenseStatus = {
+    expiresAt?: number | null;
+    licenseCenterUrl?: string | null;
+    licenseId?: string | null;
+    moduleExpiresAt: {
+        [key: string]: number;
+    };
+    moduleStatuses: {
+        [key: string]: string;
+    };
+    modules: Array<string>;
+    platformStatus: string;
+    reason?: string | null;
+    subject?: string | null;
+    valid: boolean;
 };
 
 export type PlatformToolResponse = {
@@ -1397,6 +1862,7 @@ export type ProfileRequest = {
     allowCreateApps?: boolean;
     allowCreateAutomations?: boolean;
     allowCreateForms?: boolean;
+    approvalMode?: string;
     chatModel: string;
     contextCompressionPrompt: string;
     contextCompressionProviderId?: string | null;
@@ -1406,15 +1872,15 @@ export type ProfileRequest = {
     contextOverflowStrategy: string;
     embeddingModel: string;
     imageCaptionModel: string;
-    knowledgeBaseIds: Array<string>;
+    knowledgeBaseIds?: Array<string>;
     maxContextTokens: number;
     maxRetries: number;
     maxSteps: number;
     name: string;
     personaId: string;
-    pluginIds: Array<string>;
+    pluginIds?: Array<string>;
     providerId: string;
-    skillIds: Array<string>;
+    skillIds?: Array<string>;
     temperature: number;
     webSearchEnabled: boolean;
 };
@@ -1422,18 +1888,51 @@ export type ProfileRequest = {
 export type ProviderRequest = {
     apiBaseUrl: string;
     apiKey?: string | null;
+    defaultChatModel?: string;
     enabled: boolean;
     kind: string;
+    models?: Array<string>;
     name: string;
+    websiteUrl?: string;
 };
 
 export type ProviderResponse = {
     apiBaseUrl: string;
+    apiKey: string;
     apiKeyConfigured: boolean;
+    defaultChatModel: string;
     enabled: boolean;
     id: string;
     kind: string;
+    models: Array<string>;
     name: string;
+    websiteUrl: string;
+};
+
+export type RecallCommunicationMessageRequest = {
+    reason?: string | null;
+};
+
+export type RecycleBinEntry = {
+    deletedAt: string;
+    expiresAt: string;
+    formType: string;
+    formUuid: string;
+    id: string;
+    recordData: unknown;
+    recordUuid: string;
+    sourceFormName: string;
+};
+
+export type RecycleBinSettings = {
+    retentionDays: number;
+};
+
+export type ReeditCommunicationMessageRequest = {
+    clientMessageId?: string | null;
+    content: string;
+    emailSubject?: string | null;
+    fileIds?: Array<string>;
 };
 
 export type ReorderNavigationRequest = {
@@ -1470,6 +1969,14 @@ export type SaveSchemaRequest = {
     schema: unknown;
 };
 
+export type SendCommunicationMessageRequest = {
+    clientMessageId?: string | null;
+    content?: string;
+    emailSubject?: string | null;
+    fileIds?: Array<string>;
+    messageType: string;
+};
+
 export type SetDefaultNavigationEntryRequest = {
     form_uuid?: string | null;
     system_page_slug?: string | null;
@@ -1495,6 +2002,10 @@ export type SkillRequest = {
     requiresConfirmation: boolean;
 };
 
+export type TransferGroupOwnerRequest = {
+    userId: string;
+};
+
 export type UpdateAgentSessionRequest = {
     isPinned?: boolean | null;
     title?: string | null;
@@ -1502,7 +2013,7 @@ export type UpdateAgentSessionRequest = {
 
 export type UpdateAppRequest = {
     name?: string | null;
-    status?: string | null;
+    status?: null | AppStatus;
 };
 
 export type UpdateAutomationFlowRequest = {
@@ -1512,9 +2023,10 @@ export type UpdateAutomationFlowRequest = {
     name?: string | null;
     nodes?: unknown;
     operator?: string | null;
-    status?: string | null;
+    status?: null | AutomationStatus;
     triggerConfig?: unknown;
-    triggerEvent?: string | null;
+    triggerEvent?: null | AutomationTriggerEvent;
+    triggerEvents?: Array<AutomationTriggerEvent> | null;
     triggerFormUuid?: string | null;
 };
 
@@ -1530,6 +2042,12 @@ export type UpdateFormRecordRequest = {
     data: unknown;
 };
 
+export type UpdateGroupConversationRequest = {
+    addMemberIds: Array<string>;
+    removeMemberIds: Array<string>;
+    title?: string | null;
+};
+
 export type UpdateIdentitySourceSettingsRequest = {
     dingtalk: DingTalkSettings;
 };
@@ -1537,6 +2055,10 @@ export type UpdateIdentitySourceSettingsRequest = {
 export type UpdateLocalRoleRequest = {
     name?: string | null;
     status?: string | null;
+};
+
+export type UpdateRecycleBinSettingsRequest = {
+    retentionDays: number;
 };
 
 export type UpdateRolePermissionsRequest = {
@@ -1557,6 +2079,16 @@ export type UpdateUserRequest = {
     workPlace?: string | null;
 };
 
+export type UpdateValkeySettingsRequest = {
+    cacheTtlHours: number;
+    database: number;
+    enabled: boolean;
+    host: string;
+    password?: string | null;
+    port: number;
+    username: string;
+};
+
 export type UserResponse = {
     avatarUrl?: string | null;
     departments: Array<string>;
@@ -1571,7 +2103,6 @@ export type UserResponse = {
     jobNumber?: string | null;
     managerName?: string | null;
     mobile?: string | null;
-    password?: string | null;
     primaryDepartment?: string | null;
     realAuthed: boolean;
     remark?: string | null;
@@ -1598,6 +2129,30 @@ export type UserSyncResponse = {
     synchronizedAt: string;
     total: number;
     updated: number;
+};
+
+export type ValkeySettingsResponse = {
+    cacheTtlHours: number;
+    connectionError?: string | null;
+    connectionStatus: string;
+    database: number;
+    enabled: boolean;
+    host: string;
+    password: string;
+    port: number;
+    username: string;
+};
+
+export type WorkflowCommentRequest = {
+    content: string;
+};
+
+export type WorkflowPauseRequest = {
+    reason?: string | null;
+};
+
+export type WorkflowTaskActionRequest = {
+    comment?: string | null;
 };
 
 export type ListConfigProfilesData = {
@@ -1727,6 +2282,50 @@ export type ListPersonasResponses = {
      */
     200: unknown;
 };
+
+export type CreatePersonaData = {
+    body: PersonaRequest;
+    path?: never;
+    query?: never;
+    url: '/api/agent/personas';
+};
+
+export type CreatePersonaResponses = {
+    200: ApiResponseAgentPersonaDefinition;
+};
+
+export type CreatePersonaResponse = CreatePersonaResponses[keyof CreatePersonaResponses];
+
+export type DeletePersonaData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/agent/personas/{id}';
+};
+
+export type DeletePersonaResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type UpdatePersonaData = {
+    body: PersonaRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/agent/personas/{id}';
+};
+
+export type UpdatePersonaResponses = {
+    200: ApiResponseAgentPersonaDefinition;
+};
+
+export type UpdatePersonaResponse = UpdatePersonaResponses[keyof UpdatePersonaResponses];
 
 export type ListPlatformToolsData = {
     body?: never;
@@ -2199,11 +2798,10 @@ export type ListFormsData = {
 };
 
 export type ListFormsResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+    200: ApiResponseVecApiFormSummary;
 };
+
+export type ListFormsResponse = ListFormsResponses[keyof ListFormsResponses];
 
 export type CreateFormData = {
     body: CreateFormRequest;
@@ -2405,6 +3003,213 @@ export type RestoreAutomationFlowVersionResponses = {
 
 export type RestoreAutomationFlowVersionResponse = RestoreAutomationFlowVersionResponses[keyof RestoreAutomationFlowVersionResponses];
 
+export type ListCommunicationConversationsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/communication/conversations';
+};
+
+export type ListCommunicationConversationsResponses = {
+    200: ApiResponseVecCommunicationConversationResponse;
+};
+
+export type ListCommunicationConversationsResponse = ListCommunicationConversationsResponses[keyof ListCommunicationConversationsResponses];
+
+export type CreateDirectConversationData = {
+    body: CreateDirectConversationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/communication/conversations/direct';
+};
+
+export type CreateDirectConversationResponses = {
+    200: ApiResponseCommunicationConversationResponse;
+};
+
+export type CreateDirectConversationResponse = CreateDirectConversationResponses[keyof CreateDirectConversationResponses];
+
+export type CreateGroupConversationData = {
+    body: CreateGroupConversationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/communication/conversations/groups';
+};
+
+export type CreateGroupConversationResponses = {
+    200: ApiResponseCommunicationConversationResponse;
+};
+
+export type CreateGroupConversationResponse = CreateGroupConversationResponses[keyof CreateGroupConversationResponses];
+
+export type UpdateGroupConversationData = {
+    body: UpdateGroupConversationRequest;
+    path: {
+        conversationId: string;
+    };
+    query?: never;
+    url: '/api/communication/conversations/{conversationId}';
+};
+
+export type UpdateGroupConversationResponses = {
+    200: ApiResponseCommunicationConversationResponse;
+};
+
+export type UpdateGroupConversationResponse = UpdateGroupConversationResponses[keyof UpdateGroupConversationResponses];
+
+export type DeleteGroupConversationData = {
+    body: unknown;
+    path: {
+        conversationId: string;
+    };
+    query?: never;
+    url: '/api/communication/conversations/{conversationId}/dissolve';
+};
+
+export type DeleteGroupConversationResponses = {
+    200: ApiResponseValue;
+};
+
+export type DeleteGroupConversationResponse = DeleteGroupConversationResponses[keyof DeleteGroupConversationResponses];
+
+export type LeaveGroupConversationData = {
+    body: unknown;
+    path: {
+        conversationId: string;
+    };
+    query?: never;
+    url: '/api/communication/conversations/{conversationId}/leave';
+};
+
+export type LeaveGroupConversationResponses = {
+    200: ApiResponseValue;
+};
+
+export type LeaveGroupConversationResponse = LeaveGroupConversationResponses[keyof LeaveGroupConversationResponses];
+
+export type ListCommunicationMessagesData = {
+    body?: never;
+    path: {
+        conversationId: string;
+    };
+    query?: {
+        beforeSequence?: number;
+        limit?: number;
+    };
+    url: '/api/communication/conversations/{conversationId}/messages';
+};
+
+export type ListCommunicationMessagesResponses = {
+    200: ApiResponseCommunicationMessagePageResponse;
+};
+
+export type ListCommunicationMessagesResponse = ListCommunicationMessagesResponses[keyof ListCommunicationMessagesResponses];
+
+export type SendCommunicationMessageData = {
+    body: SendCommunicationMessageRequest;
+    path: {
+        conversationId: string;
+    };
+    query?: never;
+    url: '/api/communication/conversations/{conversationId}/messages';
+};
+
+export type SendCommunicationMessageResponses = {
+    200: ApiResponseCommunicationMessageResponse;
+};
+
+export type SendCommunicationMessageResponse = SendCommunicationMessageResponses[keyof SendCommunicationMessageResponses];
+
+export type RecallCommunicationMessageData = {
+    body: RecallCommunicationMessageRequest;
+    path: {
+        conversationId: string;
+        messageId: string;
+    };
+    query?: never;
+    url: '/api/communication/conversations/{conversationId}/messages/{messageId}/recall';
+};
+
+export type RecallCommunicationMessageResponses = {
+    200: ApiResponseCommunicationMessageResponse;
+};
+
+export type RecallCommunicationMessageResponse = RecallCommunicationMessageResponses[keyof RecallCommunicationMessageResponses];
+
+export type ReeditCommunicationMessageData = {
+    body: ReeditCommunicationMessageRequest;
+    path: {
+        conversationId: string;
+        messageId: string;
+    };
+    query?: never;
+    url: '/api/communication/conversations/{conversationId}/messages/{messageId}/reedit';
+};
+
+export type ReeditCommunicationMessageResponses = {
+    200: ApiResponseCommunicationMessageResponse;
+};
+
+export type ReeditCommunicationMessageResponse = ReeditCommunicationMessageResponses[keyof ReeditCommunicationMessageResponses];
+
+export type TransferGroupOwnerData = {
+    body: TransferGroupOwnerRequest;
+    path: {
+        conversationId: string;
+    };
+    query?: never;
+    url: '/api/communication/conversations/{conversationId}/owner';
+};
+
+export type TransferGroupOwnerResponses = {
+    200: ApiResponseCommunicationConversationResponse;
+};
+
+export type TransferGroupOwnerResponse = TransferGroupOwnerResponses[keyof TransferGroupOwnerResponses];
+
+export type MarkCommunicationConversationReadData = {
+    body: MarkConversationReadRequest;
+    path: {
+        conversationId: string;
+    };
+    query?: never;
+    url: '/api/communication/conversations/{conversationId}/read';
+};
+
+export type MarkCommunicationConversationReadResponses = {
+    200: ApiResponseValue;
+};
+
+export type MarkCommunicationConversationReadResponse = MarkCommunicationConversationReadResponses[keyof MarkCommunicationConversationReadResponses];
+
+export type GetCommunicationStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/communication/status';
+};
+
+export type GetCommunicationStatusResponses = {
+    200: ApiResponseCommunicationAvailabilityResponse;
+};
+
+export type GetCommunicationStatusResponse = GetCommunicationStatusResponses[keyof GetCommunicationStatusResponses];
+
+export type ListCommunicationUsersData = {
+    body?: never;
+    path?: never;
+    query?: {
+        query?: string;
+    };
+    url: '/api/communication/users';
+};
+
+export type ListCommunicationUsersResponses = {
+    200: ApiResponseVecCommunicationUserResponse;
+};
+
+export type ListCommunicationUsersResponse = ListCommunicationUsersResponses[keyof ListCommunicationUsersResponses];
+
 export type DeleteFormData = {
     body?: never;
     path: {
@@ -2525,11 +3330,10 @@ export type DeleteFormRecordData = {
 };
 
 export type DeleteFormRecordResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+    200: ApiResponseValue;
 };
+
+export type DeleteFormRecordResponse = DeleteFormRecordResponses[keyof DeleteFormRecordResponses];
 
 export type UpdateFormRecordData = {
     body: UpdateFormRecordRequest;
@@ -2546,6 +3350,118 @@ export type UpdateFormRecordResponses = {
 };
 
 export type UpdateFormRecordResponse = UpdateFormRecordResponses[keyof UpdateFormRecordResponses];
+
+export type GetWorkflowRecordRuntimeData = {
+    body?: never;
+    path: {
+        formUuid: string;
+        recordUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/records/{recordUuid}/workflow';
+};
+
+export type GetWorkflowRecordRuntimeResponses = {
+    200: ApiResponseValue;
+};
+
+export type GetWorkflowRecordRuntimeResponse = GetWorkflowRecordRuntimeResponses[keyof GetWorkflowRecordRuntimeResponses];
+
+export type ListWorkflowCommentsData = {
+    body?: never;
+    path: {
+        formUuid: string;
+        recordUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/records/{recordUuid}/workflow/comments';
+};
+
+export type ListWorkflowCommentsResponses = {
+    200: ApiResponseValue;
+};
+
+export type ListWorkflowCommentsResponse = ListWorkflowCommentsResponses[keyof ListWorkflowCommentsResponses];
+
+export type CreateWorkflowCommentData = {
+    body: WorkflowCommentRequest;
+    path: {
+        formUuid: string;
+        recordUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/records/{recordUuid}/workflow/comments';
+};
+
+export type CreateWorkflowCommentResponses = {
+    200: ApiResponseValue;
+};
+
+export type CreateWorkflowCommentResponse = CreateWorkflowCommentResponses[keyof CreateWorkflowCommentResponses];
+
+export type PauseWorkflowRecordData = {
+    body: WorkflowPauseRequest;
+    path: {
+        formUuid: string;
+        recordUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/records/{recordUuid}/workflow/pause';
+};
+
+export type PauseWorkflowRecordResponses = {
+    200: ApiResponseValue;
+};
+
+export type PauseWorkflowRecordResponse = PauseWorkflowRecordResponses[keyof PauseWorkflowRecordResponses];
+
+export type ResumeWorkflowRecordData = {
+    body?: never;
+    path: {
+        formUuid: string;
+        recordUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/records/{recordUuid}/workflow/resume';
+};
+
+export type ResumeWorkflowRecordResponses = {
+    200: ApiResponseValue;
+};
+
+export type ResumeWorkflowRecordResponse = ResumeWorkflowRecordResponses[keyof ResumeWorkflowRecordResponses];
+
+export type ReverseWorkflowRecordData = {
+    body?: never;
+    path: {
+        formUuid: string;
+        recordUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/records/{recordUuid}/workflow/reverse';
+};
+
+export type ReverseWorkflowRecordResponses = {
+    200: ApiResponseValue;
+};
+
+export type ReverseWorkflowRecordResponse = ReverseWorkflowRecordResponses[keyof ReverseWorkflowRecordResponses];
+
+export type SubmitWorkflowRecordData = {
+    body?: never;
+    path: {
+        formUuid: string;
+        recordUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/records/{recordUuid}/workflow/submit';
+};
+
+export type SubmitWorkflowRecordResponses = {
+    200: ApiResponseValue;
+};
+
+export type SubmitWorkflowRecordResponse = SubmitWorkflowRecordResponses[keyof SubmitWorkflowRecordResponses];
 
 export type GetFormSchemaData = {
     body?: never;
@@ -2744,6 +3660,19 @@ export type ListOrganizationUnitsResponses = {
 
 export type ListOrganizationUnitsResponse = ListOrganizationUnitsResponses[keyof ListOrganizationUnitsResponses];
 
+export type CreateLocalOrganizationUnitData = {
+    body: CreateLocalOrganizationUnitRequest;
+    path?: never;
+    query?: never;
+    url: '/api/identity/organization-units';
+};
+
+export type CreateLocalOrganizationUnitResponses = {
+    200: ApiResponseOrganizationUnitResponse;
+};
+
+export type CreateLocalOrganizationUnitResponse = CreateLocalOrganizationUnitResponses[keyof CreateLocalOrganizationUnitResponses];
+
 export type ListRolesData = {
     body?: never;
     path?: never;
@@ -2827,6 +3756,19 @@ export type CreateLocalUserResponses = {
 
 export type CreateLocalUserResponse = CreateLocalUserResponses[keyof CreateLocalUserResponses];
 
+export type InitializeLocalCredentialsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/identity/users/initialize-local-credentials';
+};
+
+export type InitializeLocalCredentialsResponses = {
+    200: ApiResponseInitializeLocalCredentialsResponse;
+};
+
+export type InitializeLocalCredentialsResponse2 = InitializeLocalCredentialsResponses[keyof InitializeLocalCredentialsResponses];
+
 export type DeleteUserData = {
     body?: never;
     path: {
@@ -2903,33 +3845,63 @@ export type ImportLocationsResponses = {
 
 export type ImportLocationsResponse = ImportLocationsResponses[keyof ImportLocationsResponses];
 
-export type GetAgentSettingsData = {
+export type EmptyRecycleBinData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/api/settings/agent';
+    url: '/api/recycle-bin';
 };
 
-export type GetAgentSettingsResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+export type EmptyRecycleBinResponses = {
+    200: ApiResponseValue;
 };
 
-export type UpdateAgentSettingsData = {
+export type EmptyRecycleBinResponse = EmptyRecycleBinResponses[keyof EmptyRecycleBinResponses];
+
+export type ListRecycleBinData = {
     body?: never;
     path?: never;
-    query?: never;
-    url: '/api/settings/agent';
+    query?: {
+        formUuid?: string;
+    };
+    url: '/api/recycle-bin';
 };
 
-export type UpdateAgentSettingsResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+export type ListRecycleBinResponses = {
+    200: ApiResponseVecRecycleBinEntry;
 };
+
+export type ListRecycleBinResponse = ListRecycleBinResponses[keyof ListRecycleBinResponses];
+
+export type DeleteRecycleBinEntryData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/recycle-bin/{id}';
+};
+
+export type DeleteRecycleBinEntryResponses = {
+    200: ApiResponseValue;
+};
+
+export type DeleteRecycleBinEntryResponse = DeleteRecycleBinEntryResponses[keyof DeleteRecycleBinEntryResponses];
+
+export type RestoreRecycleBinEntryData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/recycle-bin/{id}/restore';
+};
+
+export type RestoreRecycleBinEntryResponses = {
+    200: ApiResponseValue;
+};
+
+export type RestoreRecycleBinEntryResponse = RestoreRecycleBinEntryResponses[keyof RestoreRecycleBinEntryResponses];
 
 export type GetPlatformAgentAssistantSettingsData = {
     body?: never;
@@ -2957,6 +3929,58 @@ export type UpdatePlatformAgentAssistantSettingsResponses = {
 
 export type UpdatePlatformAgentAssistantSettingsResponse = UpdatePlatformAgentAssistantSettingsResponses[keyof UpdatePlatformAgentAssistantSettingsResponses];
 
+export type GetCommunicationModuleSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/communication';
+};
+
+export type GetCommunicationModuleSettingsResponses = {
+    200: ApiResponseCommunicationModuleSettings;
+};
+
+export type GetCommunicationModuleSettingsResponse = GetCommunicationModuleSettingsResponses[keyof GetCommunicationModuleSettingsResponses];
+
+export type UpdateCommunicationModuleSettingsData = {
+    body: CommunicationModuleSettings;
+    path?: never;
+    query?: never;
+    url: '/api/settings/communication';
+};
+
+export type UpdateCommunicationModuleSettingsResponses = {
+    200: ApiResponseCommunicationModuleSettings;
+};
+
+export type UpdateCommunicationModuleSettingsResponse = UpdateCommunicationModuleSettingsResponses[keyof UpdateCommunicationModuleSettingsResponses];
+
+export type CleanupCommunicationDataData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/communication/cleanup';
+};
+
+export type CleanupCommunicationDataResponses = {
+    200: ApiResponseCommunicationCleanupResponse;
+};
+
+export type CleanupCommunicationDataResponse = CleanupCommunicationDataResponses[keyof CleanupCommunicationDataResponses];
+
+export type GetCommunicationStorageStatsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/communication/storage';
+};
+
+export type GetCommunicationStorageStatsResponses = {
+    200: ApiResponseCommunicationStorageStatsResponse;
+};
+
+export type GetCommunicationStorageStatsResponse = GetCommunicationStorageStatsResponses[keyof GetCommunicationStorageStatsResponses];
+
 export type GetDatabaseSettingsData = {
     body?: never;
     path?: never;
@@ -2972,18 +3996,17 @@ export type GetDatabaseSettingsResponses = {
 };
 
 export type UpdateDatabaseSettingsData = {
-    body?: never;
+    body: UpdateDatabaseSettingsRequest;
     path?: never;
     query?: never;
     url: '/api/settings/database';
 };
 
 export type UpdateDatabaseSettingsResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+    200: ApiResponseDatabaseSettingsResponse;
 };
+
+export type UpdateDatabaseSettingsResponse = UpdateDatabaseSettingsResponses[keyof UpdateDatabaseSettingsResponses];
 
 export type TestDatabaseConnectionData = {
     body: UpdateDatabaseSettingsRequest;
@@ -3076,6 +4099,32 @@ export type SyncDingTalkUsersResponses = {
 
 export type SyncDingTalkUsersResponse = SyncDingTalkUsersResponses[keyof SyncDingTalkUsersResponses];
 
+export type GetPlatformLicenseStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/license';
+};
+
+export type GetPlatformLicenseStatusResponses = {
+    200: ApiResponsePlatformLicenseStatus;
+};
+
+export type GetPlatformLicenseStatusResponse = GetPlatformLicenseStatusResponses[keyof GetPlatformLicenseStatusResponses];
+
+export type ActivatePlatformLicenseData = {
+    body: ActivatePlatformLicenseRequest;
+    path?: never;
+    query?: never;
+    url: '/api/settings/license';
+};
+
+export type ActivatePlatformLicenseResponses = {
+    200: ApiResponsePlatformLicenseStatus;
+};
+
+export type ActivatePlatformLicenseResponse = ActivatePlatformLicenseResponses[keyof ActivatePlatformLicenseResponses];
+
 export type GetRolePermissionsData = {
     body?: never;
     path: {
@@ -3105,6 +4154,145 @@ export type UpdateRolePermissionsResponses = {
 };
 
 export type UpdateRolePermissionsResponse = UpdateRolePermissionsResponses[keyof UpdateRolePermissionsResponses];
+
+export type GetRecycleBinSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/recycle-bin';
+};
+
+export type GetRecycleBinSettingsResponses = {
+    200: ApiResponseRecycleBinSettings;
+};
+
+export type GetRecycleBinSettingsResponse = GetRecycleBinSettingsResponses[keyof GetRecycleBinSettingsResponses];
+
+export type UpdateRecycleBinSettingsData = {
+    body: UpdateRecycleBinSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/settings/recycle-bin';
+};
+
+export type UpdateRecycleBinSettingsResponses = {
+    200: ApiResponseRecycleBinSettings;
+};
+
+export type UpdateRecycleBinSettingsResponse = UpdateRecycleBinSettingsResponses[keyof UpdateRecycleBinSettingsResponses];
+
+export type GetValkeySettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/valkey';
+};
+
+export type GetValkeySettingsResponses = {
+    200: ApiResponseValkeySettingsResponse;
+};
+
+export type GetValkeySettingsResponse = GetValkeySettingsResponses[keyof GetValkeySettingsResponses];
+
+export type UpdateValkeySettingsData = {
+    body: UpdateValkeySettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/settings/valkey';
+};
+
+export type UpdateValkeySettingsResponses = {
+    200: ApiResponseValkeySettingsResponse;
+};
+
+export type UpdateValkeySettingsResponse = UpdateValkeySettingsResponses[keyof UpdateValkeySettingsResponses];
+
+export type TestValkeyConnectionData = {
+    body: UpdateValkeySettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/settings/valkey/test';
+};
+
+export type TestValkeyConnectionResponses = {
+    200: ApiResponseDatabaseConnectionTestResponse;
+};
+
+export type TestValkeyConnectionResponse = TestValkeyConnectionResponses[keyof TestValkeyConnectionResponses];
+
+export type ListWorkflowNotificationsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/workflow/notifications';
+};
+
+export type ListWorkflowNotificationsResponses = {
+    200: ApiResponseValue;
+};
+
+export type ListWorkflowNotificationsResponse = ListWorkflowNotificationsResponses[keyof ListWorkflowNotificationsResponses];
+
+export type ReadWorkflowNotificationData = {
+    body?: never;
+    path: {
+        notificationUuid: string;
+    };
+    query?: never;
+    url: '/api/workflow/notifications/{notificationUuid}/read';
+};
+
+export type ReadWorkflowNotificationResponses = {
+    200: ApiResponseValue;
+};
+
+export type ReadWorkflowNotificationResponse = ReadWorkflowNotificationResponses[keyof ReadWorkflowNotificationResponses];
+
+export type ListWorkflowTasksData = {
+    body?: never;
+    path?: never;
+    query: {
+        appId: string;
+        scope: string;
+    };
+    url: '/api/workflow/tasks';
+};
+
+export type ListWorkflowTasksResponses = {
+    200: ApiResponseValue;
+};
+
+export type ListWorkflowTasksResponse = ListWorkflowTasksResponses[keyof ListWorkflowTasksResponses];
+
+export type ApproveWorkflowTaskData = {
+    body: WorkflowTaskActionRequest;
+    path: {
+        taskUuid: string;
+    };
+    query?: never;
+    url: '/api/workflow/tasks/{taskUuid}/approve';
+};
+
+export type ApproveWorkflowTaskResponses = {
+    200: ApiResponseValue;
+};
+
+export type ApproveWorkflowTaskResponse = ApproveWorkflowTaskResponses[keyof ApproveWorkflowTaskResponses];
+
+export type RejectWorkflowTaskData = {
+    body: WorkflowTaskActionRequest;
+    path: {
+        taskUuid: string;
+    };
+    query?: never;
+    url: '/api/workflow/tasks/{taskUuid}/reject';
+};
+
+export type RejectWorkflowTaskResponses = {
+    200: ApiResponseValue;
+};
+
+export type RejectWorkflowTaskResponse = RejectWorkflowTaskResponses[keyof RejectWorkflowTaskResponses];
 
 export type HealthCheckData = {
     body?: never;

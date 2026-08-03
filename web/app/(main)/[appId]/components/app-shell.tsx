@@ -21,7 +21,7 @@ export function AppShell({
   const sidebarRef = useRef<HTMLDivElement | null>(null);
   const pendingWidthRef = useRef(DEFAULT_SIDEBAR_WIDTH);
   const hideSidebar =
-    /\/automations\/[^/]+$/.test(pathname) || pathname.endsWith("/settings");
+    /\/automations\/[^/]+$/.test(pathname) || /\/settings(?:\/|$)/.test(pathname);
 
   useEffect(() => {
     if (!dragging) {

@@ -1068,7 +1068,7 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
       return;
     }
 
-    router.push("/myApp");
+    router.push("/");
   }
 
   async function handleWorkflowDesign() {

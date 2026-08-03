@@ -21,6 +21,10 @@ export type AgentModelProvider = {
   kind: string;
   enabled: boolean;
   apiBaseUrl: string;
+  apiKey: string;
+  websiteUrl: string;
+  defaultChatModel: string;
+  models: string[];
   apiKeyConfigured: boolean;
 };
 
@@ -39,6 +43,7 @@ export type AgentConfigProfile = {
   allowCreateApps: boolean;
   allowCreateForms: boolean;
   allowCreateAutomations: boolean;
+  approvalMode: "request_approval" | "approve_on_behalf" | "full_access";
   contextMaxTurns: number;
   contextDiscardTurns: number;
   contextOverflowStrategy: string;
@@ -51,7 +56,7 @@ export type AgentConfigProfile = {
   knowledgeBaseIds: string[];
 };
 
-export type AgentPersona = { id: string; name: string; description: string; systemPrompt: string };
+export type AgentPersona = { id: string; name: string; description: string; systemPrompt: string; pluginIds: string[]; skillIds: string[]; knowledgeBaseIds: string[] };
 
 export type AgentPlugin = { id: string; name: string; description: string; enabled: boolean; version: string; entrypoint: string; manifestJson: string; requiresConfirmation: boolean };
 export type AgentSkill = { id: string; name: string; packageName: string; source: string; version: string; packagePath: string; isSystem: boolean; description: string; enabled: boolean; allowedTools: string[]; instructions: string; requiresConfirmation: boolean };

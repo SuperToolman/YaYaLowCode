@@ -29,7 +29,12 @@ export async function getDingTalkSettings(): Promise<DingTalkSettings> {
 }
 
 export function safeRedirect(redirect: string | null) {
-  return redirect && redirect.startsWith("/") && !redirect.startsWith("//") && !redirect.startsWith("/login") ? redirect : "/";
+  return redirect
+    && redirect.startsWith("/")
+    && !redirect.startsWith("//")
+    && !redirect.startsWith("/login")
+    ? redirect
+    : "/";
 }
 
 export { backendBaseUrl };

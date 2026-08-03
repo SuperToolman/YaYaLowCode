@@ -347,6 +347,25 @@ pub(crate) async fn ensure_agent_tables(db: &DatabaseConnection) -> Result<(), A
         );
         CREATE INDEX IF NOT EXISTS idx_agent_run_steps_run_index
             ON agent_run_steps (run_id, step_index ASC);
+
+        -- Compatibility path for databases whose old in-file migrations all
+        -- shared the same recorded migration name.
+        CREATE TABLE IF NOT EXISTS agent_pending_actions (
+            id UUID PRIMARY KEY,
+            action_uuid VARCHAR(64) NOT NULL UNIQUE,
+            session_id UUID NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+            action_type VARCHAR(64) NOT NULL,
+            payload_json JSONB NOT NULL,
+            summary TEXT NOT NULL,
+            status VARCHAR(24) NOT NULL,
+            expires_at TIMESTAMPTZ NOT NULL,
+            confirmed_at TIMESTAMPTZ,
+            error_message TEXT,
+            created_at TIMESTAMPTZ NOT NULL,
+            completed_at TIMESTAMPTZ
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_pending_actions_session_status
+            ON agent_pending_actions (session_id, status, created_at DESC);
         "#,
     )
     .await?;
@@ -530,6 +549,111 @@ pub(crate) async fn ensure_identity_tables(db: &DatabaseConnection) -> Result<()
     Ok(())
 }
 
+/// Restores workflow runtime tables for databases whose earlier in-file
+/// migration history was recorded before the workflow schema was introduced.
+pub(crate) async fn ensure_workflow_tables(db: &DatabaseConnection) -> Result<(), AppError> {
+    db.execute_unprepared(
+        r#"
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_process_flow_per_form
+            ON automation_flows (trigger_form_uuid)
+            WHERE flow_type = 'process';
+
+        CREATE TABLE IF NOT EXISTS workflow_instances (
+            id UUID PRIMARY KEY,
+            instance_uuid VARCHAR(64) NOT NULL UNIQUE,
+            form_uuid VARCHAR(64) NOT NULL,
+            record_uuid VARCHAR(64) NOT NULL,
+            process_flow_id UUID NOT NULL REFERENCES automation_flows(id) ON DELETE RESTRICT,
+            flow_version INTEGER NOT NULL,
+            status VARCHAR(24) NOT NULL,
+            current_node_key VARCHAR(96),
+            submitter VARCHAR(120) NOT NULL,
+            started_at TIMESTAMPTZ NOT NULL,
+            completed_at TIMESTAMPTZ,
+            paused_by VARCHAR(120),
+            paused_at TIMESTAMPTZ,
+            pause_reason TEXT,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL
+        );
+        ALTER TABLE workflow_instances
+            ADD COLUMN IF NOT EXISTS paused_by VARCHAR(120),
+            ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS pause_reason TEXT;
+        CREATE INDEX IF NOT EXISTS idx_workflow_instances_record
+            ON workflow_instances (form_uuid, record_uuid, started_at DESC);
+
+        CREATE TABLE IF NOT EXISTS workflow_tasks (
+            id UUID PRIMARY KEY,
+            task_uuid VARCHAR(64) NOT NULL UNIQUE,
+            instance_id UUID NOT NULL REFERENCES workflow_instances(id) ON DELETE CASCADE,
+            node_key VARCHAR(96) NOT NULL,
+            node_label VARCHAR(160) NOT NULL,
+            task_type VARCHAR(24) NOT NULL,
+            assignee VARCHAR(120) NOT NULL,
+            assignee_user_id UUID REFERENCES iam_users(id) ON DELETE SET NULL,
+            status VARCHAR(24) NOT NULL,
+            comment TEXT,
+            completed_by VARCHAR(120),
+            completed_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL
+        );
+        ALTER TABLE workflow_tasks
+            ADD COLUMN IF NOT EXISTS assignee_user_id UUID REFERENCES iam_users(id) ON DELETE SET NULL;
+        CREATE INDEX IF NOT EXISTS idx_workflow_tasks_assignee_status
+            ON workflow_tasks (assignee, status, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_workflow_tasks_assignee_user_status
+            ON workflow_tasks (assignee_user_id, status, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS workflow_actions (
+            id UUID PRIMARY KEY,
+            instance_id UUID NOT NULL REFERENCES workflow_instances(id) ON DELETE CASCADE,
+            task_id UUID REFERENCES workflow_tasks(id) ON DELETE SET NULL,
+            action VARCHAR(32) NOT NULL,
+            operator VARCHAR(120) NOT NULL,
+            comment TEXT,
+            created_at TIMESTAMPTZ NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_workflow_actions_instance
+            ON workflow_actions (instance_id, created_at ASC);
+
+        CREATE TABLE IF NOT EXISTS workflow_comments (
+            id UUID PRIMARY KEY,
+            comment_uuid VARCHAR(64) NOT NULL UNIQUE,
+            form_uuid VARCHAR(64) NOT NULL,
+            record_uuid VARCHAR(64) NOT NULL,
+            author VARCHAR(120) NOT NULL,
+            content TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_workflow_comments_record
+            ON workflow_comments (form_uuid, record_uuid, created_at ASC);
+
+        CREATE TABLE IF NOT EXISTS workflow_notifications (
+            id UUID PRIMARY KEY,
+            notification_uuid VARCHAR(64) NOT NULL UNIQUE,
+            recipient_user_id UUID REFERENCES iam_users(id) ON DELETE SET NULL,
+            recipient VARCHAR(120) NOT NULL,
+            form_uuid VARCHAR(64) NOT NULL,
+            record_uuid VARCHAR(64) NOT NULL,
+            instance_id UUID NOT NULL REFERENCES workflow_instances(id) ON DELETE CASCADE,
+            task_id UUID REFERENCES workflow_tasks(id) ON DELETE SET NULL,
+            notification_type VARCHAR(24) NOT NULL,
+            title VARCHAR(200) NOT NULL,
+            content TEXT NOT NULL,
+            read_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_workflow_notifications_recipient_read
+            ON workflow_notifications (recipient_user_id, read_at, created_at DESC);
+        "#,
+    )
+    .await?;
+
+    Ok(())
+}
+
 /// The original migrations all live in `migrator.rs`, so SeaORM records them
 /// under one file-stem name. Keep newly introduced durable data available for
 /// existing installations while the migrations are split into individual files.
@@ -549,5 +673,71 @@ pub(crate) async fn ensure_file_tables(db: &DatabaseConnection) -> Result<(), Ap
     )
     .await?;
 
+    Ok(())
+}
+
+/// Communication storage is created only for installations whose license has activated the module.
+pub(crate) async fn ensure_communication_tables(db: &DatabaseConnection) -> Result<(), AppError> {
+    db.execute_unprepared(
+        r#"
+        CREATE TABLE IF NOT EXISTS communication_conversations (
+          id UUID PRIMARY KEY,
+          conversation_uuid VARCHAR(64) NOT NULL UNIQUE,
+          conversation_type VARCHAR(16) NOT NULL,
+          direct_key VARCHAR(80) UNIQUE,
+          title VARCHAR(160),
+          created_by_user_id UUID NOT NULL REFERENCES iam_users(id) ON DELETE RESTRICT,
+          last_message_sequence BIGINT NOT NULL DEFAULT 0,
+          last_message_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL,
+          CHECK (conversation_type IN ('direct', 'group'))
+        );
+        CREATE TABLE IF NOT EXISTS communication_conversation_members (
+          conversation_id UUID NOT NULL REFERENCES communication_conversations(id) ON DELETE CASCADE,
+          user_id UUID NOT NULL REFERENCES iam_users(id) ON DELETE CASCADE,
+          member_role VARCHAR(16) NOT NULL DEFAULT 'member',
+          last_read_sequence BIGINT NOT NULL DEFAULT 0,
+          joined_at TIMESTAMPTZ NOT NULL,
+          PRIMARY KEY (conversation_id, user_id),
+          CHECK (member_role IN ('owner', 'member'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_communication_members_user
+          ON communication_conversation_members (user_id, conversation_id);
+        CREATE TABLE IF NOT EXISTS communication_messages (
+          id UUID PRIMARY KEY,
+          message_uuid VARCHAR(64) NOT NULL UNIQUE,
+          conversation_id UUID NOT NULL REFERENCES communication_conversations(id) ON DELETE CASCADE,
+          sender_user_id UUID NOT NULL REFERENCES iam_users(id) ON DELETE RESTRICT,
+          sequence BIGINT NOT NULL,
+          client_message_id VARCHAR(96),
+          message_type VARCHAR(16) NOT NULL,
+          content TEXT NOT NULL DEFAULT '',
+          metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+          status VARCHAR(16) NOT NULL DEFAULT 'active',
+          recalled_at TIMESTAMPTZ,
+          recalled_by_user_id UUID REFERENCES iam_users(id) ON DELETE SET NULL,
+          replaces_message_id UUID REFERENCES communication_messages(id) ON DELETE SET NULL,
+          created_at TIMESTAMPTZ NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL,
+          UNIQUE (conversation_id, sequence),
+          UNIQUE (sender_user_id, client_message_id),
+          CHECK (message_type IN ('text', 'emoji', 'file', 'email', 'system')),
+          CHECK (status IN ('active', 'recalled'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_communication_messages_conversation_sequence
+          ON communication_messages (conversation_id, sequence DESC);
+        CREATE TABLE IF NOT EXISTS communication_message_attachments (
+          message_id UUID NOT NULL REFERENCES communication_messages(id) ON DELETE CASCADE,
+          file_id UUID NOT NULL REFERENCES uploaded_files(id) ON DELETE RESTRICT,
+          created_at TIMESTAMPTZ NOT NULL,
+          PRIMARY KEY (message_id, file_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_communication_message_attachments_file
+          ON communication_message_attachments (file_id, message_id);
+        ALTER TABLE communication_messages ADD COLUMN IF NOT EXISTS metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+        "#,
+    )
+    .await?;
     Ok(())
 }

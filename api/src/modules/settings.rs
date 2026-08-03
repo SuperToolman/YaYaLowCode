@@ -3,24 +3,39 @@
 use axum::Json;
 use axum::extract::Path;
 use axum::http::StatusCode;
-use sea_orm::{ConnectOptions, Database};
+use sea_orm::{
+    ActiveModelTrait, ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DbBackend,
+    EntityTrait, IntoActiveModel, Set, Statement, TransactionTrait, Value as SeaValue,
+};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use utoipa::ToSchema;
 
+use crate::infrastructure::entities::{
+    agent_definition_entity::Entity as AgentDefinitionEntity,
+    platform_agent_assistant_settings_entity::{
+        ActiveModel as PlatformAgentAssistantSettingsActiveModel,
+        Entity as PlatformAgentAssistantSettingsEntity,
+    },
+};
 use crate::platform::authorization;
 use crate::platform::config::{
-    AgentSettings, DatabaseSettings, DingTalkSettings, IdentitySourceSettings,
-    PlatformAgentAssistantSettings, RbacPermissionSettings, load_agent_registry,
-    load_agent_settings, load_database_settings, load_identity_source_settings,
-    load_platform_agent_assistant_settings, load_rbac_permission_settings, save_agent_settings,
-    save_database_settings, save_identity_source_settings, save_platform_agent_assistant_settings,
-    save_rbac_permission_settings,
+    CommunicationModuleSettings, DatabaseSettings, DingTalkSettings, IdentitySourceSettings,
+    NotificationSettings, PlatformAgentAssistantSettings, ValkeySettings, database_url_from_env,
+    load_communication_settings, load_database_settings, load_identity_source_settings,
+    load_notification_settings, load_valkey_settings, runtime_database_settings,
+    save_communication_settings, save_database_settings, save_identity_source_settings,
+    save_notification_settings, save_valkey_settings,
+};
+use crate::platform::license::{
+    PlatformLicenseStatus, license_has_module, license_module_expires_at, license_status,
+    mark_license_running_remotely, validate_license_center_url, validate_license_remotely,
+    validate_license_token,
 };
 use crate::platform::prelude::{ApiResponse, AppError, AppState};
 use crate::shared::success_response;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DatabaseSettingsResponse {
     host: String,
@@ -30,6 +45,7 @@ pub(crate) struct DatabaseSettingsResponse {
     password: String,
     connection_status: String,
     connection_error: Option<String>,
+    managed_by_environment: bool,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -48,32 +64,30 @@ pub(crate) struct DatabaseConnectionTestResponse {
     connected: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct AgentSettingsResponse {
+pub(crate) struct ValkeySettingsResponse {
     enabled: bool,
-    provider: String,
-    api_base_url: String,
-    api_key_configured: bool,
-    chat_model: String,
-    embedding_model: String,
-    temperature: f64,
-    max_steps: usize,
-    system_prompt: String,
+    host: String,
+    port: u16,
+    database: u8,
+    username: String,
+    password: String,
+    cache_ttl_hours: u8,
+    connection_status: String,
+    connection_error: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct UpdateAgentSettingsRequest {
+pub(crate) struct UpdateValkeySettingsRequest {
     enabled: bool,
-    provider: String,
-    api_base_url: String,
-    api_key: Option<String>,
-    chat_model: String,
-    embedding_model: String,
-    temperature: f64,
-    max_steps: usize,
-    system_prompt: String,
+    host: String,
+    port: u16,
+    database: u8,
+    username: String,
+    password: Option<String>,
+    cache_ttl_hours: u8,
 }
 
 #[derive(Deserialize, Serialize, ToSchema)]
@@ -102,12 +116,267 @@ pub(crate) struct RolePermissionsResponse {
     role_id: String,
     grants: Vec<String>,
 }
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ActivatePlatformLicenseRequest {
+    pub(crate) license_center_url: String,
+    pub(crate) license: String,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CommunicationStorageStatsResponse {
+    conversation_count: i64,
+    message_count: i64,
+    attachment_count: i64,
+    message_bytes: i64,
+    attachment_bytes: i64,
+    total_bytes: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CommunicationCleanupResponse {
+    deleted_messages: u64,
+    deleted_files: u64,
+}
+
+pub(crate) async fn get_platform_license_status() -> Json<ApiResponse<PlatformLicenseStatus>> {
+    let mut status = license_status();
+    if status.valid {
+        if let Err(reason) = validate_license_remotely().await {
+            status.valid = false;
+            status.reason = Some(reason);
+            status.platform_status = "expired".to_string();
+            status
+                .module_statuses
+                .values_mut()
+                .for_each(|module_status| *module_status = "expired".to_string());
+        }
+    }
+    Json(success_response("platform license status loaded", status))
+}
+
+pub(crate) async fn activate_platform_license(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    Json(payload): Json<ActivatePlatformLicenseRequest>,
+) -> Result<Json<ApiResponse<PlatformLicenseStatus>>, AppError> {
+    let license_center_url =
+        validate_license_center_url(&payload.license_center_url).map_err(AppError::BadRequest)?;
+    validate_license_token(payload.license.trim()).map_err(AppError::BadRequest)?;
+    let settings = crate::platform::config::PlatformLicenseSettings {
+        license_center_url,
+        license: payload.license.trim().to_string(),
+        activated_at: chrono::Utc::now().to_rfc3339(),
+    };
+    crate::platform::config::save_platform_license_settings(&settings).map_err(AppError::Server)?;
+    if let Err(error) = validate_license_remotely().await {
+        let _ = std::fs::remove_file(
+            std::env::var_os("YAYA_LICENSE_SETTINGS_PATH")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| std::path::PathBuf::from("runtime/state/license.json")),
+        );
+        return Err(AppError::BadRequest(error));
+    }
+    mark_license_running_remotely()
+        .await
+        .map_err(AppError::BadRequest)?;
+    let status = license_status();
+    if status.valid && license_has_module("communication") {
+        crate::infrastructure::legacy_bootstrap::ensure_communication_tables(&state.db).await?;
+    }
+    Ok(Json(success_response("平台许可证已激活", status)))
+}
+
+pub(crate) async fn get_communication_module_settings(
+    axum::extract::State(_state): axum::extract::State<AppState>,
+) -> Result<Json<ApiResponse<CommunicationModuleSettings>>, AppError> {
+    let settings = communication_settings_with_license();
+    Ok(Json(success_response(
+        "communication module settings loaded",
+        settings,
+    )))
+}
+
+pub(crate) async fn update_communication_module_settings(
+    Json(payload): Json<CommunicationModuleSettings>,
+) -> Result<Json<ApiResponse<CommunicationModuleSettings>>, AppError> {
+    ensure_communication_installed()?;
+    if !(1..=200).contains(&payload.max_file_upload_mb) {
+        return Err(AppError::BadRequest(
+            "聊天文件最大上传大小应在 1 至 200 MB 之间".into(),
+        ));
+    }
+    if payload.retention_days > 3650 {
+        return Err(AppError::BadRequest(
+            "聊天数据保留天数不能超过 3650 天".into(),
+        ));
+    }
+    let allowed_file_extensions = normalize_extensions(&payload.allowed_file_extensions)?;
+    let settings = CommunicationModuleSettings {
+        installed: true,
+        license_id: license_status().license_id,
+        expires_at: license_module_expires_at("communication"),
+        max_file_upload_mb: payload.max_file_upload_mb,
+        retention_days: payload.retention_days,
+        allowed_file_extensions,
+        websocket_enabled: payload.websocket_enabled,
+        allow_file_messages: payload.allow_file_messages,
+    };
+    save_communication_settings(&settings).map_err(AppError::Server)?;
+    Ok(Json(success_response(
+        "communication settings saved",
+        settings,
+    )))
+}
+
+pub(crate) async fn get_communication_storage_stats(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> Result<Json<ApiResponse<CommunicationStorageStatsResponse>>, AppError> {
+    ensure_communication_installed()?;
+    let row = state.db.query_one_raw(Statement::from_string(
+        DbBackend::Postgres,
+        "SELECT (SELECT COUNT(*) FROM communication_conversations)::BIGINT AS conversation_count, (SELECT COUNT(*) FROM communication_messages)::BIGINT AS message_count, (SELECT COALESCE(SUM(octet_length(content)), 0) FROM communication_messages)::BIGINT AS message_bytes, (SELECT COUNT(DISTINCT a.file_id) FROM communication_message_attachments a)::BIGINT AS attachment_count, (SELECT COALESCE(SUM(f.byte_size), 0) FROM uploaded_files f WHERE EXISTS (SELECT 1 FROM communication_message_attachments a WHERE a.file_id = f.id))::BIGINT AS attachment_bytes".to_string(),
+    )).await?.ok_or_else(|| AppError::Server(std::io::Error::other("communication storage statistics unavailable")))?;
+    let message_bytes = row.try_get::<i64>("", "message_bytes")?;
+    let attachment_bytes = row.try_get::<i64>("", "attachment_bytes")?;
+    Ok(Json(success_response(
+        "communication storage statistics loaded",
+        CommunicationStorageStatsResponse {
+            conversation_count: row.try_get("", "conversation_count")?,
+            message_count: row.try_get("", "message_count")?,
+            attachment_count: row.try_get("", "attachment_count")?,
+            message_bytes,
+            attachment_bytes,
+            total_bytes: message_bytes.saturating_add(attachment_bytes),
+        },
+    )))
+}
+
+pub(crate) async fn cleanup_communication_data(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> Result<Json<ApiResponse<CommunicationCleanupResponse>>, AppError> {
+    ensure_communication_installed()?;
+    let retention_days = communication_settings_with_license().retention_days;
+    if retention_days == 0 {
+        return Err(AppError::BadRequest(
+            "当前配置为永久保留，不能执行过期数据清理".into(),
+        ));
+    }
+    let cutoff = chrono::Utc::now() - chrono::Duration::days(i64::from(retention_days));
+    let transaction = state.db.begin().await?;
+    let candidates = transaction.query_all_raw(Statement::from_sql_and_values(DbBackend::Postgres, "SELECT DISTINCT f.id, f.storage_key FROM uploaded_files f JOIN communication_message_attachments a ON a.file_id = f.id JOIN communication_messages m ON m.id = a.message_id WHERE m.created_at < $1", vec![SeaValue::ChronoDateTimeUtc(Some(cutoff))])).await?;
+    let deleted_messages = transaction
+        .execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "DELETE FROM communication_messages WHERE created_at < $1",
+            vec![SeaValue::ChronoDateTimeUtc(Some(cutoff))],
+        ))
+        .await?
+        .rows_affected();
+    let mut deleted_files = 0;
+    let mut storage_keys = Vec::new();
+    for candidate in candidates {
+        let file_id = candidate.try_get("", "id")?;
+        let storage_key: String = candidate.try_get("", "storage_key")?;
+        let result = transaction.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres, "DELETE FROM uploaded_files f WHERE f.id = $1 AND NOT EXISTS (SELECT 1 FROM communication_message_attachments a WHERE a.file_id = f.id)", vec![SeaValue::Uuid(Some(file_id))])).await?;
+        if result.rows_affected() > 0 {
+            deleted_files += 1;
+            storage_keys.push(storage_key);
+        }
+    }
+    transaction.commit().await?;
+    let root = std::env::var("YAYA_UPLOAD_DIR").unwrap_or_else(|_| "runtime/uploads".to_string());
+    for storage_key in storage_keys {
+        let _ = tokio::fs::remove_file(std::path::Path::new(&root).join(storage_key)).await;
+    }
+    Ok(Json(success_response(
+        "communication expired data cleaned",
+        CommunicationCleanupResponse {
+            deleted_messages,
+            deleted_files,
+        },
+    )))
+}
+
+fn communication_settings_with_license() -> CommunicationModuleSettings {
+    let status = license_status();
+    let mut settings = load_communication_settings().unwrap_or_default();
+    settings.installed = status.valid && license_has_module("communication");
+    settings.license_id = status.license_id;
+    settings.expires_at = license_module_expires_at("communication");
+    settings
+}
+
+fn ensure_communication_installed() -> Result<(), AppError> {
+    if communication_settings_with_license().installed {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden("通讯模块未安装".into()))
+    }
+}
+
+fn normalize_extensions(value: &str) -> Result<String, AppError> {
+    let mut extensions = Vec::new();
+    for item in value
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+    {
+        let extension = item.trim_start_matches('.').to_ascii_lowercase();
+        if extension.is_empty()
+            || extension.len() > 20
+            || !extension
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric())
+        {
+            return Err(AppError::BadRequest(
+                "允许的文件类型应为以逗号分隔的扩展名，例如 pdf,docx,png".into(),
+            ));
+        }
+        if !extensions.contains(&extension) {
+            extensions.push(extension);
+        }
+    }
+    Ok(extensions.join(","))
+}
+pub(crate) async fn get_notification_settings(
+    axum::extract::State(_state): axum::extract::State<AppState>,
+) -> Result<Json<ApiResponse<NotificationSettings>>, AppError> {
+    Ok(Json(success_response(
+        "notification settings loaded",
+        load_notification_settings().unwrap_or_default(),
+    )))
+}
+
+pub(crate) async fn update_notification_settings(
+    axum::extract::State(_state): axum::extract::State<AppState>,
+    Json(payload): Json<NotificationSettings>,
+) -> Result<Json<ApiResponse<NotificationSettings>>, AppError> {
+    let settings = NotificationSettings {
+        dingtalk_webhook_url: payload.dingtalk_webhook_url.trim().to_string(),
+        email_from_address: payload.email_from_address.trim().to_string(),
+        ..payload
+    };
+    settings.validate().map_err(AppError::BadRequest)?;
+    save_notification_settings(&settings).map_err(AppError::Server)?;
+    Ok(Json(success_response(
+        "notification settings saved",
+        settings,
+    )))
+}
 
 pub(crate) async fn get_database_settings(
     axum::extract::State(_state): axum::extract::State<AppState>,
 ) -> Result<Json<ApiResponse<DatabaseSettingsResponse>>, AppError> {
-    let settings = load_database_settings().unwrap_or_else(default_database_settings);
-    let response = database_settings_response(settings).await;
+    let (settings, database_url) = match runtime_database_settings() {
+        Some((settings, database_url)) => (settings, Some(database_url)),
+        None => (
+            load_database_settings().unwrap_or_else(default_database_settings),
+            None,
+        ),
+    };
+    let response = database_settings_response(settings, database_url.as_deref()).await;
 
     Ok(Json(success_response("database settings loaded", response)))
 }
@@ -116,6 +385,11 @@ pub(crate) async fn update_database_settings(
     axum::extract::State(state): axum::extract::State<AppState>,
     Json(payload): Json<UpdateDatabaseSettingsRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<DatabaseSettingsResponse>>), AppError> {
+    if database_url_from_env().is_some() {
+        return Err(AppError::BadRequest(
+            "数据库连接由部署环境 DATABASE_URL 管理，不能从设置页覆盖".to_string(),
+        ));
+    }
     let previous = load_database_settings();
     let password = payload
         .password
@@ -136,7 +410,7 @@ pub(crate) async fn update_database_settings(
     save_database_settings(&settings).map_err(AppError::Server)?;
     state.schedule_restart().map_err(AppError::Server)?;
 
-    let response = database_settings_response(settings).await;
+    let response = database_settings_response(settings, None).await;
 
     Ok((
         StatusCode::ACCEPTED,
@@ -150,6 +424,11 @@ pub(crate) async fn update_database_settings(
 pub(crate) async fn test_database_connection(
     Json(payload): Json<UpdateDatabaseSettingsRequest>,
 ) -> Result<Json<ApiResponse<DatabaseConnectionTestResponse>>, AppError> {
+    if database_url_from_env().is_some() {
+        return Err(AppError::BadRequest(
+            "数据库连接由部署环境 DATABASE_URL 管理，不能从设置页测试或覆盖".to_string(),
+        ));
+    }
     let settings = DatabaseSettings {
         host: payload.host.trim().to_string(),
         port: payload.port,
@@ -169,8 +448,15 @@ pub(crate) async fn test_database_connection(
     )))
 }
 
-async fn database_settings_response(settings: DatabaseSettings) -> DatabaseSettingsResponse {
-    match verify_database_connection(&settings).await {
+async fn database_settings_response(
+    settings: DatabaseSettings,
+    managed_database_url: Option<&str>,
+) -> DatabaseSettingsResponse {
+    let connection_result = match managed_database_url {
+        Some(database_url) => verify_database_url(database_url).await,
+        None => verify_database_connection(&settings).await,
+    };
+    match connection_result {
         Ok(()) => DatabaseSettingsResponse {
             host: settings.host,
             port: settings.port,
@@ -179,6 +465,7 @@ async fn database_settings_response(settings: DatabaseSettings) -> DatabaseSetti
             password: settings.password,
             connection_status: "connected".to_string(),
             connection_error: None,
+            managed_by_environment: managed_database_url.is_some(),
         },
         Err(error) => DatabaseSettingsResponse {
             host: settings.host,
@@ -188,80 +475,185 @@ async fn database_settings_response(settings: DatabaseSettings) -> DatabaseSetti
             password: settings.password,
             connection_status: "disconnected".to_string(),
             connection_error: Some(error.to_string()),
+            managed_by_environment: managed_database_url.is_some(),
         },
     }
 }
 
 async fn verify_database_connection(settings: &DatabaseSettings) -> Result<(), sea_orm::DbErr> {
-    let mut options = ConnectOptions::new(settings.to_database_url());
+    verify_database_url(&settings.to_database_url()).await
+}
+
+async fn verify_database_url(database_url: &str) -> Result<(), sea_orm::DbErr> {
+    let mut options = ConnectOptions::new(database_url);
     options.connect_timeout(Duration::from_secs(3));
     Database::connect(options).await.map(|_| ())
 }
 
-pub(crate) async fn get_agent_settings(
+pub(crate) async fn get_valkey_settings(
     axum::extract::State(_state): axum::extract::State<AppState>,
-) -> Result<Json<ApiResponse<AgentSettingsResponse>>, AppError> {
-    let settings = load_agent_settings().unwrap_or_else(default_agent_settings);
+) -> Result<Json<ApiResponse<ValkeySettingsResponse>>, AppError> {
+    let settings = load_valkey_settings().unwrap_or_else(default_valkey_settings);
+    let response = valkey_settings_response(settings).await;
+    Ok(Json(success_response("Valkey settings loaded", response)))
+}
+
+pub(crate) async fn update_valkey_settings(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    Json(payload): Json<UpdateValkeySettingsRequest>,
+) -> Result<(StatusCode, Json<ApiResponse<ValkeySettingsResponse>>), AppError> {
+    let previous = load_valkey_settings();
+    let password = payload
+        .password
+        .or_else(|| previous.as_ref().map(|settings| settings.password.clone()))
+        .unwrap_or_default();
+    let settings = ValkeySettings {
+        enabled: payload.enabled,
+        host: payload.host.trim().to_string(),
+        port: payload.port,
+        database: payload.database,
+        username: payload.username.trim().to_string(),
+        password,
+        cache_ttl_hours: payload.cache_ttl_hours,
+    };
+    settings.validate().map_err(AppError::BadRequest)?;
+    if settings.enabled {
+        verify_valkey_connection(&settings).await?;
+    }
+    save_valkey_settings(&settings).map_err(AppError::Server)?;
+    state.schedule_restart().map_err(AppError::Server)?;
+    let response = valkey_settings_response(settings).await;
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(success_response(
+            "Valkey settings saved; backend is restarting",
+            response,
+        )),
+    ))
+}
+
+pub(crate) async fn test_valkey_connection(
+    Json(payload): Json<UpdateValkeySettingsRequest>,
+) -> Result<Json<ApiResponse<DatabaseConnectionTestResponse>>, AppError> {
+    let settings = ValkeySettings {
+        enabled: payload.enabled,
+        host: payload.host.trim().to_string(),
+        port: payload.port,
+        database: payload.database,
+        username: payload.username.trim().to_string(),
+        password: payload.password.unwrap_or_default(),
+        cache_ttl_hours: payload.cache_ttl_hours,
+    };
+    settings.validate().map_err(AppError::BadRequest)?;
+    if settings.enabled {
+        verify_valkey_connection(&settings).await?;
+    }
     Ok(Json(success_response(
-        "agent settings loaded",
-        AgentSettingsResponse::from(&settings),
+        "Valkey connection succeeded",
+        DatabaseConnectionTestResponse { connected: true },
     )))
 }
 
-pub(crate) async fn update_agent_settings(
-    axum::extract::State(_state): axum::extract::State<AppState>,
-    Json(payload): Json<UpdateAgentSettingsRequest>,
-) -> Result<Json<ApiResponse<AgentSettingsResponse>>, AppError> {
-    let previous = load_agent_settings().unwrap_or_else(default_agent_settings);
-    let settings = AgentSettings {
-        enabled: payload.enabled,
-        provider: payload.provider.trim().to_string(),
-        api_base_url: payload
-            .api_base_url
-            .trim()
-            .trim_end_matches('/')
-            .to_string(),
-        api_key: payload
-            .api_key
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or(previous.api_key),
-        chat_model: payload.chat_model.trim().to_string(),
-        embedding_model: payload.embedding_model.trim().to_string(),
-        temperature: payload.temperature,
-        max_steps: payload.max_steps,
-        system_prompt: payload.system_prompt.trim().to_string(),
-    };
-    settings.validate().map_err(AppError::BadRequest)?;
-    save_agent_settings(&settings).map_err(AppError::Server)?;
+async fn valkey_settings_response(settings: ValkeySettings) -> ValkeySettingsResponse {
+    if !settings.enabled {
+        return ValkeySettingsResponse {
+            enabled: settings.enabled,
+            host: settings.host,
+            port: settings.port,
+            database: settings.database,
+            username: settings.username,
+            password: settings.password,
+            cache_ttl_hours: settings.cache_ttl_hours,
+            connection_status: "disabled".to_string(),
+            connection_error: None,
+        };
+    }
+    match verify_valkey_connection(&settings).await {
+        Ok(()) => ValkeySettingsResponse {
+            enabled: settings.enabled,
+            host: settings.host,
+            port: settings.port,
+            database: settings.database,
+            username: settings.username,
+            password: settings.password,
+            cache_ttl_hours: settings.cache_ttl_hours,
+            connection_status: "connected".to_string(),
+            connection_error: None,
+        },
+        Err(error) => ValkeySettingsResponse {
+            enabled: settings.enabled,
+            host: settings.host,
+            port: settings.port,
+            database: settings.database,
+            username: settings.username,
+            password: settings.password,
+            cache_ttl_hours: settings.cache_ttl_hours,
+            connection_status: "disconnected".to_string(),
+            connection_error: Some(format!("{error:?}")),
+        },
+    }
+}
 
-    Ok(Json(success_response(
-        "agent settings saved",
-        AgentSettingsResponse::from(&settings),
-    )))
+async fn verify_valkey_connection(settings: &ValkeySettings) -> Result<(), AppError> {
+    let client = redis::Client::open(settings.to_valkey_url()).map_err(|error| {
+        AppError::BadRequest(format!("Valkey configuration is invalid: {error}"))
+    })?;
+    let mut connection = tokio::time::timeout(
+        Duration::from_secs(3),
+        redis::aio::ConnectionManager::new(client),
+    )
+    .await
+    .map_err(|_| AppError::BadRequest("Valkey connection timed out".to_string()))?
+    .map_err(|error| AppError::BadRequest(format!("Valkey connection failed: {error}")))?;
+    tokio::time::timeout(
+        Duration::from_secs(3),
+        redis::cmd("PING").query_async::<String>(&mut connection),
+    )
+    .await
+    .map_err(|_| AppError::BadRequest("Valkey ping timed out".to_string()))?
+    .map_err(|error| AppError::BadRequest(format!("Valkey ping failed: {error}")))?;
+    Ok(())
 }
 
 pub(crate) async fn get_platform_agent_assistant_settings(
-    axum::extract::State(_state): axum::extract::State<AppState>,
+    axum::extract::State(state): axum::extract::State<AppState>,
 ) -> Result<Json<ApiResponse<PlatformAgentAssistantSettings>>, AppError> {
-    Ok(Json(success_response("platform agent assistant settings loaded", load_platform_agent_assistant_settings().unwrap_or_default())))
+    Ok(Json(success_response(
+        "platform agent assistant settings loaded",
+        load_platform_agent_assistant_settings(&state.db).await?,
+    )))
 }
 
 pub(crate) async fn update_platform_agent_assistant_settings(
-    axum::extract::State(_state): axum::extract::State<AppState>,
+    axum::extract::State(state): axum::extract::State<AppState>,
     Json(payload): Json<PlatformAgentAssistantSettingsRequest>,
 ) -> Result<Json<ApiResponse<PlatformAgentAssistantSettings>>, AppError> {
-    let navigation_agent_id = payload.navigation_agent_id.map(|id| id.trim().to_string()).filter(|id| !id.is_empty());
+    let navigation_agent_id = payload
+        .navigation_agent_id
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty());
     if let Some(agent_id) = &navigation_agent_id {
-        if !load_agent_registry().agents.iter().any(|agent| agent.id == *agent_id && agent.enabled) {
+        let agent = AgentDefinitionEntity::find_by_id(agent_id)
+            .one(&state.db)
+            .await?;
+        if !agent.is_some_and(|agent| agent.enabled) {
             return Err(AppError::BadRequest("请选择一个已启用的机器人".to_string()));
         }
     }
     if payload.schema_analysis_prompt.len() > 32 * 1024 {
-        return Err(AppError::BadRequest("Schema 分析提示词不能超过 32 KB".to_string()));
+        return Err(AppError::BadRequest(
+            "Schema 分析提示词不能超过 32 KB".to_string(),
+        ));
     }
-    let settings = PlatformAgentAssistantSettings { navigation_agent_id, schema_analysis_prompt: payload.schema_analysis_prompt.trim().to_string() };
-    save_platform_agent_assistant_settings(&settings).map_err(AppError::Server)?;
-    Ok(Json(success_response("platform agent assistant settings saved", settings)))
+    let settings = PlatformAgentAssistantSettings {
+        navigation_agent_id,
+        schema_analysis_prompt: payload.schema_analysis_prompt.trim().to_string(),
+    };
+    save_platform_agent_assistant_settings(&state.db, &settings).await?;
+    Ok(Json(success_response(
+        "platform agent assistant settings saved",
+        settings,
+    )))
 }
 
 pub(crate) async fn get_identity_source_settings(
@@ -315,14 +707,15 @@ pub(crate) async fn update_identity_source_settings(
 }
 
 pub(crate) async fn get_role_permissions(
-    axum::extract::State(_state): axum::extract::State<AppState>,
+    axum::extract::State(state): axum::extract::State<AppState>,
     Path(role_id): Path<String>,
 ) -> Result<Json<ApiResponse<RolePermissionsResponse>>, AppError> {
-    let settings = load_rbac_permission_settings().unwrap_or_default();
     let grants = if role_id == "00000000-0000-4000-8000-000000000002" {
         vec!["*".to_string()]
     } else {
-        settings.grants.get(&role_id).cloned().unwrap_or_default()
+        let role_id = uuid::Uuid::parse_str(&role_id)
+            .map_err(|_| AppError::NotFound("role not found".to_string()))?;
+        crate::platform::rbac::grants_for_role(&state.db, role_id).await?
     };
     Ok(Json(success_response(
         "role permissions loaded",
@@ -331,7 +724,7 @@ pub(crate) async fn get_role_permissions(
 }
 
 pub(crate) async fn update_role_permissions(
-    axum::extract::State(_state): axum::extract::State<AppState>,
+    axum::extract::State(state): axum::extract::State<AppState>,
     Path(role_id): Path<String>,
     Json(payload): Json<UpdateRolePermissionsRequest>,
 ) -> Result<Json<ApiResponse<RolePermissionsResponse>>, AppError> {
@@ -344,7 +737,6 @@ pub(crate) async fn update_role_permissions(
             "system administrator permissions cannot be modified".to_string(),
         ));
     }
-    let mut settings: RbacPermissionSettings = load_rbac_permission_settings().unwrap_or_default();
     let mut grants = payload
         .grants
         .into_iter()
@@ -353,28 +745,13 @@ pub(crate) async fn update_role_permissions(
         .collect::<Vec<_>>();
     grants.sort();
     grants.dedup();
-    settings.grants.insert(role_id.clone(), grants.clone());
-    save_rbac_permission_settings(&settings).map_err(AppError::Server)?;
+    let parsed_role_id = uuid::Uuid::parse_str(&role_id)
+        .map_err(|_| AppError::BadRequest("invalid role id".to_string()))?;
+    crate::platform::rbac::replace_role_grants(&state.db, parsed_role_id, grants.clone()).await?;
     Ok(Json(success_response(
         "role permissions saved",
         RolePermissionsResponse { role_id, grants },
     )))
-}
-
-impl From<&AgentSettings> for AgentSettingsResponse {
-    fn from(settings: &AgentSettings) -> Self {
-        Self {
-            enabled: settings.enabled,
-            provider: settings.provider.clone(),
-            api_base_url: settings.api_base_url.clone(),
-            api_key_configured: !settings.api_key.is_empty(),
-            chat_model: settings.chat_model.clone(),
-            embedding_model: settings.embedding_model.clone(),
-            temperature: settings.temperature,
-            max_steps: settings.max_steps,
-            system_prompt: settings.system_prompt.clone(),
-        }
-    }
 }
 
 fn default_database_settings() -> DatabaseSettings {
@@ -387,18 +764,57 @@ fn default_database_settings() -> DatabaseSettings {
     }
 }
 
-pub(crate) fn default_agent_settings() -> AgentSettings {
-    AgentSettings {
+fn default_valkey_settings() -> ValkeySettings {
+    ValkeySettings {
         enabled: false,
-        provider: "openai-compatible".to_string(),
-        api_base_url: "https://api.openai.com/v1".to_string(),
-        api_key: String::new(),
-        chat_model: "gpt-4.1-mini".to_string(),
-        embedding_model: "text-embedding-3-small".to_string(),
-        temperature: 0.2,
-        max_steps: 8,
-        system_prompt: "你是 YaYa 低代码平台助手。帮助用户理解表单、自动化和应用结构。当前只允许使用只读工具，不得声称已经修改任何数据。".to_string(),
+        host: "127.0.0.1".to_string(),
+        port: 6379,
+        database: 0,
+        username: String::new(),
+        password: String::new(),
+        cache_ttl_hours: 8,
     }
+}
+
+pub(crate) async fn load_platform_agent_assistant_settings(
+    db: &DatabaseConnection,
+) -> Result<PlatformAgentAssistantSettings, AppError> {
+    Ok(PlatformAgentAssistantSettingsEntity::find_by_id(1_i16)
+        .one(db)
+        .await?
+        .map(|settings| PlatformAgentAssistantSettings {
+            navigation_agent_id: settings.navigation_agent_id,
+            schema_analysis_prompt: settings.schema_analysis_prompt,
+        })
+        .unwrap_or_default())
+}
+
+async fn save_platform_agent_assistant_settings(
+    db: &DatabaseConnection,
+    settings: &PlatformAgentAssistantSettings,
+) -> Result<(), AppError> {
+    let now = chrono::Utc::now();
+    if let Some(existing) = PlatformAgentAssistantSettingsEntity::find_by_id(1_i16)
+        .one(db)
+        .await?
+    {
+        let mut active = existing.into_active_model();
+        active.navigation_agent_id = Set(settings.navigation_agent_id.clone());
+        active.schema_analysis_prompt = Set(settings.schema_analysis_prompt.clone());
+        active.updated_at = Set(now);
+        active.update(db).await?;
+    } else {
+        PlatformAgentAssistantSettingsActiveModel {
+            id: Set(1),
+            navigation_agent_id: Set(settings.navigation_agent_id.clone()),
+            schema_analysis_prompt: Set(settings.schema_analysis_prompt.clone()),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(db)
+        .await?;
+    }
+    Ok(())
 }
 
 pub(crate) fn default_identity_source_settings() -> IdentitySourceSettings {

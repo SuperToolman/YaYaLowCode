@@ -42,7 +42,6 @@ export function FieldOutlinePage() {
         return { ...app, forms: response.data?.code === 0 && response.data.data ? response.data.data.forms : [] };
       }));
       setApps(results);
-      setExpandedIds((current) => current.size ? current : new Set(results.map((app) => app.id)));
     } catch {
       setErrorMessage("字段大纲暂时无法加载，请稍后重试。");
     } finally {
@@ -90,7 +89,19 @@ export function FieldOutlinePage() {
 
   async function copyId(id: string) {
     try {
-      await navigator.clipboard.writeText(id);
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(id);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = id;
+        textarea.setAttribute("readonly", "true");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        if (!document.execCommand("copy")) throw new Error("copy failed");
+        textarea.remove();
+      }
       setCopiedId(id);
       window.setTimeout(() => setCopiedId((current) => current === id ? null : current), 1600);
     } catch {

@@ -6,22 +6,24 @@ use utoipa::ToSchema;
 
 use crate::infrastructure::entities::form_definition_entity;
 use crate::platform::records::StoredFormRecord;
-use crate::shared::format_date;
+use crate::shared::{format_date, FormStatus, FormType};
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiFormSummary {
     pub(crate) id: String,
     pub(crate) name: String,
+    #[schema(value_type = FormType)]
     pub(crate) form_type: String,
     pub(crate) category: String,
     pub(crate) count: Option<i32>,
+    #[schema(value_type = FormStatus)]
     pub(crate) status: String,
     pub(crate) latest_schema_version: i32,
     pub(crate) created_at: String,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiSchemaPayload {
     pub(crate) form_uuid: String,
@@ -33,7 +35,7 @@ pub(crate) struct ApiSchemaPayload {
     pub(crate) published: bool,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiFormVersionSummary {
     pub(crate) version: i32,
@@ -44,7 +46,7 @@ pub(crate) struct ApiFormVersionSummary {
     pub(crate) created_at: String,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiFormRecord {
     pub(crate) id: String,
@@ -60,7 +62,7 @@ pub(crate) struct ApiFormRecord {
     pub(crate) updated_at: String,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiFormRecordList {
     pub(crate) items: Vec<ApiFormRecord>,
@@ -83,7 +85,9 @@ pub(crate) struct ApiFieldOutlineField {
 pub(crate) struct ApiFieldOutlineForm {
     pub(crate) form_uuid: String,
     pub(crate) name: String,
+    #[schema(value_type = FormType)]
     pub(crate) form_type: String,
+    #[schema(value_type = FormStatus)]
     pub(crate) status: String,
     pub(crate) schema_version: i32,
     pub(crate) physical_table: Option<String>,
@@ -94,6 +98,7 @@ pub(crate) struct ApiFieldOutlineForm {
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CreateFormRequest {
+    #[schema(value_type = Option<FormType>)]
     pub(crate) form_type: Option<String>,
 }
 

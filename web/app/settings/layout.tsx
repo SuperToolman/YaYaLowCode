@@ -21,6 +21,30 @@ const settingsGroups = [
         label: "Agent 协助设置",
         description: "导航助手与 Schema 分析",
       },
+      {
+        href: "/settings/notifications",
+        permission: "settings.agent",
+        label: "通知设置",
+        description: "站内通知与外部渠道预留",
+      },
+      {
+        href: "/settings/logs",
+        permission: "settings.database",
+        label: "平台日志",
+        description: "查看平台运行与异常事件",
+      },
+      {
+        href: "/settings/recycle-bin",
+        permission: "settings.database",
+        label: "回收站设置",
+        description: "已删除数据的保留期限",
+      },
+      {
+        href: "/settings/about",
+        permission: "settings.license",
+        label: "关于平台",
+        description: "版本与许可证状态",
+      },
     ],
   },
   {
@@ -29,14 +53,8 @@ const settingsGroups = [
       {
         href: "/settings/identity-source",
         permission: "settings.identity-source",
-        label: "身份源设置",
-        description: "平台账号或钉钉组织",
-      },
-      {
-        href: "/settings/organization",
-        permission: "settings.organization",
-        label: "组织架构",
-        description: "部门与组织层级",
+        label: "身份源与组织架构",
+        description: "平台账号、第三方身份源与组织层级",
       },
       {
         href: "/settings/roles",
@@ -80,6 +98,12 @@ const settingsGroups = [
         description: "模型与执行参数组合",
       },
       {
+        href: "/settings/personas",
+        permission: "settings.agent",
+        label: "人格",
+        description: "身份、语气与系统提示词",
+      },
+      {
         href: "/settings/knowledge",
         permission: "settings.agent",
         label: "知识库",
@@ -99,12 +123,25 @@ const settingsGroups = [
       },
     ],
   },
+  {
+    label: "通讯",
+    items: [
+      {
+        href: "/settings/communication",
+        permission: "settings.agent",
+        label: "通讯设置",
+        description: "安装和管理通讯模块",
+      },
+    ],
+  },
 ] as const;
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { permissions, permissionsReady } = useAuth();
-  const canView = (permission: string) => permissions.includes("*") || permissions.includes(permission);
+  const canView = (permission: string) => permissions.includes("*")
+    || permissions.includes(permission)
+    || (permission === "settings.identity-source" && permissions.includes("settings.organization"));
 
   return (
     <div className="theme-page-shell settings-page-shell h-full min-h-0 overflow-clip">

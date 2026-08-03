@@ -2,128 +2,235 @@
 
 import { useEffect, useState } from "react";
 import type { Key } from "react";
-import { Button, Input, ListBox, Select, Switch } from "@heroui/react";
-import { Field } from "../_components/field";
+import { CirclePlay, CircleStop, FaceRobot, Pencil, TrashBin } from "@gravity-ui/icons";
+import AnthropicIcon from "@lobehub/icons/es/Anthropic/components/Mono";
+import AzureIcon from "@lobehub/icons/es/Azure/components/Color";
+import CohereIcon from "@lobehub/icons/es/Cohere/components/Color";
+import DeepSeekIcon from "@lobehub/icons/es/DeepSeek/components/Color";
+import DoubaoIcon from "@lobehub/icons/es/Doubao/components/Color";
+import FireworksIcon from "@lobehub/icons/es/Fireworks/components/Color";
+import GoogleIcon from "@lobehub/icons/es/Google/components/Color";
+import GroqIcon from "@lobehub/icons/es/Groq/components/Mono";
+import MinimaxIcon from "@lobehub/icons/es/Minimax/components/Color";
+import MistralIcon from "@lobehub/icons/es/Mistral/components/Color";
+import MoonshotIcon from "@lobehub/icons/es/Moonshot/components/Mono";
+import OllamaIcon from "@lobehub/icons/es/Ollama/components/Mono";
+import OpenAIIcon from "@lobehub/icons/es/OpenAI/components/Mono";
+import OpenRouterIcon from "@lobehub/icons/es/OpenRouter/components/Color";
+import QwenIcon from "@lobehub/icons/es/Qwen/components/Color";
+import SiliconCloudIcon from "@lobehub/icons/es/SiliconCloud/components/Color";
+import TogetherIcon from "@lobehub/icons/es/Together/components/Color";
+import VolcengineIcon from "@lobehub/icons/es/Volcengine/components/Color";
+import XAIIcon from "@lobehub/icons/es/XAI/components/Mono";
+import ZhipuIcon from "@lobehub/icons/es/Zhipu/components/Color";
+import { Button, Input, ListBox, Modal, Select, Switch, Tooltip, toast } from "@heroui/react";
+import { createProvider, deleteProvider, listProviders, updateProvider } from "../../lib/api-client";
 import { SettingsContentCard } from "../_components/settings-content-card";
 import type { AgentModelProvider, ApiEnvelope } from "../agent-types";
+import providerPresetsJson from "./provider-presets.json";
 
-type ProviderForm = Omit<AgentModelProvider, "id" | "apiKeyConfigured"> & { apiKey: string };
-const emptyProvider: ProviderForm = { name: "OpenAI Compatible", kind: "openai-compatible", enabled: true, apiBaseUrl: "https://api.openai.com/v1", apiKey: "" };
-const providerKinds = [
+type ProviderForm = Omit<AgentModelProvider, "id" | "apiKeyConfigured">;
+const emptyProvider: ProviderForm = { name: "OpenAI Compatible", kind: "compatible", enabled: true, apiBaseUrl: "https://api.openai.com/v1", apiKey: "", defaultChatModel: "", models: [], websiteUrl: "https://platform.openai.com" };
+const legacyProviderKinds = [
   { value: "openai-compatible", label: "OpenAI Compatible" },
   { value: "openai", label: "OpenAI" },
   { value: "deepseek", label: "DeepSeek" },
   { value: "local", label: "本地模型" },
 ];
+type ProviderPreset = Pick<ProviderForm, "name" | "kind" | "apiBaseUrl" | "websiteUrl"> & { id: string; icon: string };
+const providerPresets = providerPresetsJson as ProviderPreset[];
+const providerTypeOptions = providerPresets.map((preset) => ({ value: preset.id, label: preset.name, icon: preset.icon }));
+
+function ProviderIcon({ icon, name, size = 20, className }: { icon?: string; name: string; size?: number; className?: string }) {
+  const props = { className, size, title: `${name} 图标` };
+  switch (icon) {
+    case "anthropic": return <AnthropicIcon {...props} style={{ color: "#F1F0E8" }} />;
+    case "azure": return <AzureIcon {...props} />;
+    case "cohere": return <CohereIcon {...props} />;
+    case "deepseek": return <DeepSeekIcon {...props} />;
+    case "doubao": return <DoubaoIcon {...props} />;
+    case "fireworks": return <FireworksIcon {...props} />;
+    case "google": return <GoogleIcon {...props} />;
+    case "groq": return <GroqIcon {...props} style={{ color: "#F55036" }} />;
+    case "minimax": return <MinimaxIcon {...props} />;
+    case "mistral": return <MistralIcon {...props} />;
+    case "moonshot": return <MoonshotIcon {...props} style={{ color: "#2B2B2B" }} />;
+    case "ollama": return <OllamaIcon {...props} style={{ color: "#FFFFFF" }} />;
+    case "openai": return <OpenAIIcon {...props} style={{ color: "#000000" }} />;
+    case "openrouter": return <OpenRouterIcon {...props} />;
+    case "qwen": return <QwenIcon {...props} />;
+    case "siliconcloud": return <SiliconCloudIcon {...props} />;
+    case "together": return <TogetherIcon {...props} />;
+    case "volcengine": return <VolcengineIcon {...props} />;
+    case "xai": return <XAIIcon {...props} style={{ color: "#000000" }} />;
+    case "zhipu": return <ZhipuIcon {...props} />;
+    default: return <FaceRobot className={className ?? "h-5 w-5"} aria-label={`${name} 图标`} />;
+  }
+}
+
+function findProviderPreset(provider: Pick<ProviderForm, "name" | "kind">) {
+  const normalizedName = provider.name.trim().toLowerCase();
+  return providerPresets.find((preset) => preset.name.toLowerCase() === normalizedName || preset.id === provider.kind || preset.id === normalizedName.replaceAll(" ", "-"))
+    ?? (provider.kind === "deepseek" ? providerPresets.find((preset) => preset.id === "deepseek") : undefined);
+}
+
+function maskApiKey(apiKey: string) {
+  if (!apiKey) return "未配置";
+  const visibleLength = apiKey.length > 12 ? 4 : 2;
+  const maskedLength = Math.max(4, Math.min(12, apiKey.length - visibleLength * 2));
+  return `${apiKey.slice(0, visibleLength)}${"*".repeat(maskedLength)}${apiKey.slice(-visibleLength)}`;
+}
 
 export default function ModelProvidersPage() {
   const [items, setItems] = useState<AgentModelProvider[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<ProviderForm>(emptyProvider);
-  const [message, setMessage] = useState("");
+  const [editing, setEditing] = useState<AgentModelProvider | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [deleting, setDeleting] = useState<AgentModelProvider | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deletingProvider, setDeletingProvider] = useState(false);
+  const selectedProviderType = providerTypeOptions.find((item) => item.value === form.kind);
 
-  async function load(preferredId = selectedId) {
-    const response = await fetch("/api/agent/providers", { cache: "no-store" });
-    const payload = (await response.json()) as ApiEnvelope<AgentModelProvider[]>;
-    if (!response.ok || !payload.data) throw new Error(payload.message);
+  async function load() {
+    const { data, error } = await listProviders({ responseStyle: "fields" });
+    const payload = data as ApiEnvelope<AgentModelProvider[]> | undefined;
+    if (error || payload?.code !== 0 || !payload.data) throw new Error(payload?.message || "无法加载模型提供商");
     setItems(payload.data);
-    const current = payload.data.find((item) => item.id === preferredId) ?? payload.data[0];
-    if (current) select(current);
   }
-  useEffect(() => { void load().catch((error) => setMessage(String(error))); }, []); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
 
-  function select(item: AgentModelProvider) {
-    setSelectedId(item.id);
-    setForm({ name: item.name, kind: item.kind, enabled: item.enabled, apiBaseUrl: item.apiBaseUrl, apiKey: "" });
-  }
-  function create() { setSelectedId(null); setMessage(""); setForm(emptyProvider); }
+  useEffect(() => { const timer = window.setTimeout(() => void load().catch((error) => toast.danger("无法加载模型提供商", { description: String(error) })), 0); return () => window.clearTimeout(timer); }, []);
+
+  function openCreate() { setEditing(null); setForm({ ...emptyProvider }); setFormOpen(true); }
+  function openEdit(item: AgentModelProvider) { setEditing(item); setForm({ name: item.name, kind: item.kind, enabled: item.enabled, apiBaseUrl: item.apiBaseUrl, apiKey: item.apiKey, defaultChatModel: item.defaultChatModel, models: item.models, websiteUrl: item.websiteUrl }); setFormOpen(true); }
+  function applyPreset(preset: ProviderPreset) { setForm((current) => ({ ...current, name: preset.name, kind: preset.id, apiBaseUrl: preset.apiBaseUrl, websiteUrl: preset.websiteUrl })); }
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
-    const url = selectedId ? `/api/agent/providers/${encodeURIComponent(selectedId)}` : "/api/agent/providers";
-    const response = await fetch(url, { method: selectedId ? "PUT" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...form, apiKey: form.apiKey || undefined }) });
-    const payload = (await response.json()) as ApiEnvelope<AgentModelProvider>;
-    if (!response.ok || !payload.data) return setMessage(payload.message);
-    setMessage("模型提供商已保存");
-    setSelectedId(payload.data.id);
-    await load(payload.data.id);
+    setSaving(true);
+    try {
+      const result = editing
+        ? await updateProvider({ path: { id: editing.id }, body: form, responseStyle: "fields" })
+        : await createProvider({ body: form, responseStyle: "fields" });
+      const payload = result.data as ApiEnvelope<AgentModelProvider> | undefined;
+      if (result.error || payload?.code !== 0 || !payload.data) throw new Error(payload?.message || "保存失败");
+      toast.success(editing ? "模型提供商已更新" : "模型提供商已创建");
+      setFormOpen(false);
+      await load();
+    } catch (error) {
+      toast.danger("无法保存模型提供商", { description: error instanceof Error ? error.message : "请稍后重试。" });
+    } finally {
+      setSaving(false);
+    }
   }
 
-  return (
-    <SettingsContentCard
-      title="模型提供商"
-      subtitle={`管理 Agent 使用的模型服务连接。当前共 ${items.length} 个提供商，平台不会自动创建默认数据。`}
-      bodyScrollable={false}
-      headerActions={<Button onPress={create}>新增提供商</Button>}
-      footer={<><p className="text-xs text-[var(--color-text-secondary)]">{selectedId ? "正在编辑已有提供商" : "正在创建新提供商"}</p><Button type="submit" form="model-provider-form">保存配置</Button></>}
-    >
-      <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[160px_minmax(0,1fr)] overflow-clip rounded-lg border border-[var(--color-border)] lg:grid-cols-[210px_minmax(0,1fr)] lg:grid-rows-1">
-      <aside className="flex min-h-0 flex-col border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-2 lg:border-b-0 lg:border-r">
-        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto">
-          {items.map((item) => (
-            <Button
-              key={item.id}
-              fullWidth
-              variant="ghost"
-              onPress={() => select(item)}
-              className={`h-auto min-h-0 justify-start rounded-xl px-3 py-2.5 text-left ${selectedId === item.id ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]" : "text-[var(--color-text-primary)]"}`}
-            >
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-medium">{item.name}</span>
-                <span className="mt-0.5 block truncate text-[10px] text-[var(--color-text-secondary)]">
-                  {item.enabled ? "已启用" : "已停用"} · {item.kind}
-                </span>
-              </span>
-            </Button>
-          ))}
-        </nav>
-      </aside>
+  async function toggleProvider(item: AgentModelProvider) {
+    try {
+      const result = await updateProvider({ path: { id: item.id }, body: { name: item.name, kind: item.kind, enabled: !item.enabled, apiBaseUrl: item.apiBaseUrl, apiKey: item.apiKey, websiteUrl: item.websiteUrl, defaultChatModel: item.defaultChatModel, models: item.models }, responseStyle: "fields" });
+      const payload = result.data as ApiEnvelope<AgentModelProvider> | undefined;
+      if (result.error || payload?.code !== 0) throw new Error(payload?.message || "更新失败");
+      toast.success(item.enabled ? "提供商已停用" : "提供商已启动");
+      await load();
+    } catch (error) {
+      toast.danger("无法更新提供商", { description: error instanceof Error ? error.message : "请稍后重试。" });
+    }
+  }
 
-      <form id="model-provider-form" onSubmit={save} className="flex min-h-0 flex-col overflow-clip bg-[var(--color-bg-surface)]">
-        <header className="shrink-0 border-b border-[var(--color-border)] px-5 py-4">
-          <div className="min-w-0 max-w-xl">
-              <Input
-                aria-label="模型提供商名称"
-                fullWidth
-                className="max-w-md text-lg font-semibold"
-                value={form.name}
-                onChange={(event) => setForm({ ...form, name: event.currentTarget.value })}
-              />
-              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                {selectedId ? "编辑模型提供商" : "正在创建新模型提供商"}
-              </p>
-          </div>
-        </header>
+  async function confirmDelete() {
+    if (!deleting) return;
+    setDeletingProvider(true);
+    try {
+      const result = await deleteProvider({ path: { id: deleting.id }, responseStyle: "fields" });
+      if (result.error) throw new Error("删除失败");
+      toast.success("模型提供商已删除");
+      setDeleting(null);
+      await load();
+    } catch (error) {
+      toast.danger("无法删除模型提供商", { description: error instanceof Error ? error.message : "正在被配置文件使用的提供商无法删除。" });
+    } finally {
+      setDeletingProvider(false);
+    }
+  }
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">
-          <section className="max-w-4xl rounded-lg border border-[var(--color-border)] p-5">
-            <h3 className="text-sm font-semibold">连接配置</h3>
-            <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">
-              统一管理 API 网关和密钥，多个配置文件可复用同一提供商。
-            </p>
-            <div className="mt-4 space-y-4">
-              <Field label="提供商类型">
-                <Select aria-label="提供商类型" fullWidth selectedKey={form.kind} onSelectionChange={(key: Key | null) => key !== null && setForm({ ...form, kind: String(key) })}>
-                  <Select.Trigger><Select.Value>{providerKinds.find((item) => item.value === form.kind)?.label ?? "请选择"}</Select.Value><Select.Indicator /></Select.Trigger>
-                  <Select.Popover><ListBox>{providerKinds.map((item) => <ListBox.Item key={item.value} id={item.value} textValue={item.label}>{item.label}</ListBox.Item>)}</ListBox></Select.Popover>
-                </Select>
-              </Field>
-              <Field label="API Base URL">
-                <Input fullWidth value={form.apiBaseUrl} onChange={(event) => setForm({ ...form, apiBaseUrl: event.currentTarget.value })} />
-              </Field>
-              <Field label="API Key" hint={selectedId ? "留空保留已配置密钥。" : "创建启用的提供商时请填写密钥。"}>
-                <Input fullWidth type="password" autoComplete="new-password" value={form.apiKey} onChange={(event) => setForm({ ...form, apiKey: event.currentTarget.value })} />
-              </Field>
-              <Switch isSelected={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })}>
-                <Switch.Content>启用提供商</Switch.Content>
-                <Switch.Control><Switch.Thumb /></Switch.Control>
-              </Switch>
-            </div>
-          </section>
-          {message ? <p className="mt-4 rounded-lg bg-[var(--color-bg-subtle)] p-3 text-sm">{message}</p> : null}
-        </div>
-      </form>
+  return <SettingsContentCard title="模型提供商" subtitle={`管理 Agent 使用的模型服务连接。当前共 ${items.length} 个提供商。`} bodyScrollable={false} headerActions={<Button onPress={openCreate}>新增供应商</Button>}>
+    <div className="h-full overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)]">
+      <div className="h-full overflow-auto">
+        <table className="min-w-[1080px] w-full table-fixed text-left text-sm">
+          <thead className="sticky top-0 z-10 bg-[var(--color-bg-subtle)] text-xs font-medium text-[var(--color-text-secondary)]">
+            <tr>
+              <th className="w-[18%] border-b border-[var(--color-border)] px-4 py-3">供应商名称</th>
+              <th className="w-[16%] border-b border-[var(--color-border)] px-4 py-3">提供商类型</th>
+              <th className="w-[22%] border-b border-[var(--color-border)] px-4 py-3">API Base URL</th>
+              <th className="w-[18%] border-b border-[var(--color-border)] px-4 py-3">API Key</th>
+              <th className="w-[16%] border-b border-[var(--color-border)] px-4 py-3">默认对话模型</th>
+              <th className="w-[10%] border-b border-[var(--color-border)] px-4 py-3">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => {
+              const preset = findProviderPreset(item);
+              return <tr key={item.id} className="hover:bg-[var(--color-control-soft-hover)]">
+                <td className="border-b border-[var(--color-border)] px-4 py-3 font-medium text-[var(--color-text-primary)]"><span className="block truncate">{item.name}</span></td>
+                <td className="border-b border-[var(--color-border)] px-4 py-3 text-[var(--color-text-secondary)]">
+                  <div className="flex min-w-0 items-center gap-2"><ProviderIcon icon={preset?.icon} name={preset?.name ?? item.name} /><span className="truncate">{preset?.name ?? legacyProviderKinds.find((kind) => kind.value === item.kind)?.label ?? item.kind}</span></div>
+                </td>
+                <td className="border-b border-[var(--color-border)] px-4 py-3"><span className="block truncate font-mono text-xs text-[var(--color-text-secondary)]" title={item.apiBaseUrl}>{item.apiBaseUrl}</span></td>
+                <td className="border-b border-[var(--color-border)] px-4 py-2"><span className="font-mono text-xs text-[var(--color-text-secondary)]">{maskApiKey(item.apiKey)}</span></td>
+                <td className="border-b border-[var(--color-border)] px-4 py-3"><span className="block truncate font-mono text-xs text-[var(--color-text-secondary)]" title={item.defaultChatModel}>{item.defaultChatModel || "未设置"}</span></td>
+                <td className="border-b border-[var(--color-border)] px-4 py-2">
+                  <div className="flex items-center gap-1">
+                    <Tooltip><Tooltip.Trigger><Button isIconOnly size="sm" variant="ghost" aria-label={item.enabled ? `停用 ${item.name}` : `启动 ${item.name}`} onPress={() => void toggleProvider(item)}>{item.enabled ? <CircleStop className="h-4 w-4" /> : <CirclePlay className="h-4 w-4" />}</Button></Tooltip.Trigger><Tooltip.Content>{item.enabled ? "停用" : "启动"}</Tooltip.Content></Tooltip>
+                    <Tooltip><Tooltip.Trigger><Button isIconOnly size="sm" variant="ghost" aria-label={`编辑 ${item.name}`} onPress={() => openEdit(item)}><Pencil className="h-4 w-4" /></Button></Tooltip.Trigger><Tooltip.Content>编辑</Tooltip.Content></Tooltip>
+                    <Tooltip><Tooltip.Trigger><Button isIconOnly size="sm" variant="ghost" aria-label={`删除 ${item.name}`} className="text-[var(--color-danger)]" onPress={() => setDeleting(item)}><TrashBin className="h-4 w-4" /></Button></Tooltip.Trigger><Tooltip.Content>删除</Tooltip.Content></Tooltip>
+                  </div>
+                </td>
+              </tr>;
+            })}
+            {items.length === 0 ? <tr><td colSpan={6} className="h-48 text-center text-[var(--color-text-secondary)]">暂无模型提供商，点击“新增供应商”创建连接。</td></tr> : null}
+          </tbody>
+        </table>
       </div>
-    </SettingsContentCard>
-  );
+    </div>
+    <Modal isOpen={formOpen} onOpenChange={(open) => !saving && setFormOpen(open)}>
+      <Modal.Backdrop className="theme-modal-backdrop" isDismissable={!saving}>
+        <Modal.Container placement="center" size="md">
+          <Modal.Dialog className="w-[50vw] max-w-[calc(100vw-2rem)] rounded-md bg-[var(--color-bg-surface)]">
+            <form onSubmit={save}>
+              <Modal.Header><Modal.Heading>{editing ? "编辑供应商" : "新增供应商"}</Modal.Heading><Modal.CloseTrigger aria-label="关闭" isDisabled={saving} /></Modal.Header>
+              <Modal.Body className="space-y-4">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-[var(--color-text-primary)]">预设供应商</p>
+                  <div className="flex flex-wrap gap-2">
+                    {providerPresets.map((preset) => <Button key={preset.id} type="button" size="sm" variant="secondary" isDisabled={saving} onPress={() => applyPreset(preset)}>
+                      <ProviderIcon icon={preset.icon} name={preset.name} size={16} />{preset.name}
+                    </Button>)}
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <label className="block text-sm font-medium text-[var(--color-text-primary)]">供应商名称<Input className="mt-2" fullWidth value={form.name} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} disabled={saving} /></label>
+                  <label className="block text-sm font-medium text-[var(--color-text-primary)]">提供商类型
+                    <Select className="mt-2" aria-label="提供商类型" fullWidth selectedKey={form.kind} onSelectionChange={(key: Key | null) => {
+                      const preset = providerPresets.find((item) => item.id === String(key));
+                      if (preset) applyPreset(preset);
+                    }} isDisabled={saving}>
+                      <Select.Trigger><Select.Value><span className="flex min-w-0 items-center gap-2">{selectedProviderType ? <ProviderIcon icon={selectedProviderType.icon} name={selectedProviderType.label} size={16} /> : null}<span className="truncate">{selectedProviderType?.label ?? legacyProviderKinds.find((item) => item.value === form.kind)?.label ?? "请选择"}</span></span></Select.Value><Select.Indicator /></Select.Trigger>
+                      <Select.Popover><ListBox>{providerTypeOptions.map((item) => <ListBox.Item key={item.value} id={item.value} textValue={item.label}><div className="flex items-center gap-2"><ProviderIcon icon={item.icon} name={item.label} size={16} />{item.label}</div></ListBox.Item>)}</ListBox></Select.Popover>
+                    </Select>
+                  </label>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <label className="block text-sm font-medium text-[var(--color-text-primary)]">API Base URL<Input className="mt-2" fullWidth value={form.apiBaseUrl} onChange={(event) => setForm({ ...form, apiBaseUrl: event.currentTarget.value })} disabled={saving} /></label>
+                  <label className="block text-sm font-medium text-[var(--color-text-primary)]">API Key<Input className="mt-2" fullWidth type="text" autoComplete="off" value={form.apiKey} onChange={(event) => setForm({ ...form, apiKey: event.currentTarget.value })} disabled={saving} /></label>
+                </div>
+                <label className="block text-sm font-medium text-[var(--color-text-primary)]">官网链接<Input className="mt-2" fullWidth type="url" value={form.websiteUrl} onChange={(event) => setForm({ ...form, websiteUrl: event.currentTarget.value })} disabled={saving} /></label>
+                <label className="block text-sm font-medium text-[var(--color-text-primary)]">默认对话模型<Input className="mt-2" fullWidth value={form.defaultChatModel} placeholder="例如 gpt-4.1" onChange={(event) => setForm({ ...form, defaultChatModel: event.currentTarget.value })} disabled={saving} /></label>
+                <Switch isSelected={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })} isDisabled={saving}><Switch.Content>启动供应商</Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control></Switch>
+              </Modal.Body>
+              <Modal.Footer><Button variant="ghost" isDisabled={saving} onPress={() => setFormOpen(false)}>取消</Button><Button type="submit" isDisabled={saving || !form.name.trim() || !form.apiBaseUrl.trim()}>{saving ? "保存中…" : "保存"}</Button></Modal.Footer>
+            </form>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </Modal>
+    <Modal isOpen={Boolean(deleting)} onOpenChange={(open) => !deletingProvider && !open && setDeleting(null)}><Modal.Backdrop className="theme-modal-backdrop" isDismissable={!deletingProvider}><Modal.Container placement="center" size="sm"><Modal.Dialog className="rounded-md bg-[var(--color-bg-surface)]"><Modal.Header><Modal.Heading>删除供应商</Modal.Heading><Modal.CloseTrigger aria-label="关闭" isDisabled={deletingProvider} /></Modal.Header><Modal.Body><p className="text-sm text-[var(--color-text-secondary)]">确认删除“{deleting?.name}”吗？正在被配置文件使用的供应商无法删除。</p></Modal.Body><Modal.Footer><Button variant="ghost" isDisabled={deletingProvider} onPress={() => setDeleting(null)}>取消</Button><Button isDisabled={deletingProvider} className="bg-[var(--color-danger)] text-white" onPress={() => void confirmDelete()}>{deletingProvider ? "删除中…" : "删除"}</Button></Modal.Footer></Modal.Dialog></Modal.Container></Modal.Backdrop></Modal>
+  </SettingsContentCard>;
 }

@@ -7,6 +7,7 @@ use crate::modules::navigation::{
     ensure_system_navigation_for_app, next_navigation_sort_order, normalize_navigation_orders,
     sync_navigation_title,
 };
+use crate::modules::recycle_bin;
 use crate::platform::authorization;
 use crate::platform::form_storage::{delete_storage_definition, sync_published_storage_plan};
 use crate::platform::prelude::*;
@@ -647,7 +648,10 @@ fn normalize_form_type(form_type: Option<&str>) -> Result<&str, AppError> {
     }
 }
 
-pub(crate) fn validate_schema_for_form_type(form_type: &str, schema: &Value) -> Result<(), AppError> {
+pub(crate) fn validate_schema_for_form_type(
+    form_type: &str,
+    schema: &Value,
+) -> Result<(), AppError> {
     let Some(fields) = schema.get("fields").and_then(Value::as_array) else {
         return Err(AppError::BadRequest(
             "form schema fields must be an array".to_string(),
@@ -816,6 +820,7 @@ pub(crate) async fn delete_form(
     // Detail forms are logical mappings. They never own a dynamic storage definition or
     // physical table, so deleting one must only remove its metadata, schema and navigation.
     if definition.form_type == "detail" {
+        recycle_bin::delete_entries_for_form(&txn, &form_uuid).await?;
         app_navigation_entity::Entity::delete_many()
             .filter(app_navigation_entity::Column::TargetFormUuid.eq(Some(form_uuid.clone())))
             .exec(&txn)
@@ -847,6 +852,10 @@ pub(crate) async fn delete_form(
         .into_iter()
         .map(|item| item.detail_form_uuid)
         .collect::<Vec<_>>();
+    recycle_bin::delete_entries_for_form(&txn, &form_uuid).await?;
+    for detail_form_uuid in &detail_form_uuids {
+        recycle_bin::delete_entries_for_form(&txn, detail_form_uuid).await?;
+    }
     if !detail_form_uuids.is_empty() {
         app_navigation_entity::Entity::delete_many()
             .filter(app_navigation_entity::Column::TargetFormUuid.is_in(detail_form_uuids.clone()))
@@ -967,6 +976,12 @@ pub(crate) async fn list_form_records(
     Query(query): Query<ListFormRecordsQuery>,
 ) -> Result<Json<ApiResponse<ApiFormRecordList>>, AppError> {
     let definition = find_form_definition(&state.db, &form_uuid).await?;
+    let cache_version_key = form_records_cache_version_key(&form_uuid);
+    let cache_version = state.cache_version(&cache_version_key).await;
+    let cache_key = form_records_cache_key(&form_uuid, &query, cache_version);
+    if let Some(cached) = state.cache_get_json::<ApiFormRecordList>(&cache_key).await {
+        return Ok(Json(success_response("获取表单数据成功", cached)));
+    }
     if definition.form_type == "detail" {
         let detail = load_detail_definition(&state.db, &form_uuid).await?;
         let source_records = RecordRepository::new(&state.db)
@@ -998,15 +1013,16 @@ pub(crate) async fn list_form_records(
             }
         }
         let total = items.len() as i64;
-        return Ok(Json(success_response(
-            "获取明细数据成功",
-            ApiFormRecordList {
-                items,
-                total,
-                page: 1,
-                page_size: total as u64,
-            },
-        )));
+        let response = ApiFormRecordList {
+            items,
+            total,
+            page: 1,
+            page_size: total as u64,
+        };
+        state
+            .cache_set_json(&cache_key, &response, state.cache_ttl_seconds())
+            .await;
+        return Ok(Json(success_response("获取明细数据成功", response)));
     }
 
     let repository = RecordRepository::new(&state.db);
@@ -1029,18 +1045,37 @@ pub(crate) async fn list_form_records(
     )
     .await?;
 
-    Ok(Json(success_response(
-        "获取表单数据成功",
-        ApiFormRecordList {
-            items: items
-                .into_iter()
-                .map(|record| form_record_response(record, &submitter_profiles))
-                .collect(),
-            total,
-            page,
-            page_size,
-        },
-    )))
+    let response = ApiFormRecordList {
+        items: items
+            .into_iter()
+            .map(|record| form_record_response(record, &submitter_profiles))
+            .collect(),
+        total,
+        page,
+        page_size,
+    };
+    state
+        .cache_set_json(&cache_key, &response, state.cache_ttl_seconds())
+        .await;
+    Ok(Json(success_response("获取表单数据成功", response)))
+}
+
+fn form_records_cache_version_key(form_uuid: &str) -> String {
+    format!("yaya:v1:form:{form_uuid}:records:version")
+}
+
+fn form_records_cache_key(form_uuid: &str, query: &ListFormRecordsQuery, version: u64) -> String {
+    if query.page.is_none() && query.page_size.is_none() {
+        return format!("yaya:v1:form:{form_uuid}:records:v{version}:all");
+    }
+    let (page, page_size) = normalize_record_pagination(query.page, query.page_size);
+    format!("yaya:v1:form:{form_uuid}:records:v{version}:page:{page}:size:{page_size}")
+}
+
+async fn invalidate_form_records_cache(state: &AppState, form_uuid: &str) {
+    state
+        .bump_cache_version(&form_records_cache_version_key(form_uuid))
+        .await;
 }
 
 fn normalize_record_pagination(page: Option<u64>, page_size: Option<u64>) -> (u64, u64) {
@@ -1207,6 +1242,8 @@ pub(crate) async fn create_form_record(
         repository
             .update(&parent, next, &operator, Utc::now())
             .await?;
+        invalidate_form_records_cache(&state, &detail.source_form_uuid).await;
+        invalidate_form_records_cache(&state, &form_uuid).await;
         return Ok((
             StatusCode::CREATED,
             Json(success_response(
@@ -1262,6 +1299,8 @@ pub(crate) async fn create_form_record(
         error!("run automation after create failed: {err:?}");
     }
 
+    invalidate_form_records_cache(&state, &form_uuid).await;
+
     Ok((
         StatusCode::CREATED,
         Json(success_response(
@@ -1304,6 +1343,8 @@ pub(crate) async fn update_form_record(
         let updated = repository
             .update(&parent, next, &operator, Utc::now())
             .await?;
+        invalidate_form_records_cache(&state, &detail.source_form_uuid).await;
+        invalidate_form_records_cache(&state, &form_uuid).await;
         return Ok(Json(success_response(
             "更新明细数据成功",
             ApiFormRecord {
@@ -1358,6 +1399,8 @@ pub(crate) async fn update_form_record(
     {
         error!("run automation after update failed: {err:?}");
     }
+
+    invalidate_form_records_cache(&state, &form_uuid).await;
 
     Ok(Json(success_response(
         "更新表单数据成功",
@@ -1416,10 +1459,26 @@ pub(crate) async fn delete_form_record(
         if row_index >= rows.len() {
             return Err(AppError::NotFound("detail row not found".to_string()));
         }
-        rows.remove(row_index);
+        let removed = rows.remove(row_index);
+        recycle_bin::record_deleted(
+            &state.db,
+            &form_uuid,
+            &record_uuid,
+            &definition.name,
+            "detail",
+            &removed,
+            Some((
+                &detail.source_form_uuid,
+                &detail.subform_field_id,
+                row_index,
+            )),
+        )
+        .await?;
         repository
             .update(&parent, next, "管理员", Utc::now())
             .await?;
+        invalidate_form_records_cache(&state, &detail.source_form_uuid).await;
+        invalidate_form_records_cache(&state, &form_uuid).await;
         return Ok(Json(success_response(
             "删除明细数据成功",
             json!({ "deleted": true, "recordId": record_uuid }),
@@ -1439,7 +1498,17 @@ pub(crate) async fn delete_form_record(
     )
     .await?;
 
-    repository.delete(&record).await?;
+    recycle_bin::record_deleted(
+        &state.db,
+        &form_uuid,
+        &record_uuid,
+        &definition.name,
+        &definition.form_type,
+        &record.record_data,
+        None,
+    )
+    .await?;
+    repository.soft_delete(&record, Utc::now()).await?;
     repository
         .decrement_app_records_count(&definition.app_route_app_id, 1, Utc::now())
         .await?;
@@ -1456,6 +1525,8 @@ pub(crate) async fn delete_form_record(
     {
         error!("run automation after delete failed: {err:?}");
     }
+
+    invalidate_form_records_cache(&state, &form_uuid).await;
 
     Ok(Json(success_response(
         "删除表单数据成功",

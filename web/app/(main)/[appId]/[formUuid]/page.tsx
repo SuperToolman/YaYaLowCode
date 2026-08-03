@@ -1,49 +1,46 @@
 "use client";
 
-import { memo, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, Dispatch, ReactNode, SetStateAction } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent, ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Badge,
   Button,
   Checkbox,
-  CheckboxGroup,
   Dropdown,
   Input,
-  Link as HeroLink,
   ListBox,
   ProgressBar,
   SearchField,
   Select,
-  Table,
-  Tabs,
-  TextArea,
   toast,
 } from "@heroui/react";
 import { AlertDialog } from "@heroui/react/alert-dialog";
 import { Card } from "@heroui/react/card";
 import { Modal } from "@heroui/react/modal";
 import { Drawer } from "@heroui/react/drawer";
-import { Pagination } from "@heroui/react/pagination";
+import {
+  DndContext,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import {
   ArrowDownToLine,
-  ArrowChevronLeft,
-  ArrowChevronRight,
   ArrowChevronDown,
   ArrowUpArrowDown,
   ArrowUpFromLine,
-  ArrowsExpand,
-  Copy,
   Ellipsis,
-  Eye,
   Funnel,
   Pencil,
-  FaceRobot,
-  PaperPlane,
+  Pin,
+  PinSlash,
   Plus,
   Sliders,
   TrashBin,
-  Xmark,
 } from "@gravity-ui/icons";
 import {
   RuntimeFormRenderer,
@@ -51,22 +48,14 @@ import {
   type RuntimeFormSchema,
   type RuntimeSchemaField,
 } from "../../../components/runtime-form-renderer";
-import { AgentMarkdown } from "../../../components/agent-markdown";
 import { getSystemPageBySlug, isSystemPageSlug } from "../../../lib/system-pages";
-import { getFormComponentAgentCapability } from "../../../lib/form-component-agent-capabilities";
-import {
-  normalizeCascaderDataSource,
-  serializeCascaderValue,
-} from "../../../lib/cascader-data-source";
-import {
-  formatCountryCityValue,
-  isCountryCityValue,
-  normalizeCountryCityValue,
-} from "../../../lib/location-catalog";
+import { FormAgentPanel } from "./form-agent-panel";
+import { RecordsTable, RuntimeFormPanel } from "./records-table";
+import { SystemPageView } from "./system-page-view";
+import { applyViewConfig, deserializeExcelValue, formatDateTime, getBuiltinRecordValues, getDetailParentRecordLabel, getVisibleDataFields, readFormDrafts, sanitizeFileName, serializeExcelValue, writeFormDrafts } from "./form-record-utils";
 import {
   createFormRecord,
   createDetailForm,
-  createAgentSession,
   deleteForm,
   deleteFormRecord,
   getForm,
@@ -75,7 +64,7 @@ import {
   listFormRecords,
   updateFormRecord,
 } from "../../../lib/api-client";
-import { getAppNavigation, getAppResource } from "../../../lib/app-resources";
+import { getAppNavigation } from "../../../lib/app-resources";
 import { useAuth } from "../../../components/auth-provider";
 import { notifyAppNavigationChanged } from "../components/app-navigation-events";
 import {
@@ -111,6 +100,86 @@ function normalizeDetailFormSchema(schema: FormSchema, isDetailForm: boolean): F
 }
 
 type DetailDisplayFieldOption = { id: string; label: string };
+type ViewFieldOption = { id: string; label: string; type: string; typeLabel: string };
+
+function getFieldTypeTagClass(type: string) {
+  if (["singleLineText", "multiLineText", "richText", "description", "html", "tsx"].includes(type)) return "field-type-tag--text";
+  if (["number", "serialNumber", "formula"].includes(type)) return "field-type-tag--number";
+  if (["radio", "checkbox", "select", "multiSelect", "cascader", "countryCity"].includes(type)) return "field-type-tag--choice";
+  if (["date", "dateRange"].includes(type)) return "field-type-tag--date";
+  if (["member", "department"].includes(type)) return "field-type-tag--person";
+  if (["subform", "associationFormField"].includes(type)) return "field-type-tag--relation";
+  if (["attachment", "imageUpload"].includes(type)) return "field-type-tag--media";
+  return "field-type-tag--builtin";
+}
+
+function ReorderableViewFieldRow({
+  field,
+  config,
+  onConfigChange,
+}: {
+  field: ViewFieldOption;
+  config: ViewConfig;
+  onConfigChange: (next: ViewConfig) => void;
+}) {
+  const id = `view-field-${field.id}`;
+  const { attributes, listeners, setNodeRef: setDragRef, transform, isDragging } = useDraggable({ id });
+  const { setNodeRef: setDropRef, isOver } = useDroppable({ id });
+  const setNodeRef = useCallback((node: HTMLDivElement | null) => {
+    setDragRef(node);
+    setDropRef(node);
+  }, [setDragRef, setDropRef]);
+  const allFieldIds = config.columnOrder ?? [];
+  const sortableFieldIds = config.sortableFieldIds ?? allFieldIds;
+  const frozenFieldIds = config.frozenFieldIds ?? [];
+  const configuredWidth = config.columnWidths?.[field.id];
+  const isFrozen = frozenFieldIds.includes(field.id);
+  const isVisible = config.visibleFieldIds.includes(field.id);
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined}
+      className={[
+        "view-column-config-grid__row items-center border-b border-[var(--color-border)] px-3 py-2 last:border-b-0 hover:bg-[var(--color-bg-subtle)]",
+        isDragging ? "relative z-10 bg-[var(--color-bg-panel)] opacity-60 shadow-[var(--shadow-floating)]" : "",
+        isOver && !isDragging ? "border-t-2 border-t-[var(--color-primary)]" : "",
+      ].join(" ")}
+    >
+      <div className="min-w-0 pr-3">
+        <span className="block truncate text-sm text-[var(--color-text-primary)]">{field.label}</span>
+        <span className="mt-0.5 block truncate font-mono text-xs text-[var(--color-text-secondary)]">{field.id}</span>
+      </div>
+      <span className={`field-type-tag ${getFieldTypeTagClass(field.type)}`}>{field.typeLabel}</span>
+      <Checkbox aria-label={`显示列：${field.label}`} isSelected={config.visibleFieldIds.includes(field.id)} onChange={(selected) => onConfigChange({
+        ...config,
+        visibleFieldIds: selected ? [...new Set([...config.visibleFieldIds, field.id])] : config.visibleFieldIds.filter((id) => id !== field.id),
+        sortableFieldIds: selected ? sortableFieldIds : sortableFieldIds.filter((id) => id !== field.id),
+        frozenFieldIds: selected ? frozenFieldIds : frozenFieldIds.filter((id) => id !== field.id),
+      })} className="justify-center"><Checkbox.Content className="justify-center"><Checkbox.Control><Checkbox.Indicator /></Checkbox.Control></Checkbox.Content></Checkbox>
+      <Checkbox aria-label={`显示排序按钮：${field.label}`} isSelected={config.visibleFieldIds.includes(field.id) && sortableFieldIds.includes(field.id)} isDisabled={!config.visibleFieldIds.includes(field.id)} onChange={(selected) => onConfigChange({
+        ...config,
+        sortableFieldIds: selected ? [...new Set([...sortableFieldIds, field.id])] : sortableFieldIds.filter((id) => id !== field.id),
+      })} className="justify-center"><Checkbox.Content className="justify-center"><Checkbox.Control><Checkbox.Indicator /></Checkbox.Control></Checkbox.Content></Checkbox>
+      <Input aria-label={`${field.label}列宽`} type="number" inputMode="numeric" min={24} max={480} value={configuredWidth === undefined ? "" : String(configuredWidth)} placeholder="动态" onChange={(event) => {
+        const raw = event.target.value.trim();
+        const columnWidths = { ...(config.columnWidths ?? {}) };
+        if (!raw) {
+          delete columnWidths[field.id];
+        } else {
+          const width = Number(raw);
+          if (!Number.isFinite(width)) return;
+          columnWidths[field.id] = Math.round(width);
+        }
+        onConfigChange({ ...config, columnWidths });
+      }} className="w-[72px]" />
+      <div className="flex items-center justify-center gap-1">
+        <Button isIconOnly variant="ghost" aria-label={`${isFrozen ? "取消冻结" : "冻结"}${field.label}列`} isDisabled={!isVisible} className={isFrozen ? "h-7 w-7 text-[var(--color-primary)]" : "h-7 w-7 text-[var(--color-text-secondary)]"} onPress={() => onConfigChange({ ...config, frozenFieldIds: isFrozen ? frozenFieldIds.filter((id) => id !== field.id) : [...frozenFieldIds, field.id] })}>{isFrozen ? <PinSlash className="h-4 w-4" /> : <Pin className="h-4 w-4" />}</Button>
+        <Button isIconOnly variant="ghost" aria-label={`拖拽调整${field.label}列顺序`} className="h-7 w-7 cursor-grab text-[var(--color-text-secondary)] active:cursor-grabbing" {...attributes} {...listeners}><ArrowUpArrowDown className="h-4 w-4" /></Button>
+      </div>
+    </div>
+  );
+}
 
 function DetailDisplayFieldSelect({ ariaLabel, options, selectedKey, onSelectionChange }: { ariaLabel: string; options: DetailDisplayFieldOption[]; selectedKey: string; onSelectionChange: (key: string) => void }) {
   const [query, setQuery] = useState("");
@@ -134,24 +203,6 @@ type ApiEnvelope<T> = {
   time: string;
 };
 
-type SystemWorkItem = {
-  id: string;
-  taskType: string;
-  status: string;
-  formUuid: string;
-  formName: string;
-  recordUuid: string;
-  instanceId: string;
-  flowName: string;
-  nodeLabel: string | null;
-  submitter: string;
-  createdAt: string;
-  updatedAt: string;
-  completedAt: string | null;
-};
-
-type WorkflowAction = { action: string; operator: string; comment: string | null; createdAt: string };
-type WorkflowComment = { id: string; author: string; content: string; createdAt: string };
 
 type FormRecord = {
   id: string;
@@ -167,32 +218,7 @@ type FormRecord = {
   updatedAt: string;
 };
 
-type RecordTableRow = FormRecord & {
-  rowNumber: number;
-  displayValues: {
-    fields: Record<string, string>;
-    builtIns: Record<string, string>;
-  };
-};
-
-type AssociationFormData = {
-  schema: FormSchema;
-  records: Map<string, FormRecord>;
-};
-
-type AssociationDetail = {
-  field: SchemaField;
-  record: FormRecord;
-  schema: FormSchema;
-};
-
 type ViewKey = "records" | "submit";
-type FormAgentMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-};
-
 type ImportWorkbookState = {
   fileName: string;
   headers: string[];
@@ -239,9 +265,35 @@ const WORKFLOW_BUILTIN_RECORD_FIELDS = [
   { id: "workflowSubmitter", label: "提交人" },
 ] as const;
 
+const VIEW_FIELD_TYPE_LABELS: Record<string, string> = {
+  singleLineText: "单行文本",
+  multiLineText: "多行文本",
+  richText: "富文本",
+  number: "数字",
+  radio: "单选",
+  checkbox: "多选",
+  select: "下拉选择",
+  multiSelect: "多选下拉",
+  date: "日期",
+  dateRange: "日期范围",
+  member: "成员",
+  department: "部门",
+  countryCity: "国家地区",
+  cascader: "级联选择",
+  attachment: "附件",
+  imageUpload: "图片",
+  serialNumber: "流水号",
+  subform: "子表单",
+  associationFormField: "关联表单",
+};
+
 const BUILTIN_RECORD_FIELD_LABELS = new Set<string>(
   BUILTIN_RECORD_FIELDS.map((field) => field.label),
 );
+
+function getViewFieldTypeLabel(type: string) {
+  return VIEW_FIELD_TYPE_LABELS[type] ?? type;
+}
 
 const buildExcelColumns = (fields: SchemaField[]) => {
   const labelCounts = new Map<string, number>();
@@ -461,13 +513,20 @@ function FormHomeRecords({
   const detailPrimaryDisplayFieldId = detailPageProps?.detailPrimaryDisplayFieldId as string | undefined ?? "instanceId";
   const detailSecondaryDisplayFieldId = detailPageProps?.detailSecondaryDisplayFieldId as string | undefined ?? "submitter";
   const allViewFields = useMemo(
-    () => [...visibleFields.map((field) => ({ id: field.id, label: field.label })), ...builtinRecordFields],
+    () => [
+      ...visibleFields.map((field) => ({ id: field.id, label: field.label, type: field.type, typeLabel: getViewFieldTypeLabel(field.type) })),
+      ...builtinRecordFields.map((field) => ({ ...field, type: "builtin", typeLabel: "内置字段" })),
+    ],
     [builtinRecordFields, visibleFields],
   );
   const defaultViewConfig = useMemo<ViewConfig>(() => ({
     visibleFieldIds: allViewFields.map((field) => field.id),
+    sortableFieldIds: allViewFields.map((field) => field.id),
     filters: [],
     sorts: [],
+    columnOrder: allViewFields.map((field) => field.id),
+    columnWidths: {},
+    frozenFieldIds: [],
   }), [allViewFields]);
   const formViews = useFormViews({ formUuid, defaultViewConfig, enabled: visibleFields.length > 0 });
   const {
@@ -491,17 +550,71 @@ function FormHomeRecords({
     views,
     duplicateView,
   } = formViews;
-  const configuredFields = useMemo(
-    () => visibleFields.filter((field) => effectiveViewConfig.visibleFieldIds.includes(field.id)),
-    [effectiveViewConfig.visibleFieldIds, visibleFields],
+  const viewFieldOrderSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
-  const configuredBuiltinFields = useMemo(
-    () => builtinRecordFields.filter((field) => effectiveViewConfig.visibleFieldIds.includes(field.id)),
-    [builtinRecordFields, effectiveViewConfig.visibleFieldIds],
-  );
+  const orderedDraftViewFields = useMemo(() => {
+    const order = viewConfigDraft?.columnOrder ?? allViewFields.map((field) => field.id);
+    const fieldById = new Map(allViewFields.map((field) => [field.id, field]));
+    const remaining = new Set(fieldById.keys());
+    const ordered = order.flatMap((fieldId) => {
+      const field = fieldById.get(fieldId);
+      if (!field) return [];
+      remaining.delete(fieldId);
+      return [field];
+    });
+    const allOrdered = [...ordered, ...allViewFields.filter((field) => remaining.has(field.id))];
+    const frozenIds = new Set(viewConfigDraft?.frozenFieldIds ?? []);
+    return [...allOrdered.filter((field) => frozenIds.has(field.id)), ...allOrdered.filter((field) => !frozenIds.has(field.id))];
+  }, [allViewFields, viewConfigDraft?.columnOrder, viewConfigDraft?.frozenFieldIds]);
+  const handleViewFieldOrderDragEnd = useCallback((event: DragEndEvent) => {
+    if (!event.over || event.active.id === event.over.id) return;
+    const sourceId = String(event.active.id).replace("view-field-", "");
+    const targetId = String(event.over.id).replace("view-field-", "");
+    setViewConfigDraft((current) => {
+      if (!current) return current;
+      const frozenIds = new Set(current.frozenFieldIds ?? []);
+      if (frozenIds.has(sourceId) !== frozenIds.has(targetId)) return current;
+      const currentOrder = current.columnOrder ?? allViewFields.map((field) => field.id);
+      const sourceIndex = currentOrder.indexOf(sourceId);
+      const targetIndex = currentOrder.indexOf(targetId);
+      if (sourceIndex < 0 || targetIndex < 0) return current;
+      const nextOrder = [...currentOrder];
+      nextOrder.splice(sourceIndex, 1);
+      nextOrder.splice(targetIndex, 0, sourceId);
+      return { ...current, columnOrder: nextOrder };
+    });
+  }, [allViewFields, setViewConfigDraft]);
+  const orderedViewFieldIds = useMemo(() => {
+    const visibleIds = allViewFields
+      .map((field) => field.id)
+      .filter((fieldId) => effectiveViewConfig.visibleFieldIds.includes(fieldId));
+    const knownIds = new Set(visibleIds);
+    const ordered = [
+      ...(effectiveViewConfig.columnOrder ?? []).filter((fieldId) => knownIds.delete(fieldId)),
+      ...visibleIds.filter((fieldId) => knownIds.has(fieldId)),
+    ];
+    const frozenIds = new Set(effectiveViewConfig.frozenFieldIds ?? []);
+    return [...ordered.filter((fieldId) => frozenIds.has(fieldId)), ...ordered.filter((fieldId) => !frozenIds.has(fieldId))];
+  }, [allViewFields, effectiveViewConfig.columnOrder, effectiveViewConfig.frozenFieldIds, effectiveViewConfig.visibleFieldIds]);
+  const configuredFields = useMemo(() => {
+    const fieldsById = new Map(visibleFields.map((field) => [field.id, field]));
+    return orderedViewFieldIds.flatMap((fieldId) => {
+      const field = fieldsById.get(fieldId);
+      return field ? [field] : [];
+    });
+  }, [orderedViewFieldIds, visibleFields]);
+  const configuredBuiltinFields = useMemo(() => {
+    const fieldsById = new Map<string, { id: string; label: string }>(builtinRecordFields.map((field) => [field.id, field]));
+    return orderedViewFieldIds.flatMap((fieldId) => {
+      const field = fieldsById.get(fieldId);
+      return field ? [field] : [];
+    });
+  }, [builtinRecordFields, orderedViewFieldIds]);
   const sortableFieldIds = useMemo(
-    () => schema?.pageProps?.table?.sortableFieldIds ?? [...visibleFields.map((field) => field.id), ...builtinRecordFields.map((field) => field.id)],
-    [builtinRecordFields, schema?.pageProps?.table?.sortableFieldIds, visibleFields],
+    () => (effectiveViewConfig.sortableFieldIds ?? allViewFields.map((field) => field.id))
+      .filter((fieldId) => effectiveViewConfig.visibleFieldIds.includes(fieldId)),
+    [allViewFields, effectiveViewConfig.sortableFieldIds, effectiveViewConfig.visibleFieldIds],
   );
   const displayedRecords = useMemo(() => applyViewConfig(records, effectiveViewConfig, formMetadataName || schema?.formName || formUuid), [effectiveViewConfig, formMetadataName, formUuid, records, schema?.formName]);
   const searchedRecords = useMemo(() => {
@@ -790,9 +903,13 @@ function FormHomeRecords({
     }
   }
 
-  async function handleWorkflowAction(record: FormRecord, action: "submit" | "reverse" | "pause" | "resume"): Promise<boolean> {
+  async function handleWorkflowAction(record: FormRecord, action: "submit" | "reverse" | "pause" | "resume", reason?: string): Promise<boolean> {
     try {
-      const response = await fetch(`/api/forms/${encodeURIComponent(formUuid)}/records/${encodeURIComponent(record.id)}/workflow/${action}`, { method: "POST" });
+      const response = await fetch(`/api/forms/${encodeURIComponent(formUuid)}/records/${encodeURIComponent(record.id)}/workflow/${action}`, {
+        method: "POST",
+        headers: reason ? { "content-type": "application/json" } : undefined,
+        body: reason ? JSON.stringify({ reason }) : undefined,
+      });
       const result = await response.json() as ApiEnvelope<unknown>;
       if (!response.ok || result.code !== 0) throw new Error(result.message);
       await loadRecords();
@@ -1155,6 +1272,9 @@ function FormHomeRecords({
                       <Badge color="accent" size="sm" className="!static !translate-x-0 !translate-y-0">{drafts.length}</Badge>
                     </span>
                   </Dropdown.Item>
+                  <Dropdown.Item id="recycle-bin" onAction={() => router.push(`/recycle-bin?formUuid=${encodeURIComponent(formUuid)}`)}>
+                    回收站
+                  </Dropdown.Item>
                 </Dropdown.Menu>
               </Dropdown.Popover>
             </Dropdown> : null}
@@ -1212,13 +1332,18 @@ function FormHomeRecords({
             <>
             {canUseViewDevelopment && viewConfigDirty ? <div className="flex shrink-0 items-center justify-between gap-3 rounded-lg border border-[var(--color-primary)]/30 bg-[var(--color-primary-soft)] px-4 py-2 text-sm text-[var(--color-primary)]"><span>你调整了显示配置，是否需要保存配置？</span><Button size="sm" onPress={saveViewConfig}>保存配置</Button></div> : null}
             <RecordsTable
+              key={`${activeViewId}:${JSON.stringify(effectiveViewConfig.columnWidths ?? {})}`}
               fields={configuredFields}
               builtinFields={configuredBuiltinFields}
+              columnOrder={orderedViewFieldIds}
+              frozenFieldIds={effectiveViewConfig.frozenFieldIds ?? []}
               formType={formType}
               sortableFieldIds={sortableFieldIds}
+              columnWidths={effectiveViewConfig.columnWidths ?? {}}
+              sorts={effectiveViewConfig.sorts}
               formName={formMetadataName || schema.formName || formUuid}
               schema={schema}
-              records={searchedRecords}
+              records={searchedRecords as Parameters<typeof RecordsTable>[0]["records"]}
               loading={loadingRecords}
               submitting={submitting}
               deletingRecordId={deletingRecordId}
@@ -1230,6 +1355,10 @@ function FormHomeRecords({
               canDeleteRecord={canDeleteRecord}
               urlParams={{ appId, formUuid }}
               onRecordSelectionChange={toggleRecordSelection}
+              onViewConfigChange={(patch) => setPendingViewConfig((current) => ({
+                ...(current ?? effectiveViewConfig),
+                ...patch,
+              }))}
               initialRecordId={searchParams.get("record") ?? undefined}
             />
             </>
@@ -1424,17 +1553,17 @@ function FormHomeRecords({
         </Modal.Backdrop>
       </Modal>
 
-      <Modal isOpen={viewConfigMode !== null} onOpenChange={(open) => { if (!open) closeViewConfig(); }}>
-        <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
-          <Modal.Container placement="center" scroll="inside" size="lg">
-            <Modal.Dialog className="theme-menu-surface flex max-h-[82vh] w-[min(720px,94vw)] flex-col overflow-hidden rounded-2xl shadow-[var(--shadow-dialog)]">
-              <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
-                <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
+      <Drawer isOpen={viewConfigMode !== null} onOpenChange={(open) => { if (!open) closeViewConfig(); }}>
+        <Drawer.Backdrop className="theme-modal-backdrop" isDismissable>
+          <Drawer.Content placement="right">
+            <Drawer.Dialog className="theme-menu-surface flex h-[100dvh] w-[min(620px,100vw)] max-w-[100vw] flex-col overflow-hidden shadow-[var(--shadow-dialog)]">
+              <Drawer.Header className="border-b border-[var(--color-border)] px-5 py-4">
+                <Drawer.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
                   {viewConfigMode === "filters" ? "筛选" : viewConfigMode === "fields" ? "显示列" : "排序"}
-                </Modal.Heading>
-                <Modal.CloseTrigger aria-label="关闭配置" />
-              </Modal.Header>
-              <Modal.Body className="min-h-0 flex-1 overflow-y-auto">
+                </Drawer.Heading>
+                <Drawer.CloseTrigger aria-label="关闭配置" />
+              </Drawer.Header>
+              <Drawer.Body className="min-h-0 flex-1 overflow-y-auto">
                 {viewConfigDraft && viewConfigMode === "filters" ? (
                   <div className="space-y-3">
                     {viewConfigDraft.filters.map((rule) => (
@@ -1453,29 +1582,22 @@ function FormHomeRecords({
                   </div>
                 ) : null}
                 {viewConfigDraft && viewConfigMode === "fields" ? (
-                  <div className="space-y-2">
-                    <div className="mb-3 text-sm text-[var(--color-text-secondary)]">选择需要在当前视图中显示的字段</div>
-                    <Card className="max-h-[52vh] overflow-y-auto border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-1 shadow-none">
-                      <CheckboxGroup
-                        aria-label="选择需要在当前视图中显示的字段"
-                        className="gap-0"
-                        value={viewConfigDraft.visibleFieldIds}
-                        onChange={(visibleFieldIds) => setViewConfigDraft((current) => current ? { ...current, visibleFieldIds: visibleFieldIds.map(String) } : current)}
-                      >
-                        {allViewFields.map((field) => (
-                          <Checkbox
-                            key={field.id}
-                            value={field.id}
-                            className="rounded-md px-2 py-1 hover:bg-[var(--color-bg-subtle)]"
-                          >
-                            <Checkbox.Control><Checkbox.Indicator /></Checkbox.Control>
-                            <Checkbox.Content>
-                              <span className="block text-sm text-[var(--color-text-primary)]">{field.label}</span>
-                              <span className="mt-0.5 block font-mono text-xs text-[var(--color-text-secondary)]">{field.id}</span>
-                            </Checkbox.Content>
-                          </Checkbox>
-                        ))}
-                      </CheckboxGroup>
+                  <div className="space-y-3">
+                    <p className="text-sm text-[var(--color-text-secondary)]">使用图钉冻结列到左侧；冻结列与普通列只能在各自分组内拖拽排序。</p>
+                    <Card className="overflow-auto border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-1 shadow-none">
+                      <div className="view-column-config-grid min-w-[480px]">
+                        <div className="view-column-config-grid__header items-center border-b border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)]">
+                          <span>字段</span>
+                          <span>字段类型</span>
+                          <span className="text-center">显示列</span>
+                          <span className="text-center">排序按钮</span>
+                          <span className="text-center">宽</span>
+                          <span className="text-center">操作</span>
+                        </div>
+                        <DndContext sensors={viewFieldOrderSensors} onDragEnd={handleViewFieldOrderDragEnd}>
+                          {orderedDraftViewFields.map((field) => <ReorderableViewFieldRow key={field.id} field={field} config={viewConfigDraft} onConfigChange={setViewConfigDraft} />)}
+                        </DndContext>
+                      </div>
                     </Card>
                   </div>
                 ) : null}
@@ -1485,12 +1607,12 @@ function FormHomeRecords({
                     <Button variant="ghost" className="text-[var(--color-primary)]" onPress={() => setViewConfigDraft((current) => current ? { ...current, sorts: [...current.sorts, { id: `sort-${Date.now()}`, fieldId: allViewFields[0]?.id ?? "", direction: "asc" }] } : current)}>+ 添加排序规则</Button>
                   </div>
                 ) : null}
-              </Modal.Body>
-              <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-4"><Button variant="ghost" onPress={closeViewConfig}>取消</Button><Button onPress={applyViewConfigDraft}>应用调整</Button></Modal.Footer>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
+              </Drawer.Body>
+              <Drawer.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-4"><Button variant="ghost" onPress={closeViewConfig}>取消</Button><Button onPress={applyViewConfigDraft}>应用调整</Button></Drawer.Footer>
+            </Drawer.Dialog>
+          </Drawer.Content>
+        </Drawer.Backdrop>
+      </Drawer>
 
       <Modal
         isOpen={isImportOpen}
@@ -1766,1532 +1888,4 @@ function IconToolbarButton({ label, onPress, children }: { label: string; onPres
       {children}
     </Button>
   );
-}
-
-function FormAgentPanel({ agentId, analysis, appId, currentValues, fields, formName, formUuid, onApplyValues, prompt }: { agentId: string; analysis: string; appId: string; currentValues: Record<string, unknown>; fields: SchemaField[]; formName: string; formUuid: string; onApplyValues: (values: Record<string, unknown>) => void; prompt: string }) {
-  const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<FormAgentMessage[]>([]);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [streaming, setStreaming] = useState(false);
-  const [error, setError] = useState("");
-  const sequence = useRef(0);
-  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (container) container.scrollTop = container.scrollHeight;
-  }, [error, messages, streaming]);
-
-  const context = { appId, formUuid, formDraftAssist: true, route: `/${appId}/${formUuid}` };
-
-  async function createSession() {
-    if (!agentId) throw new Error("当前表单尚未选择机器人");
-    const { data, error } = await createAgentSession({
-      body: { agentId, source: "form_fill", context },
-      responseStyle: "fields",
-    });
-    if (error || !data || data.code !== 0 || !data.data) throw new Error(data?.message || "无法创建 Agent 会话");
-    setSessionId(data.data.id);
-    return data.data.id;
-  }
-
-  async function sendMessage(content = input) {
-    const normalized = content.trim();
-    if (!normalized || streaming) return;
-    setInput("");
-    setError("");
-    setStreaming(true);
-    sequence.current += 1;
-    const messageId = sequence.current;
-    const assistantId = `form-agent-assistant-${messageId}`;
-    setMessages((current) => [...current, { id: `form-agent-user-${messageId}`, role: "user", content: normalized }, { id: assistantId, role: "assistant", content: "" }]);
-
-    try {
-      const activeSessionId = sessionId ?? await createSession();
-      const writableFields = fields.filter((field) => {
-        const capability = getFormComponentAgentCapability(field.type);
-        return capability.writable && !field.props?.isHidden && !field.props?.isDisabled && !field.props?.isReadOnly && field.props?.defaultValueType !== "formula";
-      });
-      const fieldContext = writableFields.map((field) => ({
-        id: field.id,
-        label: field.label,
-        type: field.type,
-        options: field.props?.options,
-        agentCapability: getFormComponentAgentCapability(field.type),
-      }));
-      const businessContext = [
-        `当前业务表单：${formName}（${formUuid}）`,
-        prompt.trim() ? `表单业务说明：${prompt.trim()}` : "",
-        analysis.trim() ? `发布前 Schema 分析结果：${analysis.trim()}` : "",
-        `可填写字段：${JSON.stringify(fieldContext)}`,
-        `当前未提交表单值：${JSON.stringify(currentValues)}`,
-        "如果用户要求填写表单，请直接生成合适的字段值，不要先要求分析表单，也不要提交数据。请在正常回复末尾追加一个不可见标记，严格格式为：<!--FORM_VALUES:{\"字段ID\":\"字段值\"}-->。只包含需要填写或修改的字段。",
-        `用户请求：${normalized}`,
-      ].filter(Boolean).join("\n\n");
-      const response = await fetch(`/api/agent/sessions/${encodeURIComponent(activeSessionId)}/messages`, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "text/event-stream" },
-        body: JSON.stringify({ content: businessContext, context }),
-      });
-      if (!response.ok || !response.body) {
-        const payload = (await response.json()) as ApiEnvelope<never>;
-        throw new Error(payload.message || "Agent 请求失败");
-      }
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let assistantContent = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        buffer += decoder.decode(value, { stream: !done });
-        const frames = buffer.split("\n\n");
-        buffer = frames.pop() ?? "";
-        frames.forEach((frame) => { assistantContent += applyFormAgentFrame(frame, assistantId, setMessages); });
-        if (done) {
-          if (buffer.trim()) assistantContent += applyFormAgentFrame(buffer, assistantId, setMessages);
-          break;
-        }
-      }
-      const valuePatch = extractFormValuePatch(assistantContent, writableFields);
-      if (Object.keys(valuePatch).length > 0) {
-        onApplyValues(valuePatch);
-        toast.success("Agent 已填写表单", { description: `已更新 ${Object.keys(valuePatch).length} 个字段，尚未提交。` });
-      }
-    } catch (reason) {
-      const message = reason instanceof Error ? reason.message : "Agent 请求失败";
-      setError(message);
-      setMessages((current) => current.map((item) => item.id === assistantId && !item.content ? { ...item, content: `Agent 运行失败：${message}` } : item));
-    } finally {
-      setStreaming(false);
-    }
-  }
-
-  return (
-    <aside className="flex rounded-2xl h-full min-h-0 w-[420px] shrink-0 flex-col border-l border-[var(--color-border)] bg-[var(--color-control-soft)]">
-      <div className="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]"><FaceRobot className="h-4 w-4" /></span>
-          <div className="min-w-0"><div className="truncate text-sm font-semibold">表单 Agent</div><div className="truncate text-xs text-[var(--color-text-secondary)]">协助处理 {formName}</div></div>
-        </div>
-      </div>
-      <div ref={messagesContainerRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-        {messages.length === 0 ? (
-          <div className="flex h-full min-h-48 flex-col items-center justify-center text-center">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]"><FaceRobot className="h-5 w-5" /></span>
-            <p className="mt-3 text-sm font-medium">让 Agent 协助处理表单业务</p>
-            <p className="mt-2 max-w-xs text-xs leading-5 text-[var(--color-text-secondary)]">直接描述业务需求，例如“帮我填写这份申请表，但先不要提交”。</p>
-          </div>
-        ) : messages.map((message) => (
-          <div key={message.id} className={message.role === "user" ? "flex justify-end" : "flex justify-start"}>
-            <div className={message.role === "user" ? "max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-[var(--color-primary-soft)] px-3 py-2 text-sm leading-6" : "w-full px-1 py-1 text-sm leading-7"}>
-              {message.content ? (message.role === "assistant" ? <AgentMarkdown content={message.content} /> : message.content) : (streaming ? "正在思考…" : "")}
-            </div>
-          </div>
-        ))}
-        {error ? <p className="rounded-lg bg-[var(--color-danger-soft)] p-3 text-xs text-[var(--color-danger)]">{error}</p> : null}
-      </div>
-      <div className="border-t border-[var(--color-border)] p-3">
-        <div className="flex items-end gap-2">
-          <TextArea
-            fullWidth
-            rows={2}
-            aria-label="向表单 Agent 提问"
-            placeholder={agentId ? "描述需要 Agent 处理的业务…" : "请先在设计器中选择机器人"}
-            value={input}
-            disabled={!agentId || streaming}
-            className="h-[58px] min-h-[58px] max-h-[58px] resize-none overflow-y-auto text-sm leading-5"
-            onChange={(event) => setInput(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing) return;
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void sendMessage();
-              }
-            }}
-          />
-          <Button isIconOnly aria-label="发送消息" isDisabled={!agentId || !input.trim() || streaming} onPress={() => void sendMessage()}><PaperPlane className="h-4 w-4" /></Button>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function applyFormAgentFrame(frame: string, assistantId: string, setMessages: Dispatch<SetStateAction<FormAgentMessage[]>>) {
-  let eventName = "message";
-  const dataLines: string[] = [];
-  frame.split("\n").forEach((line) => {
-    if (line.startsWith("event:")) eventName = line.slice(6).trim();
-    if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
-  });
-  if (dataLines.length === 0) return "";
-  let payload: Record<string, unknown>;
-  try { payload = JSON.parse(dataLines.join("\n")) as Record<string, unknown>; } catch { return ""; }
-  if (eventName === "message.delta" && typeof payload.delta === "string") {
-    setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, content: message.content + payload.delta } : message));
-    return payload.delta;
-  }
-  if ((eventName === "run.failed" || eventName === "message.failed") && typeof payload.message === "string") {
-    setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, content: `Agent 运行失败：${payload.message}` } : message));
-  }
-  return "";
-}
-
-function extractFormValuePatch(content: string, writableFields: SchemaField[]) {
-  const match = content.match(/<!--FORM_VALUES:([\s\S]*?)-->/);
-  if (!match) return {};
-  try {
-    const parsed = JSON.parse(match[1]) as Record<string, unknown>;
-    const fieldMap = new Map(writableFields.map((field) => [field.id, field]));
-    const entries: Array<[string, unknown]> = [];
-    for (const [fieldId, value] of Object.entries(parsed)) {
-      const field = fieldMap.get(fieldId);
-      if (!field) continue;
-      const normalized = normalizeAgentFieldValue(field, value);
-      if (normalized.accepted) entries.push([fieldId, normalized.value]);
-    }
-    return Object.fromEntries(entries);
-  } catch {
-    return {};
-  }
-}
-
-function normalizeAgentFieldValue(field: SchemaField, value: unknown): { accepted: boolean; value: unknown } {
-  const capability = getFormComponentAgentCapability(field.type);
-  if (!capability.writable) return { accepted: false, value: undefined };
-  const optionValues = new Set((field.props?.options ?? []).map((option) => option.value));
-
-  if (field.type === "countryCity") {
-    return isCountryCityValue(value)
-      ? { accepted: true, value: normalizeCountryCityValue(value) }
-      : { accepted: false, value: undefined };
-  }
-
-  if (field.type === "cascader") {
-    const values = new Set<string>();
-    const collectLeaves = (
-      items: ReturnType<typeof normalizeCascaderDataSource>,
-      parentPath: ReturnType<typeof normalizeCascaderDataSource>,
-    ) => {
-      for (const item of items) {
-        const currentPath = [...parentPath, item];
-        if (item.children?.length) {
-          collectLeaves(item.children, currentPath);
-        } else {
-          values.add(serializeCascaderValue(currentPath));
-        }
-      }
-    };
-    collectLeaves(normalizeCascaderDataSource(field.props?.dataSource), []);
-    return typeof value === "string" && values.has(value)
-      ? { accepted: true, value }
-      : { accepted: false, value: undefined };
-  }
-
-  if (capability.valueType === "number") {
-    const numberValue = typeof value === "number" ? value : Number(value);
-    if (!Number.isFinite(numberValue)) return { accepted: false, value: undefined };
-    if (typeof field.props?.minValue === "number" && numberValue < field.props.minValue) return { accepted: false, value: undefined };
-    if (typeof field.props?.maxValue === "number" && numberValue > field.props.maxValue) return { accepted: false, value: undefined };
-    return { accepted: true, value: numberValue };
-  }
-
-  if (capability.valueType === "string[]") {
-    if (!Array.isArray(value)) return { accepted: false, value: undefined };
-    const values = value.filter((item): item is string => typeof item === "string");
-    if (values.length !== value.length) return { accepted: false, value: undefined };
-    if (optionValues.size > 0 && values.some((item) => !optionValues.has(item))) return { accepted: false, value: undefined };
-    return { accepted: true, value: values };
-  }
-
-  if (capability.valueType === "dateRange") {
-    if (!Array.isArray(value) || value.length !== 2 || value.some((item) => typeof item !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(item))) return { accepted: false, value: undefined };
-    return { accepted: true, value };
-  }
-
-  if (capability.valueType === "date") {
-    return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
-      ? { accepted: true, value }
-      : { accepted: false, value: undefined };
-  }
-
-  if (capability.valueType === "string") {
-    if (typeof value !== "string") return { accepted: false, value: undefined };
-    if (optionValues.size > 0 && !optionValues.has(value)) return { accepted: false, value: undefined };
-    return { accepted: true, value };
-  }
-
-  if (capability.valueType === "boolean" && typeof value === "boolean") return { accepted: true, value };
-  return { accepted: false, value: undefined };
-}
-
-const RuntimeFormPanel = memo(function RuntimeFormPanel({
-  formId,
-  initialValues,
-  isReadOnly,
-  onValuesChange,
-  schema,
-  showSubmitButton,
-  submitLabel,
-  submitting,
-  urlParams,
-  valuePatch,
-  onSubmit,
-}: {
-  formId?: string;
-  initialValues?: Record<string, unknown>;
-  isReadOnly?: boolean;
-  onValuesChange?: (values: Record<string, unknown>) => void;
-  schema: FormSchema;
-  showSubmitButton?: boolean;
-  submitLabel: string;
-  submitting: boolean;
-  urlParams: Record<string, string>;
-  valuePatch?: { id: number; values: Record<string, unknown> };
-  onSubmit: (values: Record<string, unknown>) => Promise<void>;
-}) {
-  return (
-    <RuntimeFormRenderer
-      initialValues={initialValues}
-      formId={formId}
-      isReadOnly={isReadOnly}
-      onValuesChange={onValuesChange}
-      schema={schema}
-      showSubmitButton={showSubmitButton}
-      submitLabel={submitLabel}
-      submitting={submitting}
-      urlParams={urlParams}
-      valuePatch={valuePatch}
-      onSubmit={onSubmit}
-    />
-  );
-});
-
-function RecordsTable({
-  builtinFields,
-  sortableFieldIds,
-  deletingRecordId,
-  fields,
-  formType,
-  formName,
-  schema,
-  records,
-  selectedRecordIds,
-  loading,
-  submitting,
-  onDeleteRecord,
-  onUpdateRecord,
-  onWorkflowAction,
-  canEditRecord,
-  canDeleteRecord,
-  urlParams,
-  onRecordSelectionChange,
-  initialRecordId,
-}: {
-  builtinFields: readonly { id: string; label: string }[];
-  sortableFieldIds: string[];
-  deletingRecordId: string | null;
-  fields: SchemaField[];
-  formType: "normal" | "workflow";
-  formName: string;
-  schema: FormSchema;
-  records: FormRecord[];
-  selectedRecordIds: Set<string>;
-  loading: boolean;
-  submitting: boolean;
-  onDeleteRecord: (recordId: string) => Promise<boolean>;
-  onUpdateRecord: (recordId: string, values: Record<string, unknown>) => Promise<boolean>;
-  onWorkflowAction: (record: FormRecord, action: "submit" | "reverse" | "pause" | "resume") => Promise<boolean>;
-  canEditRecord: boolean;
-  canDeleteRecord: boolean;
-  urlParams: Record<string, string>;
-  onRecordSelectionChange: (recordId: string, selected: boolean) => void;
-  initialRecordId?: string;
-}) {
-  const pageSizeOptions = [10, 20, 30, 40, 50];
-  const columns = fields;
-  const [detailRecord, setDetailRecord] = useState<FormRecord | null>(null);
-  const autoOpenedRecordIdRef = useRef<string | null>(null);
-  const [isDetailEditing, setIsDetailEditing] = useState(false);
-  const [detailTab, setDetailTab] = useState<"comments" | "history">("comments");
-  const [isDetailFullscreen, setIsDetailFullscreen] = useState(false);
-  const [deleteRecordTarget, setDeleteRecordTarget] = useState<FormRecord | null>(null);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-  const [sortDescriptor, setSortDescriptor] = useState<{ column: string; direction: "ascending" | "descending" }>({
-    column: "createdAt",
-    direction: "descending",
-  });
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
-  const headerLabelRefs = useRef(new Map<string, HTMLSpanElement>());
-  const columnResizeFrameRef = useRef<number | null>(null);
-  const pendingColumnWidthRef = useRef<{ columnId: string; width: number } | null>(null);
-  const [isDetailContentReady, setIsDetailContentReady] = useState(false);
-  const [associationForms, setAssociationForms] = useState<Map<string, AssociationFormData>>(
-    () => new Map(),
-  );
-  const [associationDetail, setAssociationDetail] = useState<AssociationDetail | null>(null);
-  const associationFormIds = useMemo(
-    () => [...new Set(columns
-      .filter((field) => field.type === "associationFormField" && field.props?.associationFormId)
-      .map((field) => field.props!.associationFormId!))],
-    [columns],
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadAssociationForms() {
-      if (associationFormIds.length === 0) {
-        setAssociationForms(new Map());
-        return;
-      }
-
-      const results = await Promise.all(associationFormIds.map(async (associationFormId) => {
-        const [schemaResult, recordsResult] = await Promise.all([
-          getFormSchema({
-            path: { formUuid: associationFormId },
-            query: { scope: "published" },
-            responseStyle: "fields",
-          }),
-          listFormRecords({
-            path: { formUuid: associationFormId },
-            query: { page: 1, pageSize: 100 },
-            responseStyle: "fields",
-          }),
-        ]);
-        const schema = schemaResult.data?.code === 0 ? schemaResult.data.data?.schema : null;
-        const relatedRecords = recordsResult.data?.code === 0 ? recordsResult.data.data?.items : null;
-        if (schemaResult.error || recordsResult.error || !schema || !relatedRecords) return null;
-
-        return [associationFormId, {
-          schema: schema as FormSchema,
-          records: new Map((relatedRecords as FormRecord[]).map((record) => [record.id, record])),
-        }] as const;
-      }));
-
-      if (!cancelled) {
-        setAssociationForms(new Map(results.filter((result): result is readonly [string, AssociationFormData] => result !== null)));
-      }
-    }
-
-    void loadAssociationForms();
-    return () => {
-      cancelled = true;
-    };
-  }, [associationFormIds]);
-  const recordDisplayValues = useMemo(() => {
-    const values = new Map<string, {
-      fields: Record<string, string>;
-      builtIns: Record<string, string>;
-    }>();
-
-    records.forEach((record) => {
-      values.set(record.id, {
-        fields: Object.fromEntries(columns.map((field) => [
-          field.id,
-          getTableFieldDisplayValue(field, record, associationForms),
-        ])),
-        builtIns: getBuiltinRecordValues(record, formName, formType === "workflow"),
-      });
-    });
-
-    return values;
-  }, [associationForms, columns, formName, formType, records]);
-  const businessColumnWidths = useMemo(
-    () => columns.map((field) => estimateTableColumnWidth([
-      field.label,
-      ...records.map((record) => recordDisplayValues.get(record.id)?.fields[field.id] ?? ""),
-    ], 24, 320)),
-    [columns, recordDisplayValues, records],
-  );
-  const builtInColumnMaxWidths = useMemo(
-    () => builtinFields.map((field) => field.id === "instanceTitle" ? 360 : 260),
-    [builtinFields],
-  );
-  const builtInColumnWidths = useMemo(
-    () => builtinFields.map((field, index) => estimateTableColumnWidth([
-      field.label,
-      ...records.map((record) => recordDisplayValues.get(record.id)?.builtIns[field.id] ?? ""),
-    ], 24, builtInColumnMaxWidths[index])),
-    [builtInColumnMaxWidths, builtinFields, recordDisplayValues, records],
-  );
-  const sequenceColumnWidth = useMemo(() => (
-    estimateTableColumnWidth(
-      records.map((_, index) => String(index + 1)),
-      24,
-      160,
-    )
-  ), [records]);
-  const sortedRecords = useMemo(() => {
-    const direction = sortDescriptor.direction === "ascending" ? 1 : -1;
-    const getSortValue = (record: FormRecord) => {
-      const values = recordDisplayValues.get(record.id);
-      return values?.fields[sortDescriptor.column] ?? values?.builtIns[sortDescriptor.column] ?? "";
-    };
-    return [...records].sort((left, right) => direction * getSortValue(left).localeCompare(
-      getSortValue(right),
-      undefined,
-      { numeric: true, sensitivity: "base" },
-    ));
-  }, [recordDisplayValues, records, sortDescriptor]);
-  const pageCount = Math.max(1, Math.ceil(sortedRecords.length / pageSize));
-  const activePage = Math.min(page, pageCount);
-  const pageStart = (activePage - 1) * pageSize;
-  const pageRecords = sortedRecords.slice(pageStart, pageStart + pageSize);
-  const tableRows = useMemo<RecordTableRow[]>(
-    () => pageRecords.map((record, index) => ({
-      ...record,
-      rowNumber: pageStart + index + 1,
-      displayValues: recordDisplayValues.get(record.id)!,
-    })),
-    [pageRecords, pageStart, recordDisplayValues],
-  );
-  const allCurrentPageSelected = pageRecords.length > 0 && pageRecords.every((record) => selectedRecordIds.has(record.id));
-  const someCurrentPageSelected = pageRecords.some((record) => selectedRecordIds.has(record.id));
-  const getColumnWidth = useCallback((columnId: string, fallback: number, minWidth: number, maxWidth: number) => (
-    Math.min(maxWidth, Math.max(minWidth, columnWidths[columnId] ?? fallback))
-  ), [columnWidths]);
-  const commitPendingColumnWidth = useCallback(() => {
-    const pending = pendingColumnWidthRef.current;
-    pendingColumnWidthRef.current = null;
-    if (!pending) return;
-    setColumnWidths((current) =>
-      current[pending.columnId] === pending.width
-        ? current
-        : { ...current, [pending.columnId]: pending.width },
-    );
-  }, []);
-  const startColumnResize = useCallback((columnId: string, startX: number, startWidth: number, minWidth: number, maxWidth: number) => {
-    const handlePointerMove = (event: PointerEvent) => {
-      pendingColumnWidthRef.current = {
-        columnId,
-        width: Math.min(maxWidth, Math.max(minWidth, startWidth + event.clientX - startX)),
-      };
-      if (columnResizeFrameRef.current !== null) return;
-      columnResizeFrameRef.current = requestAnimationFrame(() => {
-        columnResizeFrameRef.current = null;
-        commitPendingColumnWidth();
-      });
-    };
-    const stop = () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", stop);
-      if (columnResizeFrameRef.current !== null) {
-        cancelAnimationFrame(columnResizeFrameRef.current);
-        columnResizeFrameRef.current = null;
-      }
-      commitPendingColumnWidth();
-    };
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", stop, { once: true });
-  }, [commitPendingColumnWidth]);
-  useEffect(() => () => {
-    if (columnResizeFrameRef.current !== null) {
-      cancelAnimationFrame(columnResizeFrameRef.current);
-    }
-  }, []);
-  const tableWidth = useMemo(() => (
-    sequenceColumnWidth + 180
-    + columns.reduce((total, field, index) => total + getColumnWidth(field.id, businessColumnWidths[index], 24, 320), 0)
-    + builtinFields.reduce((total, field, index) => total + getColumnWidth(field.id, builtInColumnWidths[index], 24, builtInColumnMaxWidths[index]), 0)
-  ), [builtInColumnMaxWidths, builtInColumnWidths, builtinFields, businessColumnWidths, columns, getColumnWidth, sequenceColumnWidth]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setColumnWidths((current) => {
-        let next = current;
-
-        headerLabelRefs.current.forEach((label, columnId) => {
-          const businessIndex = columns.findIndex((field) => field.id === columnId);
-          const builtinIndex = builtinFields.findIndex((field) => field.id === columnId);
-          const fallback = businessIndex >= 0 ? businessColumnWidths[businessIndex] : builtInColumnWidths[builtinIndex];
-          const maxWidth = businessIndex >= 0 ? 320 : builtInColumnMaxWidths[builtinIndex];
-          const currentWidth = Math.min(maxWidth, Math.max(24, current[columnId] ?? fallback));
-          const overflow = label.scrollWidth - label.clientWidth;
-
-          if (overflow > 0 && currentWidth < maxWidth) {
-            next = { ...next, [columnId]: Math.min(maxWidth, Math.ceil(currentWidth + overflow + 1)) };
-          }
-        });
-
-        return next;
-      });
-    }, 0);
-
-    return () => window.clearTimeout(timer);
-  }, [builtInColumnMaxWidths, builtInColumnWidths, builtinFields, businessColumnWidths, columns]);
-  const paginationPages = getPaginationPageNumbers(activePage, pageCount);
-  const detailRecordIndex = detailRecord
-    ? records.findIndex((record) => record.id === detailRecord.id)
-    : -1;
-  const detailBuiltIns = detailRecord
-    ? getBuiltinRecordValues(detailRecord, formName, formType === "workflow")
-    : null;
-
-  function openDetail(record: FormRecord, editing = false) {
-    setDetailRecord(record);
-    setIsDetailEditing(editing);
-    setDetailTab("comments");
-    setIsDetailFullscreen(false);
-  }
-
-  useEffect(() => {
-    if (!initialRecordId || autoOpenedRecordIdRef.current === initialRecordId) return;
-    const record = records.find((item) => item.id === initialRecordId);
-    if (!record) return;
-    autoOpenedRecordIdRef.current = initialRecordId;
-    const timer = window.setTimeout(() => openDetail(record), 0);
-    return () => window.clearTimeout(timer);
-  }, [initialRecordId, records]);
-
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      setIsDetailContentReady(Boolean(detailRecord));
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [detailRecord, isDetailEditing]);
-
-  const handleDetailFormSubmit = useCallback(async (values: Record<string, unknown>) => {
-    if (!isDetailEditing || !detailRecord) return;
-    const updated = await onUpdateRecord(detailRecord.id, values);
-    if (updated) {
-      setDetailRecord(null);
-      setIsDetailEditing(false);
-    }
-  }, [detailRecord, isDetailEditing, onUpdateRecord]);
-
-  function showAdjacentRecord(direction: -1 | 1) {
-    const nextRecord = records[detailRecordIndex + direction];
-    if (nextRecord) openDetail(nextRecord);
-  }
-
-  function toggleCurrentPageSelection(selected: boolean) {
-    pageRecords.forEach((record) => onRecordSelectionChange(record.id, selected));
-  }
-
-  async function copyDetailRecord() {
-    if (!detailRecord) return;
-    await navigator.clipboard?.writeText(JSON.stringify(detailRecord.data, null, 2));
-    toast.success("记录数据已复制");
-  }
-
-  if (loading) {
-    return (
-      <div className="flex min-h-0 flex-1 items-center justify-center rounded-xl border border-[var(--color-border)] px-4 py-10 text-center text-sm text-[var(--color-text-secondary)]">
-        正在加载数据...
-      </div>
-    );
-  }
-
-  return (
-    <>
-    <div className="theme-card-glass flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl">
-      <Table variant="secondary" className="records-table min-h-0 flex-1">
-        <Table.ScrollContainer className="data-table-horizontal-scroll h-full overflow-auto">
-          <Table.Content aria-label="表单提交数据" className="table-fixed border-separate border-spacing-0 text-left text-[12px] text-[var(--color-text-primary)]" style={{ width: tableWidth, minWidth: "100%" }}>
-            <Table.Header className="text-[12px] font-medium text-[var(--color-text-secondary)]">
-              <Table.Column id="selection" isRowHeader style={{ width: sequenceColumnWidth }} className="sticky top-0 z-20 h-10 border-b border-r border-[var(--color-border)] bg-[var(--color-bg-surface)] p-0 text-center">
-                <TableSelectionCheckbox ariaLabel="全选当前页" isSelected={allCurrentPageSelected} isIndeterminate={someCurrentPageSelected && !allCurrentPageSelected} onChange={toggleCurrentPageSelection} />
-              </Table.Column>
-              {columns.map((field, index) => {
-                const minWidth = 24;
-                const width = getColumnWidth(field.id, businessColumnWidths[index], minWidth, 320);
-                return (
-                  <Table.Column key={field.id} id={field.id} style={{ width, minWidth, maxWidth: 320 }} className="relative sticky top-0 z-20 h-10 border-b border-r border-[var(--color-border)] bg-[var(--color-bg-surface)] p-0">
-                    {sortableFieldIds.includes(field.id) ? (
-                      <button type="button" onClick={() => setSortDescriptor((current) => ({ column: field.id, direction: current.column === field.id && current.direction === "ascending" ? "descending" : "ascending" }))} className="flex h-full min-w-0 w-full items-center gap-1 px-1 text-left hover:text-[var(--color-text-primary)]">
-                        <span ref={(element) => { if (element) headerLabelRefs.current.set(field.id, element); else headerLabelRefs.current.delete(field.id); }} className="truncate whitespace-nowrap">{field.label}</span><ArrowUpArrowDown className={sortDescriptor.column === field.id ? "h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" : "h-3.5 w-3.5 shrink-0 text-[var(--color-text-disabled)]"} />
-                      </button>
-                    ) : <span ref={(element) => { if (element) headerLabelRefs.current.set(field.id, element); else headerLabelRefs.current.delete(field.id); }} className="flex h-full min-w-0 items-center px-1 truncate whitespace-nowrap">{field.label}</span>}
-                    <div role="separator" aria-label={`调整${field.label}列宽`} onPointerDown={(event) => { event.preventDefault(); startColumnResize(field.id, event.clientX, width, minWidth, 320); }} className="absolute right-0 top-1/2 z-40 h-6 w-px -translate-y-1/2 cursor-col-resize bg-[var(--color-border)] hover:w-0.5 hover:bg-[var(--color-primary)]" />
-                  </Table.Column>
-                );
-              })}
-              {builtinFields.map((field, index) => {
-                const maxWidth = builtInColumnMaxWidths[index];
-                const minWidth = 24;
-                const width = getColumnWidth(field.id, builtInColumnWidths[index], minWidth, maxWidth);
-                return (
-                  <Table.Column key={field.id} id={field.id} style={{ width, minWidth, maxWidth }} className="relative sticky top-0 z-20 h-10 border-b border-r border-[var(--color-border)] bg-[var(--color-bg-surface)] p-0">
-                    {sortableFieldIds.includes(field.id) ? <button type="button" onClick={() => setSortDescriptor((current) => ({ column: field.id, direction: current.column === field.id && current.direction === "ascending" ? "descending" : "ascending" }))} className="flex h-full min-w-0 w-full items-center gap-1 px-1 text-left hover:text-[var(--color-text-primary)]"><span ref={(element) => { if (element) headerLabelRefs.current.set(field.id, element); else headerLabelRefs.current.delete(field.id); }} className="truncate whitespace-nowrap">{field.label}</span><ArrowUpArrowDown className={sortDescriptor.column === field.id ? "h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" : "h-3.5 w-3.5 shrink-0 text-[var(--color-text-disabled)]"} /></button> : <span ref={(element) => { if (element) headerLabelRefs.current.set(field.id, element); else headerLabelRefs.current.delete(field.id); }} className="flex h-full min-w-0 items-center px-1 truncate whitespace-nowrap">{field.label}</span>}
-                    <div role="separator" aria-label={`调整${field.label}列宽`} onPointerDown={(event) => { event.preventDefault(); startColumnResize(field.id, event.clientX, width, minWidth, maxWidth); }} className="absolute right-0 top-1/2 z-40 h-6 w-px -translate-y-1/2 cursor-col-resize bg-[var(--color-border)] hover:w-0.5 hover:bg-[var(--color-primary)]" />
-                  </Table.Column>
-                );
-              })}
-              <Table.Column id="actions" style={{ width: 180 }} className="sticky top-0 right-0 z-30 h-10 border-b border-l border-[var(--color-border)] bg-[var(--color-bg-surface)] px-1 shadow-[-6px_0_8px_-8px_var(--color-text-secondary)]">操作</Table.Column>
-            </Table.Header>
-            <Table.Body renderEmptyState={() => <div className="flex min-h-64 flex-col items-center justify-center px-4 py-12 text-center"><div className="text-base font-medium text-[var(--color-text-primary)]">暂无数据</div><div className="mt-2 text-sm text-[var(--color-text-secondary)]">当前表单还没有提交记录，可以先通过“新增”填写一条数据。</div></div>}>
-              <Table.Collection items={tableRows}>
-                {(record) => (
-                  <Table.Row key={record.id} className="group">
-                    <Table.Cell className="relative h-10 border-b border-[var(--color-border)] p-0 text-center text-[var(--color-text-secondary)]">
-                      <span className={selectedRecordIds.has(record.id) ? "opacity-0" : "transition-opacity group-hover:opacity-0"}>{record.rowNumber}</span>
-                      <TableSelectionCheckbox ariaLabel={`选择第 ${record.rowNumber} 行`} isSelected={selectedRecordIds.has(record.id)} onChange={(selected) => onRecordSelectionChange(record.id, selected)} className={["absolute inset-0 z-20 flex items-center justify-center", selectedRecordIds.has(record.id) ? "opacity-100" : "opacity-0 group-hover:opacity-100"].join(" ")} />
-                    </Table.Cell>
-                    {columns.map((field) => {
-                      const relatedRecordId = getAssociationRecordId(field, record.data[field.id]);
-                      const association = field.props?.associationFormId
-                        ? associationForms.get(field.props.associationFormId)
-                        : undefined;
-                      const relatedRecord = relatedRecordId ? association?.records.get(relatedRecordId) : undefined;
-                      const displayValue = record.displayValues.fields[field.id];
-
-                      return (
-                        <Table.Cell key={field.id} className="h-10 border-b border-[var(--color-border)] px-1">
-                          {field.type === "associationFormField" && relatedRecord && association ? (
-                            <HeroLink
-                              onPress={() => setAssociationDetail({ field, record: relatedRecord, schema: association.schema })}
-                              className="block cursor-pointer truncate text-sm text-[var(--color-primary)] hover:underline"
-                            >
-                              {displayValue}
-                            </HeroLink>
-                          ) : (
-                            <span className="block truncate" title={displayValue}>{displayValue}</span>
-                          )}
-                        </Table.Cell>
-                      );
-                    })}
-                    {builtinFields.map((field) => <Table.Cell key={field.id} className="h-10 border-b border-[var(--color-border)] px-1"><span className="block truncate" title={record.displayValues.builtIns[field.id]}>{record.displayValues.builtIns[field.id]}</span></Table.Cell>)}
-                    <Table.Cell className="records-table__action-cell sticky right-0 z-10 h-10 border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] px-1 shadow-[-6px_0_8px_-8px_var(--color-text-secondary)]">
-                      <div className="relative z-20 flex w-max items-center gap-1.5">
-                        <Button type="button" variant="ghost" className="h-8 gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-text-primary)]" onClick={() => openDetail(record)}><Eye className="h-3.5 w-3.5" />查看</Button>
-                        {formType === "workflow" ? <Button type="button" variant="ghost" className="h-8 rounded-md border border-[var(--color-primary)]/30 bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-primary)]" isDisabled={submitting || record.data.workflowApprovalStatus !== "saved"} onClick={() => void onWorkflowAction(record, "submit")}>提交</Button> : null}
-                        {formType === "workflow" ? <Button type="button" variant="ghost" className="h-8 rounded-md border border-[var(--color-warning)]/30 bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-warning)]" isDisabled={submitting || record.data.workflowApprovalStatus !== "approved"} onClick={() => void onWorkflowAction(record, "reverse")}>反审</Button> : null}
-                        {formType === "workflow" ? <Button type="button" variant="ghost" className="h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-text-secondary)]" isDisabled={submitting || record.data.workflowInstanceStatus !== "running"} onClick={() => void onWorkflowAction(record, "pause")}>暂停</Button> : null}
-                        {formType === "workflow" ? <Button type="button" variant="ghost" className="h-8 rounded-md border border-[var(--color-primary)]/30 bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-primary)]" isDisabled={submitting || record.data.workflowInstanceStatus !== "paused"} onClick={() => void onWorkflowAction(record, "resume")}>恢复</Button> : null}
-                        {canDeleteRecord ? <Button type="button" variant="ghost" className="h-8 gap-1 rounded-md border border-[var(--color-danger)]/30 bg-[var(--color-bg-panel)] px-2.5 text-xs text-[var(--color-danger)]" isDisabled={deletingRecordId === record.id} onClick={() => setDeleteRecordTarget(record)}><TrashBin className="h-3.5 w-3.5" />{deletingRecordId === record.id ? "删除中..." : "删除"}</Button> : null}
-                        <details className="relative"><summary aria-label={`记录 ${record.rowNumber} 更多操作`} className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel)] text-[var(--color-text-secondary)] [&::-webkit-details-marker]:hidden"><Ellipsis className="h-3.5 w-3.5" /></summary><div className="absolute right-0 z-50 mt-1 min-w-28 overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg-menu)] py-1 shadow-[var(--shadow-floating)]"><button type="button" className="block w-full px-3 py-2 text-left text-xs hover:bg-[var(--color-bg-panel-soft)]" onClick={() => void navigator.clipboard?.writeText(JSON.stringify(record.data, null, 2))}>复制数据</button><button type="button" disabled className="block w-full cursor-not-allowed px-3 py-2 text-left text-xs text-[var(--color-text-disabled)]">发起流程（开发中）</button></div></details>
-                      </div>
-                    </Table.Cell>
-                  </Table.Row>
-                )}
-              </Table.Collection>
-            </Table.Body>
-          </Table.Content>
-        </Table.ScrollContainer>
-      </Table>
-      <div className="flex shrink-0 flex-nowrap items-center justify-between gap-4 overflow-x-auto border-t border-[var(--color-border)] bg-[var(--color-bg-surface)] px-4 py-3">
-        <Pagination.Summary className="shrink-0 whitespace-nowrap text-xs text-[var(--color-text-secondary)]">
-          共 {records.length} 条数据，当前显示 {records.length ? pageStart + 1 : 0}-{Math.min(pageStart + pageSize, records.length)} 条
-        </Pagination.Summary>
-        <Select
-          aria-label="每页显示条数"
-          className="w-28 shrink-0"
-          selectedKey={String(pageSize)}
-          onSelectionChange={(key) => {
-            setPageSize(Number(key));
-            setPage(1);
-          }}
-        >
-          <Select.Trigger><Select.Value /><Select.Indicator /></Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              {pageSizeOptions.map((option) => <ListBox.Item key={option} id={String(option)} textValue={`每页 ${option} 条`}>每页 {option} 条</ListBox.Item>)}
-            </ListBox>
-          </Select.Popover>
-        </Select>
-        <Pagination size="sm" aria-label="数据分页" className="shrink-0">
-          <Pagination.Content>
-            <Pagination.Item><Pagination.Previous isDisabled={activePage === 1} onPress={() => setPage((current) => Math.max(1, current - 1))}>上一页</Pagination.Previous></Pagination.Item>
-            {paginationPages.map((pageNumber, index) => pageNumber === "ellipsis" ? <Pagination.Item key={`ellipsis-${index}`}><Pagination.Ellipsis /></Pagination.Item> : <Pagination.Item key={pageNumber}><Pagination.Link isActive={activePage === pageNumber} onPress={() => setPage(pageNumber)}>{pageNumber}</Pagination.Link></Pagination.Item>)}
-            <Pagination.Item><Pagination.Next isDisabled={activePage === pageCount} onPress={() => setPage((current) => Math.min(pageCount, current + 1))}>下一页</Pagination.Next></Pagination.Item>
-          </Pagination.Content>
-        </Pagination>
-      </div>
-    </div>
-    <Drawer
-      isOpen={detailRecord !== null}
-      onOpenChange={(isOpen) => {
-        if (!isOpen) {
-          setDetailRecord(null);
-          setIsDetailEditing(false);
-          setIsDetailFullscreen(false);
-        }
-      }}
-    >
-      <Drawer.Backdrop className="theme-modal-backdrop record-detail-backdrop" isDismissable>
-        <Drawer.Content placement="right">
-          <Drawer.Dialog className="flex h-[100dvh] w-[90vw] max-w-[90vw] flex-col overflow-hidden bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]">
-            <Drawer.Header className="flex-col items-stretch gap-4 border-b border-[var(--color-border)] px-6 py-4">
-              <div className="flex min-w-0 items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <Drawer.Heading className="truncate text-lg font-semibold">{isDetailEditing ? "编辑数据" : detailBuiltIns?.instanceTitle ?? formName}</Drawer.Heading>
-                  <p className="mt-1 truncate text-xs text-[var(--color-text-secondary)]">{formName}</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <Button isIconOnly variant="ghost" aria-label={isDetailFullscreen ? "退出全屏" : "全屏查看"} className="h-8 w-8" onPress={() => setIsDetailFullscreen((current) => !current)}><ArrowsExpand className="h-4 w-4" /></Button>
-                  {detailRecordIndex > 0 ? <Button isIconOnly variant="ghost" aria-label="上一条数据" className="h-8 w-8" onPress={() => showAdjacentRecord(-1)}><ArrowChevronLeft className="h-4 w-4" /></Button> : <Button isIconOnly variant="ghost" aria-label="上一条数据" className="h-8 w-8" isDisabled><ArrowChevronLeft className="h-4 w-4" /></Button>}
-                  {detailRecordIndex >= 0 && detailRecordIndex < records.length - 1 ? <Button isIconOnly variant="ghost" aria-label="下一条数据" className="h-8 w-8" onPress={() => showAdjacentRecord(1)}><ArrowChevronRight className="h-4 w-4" /></Button> : <Button isIconOnly variant="ghost" aria-label="下一条数据" className="h-8 w-8" isDisabled><ArrowChevronRight className="h-4 w-4" /></Button>}
-                  <Button isIconOnly variant="ghost" aria-label="复制该数据" className="h-8 w-8" onPress={() => void copyDetailRecord()}><Copy className="h-4 w-4" /></Button>
-                  <Dropdown><Dropdown.Trigger aria-label="更多详情操作" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[var(--color-text-secondary)]"><Ellipsis className="h-4 w-4" /></Dropdown.Trigger><Dropdown.Popover><Dropdown.Menu aria-label="更多详情操作"><Dropdown.Item id="copy-json" onAction={() => void copyDetailRecord()}>复制 JSON</Dropdown.Item><Dropdown.Item id="record-id" isDisabled>记录 ID：{detailRecord?.id ?? "-"}</Dropdown.Item></Dropdown.Menu></Dropdown.Popover></Dropdown>
-                  <Drawer.CloseTrigger aria-label="关闭详情"><Xmark className="h-4 w-4" /></Drawer.CloseTrigger>
-                </div>
-              </div>
-              {detailBuiltIns ? <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-t border-[var(--color-border)] pt-4 text-sm md:grid-cols-4"><DetailBuiltIn label="提交时间" value={detailBuiltIns.createdAt} /><DetailBuiltIn label="发起人" value={detailBuiltIns.submitter} /><DetailBuiltIn label="发起人组织" value={detailBuiltIns.submitterOrganization} /><DetailBuiltIn label="实例 ID" value={detailBuiltIns.instanceId} /></div> : null}
-            </Drawer.Header>
-            <Drawer.Body className="min-h-0 flex-1 overflow-y-auto bg-[var(--designer-surface-soft)] p-5">
-              {detailRecord && isDetailContentReady ? (
-                <RuntimeFormSurface><RuntimeFormPanel
-                  key={`${detailRecord.id}-${isDetailEditing ? "edit" : "view"}`}
-                  formId={`record-detail-${detailRecord.id}`}
-                  schema={schema}
-                  initialValues={detailRecord.data}
-                  isReadOnly={!isDetailEditing}
-                  showSubmitButton={false}
-                  submitLabel="保存修改"
-                  submitting={submitting}
-                  urlParams={urlParams}
-                  onSubmit={handleDetailFormSubmit}
-                /></RuntimeFormSurface>
-              ) : detailRecord ? <div className="min-h-64 animate-pulse rounded-lg bg-[var(--color-bg-subtle)]" /> : null}
-              {detailRecord && !isDetailEditing ? <DetailAuxiliaryPanel activeTab={detailTab} record={detailRecord} onTabChange={setDetailTab} /> : null}
-            </Drawer.Body>
-            <Drawer.Footer className="flex shrink-0 justify-end gap-3 border-t border-[var(--color-border)] px-6 py-4">
-              {isDetailEditing ? (
-                <Button variant="ghost" isDisabled={submitting} onPress={() => setIsDetailEditing(false)}>取消编辑</Button>
-              ) : null}
-              {canDeleteRecord ? <Button
-                variant="ghost"
-                className="border border-[var(--color-danger)]/30 text-[var(--color-danger)]"
-                isDisabled={!detailRecord || deletingRecordId === detailRecord?.id}
-                onPress={() => detailRecord && setDeleteRecordTarget(detailRecord)}
-              >
-                {deletingRecordId === detailRecord?.id ? "删除中..." : "删除"}
-              </Button> : null}
-              {canEditRecord ? <Button
-                isDisabled={!detailRecord || submitting}
-                onPress={() => {
-                  if (!detailRecord) return;
-                  if (!isDetailEditing) {
-                    setIsDetailEditing(true);
-                  } else {
-                    const form = document.getElementById(`record-detail-${detailRecord.id}`) as HTMLFormElement | null;
-                    form?.requestSubmit();
-                  }
-                }}
-              >
-                {isDetailEditing ? (submitting ? "保存中..." : "保存") : "编辑"}
-              </Button> : null}
-            </Drawer.Footer>
-          </Drawer.Dialog>
-        </Drawer.Content>
-      </Drawer.Backdrop>
-    </Drawer>
-    <Modal
-      isOpen={associationDetail !== null}
-      onOpenChange={(isOpen) => {
-        if (!isOpen) setAssociationDetail(null);
-      }}
-    >
-      <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
-        <Modal.Container placement="center" scroll="inside" size="cover">
-          <Modal.Dialog className="flex h-[min(860px,88vh)] w-[min(1180px,94vw)] flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]">
-            <Modal.Header className="flex items-center justify-between border-b border-[var(--color-border)] px-6 py-4">
-              <div className="min-w-0">
-                <Modal.Heading className="truncate text-lg font-semibold">
-                  {associationDetail ? getAssociationPrimaryValue(associationDetail.field, associationDetail.record) : "关联数据"}
-                </Modal.Heading>
-                <p className="mt-1 truncate text-xs text-[var(--color-text-secondary)]">
-                  {associationDetail?.schema.formName ?? "关联表单"}
-                </p>
-              </div>
-              <Modal.CloseTrigger aria-label="关闭关联数据详情"><Xmark className="h-4 w-4" /></Modal.CloseTrigger>
-            </Modal.Header>
-            <Modal.Body className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-              {associationDetail ? (
-                <RuntimeFormSurface><RuntimeFormPanel
-                  key={associationDetail.record.id}
-                  formId={`association-record-${associationDetail.record.id}`}
-                  schema={associationDetail.schema}
-                  initialValues={associationDetail.record.data}
-                  isReadOnly
-                  showSubmitButton={false}
-                  submitLabel=""
-                  submitting={false}
-                  urlParams={urlParams}
-                  onSubmit={async () => {}}
-                /></RuntimeFormSurface>
-              ) : null}
-            </Modal.Body>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
-    <AlertDialog
-      isOpen={deleteRecordTarget !== null}
-      onOpenChange={(isOpen) => {
-        if (!isOpen && deletingRecordId === null) setDeleteRecordTarget(null);
-      }}
-    >
-      <AlertDialog.Backdrop className="theme-modal-backdrop">
-        <AlertDialog.Container placement="center" size="md">
-          <AlertDialog.Dialog className="theme-menu-surface rounded-xl shadow-[var(--shadow-dialog)]">
-            <AlertDialog.Header className="border-b border-[var(--color-border)] px-5 py-4">
-              <AlertDialog.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
-                删除数据
-              </AlertDialog.Heading>
-            </AlertDialog.Header>
-            <AlertDialog.Body className="px-5 py-4 text-sm leading-6 text-[var(--color-text-secondary)]">
-              确认删除这条数据吗？删除后无法恢复。
-            </AlertDialog.Body>
-            <AlertDialog.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
-              <Button variant="ghost" isDisabled={deletingRecordId !== null} onPress={() => setDeleteRecordTarget(null)}>
-                取消
-              </Button>
-              <Button
-                isDisabled={!deleteRecordTarget || deletingRecordId !== null}
-                className="bg-[var(--color-danger)] text-[var(--color-text-on-primary)]"
-                onPress={async () => {
-                  if (!deleteRecordTarget) return;
-                  const deletedRecord = deleteRecordTarget;
-                  const deleted = await onDeleteRecord(deletedRecord.id);
-                  if (!deleted) return;
-                  setDeleteRecordTarget(null);
-                  if (detailRecord?.id === deletedRecord.id) {
-                    setDetailRecord(null);
-                    setIsDetailEditing(false);
-                  }
-                }}
-              >
-                {deletingRecordId ? "删除中..." : "确认删除"}
-              </Button>
-            </AlertDialog.Footer>
-          </AlertDialog.Dialog>
-        </AlertDialog.Container>
-      </AlertDialog.Backdrop>
-    </AlertDialog>
-    </>
-  );
-}
-
-function DetailBuiltIn({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0">
-      <div className="text-xs text-[var(--color-text-secondary)]">{label}</div>
-      <div className="mt-1 truncate text-sm font-medium text-[var(--color-text-primary)]" title={value}>{value}</div>
-    </div>
-  );
-}
-
-function TableSelectionCheckbox({
-  ariaLabel,
-  isSelected,
-  isIndeterminate = false,
-  onChange,
-  className,
-}: {
-  ariaLabel: string;
-  isSelected: boolean;
-  isIndeterminate?: boolean;
-  onChange: (selected: boolean) => void;
-  className?: string;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (inputRef.current) inputRef.current.indeterminate = isIndeterminate;
-  }, [isIndeterminate]);
-
-  return (
-    <label className={className ?? "inline-flex items-center justify-center"}>
-      <input
-        ref={inputRef}
-        type="checkbox"
-        aria-label={ariaLabel}
-        checked={isSelected}
-        onClick={(event) => event.stopPropagation()}
-        onChange={(event) => onChange(event.target.checked)}
-        className="relative z-30 h-3.5 w-3.5 cursor-pointer accent-[var(--color-primary)]"
-      />
-    </label>
-  );
-}
-
-function getPaginationPageNumbers(currentPage: number, pageCount: number): Array<number | "ellipsis"> {
-  if (pageCount <= 7) {
-    return Array.from({ length: pageCount }, (_, index) => index + 1);
-  }
-
-  if (currentPage <= 4) {
-    return [1, 2, 3, 4, 5, "ellipsis", pageCount];
-  }
-
-  if (currentPage >= pageCount - 3) {
-    return [1, "ellipsis", pageCount - 4, pageCount - 3, pageCount - 2, pageCount - 1, pageCount];
-  }
-
-  return [1, "ellipsis", currentPage - 1, currentPage, currentPage + 1, "ellipsis", pageCount];
-}
-
-function DetailAuxiliaryPanel({
-  activeTab,
-  record,
-  onTabChange,
-}: {
-  activeTab: "comments" | "history";
-  record: FormRecord;
-  onTabChange: (tab: "comments" | "history") => void;
-}) {
-  const [workflowActions, setWorkflowActions] = useState<WorkflowAction[]>([]);
-  const [workflowHistoryLoading, setWorkflowHistoryLoading] = useState(false);
-  const [comments, setComments] = useState<WorkflowComment[]>([]);
-  const [commentContent, setCommentContent] = useState("");
-  const [postingComment, setPostingComment] = useState(false);
-  const hasUpdated = record.updatedAt !== record.createdAt;
-  const recordChanges = [
-    { id: "created", type: "创建", actor: record.createdBy, text: `${record.createdBy} 创建记录`, time: record.createdAt },
-    ...(hasUpdated ? [{ id: "updated", type: "更新", actor: record.updatedBy, text: `${record.updatedBy} 更新记录`, time: record.updatedAt }] : []),
-  ];
-  const changes = [
-    ...recordChanges,
-    ...workflowActions.map((action, index) => ({
-      id: `workflow-${index}-${action.createdAt}`,
-      type: workflowActionLabel(action.action),
-      actor: action.operator,
-      text: `${action.operator} ${workflowActionLabel(action.action)}${action.comment ? `：${action.comment}` : ""}`,
-      time: action.createdAt,
-    })),
-  ].sort((left, right) => new Date(left.time).getTime() - new Date(right.time).getTime());
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => {
-      setWorkflowHistoryLoading(true);
-      void fetch(`/api/forms/${encodeURIComponent(record.formUuid)}/records/${encodeURIComponent(record.id)}/workflow`, { signal: controller.signal })
-        .then(async (response) => {
-          const result = await response.json() as ApiEnvelope<{ actions?: WorkflowAction[] }>;
-          if (!response.ok || result.code !== 0) throw new Error(result.message);
-          setWorkflowActions(Array.isArray(result.data?.actions) ? result.data.actions : []);
-        })
-        .catch((error: unknown) => {
-          if ((error as { name?: string }).name !== "AbortError") setWorkflowActions([]);
-        })
-        .finally(() => setWorkflowHistoryLoading(false));
-    }, 0);
-    return () => {
-      controller.abort();
-      window.clearTimeout(timer);
-    };
-  }, [record.formUuid, record.id]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => {
-      void fetch(`/api/forms/${encodeURIComponent(record.formUuid)}/records/${encodeURIComponent(record.id)}/workflow/comments`, { signal: controller.signal })
-        .then(async (response) => {
-          const result = await response.json() as ApiEnvelope<{ items?: WorkflowComment[] }>;
-          if (!response.ok || result.code !== 0) throw new Error(result.message);
-          setComments(Array.isArray(result.data?.items) ? result.data.items : []);
-        }).catch(() => setComments([]));
-    }, 0);
-    return () => { controller.abort(); window.clearTimeout(timer); };
-  }, [record.formUuid, record.id]);
-
-  async function postComment() {
-    const content = commentContent.trim();
-    if (!content) return;
-    setPostingComment(true);
-    try {
-      const response = await fetch(`/api/forms/${encodeURIComponent(record.formUuid)}/records/${encodeURIComponent(record.id)}/workflow/comments`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content }) });
-      const result = await response.json() as ApiEnvelope<WorkflowComment>;
-      if (!response.ok || result.code !== 0 || !result.data) throw new Error(result.message);
-      setComments((current) => [...current, result.data!]);
-      setCommentContent("");
-    } catch (error) {
-      toast.danger("评论发布失败", { description: error instanceof Error ? error.message : "请稍后重试" });
-    } finally { setPostingComment(false); }
-  }
-
-  return (
-    <section className="mt-8 border-t border-[var(--color-border)] pt-5">
-      <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">其它</h3>
-      <Tabs
-        variant="secondary"
-        selectedKey={activeTab}
-        onSelectionChange={(key) => onTabChange(key as "comments" | "history")}
-        className="mt-4"
-      >
-        <Tabs.ListContainer>
-          <Tabs.List aria-label="详情辅助信息">
-            <Tabs.Tab id="comments" className="px-4 py-2 text-sm">评论<Tabs.Indicator /></Tabs.Tab>
-            <Tabs.Tab id="history" className="px-4 py-2 text-sm">变更记录<Tabs.Indicator /></Tabs.Tab>
-          </Tabs.List>
-        </Tabs.ListContainer>
-        <Tabs.Panel id="comments" className="outline-none">
-          <div className="max-w-2xl space-y-4 py-5">
-          {comments.map((comment) => <div key={comment.id} className="border-b border-[var(--color-border)] pb-3"><div className="flex items-center justify-between gap-3 text-sm"><span className="font-medium text-[var(--color-text-primary)]">{comment.author}</span><span className="text-xs text-[var(--color-text-secondary)]">{formatDateTime(comment.createdAt)}</span></div><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[var(--color-text-primary)]">{comment.content}</p></div>)}
-          <TextArea aria-label="评论" placeholder="请输入评论" value={commentContent} onChange={setCommentContent} isDisabled={postingComment} />
-          <div className="flex justify-end"><Button size="sm" isDisabled={postingComment || !commentContent.trim()} onPress={() => void postComment()}>{postingComment ? "发布中..." : "发表评论"}</Button></div>
-          </div>
-        </Tabs.Panel>
-        <Tabs.Panel id="history" className="outline-none">
-          <ol className="space-y-4 py-5">
-          {workflowHistoryLoading ? <li className="text-sm text-[var(--color-text-secondary)]">正在加载流程轨迹...</li> : null}
-          {changes.map((change) => (
-            <li key={change.id} className="grid grid-cols-[10px_minmax(0,1fr)] gap-3">
-              <span className="mt-1.5 h-2.5 w-2.5 rounded-full bg-[var(--color-primary)]" />
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                  <span className="font-medium text-[var(--color-text-primary)]">{change.text}</span>
-                  <span className="rounded border border-[var(--color-border)] px-1.5 py-0.5 text-xs text-[var(--color-text-secondary)]">{change.type}</span>
-                </div>
-                <div className="mt-1 text-xs text-[var(--color-text-secondary)]">变更人：{change.actor} · {formatDateTime(change.time)}</div>
-              </div>
-            </li>
-          ))}
-          </ol>
-        </Tabs.Panel>
-      </Tabs>
-    </section>
-  );
-}
-
-function workflowActionLabel(action: string) {
-  return ({ submit: "提交流程", approve: "同意", reject: "拒绝" } as Record<string, string>)[action] ?? action;
-}
-
-function SystemPageView({
-  appId,
-  pageSlug,
-  pageTitle,
-}: {
-  appId: string;
-  pageSlug: string;
-  pageTitle: string;
-}) {
-  const router = useRouter();
-  const [appName, setAppName] = useState("");
-  const [items, setItems] = useState<SystemWorkItem[]>([]);
-  const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [pendingAction, setPendingAction] = useState<{ item: SystemWorkItem; kind: "approve" | "reject" | "complete" } | null>(null);
-  const [actionComment, setActionComment] = useState("");
-  const [submittingAction, setSubmittingAction] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void getAppResource(appId)
-      .then((app) => {
-        if (!cancelled) setAppName(app.name);
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [appId]);
-
-  const loadItems = useCallback(async () => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const response = await fetch(`/api/workflow/tasks?appId=${encodeURIComponent(appId)}&scope=${encodeURIComponent(pageSlug)}`, { cache: "no-store" });
-      const result = await response.json() as ApiEnvelope<{ items?: SystemWorkItem[] }>;
-      if (!response.ok || result.code !== 0) throw new Error(result.message);
-      setItems(Array.isArray(result.data?.items) ? result.data.items : []);
-    } catch (error) {
-      setItems([]);
-      setLoadError(error instanceof Error ? error.message : "加载任务失败");
-    } finally {
-      setLoading(false);
-    }
-  }, [appId, pageSlug]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void loadItems();
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [loadItems]);
-
-  const displayAppName = appName || "当前应用";
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const rows = normalizedQuery ? items.filter((item) => [item.formName, item.flowName, item.nodeLabel, item.submitter, item.instanceId].filter(Boolean).join(" ").toLocaleLowerCase().includes(normalizedQuery)) : items;
-
-  function openTaskAction(item: SystemWorkItem, kind: "approve" | "reject" | "complete") {
-    setActionComment("");
-    setPendingAction({ item, kind });
-  }
-
-  async function submitTaskAction() {
-    if (!pendingAction) return;
-    if (pendingAction.kind === "reject" && !actionComment.trim()) {
-      toast.danger("请填写拒绝意见");
-      return;
-    }
-    setSubmittingAction(true);
-    try {
-      const endpoint = pendingAction.kind === "reject" ? "reject" : "approve";
-      const response = await fetch(`/api/workflow/tasks/${encodeURIComponent(pendingAction.item.id)}/${endpoint}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ comment: actionComment.trim() || undefined }),
-      });
-      const result = await response.json() as ApiEnvelope<unknown>;
-      if (!response.ok || result.code !== 0) throw new Error(result.message);
-      toast.success(pendingAction.kind === "reject" ? "已拒绝任务" : pendingAction.kind === "complete" ? "任务已完成" : "已同意任务");
-      setPendingAction(null);
-      await loadItems();
-    } catch (error) {
-      toast.danger("任务处理失败", { description: error instanceof Error ? error.message : "请稍后重试" });
-    } finally {
-      setSubmittingAction(false);
-    }
-  }
-
-  return (
-    <div className="h-full min-h-0 overflow-auto">
-      <div className="shadow-[var(--shadow-designer)]">
-        <Card className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h1 className="mt-1 text-2xl font-semibold text-[var(--color-text-primary)]">{pageTitle}</h1>
-            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-              {displayAppName}中的流程任务与审批记录。
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Input
-              aria-label={`${pageTitle}搜索`}
-              className="w-full min-w-[220px] md:w-[280px]"
-              placeholder="搜索标题、流程或发起人"
-              value={query}
-              onChange={(event) => setQuery(event.currentTarget.value)}
-            />
-            <Button variant="ghost" onClick={() => void loadItems()}>刷新</Button>
-          </div>
-        </Card>
-
-        <div className="overflow-hidden rounded-xl border border-[var(--color-border)]">
-          <div className="grid grid-cols-[minmax(0,2fr)_120px_160px_180px_132px] gap-4 bg-[var(--color-bg-panel-soft)] px-4 py-3 text-sm font-medium text-[var(--color-text-secondary)]">
-            <span>标题</span>
-            <span>状态</span>
-            <span>发起人</span>
-            <span>更新时间</span>
-            <span>操作</span>
-          </div>
-          {loading ? <div className="px-4 py-10 text-center text-sm text-[var(--color-text-secondary)]">正在加载任务...</div> : null}
-          {loadError ? <div className="px-4 py-10 text-center text-sm text-[var(--color-danger)]">{loadError}</div> : null}
-          {!loading && !loadError && rows.length === 0 ? <div className="px-4 py-10 text-center text-sm text-[var(--color-text-secondary)]">暂无相关流程任务</div> : null}
-          {!loading && !loadError ? rows.map((row) => (
-            <div
-              key={row.id}
-              className="grid grid-cols-[minmax(0,2fr)_120px_160px_180px_132px] items-center gap-4 border-t border-[var(--color-border)] px-4 py-3 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-panel-soft)]"
-            >
-              <button type="button" className="min-w-0 text-left" onClick={() => router.push(`/${appId}/${row.formUuid}?record=${encodeURIComponent(row.recordUuid)}`)}>
-                <div className="truncate font-medium text-[var(--color-text-primary)]">{row.formName}</div>
-                <div className="mt-1 truncate text-xs text-[var(--color-text-secondary)]">{row.flowName} · {row.nodeLabel || "流程处理中"}</div>
-              </button>
-              <span>{workflowTaskStatusLabel(row.status)}</span>
-              <span>{row.submitter}</span>
-              <span>{formatDateTime(row.completedAt || row.updatedAt || row.createdAt)}</span>
-              <div className="flex items-center gap-1">
-                {pageSlug === "todo" && row.status === "pending" && row.taskType === "approval" ? <><Button size="sm" onPress={() => openTaskAction(row, "approve")}>同意</Button><Button size="sm" variant="ghost" className="text-[var(--color-danger)]" onPress={() => openTaskAction(row, "reject")}>拒绝</Button></> : null}
-                {pageSlug === "todo" && row.status === "pending" && row.taskType === "execution" ? <Button size="sm" onPress={() => openTaskAction(row, "complete")}>完成</Button> : null}
-                {pageSlug !== "todo" || row.status !== "pending" ? <span className="text-xs text-[var(--color-text-secondary)]">已处理</span> : null}
-              </div>
-            </div>
-          )) : null}
-        </div>
-      </div>
-      <Modal isOpen={pendingAction !== null} onOpenChange={(open) => { if (!open && !submittingAction) setPendingAction(null); }}>
-        <Modal.Backdrop className="theme-modal-backdrop" isDismissable={!submittingAction}>
-          <Modal.Container placement="center" size="sm">
-            <Modal.Dialog className="theme-menu-surface rounded-2xl shadow-[var(--shadow-dialog)]">
-              <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
-                <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">{pendingAction?.kind === "reject" ? "拒绝任务" : pendingAction?.kind === "complete" ? "完成任务" : "同意任务"}</Modal.Heading>
-                <Modal.CloseTrigger aria-label="关闭" />
-              </Modal.Header>
-              <Modal.Body className="space-y-3 px-5 py-4">
-                <div className="text-sm text-[var(--color-text-secondary)]">{pendingAction?.item.formName} · {pendingAction?.item.nodeLabel}</div>
-                <TextArea aria-label="审批意见" placeholder={pendingAction?.kind === "reject" ? "请填写拒绝原因" : "可填写审批意见"} value={actionComment} onChange={setActionComment} isDisabled={submittingAction} />
-              </Modal.Body>
-              <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
-                <Button variant="ghost" isDisabled={submittingAction} onPress={() => setPendingAction(null)}>取消</Button>
-                <Button isDisabled={submittingAction || (pendingAction?.kind === "reject" && !actionComment.trim())} onPress={() => void submitTaskAction()} className={pendingAction?.kind === "reject" ? "bg-[var(--color-danger)] text-white" : undefined}>{submittingAction ? "处理中..." : pendingAction?.kind === "reject" ? "确认拒绝" : pendingAction?.kind === "complete" ? "确认完成" : "确认同意"}</Button>
-              </Modal.Footer>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
-    </div>
-  );
-}
-
-function workflowTaskStatusLabel(status: string) {
-  return ({ pending: "待处理", approved: "已同意", rejected: "已拒绝", completed: "已完成", running: "进行中", failed: "失败" } as Record<string, string>)[status] ?? status;
-}
-
-function getVisibleDataFields(fields: SchemaField[]) {
-  return fields.filter(
-    (field) =>
-      !field.props?.isHidden &&
-      field.type !== "description" &&
-      field.type !== "groupContainer" &&
-      field.type !== "button" &&
-      field.type !== "link",
-  );
-}
-
-function getDetailParentRecordLabel(
-  record: FormRecord | undefined,
-  primaryFieldId?: string,
-  secondaryFieldId?: string,
-  fallbackRecordId = "",
-) {
-  const primary = getDetailParentRecordValue(record, primaryFieldId);
-  const secondary = getDetailParentRecordValue(record, secondaryFieldId);
-  return [primary || `主记录 ${record?.id ?? fallbackRecordId}`, secondary].filter(Boolean).join(" · ");
-}
-
-function getDetailParentRecordValue(record: FormRecord | undefined, fieldId?: string) {
-  if (!record || !fieldId) return "";
-  switch (fieldId) {
-    case "instanceId": return record.id;
-    case "instanceTitle": return `${record.createdBy}发起的记录`;
-    case "submitter":
-    case "workflowSubmitter": return record.createdBy;
-    case "submitterOrganization": return record.submitterOrganization ?? "";
-    case "createdAt": return record.createdAt;
-    case "updatedAt": return record.updatedAt;
-    default: return formatRecordValue(findRecordFieldValue(record.data, fieldId));
-  }
-}
-
-function findRecordFieldValue(value: unknown, fieldId: string): unknown {
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const found = findRecordFieldValue(item, fieldId);
-      if (found !== undefined) return found;
-    }
-    return undefined;
-  }
-  if (!value || typeof value !== "object") return undefined;
-  const record = value as Record<string, unknown>;
-  if (fieldId in record) return record[fieldId];
-  for (const child of Object.values(record)) {
-    const found = findRecordFieldValue(child, fieldId);
-    if (found !== undefined) return found;
-  }
-  return undefined;
-}
-
-function getAssociationRecordId(field: SchemaField, value: unknown) {
-  if (field.type !== "associationFormField" || typeof value !== "string" || !value) {
-    return null;
-  }
-  return value;
-}
-
-function getAssociationPrimaryValue(field: SchemaField, record: FormRecord) {
-  const primaryFieldId = field.props?.associationPrimaryFieldId;
-  return primaryFieldId
-    ? formatRecordValue(record.data[primaryFieldId])
-    : record.id;
-}
-
-function getTableFieldDisplayValue(
-  field: SchemaField,
-  record: FormRecord,
-  associationForms: Map<string, AssociationFormData>,
-) {
-  const relatedRecordId = getAssociationRecordId(field, record.data[field.id]);
-  const associationFormId = field.props?.associationFormId;
-  const relatedRecord = relatedRecordId && associationFormId
-    ? associationForms.get(associationFormId)?.records.get(relatedRecordId)
-    : undefined;
-
-  return relatedRecord
-    ? getAssociationPrimaryValue(field, relatedRecord)
-    : formatRecordValue(record.data[field.id]);
-}
-
-function formatRecordValue(value: unknown) {
-  if (isCountryCityValue(value)) {
-    return formatCountryCityValue(value);
-  }
-
-  if (Array.isArray(value)) {
-    if (value.every((item) => item && typeof item === "object" && !Array.isArray(item))) {
-      return `共 ${value.length} 行`;
-    }
-    return value.join("、") || "-";
-  }
-
-  if (typeof value === "boolean") {
-    return value ? "是" : "否";
-  }
-
-  if (typeof value === "string" || typeof value === "number") {
-    return String(value) || "-";
-  }
-
-  if (value && typeof value === "object") {
-    return JSON.stringify(value);
-  }
-
-  return "-";
-}
-
-function serializeExcelValue(value: unknown) {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return value;
-  }
-  return JSON.stringify(value);
-}
-
-function deserializeExcelValue(field: SchemaField, cell: unknown) {
-  if (cell === null || cell === undefined || String(cell).trim() === "") return undefined;
-  const capability = getFormComponentAgentCapability(field.type);
-  const text = String(cell).trim();
-
-  if (capability.valueType === "number") {
-    const value = Number(cell);
-    return Number.isFinite(value) ? value : undefined;
-  }
-  if (capability.valueType === "boolean") {
-    return ["true", "是", "1", "yes"].includes(text.toLowerCase());
-  }
-  if (capability.valueType === "string[]" || capability.valueType === "dateRange") {
-    try {
-      const parsed = JSON.parse(text);
-      if (Array.isArray(parsed)) return parsed.map(String);
-    } catch {
-      return text.split(/[、,，;；|]/).map((item) => item.trim()).filter(Boolean);
-    }
-  }
-  if (capability.valueType === "object" || capability.valueType === "file") {
-    try {
-      return JSON.parse(text);
-    } catch {
-      return text;
-    }
-  }
-  return text;
-}
-
-function sanitizeFileName(value: string) {
-  return value.replace(/[\\/:*?"<>|]/g, "-").trim() || "表单";
-}
-
-function getFormDraftStorageKey(formUuid: string) {
-  return `yaya-low-code:form-drafts:${formUuid}`;
-}
-
-function readFormDrafts(formUuid: string): FormDraft[] {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(getFormDraftStorageKey(formUuid)) ?? "[]") as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((draft): draft is FormDraft => Boolean(
-      draft
-      && typeof draft === "object"
-      && "id" in draft
-      && "savedAt" in draft
-      && "values" in draft,
-    ));
-  } catch {
-    return [];
-  }
-}
-
-function writeFormDrafts(formUuid: string, drafts: FormDraft[]) {
-  window.localStorage.setItem(getFormDraftStorageKey(formUuid), JSON.stringify(drafts));
-}
-
-function getViewFieldValue(record: FormRecord, fieldId: string, formName: string) {
-  if (fieldId in record.data) return formatRecordValue(record.data[fieldId]);
-  return getBuiltinRecordValues(record, formName)[fieldId] ?? "";
-}
-
-function applyViewConfig(records: FormRecord[], config: ViewConfig, formName: string) {
-  const filtered = records.filter((record) => config.filters.every((rule) => {
-    const actual = getViewFieldValue(record, rule.fieldId, formName).toLowerCase();
-    const expected = rule.value.trim().toLowerCase();
-    if (!expected) return true;
-    if (rule.operator === "equals") return actual === expected;
-    if (rule.operator === "notEquals") return actual !== expected;
-    if (rule.operator === "greaterThan") return actual > expected;
-    if (rule.operator === "lessThan") return actual < expected;
-    return actual.includes(expected);
-  }));
-  if (!config.sorts.length) return filtered;
-  return [...filtered].sort((left, right) => {
-    for (const rule of config.sorts) {
-      const comparison = getViewFieldValue(left, rule.fieldId, formName).localeCompare(getViewFieldValue(right, rule.fieldId, formName), undefined, { numeric: true, sensitivity: "base" });
-      if (comparison !== 0) return rule.direction === "asc" ? comparison : -comparison;
-    }
-    return 0;
-  });
-}
-
-function getBuiltinRecordValues(
-  record: FormRecord,
-  formName: string,
-  isWorkflow = false,
-): Record<string, string> {
-  const values = {
-    instanceId: record.id,
-    instanceTitle: `${record.createdBy}发起的${formName}`,
-    submitter: record.createdBy,
-    submitterOrganization: record.submitterOrganization ?? "",
-    createdAt: formatDateTime(record.createdAt),
-    updatedAt: formatDateTime(record.updatedAt),
-  };
-  if (!isWorkflow) return values;
-  return {
-    ...values,
-    workflowApprovalStatus: workflowApprovalStatusLabel(record.data.workflowApprovalStatus),
-    workflowInstanceStatus: workflowInstanceStatusLabel(record.data.workflowInstanceStatus),
-    workflowCurrentApprovalNode: formatRecordValue(record.data.workflowCurrentApprovalNode),
-    workflowSubmitter: formatRecordValue(record.data.workflowSubmitter) || record.createdBy,
-  };
-}
-
-function workflowApprovalStatusLabel(value: unknown) {
-  return ({ saved: "保存", reviewing: "审核中", approved: "审核通过", rejected: "拒绝" } as Record<string, string>)[String(value)] ?? "保存";
-}
-
-function workflowInstanceStatusLabel(value: unknown) {
-  return ({ in_progress: "进行中", running: "进行中", paused: "已暂停", completed: "已完成", failed: "失败" } as Record<string, string>)[String(value)] ?? "进行中";
-}
-
-function formatDateTime(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-}
-
-function estimateTableColumnWidth(
-  values: string[],
-  minWidth = 0,
-  maxWidth = 320,
-) {
-  const widestTextWidth = values.reduce(
-    (widest, value) => Math.max(widest, estimateTableTextWidth(value)),
-    0,
-  );
-
-  return Math.min(maxWidth, Math.max(minWidth, Math.ceil(widestTextWidth + 24)));
-}
-
-function estimateTableTextWidth(value: string) {
-  const units = Array.from(value).reduce(
-    (total, character) => total + (/^[\u0000-\u00ff]$/.test(character) ? 0.62 : 1),
-    0,
-  );
-  return units * 12;
 }

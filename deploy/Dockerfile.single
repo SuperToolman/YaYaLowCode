@@ -1,0 +1,69 @@
+# syntax=docker/dockerfile:1.7
+FROM rust:1.94-bookworm AS api-build
+ARG CARGO_REGISTRIES_CRATES_IO_INDEX
+RUN if [ -n "$CARGO_REGISTRIES_CRATES_IO_INDEX" ]; then \
+      mkdir -p /usr/local/cargo && \
+      printf '[source.crates-io]\nreplace-with = "deployment-mirror"\n\n[source.deployment-mirror]\nregistry = "%s"\n' "$CARGO_REGISTRIES_CRATES_IO_INDEX" > /usr/local/cargo/config.toml; \
+    fi
+WORKDIR /workspace
+COPY api ./api
+RUN --mount=type=cache,id=yaya-cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=yaya-cargo-git,target=/usr/local/cargo/git \
+    --mount=type=cache,id=yaya-cargo-target,target=/workspace/api/target \
+    set -eu; \
+    cargo build --release --verbose --manifest-path api/Cargo.toml & cargo_pid=$!; \
+    while kill -0 "$cargo_pid" 2>/dev/null; do \
+      echo "Cargo release build is still running..."; \
+      sleep 30; \
+    done; \
+    wait "$cargo_pid"; \
+    cp /workspace/api/target/release/yaya-api /workspace/yaya-api
+RUN /workspace/api/target/release/yaya-api --export-openapi
+
+FROM node:22-bookworm-slim AS web-build
+ARG NEXT_PUBLIC_BACKEND_WS_URL
+ENV NEXT_PUBLIC_BACKEND_WS_URL=${NEXT_PUBLIC_BACKEND_WS_URL}
+WORKDIR /workspace
+RUN corepack enable
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY web/package.json ./web/package.json
+RUN pnpm install --frozen-lockfile
+COPY web ./web
+COPY --from=api-build /workspace/api/openapi/openapi.json ./api/openapi/openapi.json
+RUN pnpm --dir web codegen:api
+RUN pnpm --dir web build
+
+FROM web-build AS web-runtime
+RUN rm -rf /workspace/web/node_modules
+
+FROM valkey/valkey:8.1-bookworm AS valkey-build
+
+FROM node:22-bookworm-slim
+ARG DEBIAN_MIRROR=http://mirrors.aliyun.com/debian
+ARG DEBIAN_SECURITY_MIRROR=http://mirrors.aliyun.com/debian-security
+ENV NODE_ENV=production \
+    PATH="/usr/lib/postgresql/15/bin:${PATH}"
+RUN sed -i "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g; s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends curl postgresql postgresql-client supervisor util-linux \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --create-home --uid 10001 yaya
+WORKDIR /app
+RUN corepack enable
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY web/package.json ./web/package.json
+RUN chown yaya:yaya /app /app/web /home/yaya
+USER yaya
+RUN --mount=type=cache,id=yaya-pnpm-store,target=/home/yaya/.local/share/pnpm/store \
+    pnpm install --prod --frozen-lockfile
+USER root
+COPY --chown=yaya:yaya --from=web-runtime /workspace/web ./web
+COPY --chown=yaya:yaya --from=web-build /root/.cache/next-swc /home/yaya/.cache/next-swc
+COPY --from=api-build /workspace/yaya-api /usr/local/bin/yaya-api
+COPY --from=valkey-build /usr/local/bin/valkey-server /usr/local/bin/valkey-server
+COPY deploy/supervisord.single.conf /etc/supervisor/conf.d/yaya.conf
+COPY deploy/entrypoint-single.sh /usr/local/bin/yaya-entrypoint
+RUN chmod 755 /usr/local/bin/yaya-entrypoint
+WORKDIR /var/lib/yaya
+EXPOSE 3000 8787
+ENTRYPOINT ["/usr/local/bin/yaya-entrypoint"]

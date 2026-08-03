@@ -1,0 +1,56 @@
+services:
+  yaya:
+    container_name: ${CONTAINER_NAME:-yaya}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.single
+      args:
+        CARGO_REGISTRIES_CRATES_IO_INDEX: ${CARGO_REGISTRIES_CRATES_IO_INDEX:-sparse+https://rsproxy.cn/index/}
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-http://mirrors.aliyun.com/debian}
+        DEBIAN_SECURITY_MIRROR: ${DEBIAN_SECURITY_MIRROR:-http://mirrors.aliyun.com/debian-security}
+        NEXT_PUBLIC_BACKEND_WS_URL: ${NEXT_PUBLIC_BACKEND_WS_URL:-}
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8787
+      POSTGRES_DB: ${POSTGRES_DB:-yaya_low_code}
+      POSTGRES_USER: ${POSTGRES_USER:-yaya}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      DATABASE_URL: postgres://${POSTGRES_USER:-yaya}:${POSTGRES_PASSWORD}@127.0.0.1:5432/${POSTGRES_DB:-yaya_low_code}
+      VALKEY_PASSWORD: ${VALKEY_PASSWORD:?set VALKEY_PASSWORD in deploy/.env}
+      VALKEY_URL: redis://:${VALKEY_PASSWORD}@127.0.0.1:6379/0
+      VALKEY_CACHE_TTL_HOURS: ${VALKEY_CACHE_TTL_HOURS:-8}
+      AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:?set AUTH_TOKEN_SECRET in deploy/.env}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      BACKEND_INTERNAL_TOKEN: ${BACKEND_INTERNAL_TOKEN:?set BACKEND_INTERNAL_TOKEN in deploy/.env}
+      BACKEND_API_BASE_URL: http://127.0.0.1:8787
+      YAYA_LICENSE_PUBLIC_KEY_PATH: /run/secrets/license-public.pem
+      YAYA_UPLOAD_DIR: /var/lib/yaya/uploads
+      YAYA_SETTINGS_PATH: /var/lib/yaya/config/database.json
+      YAYA_VALKEY_SETTINGS_PATH: /var/lib/yaya/config/valkey.json
+      YAYA_AGENT_SETTINGS_PATH: /var/lib/yaya/config/agent-settings.json
+      YAYA_PLATFORM_AGENT_ASSISTANT_SETTINGS_PATH: /var/lib/yaya/config/agent-assistant.json
+      YAYA_AGENT_REGISTRY_PATH: /var/lib/yaya/config/agent-registry.json
+      YAYA_IDENTITY_SETTINGS_PATH: /var/lib/yaya/config/identity.json
+      YAYA_RBAC_PERMISSION_SETTINGS_PATH: /var/lib/yaya/config/rbac.json
+      YAYA_NOTIFICATION_SETTINGS_PATH: /var/lib/yaya/config/notifications.json
+      YAYA_LICENSE_SETTINGS_PATH: /var/lib/yaya/config/license.json
+      YAYA_SKILLS_PATH: /var/lib/yaya/skills
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - api-state:/var/lib/yaya
+      - ./secrets/license-public.pem:/run/secrets/license-public.pem:ro
+    ports:
+      - "${WEB_PORT:-8801}:3000"
+      - "${API_PORT:-8802}:8787"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8787/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+
+volumes:
+  postgres-data:
+  api-state:

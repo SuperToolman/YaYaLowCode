@@ -4,6 +4,11 @@ import { useEffect, useState } from "react";
 import type { Key } from "react";
 import { Button, ListBox, Select, TextArea, toast } from "@heroui/react";
 import { Card } from "@heroui/react/card";
+import {
+  getPlatformAgentAssistantSettings,
+  listAgents,
+  updatePlatformAgentAssistantSettings,
+} from "../../lib/api-client";
 import { Field } from "../_components/field";
 import { SettingsContentCard } from "../_components/settings-content-card";
 import type { AgentDefinition, ApiEnvelope } from "../agent-types";
@@ -17,11 +22,16 @@ export default function AgentAssistantSettingsPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    void Promise.all([fetch("/api/agents", { cache: "no-store" }), fetch("/api/settings/agent-assistant", { cache: "no-store" })])
-      .then(async ([agentsResponse, settingsResponse]) => {
-        const agentsPayload = await agentsResponse.json() as ApiEnvelope<AgentDefinition[]>;
-        const settingsPayload = await settingsResponse.json() as ApiEnvelope<AssistantSettings>;
-        if (!agentsResponse.ok || !settingsResponse.ok || !agentsPayload.data || !settingsPayload.data) throw new Error(agentsPayload.message || settingsPayload.message || "无法加载 Agent 协助设置");
+    void Promise.all([
+      listAgents({ responseStyle: "fields" }),
+      getPlatformAgentAssistantSettings({ responseStyle: "fields" }),
+    ])
+      .then(([agentsResult, settingsResult]) => {
+        const agentsPayload = agentsResult.data as ApiEnvelope<AgentDefinition[]> | undefined;
+        const settingsPayload = settingsResult.data as ApiEnvelope<AssistantSettings> | undefined;
+        if (agentsResult.error || settingsResult.error || agentsPayload?.code !== 0 || settingsPayload?.code !== 0 || !agentsPayload.data || !settingsPayload.data) {
+          throw new Error(agentsPayload?.message || settingsPayload?.message || "无法加载 Agent 协助设置");
+        }
         setAgents(agentsPayload.data.filter((agent) => agent.enabled));
         setForm(settingsPayload.data);
       })
@@ -32,9 +42,9 @@ export default function AgentAssistantSettingsPage() {
   async function save() {
     setSaving(true);
     try {
-      const response = await fetch("/api/settings/agent-assistant", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(form) });
-      const payload = await response.json() as ApiEnvelope<AssistantSettings>;
-      if (!response.ok || !payload.data) return toast.danger("保存失败", { description: payload.message || "请稍后重试。" });
+      const { data, error } = await updatePlatformAgentAssistantSettings({ body: form, responseStyle: "fields" });
+      const payload = data as ApiEnvelope<AssistantSettings> | undefined;
+      if (error || payload?.code !== 0 || !payload.data) throw new Error(payload?.message || "保存失败");
       setForm(payload.data);
       toast.success("Agent 协助设置已保存");
     } catch (error) {

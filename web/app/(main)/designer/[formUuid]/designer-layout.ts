@@ -43,6 +43,8 @@ const COMPONENT_RESIZE_CAPABILITIES: Record<
   countryCity: { columns: true, rows: false },
   cascader: { columns: true, rows: false },
   multiLineText: { columns: true, rows: true },
+  html: { columns: true, rows: true },
+  tsx: { columns: true, rows: true },
 };
 
 export function getComponentResizeCapabilities(

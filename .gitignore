@@ -20,14 +20,13 @@ out/
 # production
 build/
 api/target/
-api/target-openapi/
-api/target-location-import/
 api/target-codex-openapi/
 api/target-migration/
-api/data/
+api/runtime/
 web/src-tauri/target/
 web/src-tauri/gen/
 web/.cache/
+web/data/location-catalog/
 .codex-openapi-target/
 
 # misc
@@ -43,15 +42,24 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+deploy/.env
+deploy/secrets/
+!api/.env.example
+!deploy/.env.example
 
 # local runtime settings (may contain database passwords or API keys)
 .yaya-lowcode-settings.json
+.yaya-valkey-settings.json
 .yaya-agent-settings.json
 .yaya-agent-registry.json
 .yaya-identity-settings.json
+.yaya-communication-module.json
+.yaya-license.json
+license-center/.license-center-revocations.json
+license-center/secrets/
 api/.yaya-rbac-permissions.json
 api/.yaya-platform-agent-assistant-settings.json
-web/openapi/openapi.generated.json
+api/.yaya-communication-module.json
 
 # vercel
 .vercel/

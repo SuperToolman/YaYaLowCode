@@ -9,23 +9,6 @@ export const metadata: Metadata = {
   description: "丫丫LowCode 首页",
 };
 
-const themeInitScript = `
-(() => {
-  const storageKey = "yaya-theme-mode";
-  const savedTheme = localStorage.getItem(storageKey);
-  const theme = savedTheme === "light" || savedTheme === "dark" || savedTheme === "system"
-    ? savedTheme
-    : "system";
-  const resolvedTheme = theme === "system"
-    ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
-    : theme;
-  const root = document.documentElement;
-  root.dataset.theme = theme;
-  root.dataset.resolvedTheme = resolvedTheme;
-  root.style.colorScheme = resolvedTheme;
-})();
-`;
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -33,9 +16,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN" className="h-full antialiased" suppressHydrationWarning>
-      <head>
-        <script id="theme-init" dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-      </head>
       <body className="min-h-full">
         <ThemeProvider>
           <AuthenticatedAppShell>{children}</AuthenticatedAppShell>

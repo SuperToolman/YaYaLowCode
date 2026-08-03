@@ -4,8 +4,9 @@ use std::path::Path;
 use utoipa::OpenApi;
 
 use crate::modules::agent_config::{
-    AgentRequest, KnowledgeBaseRequest, PlatformToolResponse, PluginRequest, ProfileRequest,
-    ProviderRequest, ProviderResponse, SkillFileRequest, SkillFileResponse, SkillRequest,
+    AgentRequest, KnowledgeBaseRequest, PersonaRequest, PlatformToolResponse, PluginRequest,
+    ProfileRequest, ProviderRequest, ProviderResponse, SkillFileRequest, SkillFileResponse,
+    SkillRequest,
 };
 use crate::modules::agents::{
     ApiAgentMessage, ApiAgentSession, CreateAgentSessionRequest, UpdateAgentSessionRequest,
@@ -15,6 +16,13 @@ use crate::modules::automations::{
     ApiAutomationFlow, ApiAutomationFlowDetail, ApiAutomationFlowList,
     ApiAutomationFlowVersionSummary, ApiAutomationRun, CreateAutomationFlowRequest,
     UpdateAutomationFlowRequest,
+};
+use crate::modules::communication::{
+    CommunicationAvailabilityResponse, CommunicationConversationResponse,
+    CommunicationMessagePageResponse, CommunicationMessageResponse, CommunicationUserResponse,
+    CreateDirectConversationRequest, CreateGroupConversationRequest, MarkConversationReadRequest,
+    RecallCommunicationMessageRequest, ReeditCommunicationMessageRequest,
+    SendCommunicationMessageRequest, TransferGroupOwnerRequest, UpdateGroupConversationRequest,
 };
 use crate::modules::dingtalk::{
     AccessTokenResponse, ClearDingTalkDataResponse, DepartmentSyncResponse, UserSyncResponse,
@@ -26,27 +34,34 @@ use crate::modules::forms::{
     SaveSchemaRequest, UpdateFormRecordRequest,
 };
 use crate::modules::identity::{
-    CreateLocalRoleRequest, CreateLocalUserRequest, DingTalkLoginUserResponse,
-    OrganizationUnitResponse, RoleResponse, UpdateLocalRoleRequest, UpdateUserRequest,
-    UserResponse,
+    CreateLocalOrganizationUnitRequest, CreateLocalRoleRequest, CreateLocalUserRequest,
+    DingTalkLoginUserResponse, OrganizationUnitResponse, RoleResponse, UpdateLocalRoleRequest,
+    UpdateUserRequest, UserResponse,
 };
 use crate::modules::locations::{ImportLocationsRequest, LocationResponse};
 use crate::modules::navigation::{
     ApiNavigationItem, CreateNavigationGroupRequest, ReorderNavigationRequest,
     SetDefaultNavigationEntryRequest,
 };
+use crate::modules::recycle_bin::{RecycleBinEntry, UpdateRecycleBinSettingsRequest};
 use crate::modules::settings::{
-    DatabaseConnectionTestResponse, PlatformAgentAssistantSettingsRequest,
-    RolePermissionsResponse, UpdateDatabaseSettingsRequest, UpdateIdentitySourceSettingsRequest,
-    UpdateRolePermissionsRequest,
+    ActivatePlatformLicenseRequest, CommunicationCleanupResponse,
+    CommunicationStorageStatsResponse, DatabaseConnectionTestResponse, DatabaseSettingsResponse,
+    PlatformAgentAssistantSettingsRequest, RolePermissionsResponse, UpdateDatabaseSettingsRequest,
+    UpdateIdentitySourceSettingsRequest, UpdateRolePermissionsRequest, UpdateValkeySettingsRequest,
+    ValkeySettingsResponse,
 };
-use crate::modules::workflows::{WorkflowCommentRequest, WorkflowTaskActionRequest};
+use crate::modules::workflows::{
+    WorkflowCommentRequest, WorkflowPauseRequest, WorkflowTaskActionRequest,
+};
 use crate::platform::api::ApiResponse;
-use crate::platform::config::{IdentitySourceSettings, PlatformAgentAssistantSettings};
+use crate::platform::config::AgentPersonaDefinition;
 use crate::platform::config::{
     AgentConfigProfile, AgentDefinition, AgentKnowledgeBaseDefinition, AgentPluginDefinition,
-    AgentSkillDefinition,
+    AgentSkillDefinition, CommunicationModuleSettings, RecycleBinSettings,
 };
+use crate::platform::config::{IdentitySourceSettings, PlatformAgentAssistantSettings};
+use crate::platform::license::PlatformLicenseStatus;
 
 macro_rules! endpoint {
     ($name:ident, $method:ident, $path:literal, $operation_id:literal) => {
@@ -86,17 +101,69 @@ macro_rules! typed_endpoint {
 }
 
 endpoint!(health_check, get, "/healthz", "healthCheck");
+typed_endpoint!(
+    list_recycle_bin,
+    get,
+    "/api/recycle-bin",
+    "listRecycleBin",
+    (("formUuid" = Option<String>, Query)),
+    ApiResponse<Vec<RecycleBinEntry>>
+);
+typed_endpoint!(
+    empty_recycle_bin,
+    delete,
+    "/api/recycle-bin",
+    "emptyRecycleBin",
+    (),
+    ApiResponse<Value>
+);
+typed_endpoint!(
+    restore_recycle_bin_entry,
+    post,
+    "/api/recycle-bin/{id}/restore",
+    "restoreRecycleBinEntry",
+    (("id" = String, Path)),
+    ApiResponse<Value>
+);
+typed_endpoint!(
+    delete_recycle_bin_entry,
+    delete,
+    "/api/recycle-bin/{id}",
+    "deleteRecycleBinEntry",
+    (("id" = String, Path)),
+    ApiResponse<Value>
+);
+typed_endpoint!(
+    get_recycle_bin_settings,
+    get,
+    "/api/settings/recycle-bin",
+    "getRecycleBinSettings",
+    (),
+    ApiResponse<RecycleBinSettings>
+);
+typed_endpoint!(
+    update_recycle_bin_settings,
+    put,
+    "/api/settings/recycle-bin",
+    "updateRecycleBinSettings",
+    (),
+    UpdateRecycleBinSettingsRequest,
+    ApiResponse<RecycleBinSettings>
+);
 endpoint!(
     get_database_settings,
     get,
     "/api/settings/database",
     "getDatabaseSettings"
 );
-endpoint!(
+typed_endpoint!(
     update_database_settings,
     put,
     "/api/settings/database",
-    "updateDatabaseSettings"
+    "updateDatabaseSettings",
+    (),
+    UpdateDatabaseSettingsRequest,
+    ApiResponse<DatabaseSettingsResponse>
 );
 typed_endpoint!(
     test_database_connection,
@@ -107,17 +174,31 @@ typed_endpoint!(
     UpdateDatabaseSettingsRequest,
     ApiResponse<DatabaseConnectionTestResponse>
 );
-endpoint!(
-    get_agent_settings,
+typed_endpoint!(
+    get_valkey_settings,
     get,
-    "/api/settings/agent",
-    "getAgentSettings"
+    "/api/settings/valkey",
+    "getValkeySettings",
+    (),
+    ApiResponse<ValkeySettingsResponse>
 );
-endpoint!(
-    update_agent_settings,
+typed_endpoint!(
+    update_valkey_settings,
     put,
-    "/api/settings/agent",
-    "updateAgentSettings"
+    "/api/settings/valkey",
+    "updateValkeySettings",
+    (),
+    UpdateValkeySettingsRequest,
+    ApiResponse<ValkeySettingsResponse>
+);
+typed_endpoint!(
+    test_valkey_connection,
+    post,
+    "/api/settings/valkey/test",
+    "testValkeyConnection",
+    (),
+    UpdateValkeySettingsRequest,
+    ApiResponse<DatabaseConnectionTestResponse>
 );
 typed_endpoint!(
     get_platform_agent_assistant_settings,
@@ -135,6 +216,177 @@ typed_endpoint!(
     (),
     PlatformAgentAssistantSettingsRequest,
     ApiResponse<PlatformAgentAssistantSettings>
+);
+typed_endpoint!(
+    get_communication_module_settings,
+    get,
+    "/api/settings/communication",
+    "getCommunicationModuleSettings",
+    (),
+    ApiResponse<CommunicationModuleSettings>
+);
+typed_endpoint!(
+    update_communication_module_settings,
+    put,
+    "/api/settings/communication",
+    "updateCommunicationModuleSettings",
+    (),
+    CommunicationModuleSettings,
+    ApiResponse<CommunicationModuleSettings>
+);
+typed_endpoint!(
+    get_communication_storage_stats,
+    get,
+    "/api/settings/communication/storage",
+    "getCommunicationStorageStats",
+    (),
+    ApiResponse<CommunicationStorageStatsResponse>
+);
+typed_endpoint!(
+    cleanup_communication_data,
+    post,
+    "/api/settings/communication/cleanup",
+    "cleanupCommunicationData",
+    (),
+    ApiResponse<CommunicationCleanupResponse>
+);
+typed_endpoint!(
+    get_platform_license_status,
+    get,
+    "/api/settings/license",
+    "getPlatformLicenseStatus",
+    (),
+    ApiResponse<PlatformLicenseStatus>
+);
+typed_endpoint!(
+    activate_platform_license,
+    post,
+    "/api/settings/license",
+    "activatePlatformLicense",
+    (),
+    ActivatePlatformLicenseRequest,
+    ApiResponse<PlatformLicenseStatus>
+);
+typed_endpoint!(
+    communication_status,
+    get,
+    "/api/communication/status",
+    "getCommunicationStatus",
+    (),
+    ApiResponse<CommunicationAvailabilityResponse>
+);
+typed_endpoint!(
+    list_communication_conversations,
+    get,
+    "/api/communication/conversations",
+    "listCommunicationConversations",
+    (),
+    ApiResponse<Vec<CommunicationConversationResponse>>
+);
+typed_endpoint!(
+    list_communication_users,
+    get,
+    "/api/communication/users",
+    "listCommunicationUsers",
+    (("query" = Option<String>, Query)),
+    ApiResponse<Vec<CommunicationUserResponse>>
+);
+typed_endpoint!(
+    create_direct_conversation,
+    post,
+    "/api/communication/conversations/direct",
+    "createDirectConversation",
+    (),
+    CreateDirectConversationRequest,
+    ApiResponse<CommunicationConversationResponse>
+);
+typed_endpoint!(
+    create_group_conversation,
+    post,
+    "/api/communication/conversations/groups",
+    "createGroupConversation",
+    (),
+    CreateGroupConversationRequest,
+    ApiResponse<CommunicationConversationResponse>
+);
+typed_endpoint!(
+    update_group_conversation,
+    put,
+    "/api/communication/conversations/{conversationId}",
+    "updateGroupConversation",
+    (("conversationId" = String, Path)),
+    UpdateGroupConversationRequest,
+    ApiResponse<CommunicationConversationResponse>
+);
+typed_endpoint!(
+    transfer_group_owner,
+    post,
+    "/api/communication/conversations/{conversationId}/owner",
+    "transferGroupOwner",
+    (("conversationId" = String, Path)),
+    TransferGroupOwnerRequest,
+    ApiResponse<CommunicationConversationResponse>
+);
+typed_endpoint!(
+    leave_group_conversation,
+    post,
+    "/api/communication/conversations/{conversationId}/leave",
+    "leaveGroupConversation",
+    (("conversationId" = String, Path)),
+    (),
+    ApiResponse<Value>
+);
+typed_endpoint!(
+    delete_group_conversation,
+    delete,
+    "/api/communication/conversations/{conversationId}/dissolve",
+    "deleteGroupConversation",
+    (("conversationId" = String, Path)),
+    (),
+    ApiResponse<Value>
+);
+typed_endpoint!(list_communication_messages, get, "/api/communication/conversations/{conversationId}/messages", "listCommunicationMessages", (("conversationId" = String, Path), ("beforeSequence" = Option<i64>, Query), ("limit" = Option<u64>, Query)), ApiResponse<CommunicationMessagePageResponse>);
+typed_endpoint!(
+    send_communication_message,
+    post,
+    "/api/communication/conversations/{conversationId}/messages",
+    "sendCommunicationMessage",
+    (("conversationId" = String, Path)),
+    SendCommunicationMessageRequest,
+    ApiResponse<CommunicationMessageResponse>
+);
+typed_endpoint!(
+    recall_communication_message,
+    post,
+    "/api/communication/conversations/{conversationId}/messages/{messageId}/recall",
+    "recallCommunicationMessage",
+    (
+        ("conversationId" = String, Path),
+        ("messageId" = String, Path)
+    ),
+    RecallCommunicationMessageRequest,
+    ApiResponse<CommunicationMessageResponse>
+);
+typed_endpoint!(
+    reedit_communication_message,
+    post,
+    "/api/communication/conversations/{conversationId}/messages/{messageId}/reedit",
+    "reeditCommunicationMessage",
+    (
+        ("conversationId" = String, Path),
+        ("messageId" = String, Path)
+    ),
+    ReeditCommunicationMessageRequest,
+    ApiResponse<CommunicationMessageResponse>
+);
+typed_endpoint!(
+    mark_communication_conversation_read,
+    post,
+    "/api/communication/conversations/{conversationId}/read",
+    "markCommunicationConversationRead",
+    (("conversationId" = String, Path)),
+    MarkConversationReadRequest,
+    ApiResponse<Value>
 );
 typed_endpoint!(
     list_locations,
@@ -221,6 +473,31 @@ endpoint!(
     ("id" = String, Path)
 );
 endpoint!(list_personas, get, "/api/agent/personas", "listPersonas");
+typed_endpoint!(
+    create_persona,
+    post,
+    "/api/agent/personas",
+    "createPersona",
+    (),
+    PersonaRequest,
+    ApiResponse<AgentPersonaDefinition>
+);
+typed_endpoint!(
+    update_persona,
+    put,
+    "/api/agent/personas/{id}",
+    "updatePersona",
+    (("id" = String, Path)),
+    PersonaRequest,
+    ApiResponse<AgentPersonaDefinition>
+);
+endpoint!(
+    delete_persona,
+    delete,
+    "/api/agent/personas/{id}",
+    "deletePersona",
+    ("id" = String, Path)
+);
 typed_endpoint!(
     list_agents,
     get,
@@ -461,6 +738,15 @@ typed_endpoint!(
     ApiResponse<Vec<OrganizationUnitResponse>>
 );
 typed_endpoint!(
+    create_local_organization_unit,
+    post,
+    "/api/identity/organization-units",
+    "createLocalOrganizationUnit",
+    (),
+    CreateLocalOrganizationUnitRequest,
+    ApiResponse<OrganizationUnitResponse>
+);
+typed_endpoint!(
     list_users,
     get,
     "/api/identity/users",
@@ -476,6 +762,14 @@ typed_endpoint!(
     (),
     CreateLocalUserRequest,
     ApiResponse<DingTalkLoginUserResponse>
+);
+typed_endpoint!(
+    initialize_local_credentials,
+    post,
+    "/api/identity/users/initialize-local-credentials",
+    "initializeLocalCredentials",
+    (),
+    ApiResponse<crate::modules::identity::InitializeLocalCredentialsResponse>
 );
 typed_endpoint!(
     local_login,
@@ -670,12 +964,13 @@ typed_endpoint!(
     (("appId" = String, Path)),
     ApiResponse<ApiAppFieldOutline>
 );
-endpoint!(
+typed_endpoint!(
     list_forms,
     get,
     "/api/apps/{appId}/forms",
     "listForms",
-    ("appId" = String, Path)
+    (("appId" = String, Path)),
+    ApiResponse<Vec<ApiFormSummary>>
 );
 typed_endpoint!(
     create_form,
@@ -744,6 +1039,23 @@ typed_endpoint!(
     ApiResponse<Value>
 );
 typed_endpoint!(
+    pause_workflow_record,
+    post,
+    "/api/forms/{formUuid}/records/{recordUuid}/workflow/pause",
+    "pauseWorkflowRecord",
+    (("formUuid" = String, Path), ("recordUuid" = String, Path)),
+    WorkflowPauseRequest,
+    ApiResponse<Value>
+);
+typed_endpoint!(
+    resume_workflow_record,
+    post,
+    "/api/forms/{formUuid}/records/{recordUuid}/workflow/resume",
+    "resumeWorkflowRecord",
+    (("formUuid" = String, Path), ("recordUuid" = String, Path)),
+    ApiResponse<Value>
+);
+typed_endpoint!(
     approve_workflow_task,
     post,
     "/api/workflow/tasks/{taskUuid}/approve",
@@ -759,6 +1071,22 @@ typed_endpoint!(
     "rejectWorkflowTask",
     (("taskUuid" = String, Path)),
     WorkflowTaskActionRequest,
+    ApiResponse<Value>
+);
+typed_endpoint!(
+    list_workflow_notifications,
+    get,
+    "/api/workflow/notifications",
+    "listWorkflowNotifications",
+    (),
+    ApiResponse<Value>
+);
+typed_endpoint!(
+    read_workflow_notification,
+    post,
+    "/api/workflow/notifications/{notificationUuid}/read",
+    "readWorkflowNotification",
+    (("notificationUuid" = String, Path)),
     ApiResponse<Value>
 );
 typed_endpoint!(
@@ -973,13 +1301,40 @@ endpoint!(
     ),
     paths(
         health_check,
+        list_recycle_bin,
+        empty_recycle_bin,
+        restore_recycle_bin_entry,
+        delete_recycle_bin_entry,
+        get_recycle_bin_settings,
+        update_recycle_bin_settings,
         get_database_settings,
         update_database_settings,
         test_database_connection,
-        get_agent_settings,
-        update_agent_settings,
+        get_valkey_settings,
+        update_valkey_settings,
+        test_valkey_connection,
         get_platform_agent_assistant_settings,
         update_platform_agent_assistant_settings,
+        get_platform_license_status,
+        activate_platform_license,
+        get_communication_module_settings,
+        update_communication_module_settings,
+        get_communication_storage_stats,
+        cleanup_communication_data,
+        communication_status,
+        list_communication_conversations,
+        list_communication_users,
+        create_direct_conversation,
+        create_group_conversation,
+        update_group_conversation,
+        transfer_group_owner,
+        leave_group_conversation,
+        delete_group_conversation,
+        list_communication_messages,
+        send_communication_message,
+        recall_communication_message,
+        reedit_communication_message,
+        mark_communication_conversation_read,
         list_locations,
         import_locations,
         list_providers,
@@ -991,6 +1346,9 @@ endpoint!(
         update_profile,
         delete_profile,
         list_personas,
+        create_persona,
+        update_persona,
+        delete_persona,
         list_agents,
         create_agent,
         update_agent,
@@ -1020,8 +1378,10 @@ endpoint!(
         sync_dingtalk_users,
         clear_dingtalk_data,
         list_organization_units,
+        create_local_organization_unit,
         list_users,
         create_local_user,
+        initialize_local_credentials,
         local_login,
         update_user,
         delete_user,
@@ -1054,8 +1414,12 @@ endpoint!(
         get_workflow_record_runtime,
         submit_workflow_record,
         reverse_workflow_record,
+        pause_workflow_record,
+        resume_workflow_record,
         approve_workflow_task,
         reject_workflow_task,
+        list_workflow_notifications,
+        read_workflow_notification,
         list_automation_flows,
         create_automation_flow,
         get_automation_flow,
@@ -1112,11 +1476,33 @@ mod tests {
         assert!(value["paths"]["/api/identity/users/{userId}"]["put"].is_object());
         assert!(value["paths"]["/api/forms/{formUuid}/views/{viewUuid}"]["delete"].is_object());
         assert!(value["paths"]["/api/forms/{formUuid}/workflow/process"]["post"].is_object());
-        assert!(value["paths"]["/api/forms/{formUuid}/records/{recordUuid}/workflow"]["get"].is_object());
-        assert!(value["paths"]["/api/forms/{formUuid}/records/{recordUuid}/workflow/submit"]["post"].is_object());
+        assert!(
+            value["paths"]["/api/forms/{formUuid}/records/{recordUuid}/workflow"]["get"]
+                .is_object()
+        );
+        assert!(
+            value["paths"]["/api/forms/{formUuid}/records/{recordUuid}/workflow/submit"]["post"]
+                .is_object()
+        );
         assert!(value["paths"]["/api/workflow/tasks/{taskUuid}/approve"]["post"].is_object());
         assert!(value["paths"]["/api/workflow/tasks"]["get"].is_object());
-        assert!(value["paths"]["/api/forms/{formUuid}/records/{recordUuid}/workflow/comments"]["post"].is_object());
+        assert!(value["paths"]["/api/workflow/notifications"]["get"].is_object());
+        assert!(
+            value["paths"]["/api/workflow/notifications/{notificationUuid}/read"]["post"]
+                .is_object()
+        );
+        assert!(
+            value["paths"]["/api/forms/{formUuid}/records/{recordUuid}/workflow/pause"]["post"]
+                .is_object()
+        );
+        assert!(
+            value["paths"]["/api/forms/{formUuid}/records/{recordUuid}/workflow/resume"]["post"]
+                .is_object()
+        );
+        assert!(
+            value["paths"]["/api/forms/{formUuid}/records/{recordUuid}/workflow/comments"]["post"]
+                .is_object()
+        );
         assert!(value["paths"]["/api/locations"]["get"].is_object());
         assert!(value["paths"]["/api/locations"]["post"].is_object());
         assert!(value["paths"]["/api/apps/{appId}/field-outline"]["get"].is_object());

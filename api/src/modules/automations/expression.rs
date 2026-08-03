@@ -74,7 +74,11 @@ pub(super) fn filter_records_by_rules(
         .collect()
 }
 
-fn evaluate_record_rule_group(rules: &[Value], parent_id: Option<&str>, record_data: &Value) -> bool {
+fn evaluate_record_rule_group(
+    rules: &[Value],
+    parent_id: Option<&str>,
+    record_data: &Value,
+) -> bool {
     let siblings = rules
         .iter()
         .filter(|rule| read_json_string(rule.get("parentId")).as_deref() == parent_id)
@@ -96,7 +100,9 @@ fn evaluate_record_rule_group(rules: &[Value], parent_id: Option<&str>, record_d
             .map(|id| {
                 rules
                     .iter()
-                    .filter(|candidate| read_json_string(candidate.get("parentId")).as_deref() == Some(id))
+                    .filter(|candidate| {
+                        read_json_string(candidate.get("parentId")).as_deref() == Some(id)
+                    })
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
@@ -106,7 +112,11 @@ fn evaluate_record_rule_group(rules: &[Value], parent_id: Option<&str>, record_d
             evaluate_record_rule(rule, record_data)
         } else {
             let children_match = evaluate_record_rule_group(rules, rule_id.as_deref(), record_data);
-            if child_rules[0].get("logicalOperator").and_then(Value::as_str) == Some("or") {
+            if child_rules[0]
+                .get("logicalOperator")
+                .and_then(Value::as_str)
+                == Some("or")
+            {
                 evaluate_record_rule(rule, record_data) || children_match
             } else {
                 evaluate_record_rule(rule, record_data) && children_match

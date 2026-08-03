@@ -3,7 +3,9 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const catalogDirectory = resolve(scriptDirectory, "../public/location-catalog");
+const catalogDirectory = resolve(
+  process.env.LOCATION_CATALOG_OUTPUT_DIR ?? resolve(scriptDirectory, "../data/location-catalog"),
+);
 const apiDirectory = resolve(scriptDirectory, "../../api");
 
 // This is a maintenance command. It connects through the backend's configured
@@ -14,10 +16,6 @@ const processHandle = spawn(
   {
     cwd: apiDirectory,
     stdio: "inherit",
-    env: {
-      ...process.env,
-      CARGO_TARGET_DIR: resolve(apiDirectory, "target-location-import"),
-    },
   },
 );
 

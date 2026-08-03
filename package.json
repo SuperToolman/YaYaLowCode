@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "pnpm dev:web",
     "dev:all": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-dev.ps1",
-    "build": "pnpm build:web",
+    "build": "pnpm export:openapi && pnpm codegen:api && pnpm build:web",
     "lint": "pnpm lint:web",
+    "export:openapi": "cargo run --release --manifest-path api/Cargo.toml -- --export-openapi",
     "codegen:api": "pnpm --dir web codegen:api",
     "dev:web": "pnpm --dir web dev",
     "dev:api": "cd api && cargo run",

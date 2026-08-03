@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1.7
+FROM rust:1.94-bookworm AS build
+ARG CARGO_REGISTRIES_CRATES_IO_INDEX
+RUN if [ -n "$CARGO_REGISTRIES_CRATES_IO_INDEX" ]; then \
+      mkdir -p /usr/local/cargo && \
+      printf '[source.crates-io]\nreplace-with = "deployment-mirror"\n\n[source.deployment-mirror]\nregistry = "%s"\n' "$CARGO_REGISTRIES_CRATES_IO_INDEX" > /usr/local/cargo/config.toml; \
+    fi
+WORKDIR /workspace
+COPY api ./api
+RUN --mount=type=cache,id=yaya-cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=yaya-cargo-git,target=/usr/local/cargo/git \
+    --mount=type=cache,id=yaya-cargo-target,target=/workspace/api/target \
+    set -eu; \
+    cargo build --release --verbose --manifest-path api/Cargo.toml & cargo_pid=$!; \
+    while kill -0 "$cargo_pid" 2>/dev/null; do \
+      echo "Cargo release build is still running..."; \
+      sleep 30; \
+    done; \
+    wait "$cargo_pid"; \
+    cp /workspace/api/target/release/yaya-api /workspace/yaya-api
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --create-home --uid 10001 yaya
+COPY --from=build /workspace/yaya-api /usr/local/bin/yaya-api
+WORKDIR /var/lib/yaya
+EXPOSE 8787
+CMD ["sh", "-c", "mkdir -p /var/lib/yaya && chown -R yaya:yaya /var/lib/yaya && exec runuser -u yaya -- yaya-api"]

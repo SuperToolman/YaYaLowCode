@@ -12,7 +12,15 @@ import {
 export type ViewFilterOperator = "contains" | "equals" | "notEquals" | "greaterThan" | "lessThan";
 export type ViewFilterRule = { id: string; fieldId: string; operator: ViewFilterOperator; value: string };
 export type ViewSortRule = { id: string; fieldId: string; direction: "asc" | "desc" };
-export type ViewConfig = { visibleFieldIds: string[]; filters: ViewFilterRule[]; sorts: ViewSortRule[] };
+export type ViewConfig = {
+  visibleFieldIds: string[];
+  sortableFieldIds: string[];
+  filters: ViewFilterRule[];
+  sorts: ViewSortRule[];
+  columnOrder?: string[];
+  columnWidths?: Record<string, number>;
+  frozenFieldIds?: string[];
+};
 export type FormView = { id: string; viewUuid?: string; name: string; isDefault: boolean; config: ViewConfig; updatedAt: string };
 export type ViewConfigMode = "filters" | "fields" | "sorts";
 

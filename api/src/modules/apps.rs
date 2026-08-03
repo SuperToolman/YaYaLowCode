@@ -1,6 +1,10 @@
 use crate::infrastructure::entities::iam_user_entity;
 use crate::modules::navigation::ensure_system_navigation_for_app;
 use crate::platform::authorization;
+use crate::platform::config::{
+    ApplicationBusinessContext, load_application_business_context_settings,
+    save_application_business_context_settings,
+};
 use crate::platform::form_storage::delete_storage_definition;
 use crate::platform::prelude::*;
 use crate::platform::records::RecordRepository;
@@ -86,6 +90,49 @@ pub(crate) async fn get_app(
     Ok(Json(success_response(
         "获取应用成功",
         app_response(&state.db, app).await?,
+    )))
+}
+
+pub(crate) async fn get_application_business_context(
+    State(state): State<AppState>,
+    Path(app_id): Path<String>,
+) -> Result<Json<ApiResponse<ApplicationBusinessContext>>, AppError> {
+    AppEntity::find()
+        .filter(app_entity::Column::RouteAppId.eq(app_id.clone()))
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("app not found".to_string()))?;
+    let context = load_application_business_context_settings()
+        .and_then(|settings| settings.applications.get(&app_id).cloned())
+        .unwrap_or_default();
+    Ok(Json(success_response(
+        "application business context loaded",
+        context,
+    )))
+}
+
+pub(crate) async fn update_application_business_context(
+    State(state): State<AppState>,
+    Path(app_id): Path<String>,
+    Json(payload): Json<UpdateApplicationBusinessContextRequest>,
+) -> Result<Json<ApiResponse<ApplicationBusinessContext>>, AppError> {
+    AppEntity::find()
+        .filter(app_entity::Column::RouteAppId.eq(app_id.clone()))
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("app not found".to_string()))?;
+    let context = ApplicationBusinessContext::from(payload);
+    context.validate().map_err(AppError::BadRequest)?;
+    let mut settings = load_application_business_context_settings().unwrap_or_default();
+    if context.is_empty() {
+        settings.applications.remove(&app_id);
+    } else {
+        settings.applications.insert(app_id, context.clone());
+    }
+    save_application_business_context_settings(&settings).map_err(AppError::Server)?;
+    Ok(Json(success_response(
+        "application business context saved",
+        context,
     )))
 }
 

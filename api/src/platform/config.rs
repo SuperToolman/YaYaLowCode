@@ -13,6 +13,8 @@ pub struct AppConfig {
     pub host: String,
     pub port: u16,
     pub database_url: String,
+    pub valkey_url: Option<String>,
+    pub valkey_cache_ttl_seconds: u64,
 }
 
 #[derive(Clone, Deserialize, Serialize, ToSchema)]
@@ -22,6 +24,18 @@ pub struct DatabaseSettings {
     pub database: String,
     pub username: String,
     pub password: String,
+}
+
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
+pub struct ValkeySettings {
+    pub enabled: bool,
+    pub host: String,
+    pub port: u16,
+    pub database: u8,
+    pub username: String,
+    pub password: String,
+    #[serde(default = "default_valkey_cache_ttl_hours")]
+    pub cache_ttl_hours: u8,
 }
 
 #[derive(Clone, Deserialize, Serialize, ToSchema)]
@@ -45,6 +59,48 @@ pub struct PlatformAgentAssistantSettings {
     pub navigation_agent_id: Option<String>,
     #[serde(default)]
     pub schema_analysis_prompt: String,
+}
+
+#[derive(Clone, Default, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationBusinessContext {
+    #[serde(default)]
+    pub business_overview: String,
+    #[serde(default)]
+    pub terminology: String,
+    #[serde(default)]
+    pub process_description: String,
+    #[serde(default)]
+    pub analysis_guidance: String,
+}
+
+impl ApplicationBusinessContext {
+    pub fn validate(&self) -> Result<(), String> {
+        for (name, value) in [
+            ("businessOverview", &self.business_overview),
+            ("terminology", &self.terminology),
+            ("processDescription", &self.process_description),
+            ("analysisGuidance", &self.analysis_guidance),
+        ] {
+            if value.chars().count() > 4_000 {
+                return Err(format!("{name} must not exceed 4000 characters"));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.business_overview.trim().is_empty()
+            && self.terminology.trim().is_empty()
+            && self.process_description.trim().is_empty()
+            && self.analysis_guidance.trim().is_empty()
+    }
+}
+
+#[derive(Clone, Default, Deserialize, Serialize)]
+pub struct ApplicationBusinessContextSettings {
+    #[serde(default)]
+    pub applications: HashMap<String, ApplicationBusinessContext>,
 }
 
 impl Default for PlatformAgentAssistantSettings {
@@ -71,6 +127,10 @@ fn default_schema_analysis_prompt() -> String {
     .join("\n")
 }
 
+fn default_approval_mode() -> String {
+    "approve_on_behalf".to_string()
+}
+
 /// The concrete configuration selected for one Agent run.
 ///
 /// A Robot selects a profile. The profile owns its model provider and the
@@ -86,7 +146,7 @@ pub struct ResolvedAgentRuntime {
     pub plugins: Vec<AgentPluginDefinition>,
     pub skills: Vec<AgentSkillDefinition>,
     pub knowledge_bases: Vec<AgentKnowledgeBaseDefinition>,
-    pub allow_create_forms: bool,
+    pub approval_mode: String,
     pub allowed_tools: HashSet<String>,
 }
 
@@ -133,6 +193,12 @@ pub struct AgentPersonaDefinition {
     pub name: String,
     pub description: String,
     pub system_prompt: String,
+    #[serde(default)]
+    pub plugin_ids: Vec<String>,
+    #[serde(default)]
+    pub skill_ids: Vec<String>,
+    #[serde(default)]
+    pub knowledge_base_ids: Vec<String>,
 }
 
 #[derive(Clone, Deserialize, Serialize, ToSchema)]
@@ -250,6 +316,10 @@ pub struct AgentModelProvider {
     pub enabled: bool,
     pub api_base_url: String,
     pub api_key: String,
+    #[serde(default)]
+    pub website_url: String,
+    #[serde(default)]
+    pub default_chat_model: String,
 }
 
 #[derive(Clone, Deserialize, Serialize, ToSchema)]
@@ -276,6 +346,8 @@ pub struct AgentConfigProfile {
     pub allow_create_forms: bool,
     #[serde(default)]
     pub allow_create_automations: bool,
+    #[serde(default = "default_approval_mode")]
+    pub approval_mode: String,
     #[serde(default = "default_context_max_turns")]
     pub context_max_turns: i32,
     #[serde(default = "default_context_discard_turns")]
@@ -328,6 +400,98 @@ pub struct IdentitySourceSettings {
 
 #[derive(Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct NotificationSettings {
+    #[serde(default = "default_true")]
+    pub in_app_enabled: bool,
+    #[serde(default = "default_notification_poll_interval_seconds")]
+    pub poll_interval_seconds: u32,
+    #[serde(default = "default_notification_retention_days")]
+    pub retention_days: u32,
+    #[serde(default)]
+    pub dingtalk_enabled: bool,
+    #[serde(default)]
+    pub dingtalk_webhook_url: String,
+    #[serde(default)]
+    pub email_enabled: bool,
+    #[serde(default)]
+    pub email_from_address: String,
+    #[serde(default)]
+    pub websocket_enabled: bool,
+}
+
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunicationModuleSettings {
+    #[serde(default)]
+    pub installed: bool,
+    #[serde(default)]
+    pub license_id: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<i64>,
+    #[serde(default = "default_communication_max_file_upload_mb")]
+    pub max_file_upload_mb: u32,
+    #[serde(default = "default_communication_retention_days")]
+    pub retention_days: u32,
+    #[serde(default)]
+    pub allowed_file_extensions: String,
+    #[serde(default = "default_true")]
+    pub websocket_enabled: bool,
+    #[serde(default = "default_true")]
+    pub allow_file_messages: bool,
+}
+
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RecycleBinSettings {
+    pub retention_days: u16,
+}
+
+impl Default for RecycleBinSettings {
+    fn default() -> Self {
+        Self { retention_days: 7 }
+    }
+}
+
+impl Default for CommunicationModuleSettings {
+    fn default() -> Self {
+        Self {
+            installed: false,
+            license_id: None,
+            expires_at: None,
+            max_file_upload_mb: default_communication_max_file_upload_mb(),
+            retention_days: default_communication_retention_days(),
+            allowed_file_extensions: String::new(),
+            websocket_enabled: true,
+            allow_file_messages: true,
+        }
+    }
+}
+
+#[derive(Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformLicenseSettings {
+    pub license_center_url: String,
+    pub license: String,
+    pub activated_at: String,
+}
+
+impl Default for NotificationSettings {
+    fn default() -> Self {
+        Self {
+            in_app_enabled: true,
+            poll_interval_seconds: default_notification_poll_interval_seconds(),
+            retention_days: default_notification_retention_days(),
+            dingtalk_enabled: false,
+            dingtalk_webhook_url: String::new(),
+            email_enabled: false,
+            email_from_address: String::new(),
+            websocket_enabled: false,
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct DingTalkSettings {
     #[serde(default)]
     pub app_id: String,
@@ -359,18 +523,63 @@ struct StoredSettings {
 
 impl AppConfig {
     pub fn from_env() -> Self {
+        let valkey_settings = load_valkey_settings();
         Self {
             host: std::env::var("APP_HOST").unwrap_or_else(|_| "127.0.0.1".to_string()),
             port: std::env::var("APP_PORT")
                 .ok()
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(8787),
-            database_url: load_database_settings()
-                .map(|settings| settings.to_database_url())
-                .or_else(|| std::env::var("DATABASE_URL").ok())
+            database_url: database_url_from_env()
+                .or_else(|| load_database_settings().map(|settings| settings.to_database_url()))
                 .unwrap_or_else(|| "postgres://postgres@localhost:5432/yaya_low_code".to_string()),
+            valkey_url: std::env::var("VALKEY_URL").ok().or_else(|| {
+                valkey_settings
+                    .as_ref()
+                    .filter(|settings| settings.enabled)
+                    .map(|settings| settings.to_valkey_url())
+            }),
+            valkey_cache_ttl_seconds: valkey_settings
+                .as_ref()
+                .map(|settings| settings.cache_ttl_hours as u64 * 3_600)
+                .or_else(|| {
+                    std::env::var("VALKEY_CACHE_TTL_HOURS")
+                        .ok()
+                        .and_then(|value| value.parse::<u64>().ok())
+                        .map(|hours| hours * 3_600)
+                })
+                .unwrap_or(8 * 3_600),
         }
     }
+}
+
+pub fn validate_production_environment() -> Result<(), std::io::Error> {
+    let production = matches!(std::env::var("APP_ENV").as_deref(), Ok("production"))
+        || matches!(std::env::var("NODE_ENV").as_deref(), Ok("production"));
+    if !production {
+        return Ok(());
+    }
+
+    for name in [
+        "DATABASE_URL",
+        "AUTH_TOKEN_SECRET",
+        "BACKEND_INTERNAL_TOKEN",
+        "YAYA_LICENSE_PUBLIC_KEY_PEM",
+    ] {
+        if std::env::var(name).is_ok_and(|value| !value.trim().is_empty()) {
+            continue;
+        }
+        if name == "YAYA_LICENSE_PUBLIC_KEY_PEM"
+            && std::env::var_os("YAYA_LICENSE_PUBLIC_KEY_PATH").is_some()
+        {
+            continue;
+        }
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("required production environment variable is missing: {name}"),
+        ));
+    }
+    Ok(())
 }
 
 impl DatabaseSettings {
@@ -402,6 +611,79 @@ impl DatabaseSettings {
     }
 }
 
+pub fn database_url_from_env() -> Option<String> {
+    std::env::var("DATABASE_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+}
+
+pub fn runtime_database_settings() -> Option<(DatabaseSettings, String)> {
+    let database_url = database_url_from_env()?;
+    let parsed = reqwest::Url::parse(&database_url).ok()?;
+    let host = parsed.host_str()?.to_string();
+    let database = parsed.path().trim_start_matches('/').to_string();
+    if database.is_empty() || parsed.username().is_empty() {
+        return None;
+    }
+    Some((
+        DatabaseSettings {
+            host,
+            port: parsed.port().unwrap_or(5432),
+            database,
+            username: parsed.username().to_string(),
+            // Runtime credentials are never returned through the settings API.
+            password: String::new(),
+        },
+        database_url,
+    ))
+}
+
+impl ValkeySettings {
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.enabled {
+            return Ok(());
+        }
+        if self.host.trim().is_empty() {
+            return Err("Valkey host is required".to_string());
+        }
+        if self.port == 0 {
+            return Err("Valkey port is required".to_string());
+        }
+        if self.database > 15 {
+            return Err("Valkey database must be between 0 and 15".to_string());
+        }
+        if !(1..=24).contains(&self.cache_ttl_hours) {
+            return Err("Valkey cache TTL must be between 1 and 24 hours".to_string());
+        }
+        Ok(())
+    }
+
+    pub fn to_valkey_url(&self) -> String {
+        let credentials = match (self.username.trim(), self.password.as_str()) {
+            ("", "") => String::new(),
+            (username, password) => format!(
+                "{}:{}@",
+                percent_encode(if username.is_empty() {
+                    "default"
+                } else {
+                    username
+                }),
+                percent_encode(password)
+            ),
+        };
+        format!(
+            "redis://{credentials}{}:{}/{}",
+            self.host.trim(),
+            self.port,
+            self.database
+        )
+    }
+}
+
+fn default_valkey_cache_ttl_hours() -> u8 {
+    8
+}
+
 pub fn load_database_settings() -> Option<DatabaseSettings> {
     let content = fs::read_to_string(settings_path()).ok()?;
     serde_json::from_str::<StoredSettings>(&content)
@@ -424,33 +706,19 @@ pub fn save_database_settings(settings: &DatabaseSettings) -> Result<(), std::io
     fs::rename(temporary_path, path)
 }
 
-pub fn load_agent_settings() -> Option<AgentSettings> {
-    let content = fs::read_to_string(agent_settings_path()).ok()?;
-    serde_json::from_str::<AgentSettings>(&content).ok()
+pub fn load_valkey_settings() -> Option<ValkeySettings> {
+    let content = fs::read_to_string(valkey_settings_path()).ok()?;
+    serde_json::from_str::<ValkeySettings>(&content).ok()
 }
 
-pub fn save_agent_settings(settings: &AgentSettings) -> Result<(), std::io::Error> {
-    let path = agent_settings_path();
+pub fn save_valkey_settings(settings: &ValkeySettings) -> Result<(), std::io::Error> {
+    let path = valkey_settings_path();
     let temporary_path = path.with_extension("tmp");
-    let content = serde_json::to_vec_pretty(settings).expect("agent settings are serializable");
+    let content = serde_json::to_vec_pretty(settings).expect("Valkey settings are serializable");
     fs::write(&temporary_path, content)?;
     if path.exists() {
         fs::remove_file(&path)?;
     }
-    fs::rename(temporary_path, path)
-}
-
-pub fn load_platform_agent_assistant_settings() -> Option<PlatformAgentAssistantSettings> {
-    let content = fs::read_to_string(platform_agent_assistant_settings_path()).ok()?;
-    serde_json::from_str::<PlatformAgentAssistantSettings>(&content).ok()
-}
-
-pub fn save_platform_agent_assistant_settings(settings: &PlatformAgentAssistantSettings) -> Result<(), std::io::Error> {
-    let path = platform_agent_assistant_settings_path();
-    let temporary_path = path.with_extension("tmp");
-    let content = serde_json::to_vec_pretty(settings).expect("assistant settings are serializable");
-    fs::write(&temporary_path, content)?;
-    if path.exists() { fs::remove_file(&path)?; }
     fs::rename(temporary_path, path)
 }
 
@@ -604,7 +872,10 @@ pub fn import_skill_package(
         file.read_to_end(&mut bytes)
             .map_err(|error| format!("无法解压 Skill 文件: {error}"))?;
         if relative == Path::new("SKILL.md") {
-            instructions = Some(String::from_utf8(bytes.clone()).map_err(|_| "SKILL.md 必须是 UTF-8 文本".to_string())?);
+            instructions = Some(
+                String::from_utf8(bytes.clone())
+                    .map_err(|_| "SKILL.md 必须是 UTF-8 文本".to_string())?,
+            );
         }
         fs::write(target, bytes).map_err(|error| error.to_string())?;
     }
@@ -651,7 +922,7 @@ fn skill_package_name(value: &str) -> String {
 fn skill_packages_root() -> PathBuf {
     std::env::var_os("YAYA_SKILLS_PATH")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(".yaya-skills"))
+        .unwrap_or_else(|| PathBuf::from("resources/skills"))
 }
 
 fn ensure_default_agent_resources_in_registry(registry: &mut AgentRegistry) -> bool {
@@ -752,7 +1023,7 @@ fn default_agent_skills() -> Vec<AgentSkillDefinition> {
             is_system: true,
             description: "分析触发器、节点与连线，识别流程风险。".to_string(),
             enabled: true,
-            allowed_tools: vec!["list_automations".to_string(), "get_automation_graph".to_string(), "get_workflow_process_definition".to_string(), "get_workflow_record_runtime".to_string()],
+            allowed_tools: vec!["list_automations".to_string(), "get_automation_graph".to_string(), "create_automation_draft".to_string(), "get_workflow_process_definition".to_string(), "get_workflow_record_runtime".to_string()],
             instructions: "审查自动化或工作流时，先读取实际流程图或流程定义。检查触发条件是否过宽、字段引用是否存在、失败重试是否可能重复执行、节点是否存在不可达分支，以及外部请求是否可能暴露敏感数据。分析单条工作流记录时，只根据实例、待办和动作轨迹说明当前状态与阻塞点；不得提交、审批、驳回、撤回或修改流程。只提出修改建议，不执行或发布自动化。".to_string(),
             requires_confirmation: false,
         },
@@ -808,7 +1079,7 @@ pub fn resolve_agent_runtime_for_scope(
     resolve_agent_runtime_from_registry(&registry, agent_id, app_id, business_id)
 }
 
-fn resolve_agent_runtime_from_registry(
+pub(crate) fn resolve_agent_runtime_from_registry(
     registry: &AgentRegistry,
     agent_id: Option<&str>,
     app_id: Option<&str>,
@@ -866,23 +1137,45 @@ fn resolve_agent_runtime_from_registry(
         .map(|persona| persona.system_prompt.as_str())
         .unwrap_or("");
 
+    // Persona owns reusable capability bindings. Profile bindings are a legacy fallback.
+    let persona_plugin_ids = persona
+        .map(|value| value.plugin_ids.as_slice())
+        .unwrap_or_default();
+    let persona_skill_ids = persona
+        .map(|value| value.skill_ids.as_slice())
+        .unwrap_or_default();
+    let persona_knowledge_ids = persona
+        .map(|value| value.knowledge_base_ids.as_slice())
+        .unwrap_or_default();
     let plugins = resolve_bound_resources(
         "plugin",
-        &profile.plugin_ids,
+        if persona_plugin_ids.is_empty() {
+            &profile.plugin_ids
+        } else {
+            persona_plugin_ids
+        },
         &registry.plugins,
         |resource| &resource.id,
         |resource| resource.enabled,
     )?;
     let skills = resolve_bound_resources(
         "skill",
-        &profile.skill_ids,
+        if persona_skill_ids.is_empty() {
+            &profile.skill_ids
+        } else {
+            persona_skill_ids
+        },
         &registry.skills,
         |resource| &resource.id,
         |resource| resource.enabled,
     )?;
     let knowledge_bases = resolve_bound_resources(
         "knowledge base",
-        &profile.knowledge_base_ids,
+        if persona_knowledge_ids.is_empty() {
+            &profile.knowledge_base_ids
+        } else {
+            persona_knowledge_ids
+        },
         &registry.knowledge_bases,
         |resource| &resource.id,
         |resource| resource.enabled,
@@ -902,7 +1195,11 @@ fn resolve_agent_runtime_from_registry(
             provider: provider.kind.clone(),
             api_base_url: provider.api_base_url.clone(),
             api_key: provider.api_key.clone(),
-            chat_model: profile.chat_model.clone(),
+            chat_model: if profile.chat_model.trim().is_empty() {
+                provider.default_chat_model.clone()
+            } else {
+                profile.chat_model.clone()
+            },
             embedding_model: profile.embedding_model.clone(),
             temperature: profile.temperature,
             max_steps: profile.max_steps,
@@ -915,7 +1212,7 @@ fn resolve_agent_runtime_from_registry(
         plugins,
         skills,
         knowledge_bases,
-        allow_create_forms: profile.allow_create_forms,
+        approval_mode: profile.approval_mode.clone(),
         allowed_tools,
     })
 }
@@ -963,6 +1260,7 @@ mod tests {
             allow_create_apps: false,
             allow_create_forms: false,
             allow_create_automations: false,
+            approval_mode: default_approval_mode(),
             context_max_turns: 50,
             context_discard_turns: 10,
             context_overflow_strategy: "truncate".to_string(),
@@ -985,6 +1283,8 @@ mod tests {
                 enabled: true,
                 api_base_url: "https://example.test/v1".to_string(),
                 api_key: "test-key".to_string(),
+                website_url: String::new(),
+                default_chat_model: "gpt-test".to_string(),
             }],
             profiles: vec![profile()],
             agents: vec![AgentDefinition {
@@ -1040,14 +1340,16 @@ mod tests {
                 name: "实施顾问".to_string(),
                 description: String::new(),
                 system_prompt: "你是表单设计助手。".to_string(),
+                plugin_ids: Vec::new(),
+                skill_ids: Vec::new(),
+                knowledge_base_ids: Vec::new(),
             }],
         }
     }
 
     #[test]
     fn runtime_uses_profile_bindings_and_deduplicates_resources() {
-        let mut registry = registry();
-        registry.profiles[0].allow_create_forms = true;
+        let registry = registry();
         let runtime =
             resolve_agent_runtime_from_registry(&registry, Some("robot-form-builder"), None, None)
                 .expect("runtime should resolve");
@@ -1061,7 +1363,6 @@ mod tests {
         assert_eq!(runtime.plugins[0].id, "plugin-one");
         assert_eq!(runtime.skills[0].id, "skill-one");
         assert_eq!(runtime.knowledge_bases[0].id, "knowledge-one");
-        assert!(runtime.allow_create_forms);
         assert!(runtime.allowed_tools.contains("get_form_schema"));
         assert!(!runtime.allowed_tools.contains("list_forms"));
         assert!(!runtime.allowed_tools.contains("create_form_draft"));
@@ -1232,12 +1533,18 @@ fn default_personas() -> Vec<AgentPersonaDefinition> {
             description: "通用低代码平台助手".to_string(),
             system_prompt: "你是 YaYa 低代码平台助手。帮助用户设计表单、编排自动化和分析业务配置。"
                 .to_string(),
+            plugin_ids: Vec::new(),
+            skill_ids: Vec::new(),
+            knowledge_base_ids: Vec::new(),
         },
         AgentPersonaDefinition {
             id: "persona-business".to_string(),
             name: "业务分析师".to_string(),
             description: "聚焦业务流程和需求分析".to_string(),
             system_prompt: "你是一名业务分析师，擅长梳理业务流程、数据关系与系统需求。".to_string(),
+            plugin_ids: Vec::new(),
+            skill_ids: Vec::new(),
+            knowledge_base_ids: Vec::new(),
         },
         AgentPersonaDefinition {
             id: "persona-builder".to_string(),
@@ -1245,6 +1552,9 @@ fn default_personas() -> Vec<AgentPersonaDefinition> {
             description: "聚焦应用搭建与自动化实施".to_string(),
             system_prompt: "你是一名低代码实施顾问，擅长表单设计、自动化编排和应用治理。"
                 .to_string(),
+            plugin_ids: Vec::new(),
+            skill_ids: Vec::new(),
+            knowledge_base_ids: Vec::new(),
         },
     ]
 }
@@ -1267,19 +1577,65 @@ pub fn save_identity_source_settings(
     fs::rename(temporary_path, path)
 }
 
+pub fn load_application_business_context_settings() -> Option<ApplicationBusinessContextSettings> {
+    let content = fs::read_to_string(application_business_context_settings_path()).ok()?;
+    serde_json::from_str::<ApplicationBusinessContextSettings>(&content).ok()
+}
+
+pub fn save_application_business_context_settings(
+    settings: &ApplicationBusinessContextSettings,
+) -> Result<(), std::io::Error> {
+    let path = application_business_context_settings_path();
+    let temporary_path = path.with_extension("tmp");
+    let content = serde_json::to_vec_pretty(settings)
+        .expect("application business context settings are serializable");
+    fs::write(&temporary_path, content)?;
+    if path.exists() {
+        fs::remove_file(&path)?;
+    }
+    fs::rename(temporary_path, path)
+}
+
 pub fn load_rbac_permission_settings() -> Option<RbacPermissionSettings> {
     let content = fs::read_to_string(rbac_permission_settings_path()).ok()?;
     serde_json::from_str::<RbacPermissionSettings>(&content).ok()
 }
 
-pub fn save_rbac_permission_settings(
-    settings: &RbacPermissionSettings,
-) -> Result<(), std::io::Error> {
-    let path = rbac_permission_settings_path();
+pub fn load_notification_settings() -> Option<NotificationSettings> {
+    let content = fs::read_to_string(notification_settings_path()).ok()?;
+    serde_json::from_str::<NotificationSettings>(&content).ok()
+}
+
+pub fn save_notification_settings(settings: &NotificationSettings) -> Result<(), std::io::Error> {
+    let path = notification_settings_path();
     let temporary_path = path.with_extension("tmp");
     let content =
-        serde_json::to_vec_pretty(settings).expect("rbac permission settings are serializable");
+        serde_json::to_vec_pretty(settings).expect("notification settings are serializable");
     fs::write(&temporary_path, content)?;
+    if path.exists() {
+        fs::remove_file(&path)?;
+    }
+    fs::rename(temporary_path, path)
+}
+
+pub fn communication_module_enabled() -> bool {
+    crate::platform::license::license_has_module("communication")
+}
+
+pub fn load_platform_license_settings() -> Option<PlatformLicenseSettings> {
+    let content = fs::read_to_string(platform_license_settings_path()).ok()?;
+    serde_json::from_str::<PlatformLicenseSettings>(&content).ok()
+}
+
+pub fn save_platform_license_settings(
+    settings: &PlatformLicenseSettings,
+) -> Result<(), std::io::Error> {
+    let path = platform_license_settings_path();
+    let temporary_path = path.with_extension("tmp");
+    fs::write(
+        &temporary_path,
+        serde_json::to_vec_pretty(settings).expect("license settings are serializable"),
+    )?;
     if path.exists() {
         fs::remove_file(&path)?;
     }
@@ -1317,40 +1673,201 @@ impl IdentitySourceSettings {
     }
 }
 
+impl NotificationSettings {
+    pub fn validate(&self) -> Result<(), String> {
+        if !(15..=3_600).contains(&self.poll_interval_seconds) {
+            return Err(
+                "notification polling interval must be between 15 and 3600 seconds".to_string(),
+            );
+        }
+        if !(1..=3_650).contains(&self.retention_days) {
+            return Err("notification retention must be between 1 and 3650 days".to_string());
+        }
+        if self.dingtalk_enabled && self.dingtalk_webhook_url.trim().is_empty() {
+            return Err("dingtalk webhook url is required when enabled".to_string());
+        }
+        if self.email_enabled && self.email_from_address.trim().is_empty() {
+            return Err("email from address is required when enabled".to_string());
+        }
+        Ok(())
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+fn default_notification_poll_interval_seconds() -> u32 {
+    60
+}
+fn default_notification_retention_days() -> u32 {
+    90
+}
+fn default_communication_max_file_upload_mb() -> u32 {
+    20
+}
+fn default_communication_retention_days() -> u32 {
+    0
+}
+
 fn settings_path() -> PathBuf {
-    std::env::var_os("YAYA_SETTINGS_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(".yaya-lowcode-settings.json"))
+    runtime_state_path("YAYA_SETTINGS_PATH", "database.json")
 }
 
-fn agent_settings_path() -> PathBuf {
-    std::env::var_os("YAYA_AGENT_SETTINGS_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(".yaya-agent-settings.json"))
+fn valkey_settings_path() -> PathBuf {
+    runtime_state_path("YAYA_VALKEY_SETTINGS_PATH", "valkey.json")
 }
 
-fn platform_agent_assistant_settings_path() -> PathBuf {
-    std::env::var_os("YAYA_PLATFORM_AGENT_ASSISTANT_SETTINGS_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(".yaya-platform-agent-assistant-settings.json"))
+fn application_business_context_settings_path() -> PathBuf {
+    runtime_state_path(
+        "YAYA_APPLICATION_BUSINESS_CONTEXT_PATH",
+        "application-business-context.json",
+    )
 }
 
 fn agent_registry_path() -> PathBuf {
-    std::env::var_os("YAYA_AGENT_REGISTRY_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(".yaya-agent-registry.json"))
+    runtime_state_path("YAYA_AGENT_REGISTRY_PATH", "agent-registry.json")
 }
 
 fn identity_settings_path() -> PathBuf {
-    std::env::var_os("YAYA_IDENTITY_SETTINGS_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(".yaya-identity-settings.json"))
+    runtime_state_path("YAYA_IDENTITY_SETTINGS_PATH", "identity.json")
 }
 
 fn rbac_permission_settings_path() -> PathBuf {
-    std::env::var_os("YAYA_RBAC_PERMISSION_SETTINGS_PATH")
+    runtime_state_path("YAYA_RBAC_PERMISSION_SETTINGS_PATH", "rbac.json")
+}
+
+fn notification_settings_path() -> PathBuf {
+    runtime_state_path("YAYA_NOTIFICATION_SETTINGS_PATH", "notifications.json")
+}
+
+fn communication_settings_path() -> PathBuf {
+    runtime_state_path("YAYA_COMMUNICATION_SETTINGS_PATH", "communication.json")
+}
+
+fn recycle_bin_settings_path() -> PathBuf {
+    runtime_state_path("YAYA_RECYCLE_BIN_SETTINGS_PATH", "recycle-bin.json")
+}
+
+pub fn load_recycle_bin_settings() -> RecycleBinSettings {
+    fs::read_to_string(recycle_bin_settings_path())
+        .ok()
+        .and_then(|content| serde_json::from_str(&content).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_recycle_bin_settings(settings: &RecycleBinSettings) -> Result<(), std::io::Error> {
+    let path = recycle_bin_settings_path();
+    let temporary_path = path.with_extension("tmp");
+    fs::write(
+        &temporary_path,
+        serde_json::to_vec_pretty(settings).expect("recycle settings are serializable"),
+    )?;
+    if path.exists() {
+        fs::remove_file(&path)?;
+    }
+    fs::rename(temporary_path, path)
+}
+
+pub fn load_communication_settings() -> Option<CommunicationModuleSettings> {
+    let content = fs::read_to_string(communication_settings_path()).ok()?;
+    serde_json::from_str::<CommunicationModuleSettings>(&content).ok()
+}
+
+pub fn save_communication_settings(
+    settings: &CommunicationModuleSettings,
+) -> Result<(), std::io::Error> {
+    let path = communication_settings_path();
+    let temporary_path = path.with_extension("tmp");
+    fs::write(
+        &temporary_path,
+        serde_json::to_vec_pretty(settings).expect("communication settings are serializable"),
+    )?;
+    if path.exists() {
+        fs::remove_file(&path)?;
+    }
+    fs::rename(temporary_path, path)
+}
+
+fn platform_license_settings_path() -> PathBuf {
+    runtime_state_path("YAYA_LICENSE_SETTINGS_PATH", "license.json")
+}
+
+fn runtime_state_path(variable: &str, file_name: &str) -> PathBuf {
+    std::env::var_os(variable)
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(".yaya-rbac-permissions.json"))
+        .unwrap_or_else(|| PathBuf::from("runtime/state").join(file_name))
+}
+
+/// Moves local runtime state out of the source root without overwriting an
+/// existing runtime directory. Explicit `YAYA_*_PATH` values are left alone.
+pub fn migrate_legacy_runtime_layout() -> Result<(), std::io::Error> {
+    let state_migrations = [
+        ("YAYA_SETTINGS_PATH", ".yaya-lowcode-settings.json", "database.json"),
+        ("YAYA_VALKEY_SETTINGS_PATH", ".yaya-valkey-settings.json", "valkey.json"),
+        (
+            "YAYA_APPLICATION_BUSINESS_CONTEXT_PATH",
+            ".yaya-application-business-context.json",
+            "application-business-context.json",
+        ),
+        (
+            "YAYA_AGENT_REGISTRY_PATH",
+            ".yaya-agent-registry.json",
+            "agent-registry.json",
+        ),
+        (
+            "YAYA_IDENTITY_SETTINGS_PATH",
+            ".yaya-identity-settings.json",
+            "identity.json",
+        ),
+        (
+            "YAYA_RBAC_PERMISSION_SETTINGS_PATH",
+            ".yaya-rbac-permissions.json",
+            "rbac.json",
+        ),
+        (
+            "YAYA_NOTIFICATION_SETTINGS_PATH",
+            ".yaya-notification-settings.json",
+            "notifications.json",
+        ),
+        (
+            "YAYA_COMMUNICATION_SETTINGS_PATH",
+            ".yaya-communication-settings.json",
+            "communication.json",
+        ),
+        (
+            "YAYA_RECYCLE_BIN_SETTINGS_PATH",
+            ".yaya-recycle-bin.json",
+            "recycle-bin.json",
+        ),
+        ("YAYA_LICENSE_SETTINGS_PATH", ".yaya-license.json", "license.json"),
+    ];
+
+    fs::create_dir_all("runtime/state")?;
+    for (variable, legacy, file_name) in state_migrations {
+        if std::env::var_os(variable).is_none() {
+            move_runtime_path(Path::new(legacy), &runtime_state_path(variable, file_name))?;
+        }
+    }
+    if std::env::var_os("YAYA_UPLOAD_DIR").is_none() {
+        move_runtime_path(Path::new("data/uploads"), Path::new("runtime/uploads"))?;
+    }
+    if std::env::var_os("YAYA_LOG_DIRECTORY").is_none() {
+        move_runtime_path(Path::new("data/logs"), Path::new("runtime/logs"))?;
+    }
+    if Path::new("data").is_dir() && fs::read_dir("data")?.next().is_none() {
+        fs::remove_dir("data")?;
+    }
+    Ok(())
+}
+
+fn move_runtime_path(source: &Path, destination: &Path) -> Result<(), std::io::Error> {
+    if !source.exists() || destination.exists() {
+        return Ok(());
+    }
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::rename(source, destination)
 }
 
 fn percent_encode(value: &str) -> String {

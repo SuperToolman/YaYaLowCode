@@ -271,7 +271,12 @@ function LoginScreen() {
 function getSafeRedirect() {
   if (typeof window === "undefined") return "/";
   const redirect = new URLSearchParams(window.location.search).get("redirect");
-  return redirect && redirect.startsWith("/") && !redirect.startsWith("//") && !redirect.startsWith("/login") ? redirect : "/";
+  return redirect
+    && redirect.startsWith("/")
+    && !redirect.startsWith("//")
+    && !redirect.startsWith("/login")
+    ? redirect
+    : "/";
 }
 
 function readRememberedCredentials(): RememberedCredentials | null {

@@ -363,6 +363,7 @@ where
             extension_data JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             created_by VARCHAR(80) NOT NULL,
             updated_by VARCHAR(80) NOT NULL,
+            deleted_at TIMESTAMPTZ NULL,
             created_at TIMESTAMPTZ NOT NULL,
             updated_at TIMESTAMPTZ NOT NULL
         );
@@ -372,8 +373,15 @@ where
             ADD COLUMN IF NOT EXISTS extension_data JSONB NOT NULL DEFAULT '{{}}'::jsonb;
         ALTER TABLE "{}"
             ADD COLUMN IF NOT EXISTS form_type VARCHAR(24) NOT NULL DEFAULT 'normal';
+        ALTER TABLE "{}"
+            ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ NULL;
         "#,
-        plan.main_table, created_at_index, plan.main_table, plan.main_table, plan.main_table
+        plan.main_table,
+        created_at_index,
+        plan.main_table,
+        plan.main_table,
+        plan.main_table,
+        plan.main_table
     ))
     .await?;
 

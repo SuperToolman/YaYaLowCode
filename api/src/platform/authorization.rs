@@ -11,9 +11,7 @@ use crate::infrastructure::entities::{
     automation_flow_entity, form_definition_entity, iam_role_entity, iam_user_entity,
     iam_user_role_entity,
 };
-use crate::platform::{
-    config::load_rbac_permission_settings, error::AppError, prelude::ApiResponse, runtime::AppState,
-};
+use crate::platform::{error::AppError, prelude::ApiResponse, rbac, runtime::AppState};
 use crate::shared::success_response;
 
 #[derive(Deserialize)]
@@ -67,14 +65,7 @@ pub(crate) async fn grants(
         return Ok(HashSet::from(["*".into()]));
     }
 
-    let settings = load_rbac_permission_settings().unwrap_or_default();
-    let mut grants = HashSet::new();
-    for role in roles {
-        if let Some(values) = settings.grants.get(&role.id.to_string()) {
-            grants.extend(values.iter().cloned());
-        }
-    }
-    Ok(grants)
+    rbac::grants_for_roles(&state.db, roles.into_iter().map(|role| role.id).collect()).await
 }
 
 pub(crate) async fn get_grants(
@@ -124,6 +115,9 @@ pub(crate) async fn authorize_request(
         return Ok(());
     };
     let has_permission = grants.contains(&permission)
+        // Keep existing organization-only role assignments working after the
+        // identity source and organization settings were merged.
+        || (permission == "settings.identity-source" && grants.contains("settings.organization"))
         || (permission == "apps.access"
             && (grants.contains("apps.manage")
                 || grants
@@ -178,14 +172,24 @@ async fn required_permission(
     path: &str,
 ) -> Result<Option<String>, AppError> {
     let platform_permission = match path {
-        "/api/settings/database" | "/api/settings/database/test" => Some("settings.database"),
-        "/api/settings/agent" | "/api/settings/agent-assistant" => Some("settings.agent"),
+        "/api/settings/database"
+        | "/api/settings/database/test"
+        | "/api/settings/valkey"
+        | "/api/settings/valkey/test"
+        | "/api/settings/logs" => Some("settings.database"),
+        "/api/settings/recycle-bin" | "/api/recycle-bin" => Some("settings.database"),
+        _ if path.starts_with("/api/recycle-bin/") => Some("settings.database"),
+        "/api/settings/agent-assistant"
+        | "/api/settings/notifications"
+        | "/api/settings/communication" => Some("settings.agent"),
+        "/api/settings/license" if method == Method::GET || method == Method::HEAD => None,
+        "/api/settings/license" => Some("settings.license"),
         "/api/settings/identity-source"
         | "/api/settings/identity-source/dingtalk/access-token"
         | "/api/settings/identity-source/dingtalk/sync-departments"
         | "/api/settings/identity-source/dingtalk/sync-users"
         | "/api/settings/identity-source/dingtalk/clear" => Some("settings.identity-source"),
-        "/api/identity/organization-units" => Some("settings.organization"),
+        "/api/identity/organization-units" => Some("settings.identity-source"),
         "/api/identity/users" => Some("settings.users"),
         "/api/identity/roles" | "/api/settings/permissions" => Some("settings.roles"),
         _ if path.starts_with("/api/identity/users/") => Some("settings.users"),
@@ -195,6 +199,9 @@ async fn required_permission(
             Some("settings.roles")
         }
         _ if path.starts_with("/api/agent/sessions") => Some("agent.window"),
+        // Communication is licensed at the platform level. Every active member can use it
+        // when the communication module is present in the current license.
+        _ if path.starts_with("/api/communication/") => None,
         _ if path.starts_with("/api/agent/")
             || path == "/api/agents"
             || path.starts_with("/api/agents/") =>
@@ -215,6 +222,14 @@ async fn required_permission(
         ["api", "apps"] if method == Method::POST => Ok(Some("apps.manage".to_string())),
         ["api", "apps", app_id] if method == Method::DELETE => Ok(Some("apps.manage".to_string())),
         ["api", "apps", app_id] if method == Method::PATCH => {
+            Ok(Some(format!("app:{app_id}:edit_info")))
+        }
+        ["api", "apps", app_id, "business-context"]
+            if method == Method::GET || method == Method::HEAD =>
+        {
+            Ok(Some(format!("app:{app_id}:display")))
+        }
+        ["api", "apps", app_id, "business-context"] if method == Method::PATCH => {
             Ok(Some(format!("app:{app_id}:edit_info")))
         }
         ["api", "apps", app_id] => Ok(Some(app_permission(app_id, method))),

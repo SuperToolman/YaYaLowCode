@@ -2,6 +2,63 @@
 @import "@heroui/styles"; 
 @import "@xyflow/react/dist/style.css";
 
+.chat-mention-token {
+  display: inline-block;
+  margin: 0 2px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  line-height: 1.4;
+  user-select: none;
+}
+
+/* Field type tags use semantic hues that remain distinct from both app themes. */
+.field-type-tag {
+  justify-self: start;
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  min-height: 20px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.field-type-tag--text { background: #d9f4f2; color: #056d70; }
+.field-type-tag--number { background: #dcecff; color: #125bb1; }
+.field-type-tag--choice { background: #f7e1f4; color: #9c2e86; }
+.field-type-tag--date { background: #ece4ff; color: #6940ae; }
+.field-type-tag--person { background: #ffead4; color: #a64a00; }
+.field-type-tag--relation { background: #daf2df; color: #23743b; }
+.field-type-tag--media { background: #ffe0e5; color: #b2314b; }
+.field-type-tag--builtin { background: #e5e8ed; color: #4e5868; }
+
+html[data-resolved-theme="dark"] .field-type-tag--text { background: #123e40; color: #6ce8df; }
+html[data-resolved-theme="dark"] .field-type-tag--number { background: #173b6b; color: #91c5ff; }
+html[data-resolved-theme="dark"] .field-type-tag--choice { background: #54204d; color: #f4a8e7; }
+html[data-resolved-theme="dark"] .field-type-tag--date { background: #39255f; color: #c9afff; }
+html[data-resolved-theme="dark"] .field-type-tag--person { background: #5a3218; color: #ffc08a; }
+html[data-resolved-theme="dark"] .field-type-tag--relation { background: #1d4b2a; color: #9ee8ae; }
+html[data-resolved-theme="dark"] .field-type-tag--media { background: #56202c; color: #ffb0bf; }
+html[data-resolved-theme="dark"] .field-type-tag--builtin { background: #303842; color: #c7d0dc; }
+
+.view-column-config-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content max-content max-content 72px max-content;
+  column-gap: 12px;
+}
+
+.view-column-config-grid__header,
+.view-column-config-grid__row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+
 :root,
 html[data-resolved-theme="light"] {
   color-scheme: light;
@@ -396,6 +453,11 @@ body::-webkit-scrollbar-thumb,
   scrollbar-width: thin !important;
 }
 
+/* React Aria sets resizable tables to min-content; retain the calculated column width instead. */
+.data-table-content {
+  width: max(100%, var(--data-table-minimum-width)) !important;
+}
+
 .data-table-horizontal-scroll::-webkit-scrollbar {
   display: block !important;
   width: 8px !important;
@@ -413,31 +475,6 @@ body::-webkit-scrollbar-thumb,
 
 .data-table-horizontal-scroll::-webkit-scrollbar-corner {
   background: var(--color-bg-subtle) !important;
-}
-
-/* The records page is a dense operational table with native table layout. */
-.records-table th,
-.records-table td {
-  border-radius: 0 !important;
-  font-size: 12px;
-  line-height: 1.25rem;
-}
-
-.records-table th {
-  padding: 0 0.25rem;
-}
-
-.records-table td {
-  padding: 0 0.25rem;
-  background-color: var(--color-bg-surface);
-}
-
-.records-table tbody tr:hover td {
-  background-color: var(--color-bg-panel-soft);
-}
-
-.records-table tbody tr:hover .records-table__action-cell {
-  background-color: var(--color-bg-surface);
 }
 
 /* Keep automation node configuration dense without changing shared form controls. */
@@ -531,6 +568,7 @@ select {
   min-height: 0;
   gap:8px; /*gap-2*/
   padding: 8px; /*p-2*/
+  padding-right: 16px;
   overflow: hidden;
   align-items: stretch;
 }
@@ -647,11 +685,6 @@ html[data-resolved-theme="dark"] .theme-modal-backdrop {
 .designer-theme-surface,
 .designer-properties-drawer {
   color: var(--color-text-primary);
-}
-
-.designer-theme-root {
-  /* background: var(--designer-background); */
-  /* transition: background 180ms ease, color 180ms ease; */
 }
 
 .designer-is-interacting :is(.backdrop-blur, .backdrop-blur-xl, .backdrop-blur-2xl) {

@@ -1,9 +1,66 @@
 use crate::platform::api::ApiResponse;
 use crate::platform::automation_runs::RetrySource;
 use crate::platform::prelude::*;
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum AppStatus {
+    Enabled,
+    Paused,
+    Draft,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum FormStatus {
+    Draft,
+    Published,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum FormType {
+    Normal,
+    Workflow,
+    Defined,
+    Detail,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum AutomationStatus {
+    Enabled,
+    Paused,
+    Draft,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum AutomationFlowType {
+    Trigger,
+    Process,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum AutomationTriggerEvent {
+    BeforeCreate,
+    AfterCreate,
+    BeforeUpdate,
+    AfterUpdate,
+    BeforeDelete,
+    AfterDelete,
+    FormSubmit,
+}
 
 pub(crate) fn format_date(value: DateTime<Utc>) -> String {
     value.format("%Y-%m-%d").to_string()
+}
+
+pub(crate) fn format_datetime(value: DateTime<Utc>) -> String {
+    value.to_rfc3339()
 }
 
 pub(crate) fn calculate_duration_ms(
@@ -197,7 +254,10 @@ pub(crate) fn normalize_automation_trigger_events(
     Ok(normalized)
 }
 
-pub(crate) fn automation_trigger_events(trigger_event: &str, trigger_config: &Value) -> Vec<String> {
+pub(crate) fn automation_trigger_events(
+    trigger_event: &str,
+    trigger_config: &Value,
+) -> Vec<String> {
     let configured_events = trigger_config
         .get("triggerEvents")
         .and_then(Value::as_array)
@@ -226,13 +286,7 @@ pub(crate) fn with_automation_trigger_events(
     let mut config = trigger_config.as_object().cloned().unwrap_or_default();
     config.insert(
         "triggerEvents".to_string(),
-        Value::Array(
-            trigger_events
-                .iter()
-                .cloned()
-                .map(Value::String)
-                .collect(),
-        ),
+        Value::Array(trigger_events.iter().cloned().map(Value::String).collect()),
     );
     Value::Object(config)
 }
@@ -266,21 +320,27 @@ mod automation_trigger_event_tests {
             automation_trigger_events("after_update", &json!({})),
             vec!["after_update"]
         );
-        assert!(automation_trigger_events("after_update", &json!({ "triggerEvents": [] })).is_empty());
+        assert!(
+            automation_trigger_events("after_update", &json!({ "triggerEvents": [] })).is_empty()
+        );
     }
 
     #[test]
     fn rejects_before_and_after_for_the_same_record_operation() {
-        assert!(normalize_automation_trigger_events(vec![
-            "before_update".to_string(),
-            "after_update".to_string(),
-        ])
-        .is_err());
-        assert!(normalize_automation_trigger_events(vec![
-            "before_create".to_string(),
-            "after_update".to_string(),
-        ])
-        .is_ok());
+        assert!(
+            normalize_automation_trigger_events(vec![
+                "before_update".to_string(),
+                "after_update".to_string(),
+            ])
+            .is_err()
+        );
+        assert!(
+            normalize_automation_trigger_events(vec![
+                "before_create".to_string(),
+                "after_update".to_string(),
+            ])
+            .is_ok()
+        );
     }
 }
 

@@ -62,11 +62,14 @@ pub(crate) async fn create_automation_flow(
     let now = Utc::now();
     let operator = normalize_operator(payload.operator);
     let trigger_form_uuid = normalize_optional_text(payload.trigger_form_uuid);
-    let trigger_events = normalize_automation_trigger_events(
-        payload
-            .trigger_events
-            .unwrap_or_else(|| vec![payload.trigger_event.unwrap_or_else(|| "after_create".to_string())]),
-    )?;
+    let trigger_events =
+        normalize_automation_trigger_events(payload.trigger_events.unwrap_or_else(|| {
+            vec![
+                payload
+                    .trigger_event
+                    .unwrap_or_else(|| "after_create".to_string()),
+            ]
+        }))?;
     if trigger_events.iter().any(|event| event == "form_submit") {
         return Err(AppError::BadRequest(
             "process flows are created only with workflow forms".to_string(),
@@ -91,12 +94,10 @@ pub(crate) async fn create_automation_flow(
         trigger_form_uuid: Set(trigger_form_uuid),
         // The database keeps a legacy non-null event column. An explicit empty
         // triggerEvents array is the source of truth for an unconfigured flow.
-        trigger_event: Set(
-            trigger_events
-                .first()
-                .cloned()
-                .unwrap_or_else(|| "after_create".to_string()),
-        ),
+        trigger_event: Set(trigger_events
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "after_create".to_string())),
         trigger_config: Set(with_automation_trigger_events(
             normalize_automation_trigger_config(json!({}), &trigger_events)?,
             &trigger_events,
@@ -363,7 +364,8 @@ pub(crate) async fn update_automation_flow(
     let next_version = flow.current_version + 1;
     let existing_nodes_json = flow.nodes_json.clone();
     let existing_edges_json = flow.edges_json.clone();
-    let existing_trigger_events = automation_trigger_events(&flow.trigger_event, &flow.trigger_config);
+    let existing_trigger_events =
+        automation_trigger_events(&flow.trigger_event, &flow.trigger_config);
     let existing_trigger_event = flow.trigger_event.clone();
     let mut active_model: automation_flow_entity::ActiveModel = flow.into();
     let mut should_create_version = false;
@@ -404,12 +406,10 @@ pub(crate) async fn update_automation_flow(
                 "process flow trigger is fixed to form_submit".to_string(),
             ));
         }
-        active_model.trigger_event = Set(
-            trigger_events
-                .first()
-                .cloned()
-                .unwrap_or_else(|| existing_trigger_event.clone()),
-        );
+        active_model.trigger_event = Set(trigger_events
+            .first()
+            .cloned()
+            .unwrap_or_else(|| existing_trigger_event.clone()));
         should_create_version = true;
     } else if let Some(trigger_event) = requested_trigger_event.as_ref() {
         if is_process_flow && trigger_event != "form_submit" {
@@ -441,17 +441,14 @@ pub(crate) async fn update_automation_flow(
     }
 
     let effective_trigger_events = if let Some(trigger_events) = requested_trigger_events.as_ref() {
-        let trigger_config = active_model
-            .trigger_config
-            .clone()
-            .unwrap();
-        active_model.trigger_config = Set(with_automation_trigger_events(trigger_config, trigger_events));
+        let trigger_config = active_model.trigger_config.clone().unwrap();
+        active_model.trigger_config = Set(with_automation_trigger_events(
+            trigger_config,
+            trigger_events,
+        ));
         trigger_events.clone()
     } else if let Some(trigger_event) = requested_trigger_event.as_ref() {
-        let trigger_config = active_model
-            .trigger_config
-            .clone()
-            .unwrap();
+        let trigger_config = active_model.trigger_config.clone().unwrap();
         active_model.trigger_config = Set(with_automation_trigger_events(
             trigger_config,
             std::slice::from_ref(trigger_event),
@@ -596,8 +593,17 @@ pub(crate) async fn execute_automation_flows_for_event(
         if !flow_matches_changed_fields(event, &flow.trigger_config, changed_fields) {
             continue;
         }
-        if let Err(err) =
-            execute_automation_flow(db, &flow, event, trigger_payload, operator, None, None, None).await
+        if let Err(err) = execute_automation_flow(
+            db,
+            &flow,
+            event,
+            trigger_payload,
+            operator,
+            None,
+            None,
+            None,
+        )
+        .await
         {
             error!(
                 "execute automation flow failed, flow={}: {err:?}",
@@ -2050,7 +2056,9 @@ fn evaluate_branch_rule_group(
             .map(|id| {
                 rules
                     .iter()
-                    .filter(|candidate| read_json_string(candidate.get("parentId")).as_deref() == Some(id))
+                    .filter(|candidate| {
+                        read_json_string(candidate.get("parentId")).as_deref() == Some(id)
+                    })
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
@@ -2059,12 +2067,12 @@ fn evaluate_branch_rule_group(
         } else if child_rules.is_empty() {
             evaluate_branch_rule(rule, context)
         } else {
-            let children_match = evaluate_branch_rule_group(
-                rules,
-                rule_id.as_deref(),
-                context,
-            );
-            if child_rules[0].get("logicalOperator").and_then(Value::as_str) == Some("or") {
+            let children_match = evaluate_branch_rule_group(rules, rule_id.as_deref(), context);
+            if child_rules[0]
+                .get("logicalOperator")
+                .and_then(Value::as_str)
+                == Some("or")
+            {
                 evaluate_branch_rule(rule, context) || children_match
             } else {
                 evaluate_branch_rule(rule, context) && children_match
@@ -2245,7 +2253,8 @@ fn normalize_automation_trigger_config(
         .any(|event| matches!(event.as_str(), "before_update" | "after_update"));
     let legacy_field_id = read_json_string(source.get("changedFieldsText"));
     let requested_field_id = read_json_string(source.get("changedFieldId")).or(legacy_field_id);
-    let requested_specific = source.get("changedFieldMode").and_then(Value::as_str) == Some("specific")
+    let requested_specific = source.get("changedFieldMode").and_then(Value::as_str)
+        == Some("specific")
         || requested_field_id.is_some();
     let (mode, changed_field_id) = if has_update_event && requested_specific {
         let field_id = requested_field_id.ok_or_else(|| {
@@ -2286,7 +2295,11 @@ mod tests {
 
         assert!(flow_matches_changed_fields("before_create", &config, None));
         assert!(flow_matches_changed_fields("after_delete", &config, None));
-        assert!(!flow_matches_changed_fields("before_update", &config, Some(&changed)));
+        assert!(!flow_matches_changed_fields(
+            "before_update",
+            &config,
+            Some(&changed)
+        ));
     }
 }
 pub(crate) mod dto;

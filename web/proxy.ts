@@ -40,5 +40,10 @@ function hasUsableToken(token: string | null) {
 }
 
 function getSafeRedirect(redirect: string | null) {
-  return redirect && redirect.startsWith("/") && !redirect.startsWith("//") && !redirect.startsWith("/login") ? redirect : "/";
+  return redirect
+    && redirect.startsWith("/")
+    && !redirect.startsWith("//")
+    && !redirect.startsWith("/login")
+    ? redirect
+    : "/";
 }

@@ -32,7 +32,7 @@ export function AppTopNav({ appId }: AppTopNavProps) {
     },
     {
       label: "应用设置",
-      href: `/${appId}/settings`,
+      href: `/${appId}/settings/basic`,
       active: pathname.startsWith(`/${appId}/settings`),
       permission: "settings",
     },

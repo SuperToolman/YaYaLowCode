@@ -5,14 +5,12 @@ import {
   appStatusLabel,
   appStatusTone,
   getAppByRouteId,
-  getFormsByRouteAppId,
   normalizeAppColorTone,
   type AppItem,
 } from "../../lib/apps";
 import { AppMainContent, AppShell } from "./components/app-shell";
 import { AppHeaderTitle } from "./components/app-header-title";
 import { AppTopNav } from "./components/app-top-nav";
-import { WorkflowNotificationMenu } from "./components/workflow-notification-menu";
 import { FormSidebar } from "./components/form-sidebar";
 
 export default async function AppLayout({
@@ -29,20 +27,18 @@ export default async function AppLayout({
     notFound();
   }
 
-  const forms = getFormsByRouteAppId(routeAppId);
-
   return (
     <div className="theme-page-shell min-h-0 flex-1 overflow-hidden">
       <AppShell
         sidebar={
-          <FormSidebar initialForms={forms} routeAppId={routeAppId} />
+          <FormSidebar routeAppId={routeAppId} />
         }
       >
         <header className="app-detail-header theme-card-glass sticky top-0 z-20 shrink-0 overflow-hidden rounded-[20px] p-2">
           <div className="flex flex-wrap items-center">
             <div className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3">
               <Link
-                href="/myApp"
+                href="/"
                 aria-label="返回我的应用"
                 className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-subtle)]"
               >
@@ -64,7 +60,7 @@ export default async function AppLayout({
               </span>
             </div>
 
-            <div className="flex items-center"><AppTopNav appId={routeAppId} /><WorkflowNotificationMenu appId={routeAppId} /></div>
+            <div className="flex items-center"><AppTopNav appId={routeAppId} /></div>
           </div>
         </header>
         <AppMainContent>{children}</AppMainContent>

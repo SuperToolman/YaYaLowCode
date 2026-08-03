@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::infrastructure::entities::app_entity;
-use crate::shared::format_date;
+use crate::platform::config::ApplicationBusinessContext;
+use crate::shared::{format_date, AppStatus};
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -15,6 +16,7 @@ pub(crate) struct ApiApp {
     pub(crate) icon: String,
     pub(crate) badge: Option<String>,
     pub(crate) color: String,
+    #[schema(value_type = AppStatus)]
     pub(crate) status: String,
     pub(crate) created_at: String,
     pub(crate) owner: String,
@@ -30,7 +32,28 @@ pub(crate) struct CreateAppRequest {
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct UpdateAppRequest {
     pub(crate) name: Option<String>,
+    #[schema(value_type = Option<AppStatus>)]
     pub(crate) status: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UpdateApplicationBusinessContextRequest {
+    pub(crate) business_overview: String,
+    pub(crate) terminology: String,
+    pub(crate) process_description: String,
+    pub(crate) analysis_guidance: String,
+}
+
+impl From<UpdateApplicationBusinessContextRequest> for ApplicationBusinessContext {
+    fn from(value: UpdateApplicationBusinessContextRequest) -> Self {
+        Self {
+            business_overview: value.business_overview,
+            terminology: value.terminology,
+            process_description: value.process_description,
+            analysis_guidance: value.analysis_guidance,
+        }
+    }
 }
 
 impl From<app_entity::Model> for ApiApp {

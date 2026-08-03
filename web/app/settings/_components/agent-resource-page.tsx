@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pencil, TrashBin } from "@gravity-ui/icons";
-import { Button, Checkbox, Input, Modal, Popover, Select, Switch, TextArea, Tooltip } from "@heroui/react";
+import { Button, Checkbox, Drawer, Input, Popover, Select, Switch, TextArea, Tooltip } from "@heroui/react";
 import { Field } from "./field";
 import type { ApiEnvelope } from "../agent-types";
 
@@ -160,19 +160,19 @@ export function AgentResourcePage({ kind }: { kind: Kind }) {
           {!visibleItems.length ? <p className="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-10 text-center text-sm text-[var(--color-text-secondary)]">{items.length ? "没有匹配的 Skill" : "尚未安装 Skill"}</p> : null}
         </div>
       </div>
-      <Modal isOpen={isSkillEditorOpen} onOpenChange={setIsSkillEditorOpen}>
-        <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
-          <Modal.Container placement="center" size="lg">
-            <Modal.Dialog className="flex max-h-[calc(100dvh-2rem)] w-[min(880px,96vw)] flex-col overflow-clip rounded-2xl bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]">
+      <Drawer isOpen={isSkillEditorOpen} onOpenChange={setIsSkillEditorOpen}>
+        <Drawer.Backdrop className="theme-modal-backdrop" isDismissable>
+          <Drawer.Content placement="right">
+            <Drawer.Dialog className="flex h-[100dvh] w-[min(960px,96vw)] max-w-[96vw] flex-col overflow-hidden bg-[var(--color-bg-surface)] p-0 text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]">
               <form onSubmit={save} className="flex min-h-0 flex-1 flex-col">
-                <Modal.Header className="shrink-0 border-b border-[var(--color-border)] px-5 py-4"><div><Modal.Heading className="text-lg font-semibold">{selectedId ? `编辑 ${form.name || "Skill"}` : "新建本地 Skill"}</Modal.Heading><p className="mt-1 text-xs text-[var(--color-text-secondary)]">配置运行指令和受控工具授权。</p></div><Modal.CloseTrigger aria-label="关闭" /></Modal.Header>
-                <Modal.Body className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5"><section className="grid gap-4 sm:grid-cols-2"><Field label="名称"><Input autoFocus fullWidth value={form.name} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} /></Field><Field label="描述"><Input fullWidth value={form.description} onChange={(event) => setForm({ ...form, description: event.currentTarget.value })} /></Field></section><SkillFields form={form} setForm={setForm} tools={platformTools} /><section className="flex flex-wrap gap-6 border-t border-[var(--color-border)] pt-5"><Switch isSelected={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })}><Switch.Content>启用 Skill</Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control></Switch><Switch isSelected={Boolean(form.requiresConfirmation)} onChange={(requiresConfirmation) => setForm({ ...form, requiresConfirmation })}><Switch.Content>执行前需确认</Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control></Switch></section></Modal.Body>
-                <Modal.Footer className="shrink-0 justify-between border-t border-[var(--color-border)] px-5 py-3">{selectedId ? <Button type="button" variant="ghost" className="text-[var(--color-danger)]" onPress={() => void remove()}>删除</Button> : <span />}<div className="flex gap-2"><Button type="button" variant="ghost" onPress={() => setIsSkillEditorOpen(false)}>取消</Button><Button type="submit">保存</Button></div></Modal.Footer>
+                <Drawer.Header className="shrink-0 border-b border-[var(--color-border)] px-5 py-4"><div><Drawer.Heading className="text-lg font-semibold">{selectedId ? `编辑 ${form.name || "Skill"}` : "新建本地 Skill"}</Drawer.Heading><p className="mt-1 text-xs text-[var(--color-text-secondary)]">配置运行指令和受控工具授权。</p></div><Drawer.CloseTrigger aria-label="关闭" /></Drawer.Header>
+                <Drawer.Body className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5"><section className="grid gap-4 sm:grid-cols-2"><Field label="名称"><Input autoFocus fullWidth value={form.name} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} /></Field><Field label="描述"><Input fullWidth value={form.description} onChange={(event) => setForm({ ...form, description: event.currentTarget.value })} /></Field></section><SkillFields form={form} setForm={setForm} tools={platformTools} /><section className="flex flex-wrap gap-6 border-t border-[var(--color-border)] pt-5"><Switch isSelected={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })}><Switch.Content>启用 Skill</Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control></Switch><Switch isSelected={Boolean(form.requiresConfirmation)} onChange={(requiresConfirmation) => setForm({ ...form, requiresConfirmation })}><Switch.Content>执行前需确认</Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control></Switch></section></Drawer.Body>
+                <Drawer.Footer className="shrink-0 justify-between border-t border-[var(--color-border)] px-5 py-3">{selectedId ? <Button type="button" variant="ghost" className="text-[var(--color-danger)]" onPress={() => void remove()}>删除</Button> : <span />}<div className="flex gap-2"><Button type="button" variant="ghost" onPress={() => setIsSkillEditorOpen(false)}>取消</Button><Button type="submit">保存</Button></div></Drawer.Footer>
               </form>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
+            </Drawer.Dialog>
+          </Drawer.Content>
+        </Drawer.Backdrop>
+      </Drawer>
     </section>;
   }
 
