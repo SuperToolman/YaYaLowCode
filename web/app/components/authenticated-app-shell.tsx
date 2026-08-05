@@ -1,32 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
 import HomeSideBar from "./HomeSideBar";
-import { AuthProvider } from "./auth-provider";
 import { LicenseManagementModal, OPEN_LICENSE_MANAGEMENT_MODAL_EVENT } from "./license-management-modal";
 
-const PUBLIC_PATHS = new Set(["/login"]);
-
 export function AuthenticatedAppShell({ children }: { children: React.ReactNode }) {
-  return (
-    <AuthProvider>
-      <AuthBoundary>{children}</AuthBoundary>
-    </AuthProvider>
-  );
+  return <AuthBoundary>{children}</AuthBoundary>;
 }
 
 function AuthBoundary({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
   const [licenseReady, setLicenseReady] = useState(false);
   const [licenseValid, setLicenseValid] = useState(false);
   const [licenseModalOpen, setLicenseModalOpen] = useState(false);
-  const isPublicPath = PUBLIC_PATHS.has(pathname);
 
   useEffect(() => {
-    if (isPublicPath) {
-      return;
-    }
     let cancelled = false;
     const refreshLicense = () => {
       void fetch("/api/settings/license", { cache: "no-store" })
@@ -46,17 +33,24 @@ function AuthBoundary({ children }: { children: React.ReactNode }) {
       window.removeEventListener("yaya-license-updated", refreshLicense);
       window.removeEventListener(OPEN_LICENSE_MANAGEMENT_MODAL_EVENT, openLicenseModal);
     };
-  }, [isPublicPath]);
+  }, []);
 
-  if (isPublicPath) return <>{children}</>;
-
-  if (!licenseReady) return <div className="grid min-h-screen place-items-center text-sm text-[var(--color-text-secondary)]">正在检查平台许可证…</div>;
   return (
-    <><div className="app-root-shell">
+    <><div className="app-root-shell" aria-busy={!licenseReady}>
       <HomeSideBar />
       <div className="app-main-region">
         <div className="app-main-glass">{children}</div>
       </div>
-    </div><LicenseManagementModal open={licenseModalOpen || !licenseValid} blocked={!licenseValid} onOpenChange={setLicenseModalOpen} /></>
+      {!licenseReady ? <LicenseCheckingOverlay /> : null}
+    </div><LicenseManagementModal open={licenseReady && (licenseModalOpen || !licenseValid)} blocked={licenseReady && !licenseValid} onOpenChange={setLicenseModalOpen} /></>
+  );
+}
+
+function LicenseCheckingOverlay() {
+  return (
+    <div className="license-checking-overlay" role="status" aria-live="polite">
+      <div className="h-5 w-40 animate-pulse rounded bg-[var(--color-bg-subtle)]" />
+      <span className="sr-only">正在检查平台许可证</span>
+    </div>
   );
 }

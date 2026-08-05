@@ -21,13 +21,11 @@ use crate::infrastructure::entities::agent_resource_entity::{self, Entity as Age
 use crate::platform::config::{
     AgentConfigProfile, AgentDefinition, AgentKnowledgeBaseDefinition, AgentModelProvider,
     AgentPersonaDefinition, AgentPluginDefinition, AgentRegistry, AgentSkillDefinition,
-    ensure_skill_package, import_skill_package, load_agent_registry, write_skill_markdown,
+    ensure_skill_package, import_skill_package, write_skill_markdown,
 };
 use crate::platform::prelude::{ApiResponse, AppError, AppState};
 use crate::shared::success_response;
-use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter,
-};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter};
 
 fn default_approval_mode() -> String {
     "approve_on_behalf".to_string()
@@ -117,40 +115,29 @@ pub(crate) async fn resolve_database_agent_runtime(
         skills: core.skills,
         knowledge_bases: core.knowledge_bases,
     };
-    crate::platform::config::resolve_agent_runtime_from_registry(
+    let mut runtime = crate::platform::config::resolve_agent_runtime_from_registry(
         &registry,
         agent_id,
         app_id,
         business_id,
-    )
-}
-
-pub(crate) async fn migrate_legacy_agent_resources(
-    db: &sea_orm::DatabaseConnection,
-) -> Result<(), AppError> {
-    let registry = load_agent_registry();
-    let now = chrono::Utc::now();
-    for persona in registry.personas {
-        insert_resource_if_absent(db, "persona", &persona.id, &persona.name, &persona, now).await?;
+    )?;
+    if runtime.allowed_tools.contains("create_form_draft") {
+        runtime
+            .allowed_tools
+            .insert("list_navigation_groups".to_string());
+        runtime
+            .allowed_tools
+            .insert("move_form_to_group".to_string());
+        runtime
+            .allowed_tools
+            .insert("create_navigation_group".to_string());
+        runtime
+            .allowed_tools
+            .insert("delete_navigation_group".to_string());
+        runtime.allowed_tools.insert("publish_form".to_string());
+        runtime.allowed_tools.insert("delete_form".to_string());
     }
-    for plugin in registry.plugins {
-        insert_resource_if_absent(db, "plugin", &plugin.id, &plugin.name, &plugin, now).await?;
-    }
-    for skill in registry.skills {
-        insert_resource_if_absent(db, "skill", &skill.id, &skill.name, &skill, now).await?;
-    }
-    for knowledge_base in registry.knowledge_bases {
-        insert_resource_if_absent(
-            db,
-            "knowledge_base",
-            &knowledge_base.id,
-            &knowledge_base.name,
-            &knowledge_base,
-            now,
-        )
-        .await?;
-    }
-    Ok(())
+    Ok(runtime)
 }
 
 fn resources_of_kind<T: serde::de::DeserializeOwned>(
@@ -183,20 +170,6 @@ async fn insert_resource<T: Serialize>(
     }
     .insert(db)
     .await?;
-    Ok(())
-}
-
-async fn insert_resource_if_absent<T: Serialize>(
-    db: &sea_orm::DatabaseConnection,
-    kind: &str,
-    id: &str,
-    name: &str,
-    value: &T,
-    now: chrono::DateTime<chrono::Utc>,
-) -> Result<(), AppError> {
-    if AgentResourceEntity::find_by_id(id).one(db).await?.is_none() {
-        insert_resource(db, kind, id, name, value, now).await?;
-    }
     Ok(())
 }
 
@@ -314,71 +287,6 @@ async fn delete_resource(
         .await?;
     if result.rows_affected == 0 {
         return Err(AppError::NotFound(format!("{kind} not found")));
-    }
-    Ok(())
-}
-
-pub(crate) async fn migrate_legacy_agent_registry(
-    db: &sea_orm::DatabaseConnection,
-) -> Result<(), AppError> {
-    if AgentModelProviderEntity::find().count(db).await? > 0
-        || AgentConfigProfileEntity::find().count(db).await? > 0
-        || AgentDefinitionEntity::find().count(db).await? > 0
-    {
-        return Ok(());
-    }
-    let registry = load_agent_registry();
-    let now = chrono::Utc::now();
-    for provider in registry.providers {
-        let default_chat_model = provider.default_chat_model.clone();
-        let provider_id = provider.id.clone();
-        agent_model_provider_entity::ActiveModel {
-            id: Set(provider.id),
-            name: Set(provider.name),
-            kind: Set(provider.kind),
-            enabled: Set(provider.enabled),
-            api_base_url: Set(provider.api_base_url),
-            api_key: Set(provider.api_key),
-            website_url: Set(provider.website_url),
-            default_chat_model: Set(default_chat_model.clone()),
-            created_at: Set(now),
-            updated_at: Set(now),
-        }
-        .insert(db)
-        .await?;
-        if !default_chat_model.is_empty() {
-            insert_provider_model(db, &provider_id, &default_chat_model, true).await?;
-        }
-    }
-    for profile in registry.profiles {
-        agent_config_profile_entity::ActiveModel {
-            id: Set(profile.id.clone()),
-            name: Set(profile.name.clone()),
-            provider_id: Set(profile.provider_id.clone()),
-            configuration_json: Set(serde_json::to_value(&profile)
-                .map_err(|error| AppError::BadRequest(error.to_string()))?),
-            created_at: Set(now),
-            updated_at: Set(now),
-        }
-        .insert(db)
-        .await?;
-    }
-    for agent in registry.agents {
-        agent_definition_entity::ActiveModel {
-            id: Set(agent.id.clone()),
-            name: Set(agent.name.clone()),
-            enabled: Set(agent.enabled),
-            is_default: Set(agent.is_default),
-            scope_type: Set(agent.scope_type.clone()),
-            scope_ref_id: Set(agent.scope_ref_id.clone()),
-            profile_id: Set(agent.profile_id.clone()),
-            configuration_json: Set(serde_json::to_value(&agent)
-                .map_err(|error| AppError::BadRequest(error.to_string()))?),
-            created_at: Set(now),
-            updated_at: Set(now),
-        }
-        .insert(db)
-        .await?;
     }
     Ok(())
 }
@@ -573,6 +481,27 @@ pub(crate) async fn list_platform_tools(
                 risk_level: "read",
             },
             PlatformToolResponse {
+                id: "list_navigation_groups",
+                name: "读取导航分组",
+                description: "读取应用导航分组的真实 ID 和层级，用于创建或移动表单。",
+                category: "form",
+                risk_level: "read",
+            },
+            PlatformToolResponse {
+                id: "create_navigation_group",
+                name: "创建导航分组",
+                description: "在应用导航中创建根级或嵌套分组。",
+                category: "form",
+                risk_level: "write",
+            },
+            PlatformToolResponse {
+                id: "delete_navigation_group",
+                name: "删除导航分组",
+                description: "删除分组容器并将内部项目上移，需用户确认。",
+                category: "form",
+                risk_level: "write",
+            },
+            PlatformToolResponse {
                 id: "get_form_schema",
                 name: "读取表单 Schema",
                 description: "读取表单草稿结构和字段。",
@@ -636,6 +565,13 @@ pub(crate) async fn list_platform_tools(
                 risk_level: "write",
             },
             PlatformToolResponse {
+                id: "move_form_to_group",
+                name: "移动表单到分组",
+                description: "将已有表单移动到指定导航分组或根级，需用户确认。",
+                category: "form",
+                risk_level: "write",
+            },
+            PlatformToolResponse {
                 id: "create_detail_form_draft",
                 name: "生成明细表配置",
                 description: "为父表的 subform 字段生成明细表，需用户确认且要求 Profile 允许创建表单。",
@@ -648,6 +584,20 @@ pub(crate) async fn list_platform_tools(
                 description: "保存表单草稿结构；还要求 Profile 开启创建表单能力。",
                 category: "form",
                 risk_level: "write",
+            },
+            PlatformToolResponse {
+                id: "publish_form",
+                name: "发布表单",
+                description: "发布表单当前 Schema 草稿并同步运行时存储计划，需用户确认。",
+                category: "form",
+                risk_level: "write",
+            },
+            PlatformToolResponse {
+                id: "delete_form",
+                name: "删除表单",
+                description: "永久删除表单及其 Schema、记录、导航和关联资源，始终要求人工确认。",
+                category: "form",
+                risk_level: "destructive",
             },
             PlatformToolResponse {
                 id: "list_automations",
@@ -669,6 +619,13 @@ pub(crate) async fn list_platform_tools(
                 description: "创建待确认的事件自动化草稿，确认后保持 draft 状态。",
                 category: "automation",
                 risk_level: "write",
+            },
+            PlatformToolResponse {
+                id: "delete_automation",
+                name: "删除集成自动化",
+                description: "永久删除普通事件集成自动化；始终要求人工确认，不允许删除流程工作流。",
+                category: "automation",
+                risk_level: "destructive",
             },
             PlatformToolResponse {
                 id: "get_workflow_process_definition",

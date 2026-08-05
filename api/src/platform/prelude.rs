@@ -15,7 +15,6 @@ pub(crate) use sea_orm::{
     ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
     QueryOrder, TransactionTrait,
 };
-pub(crate) use serde::Serialize;
 pub(crate) use serde_json::{Value, json};
 pub(crate) use tracing::{error, info};
 pub(crate) use uuid::Uuid;

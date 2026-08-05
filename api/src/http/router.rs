@@ -183,6 +183,10 @@ pub(crate) fn build(state: AppState) -> Router {
             get(agent_config::list_platform_tools),
         )
         .route(
+            "/api/agent/available-agents",
+            get(agents::list_available_agents),
+        )
+        .route(
             "/api/agents",
             get(agent_config::list_agents).post(agent_config::create_agent),
         )
@@ -331,6 +335,14 @@ pub(crate) fn build(state: AppState) -> Router {
             post(navigation::create_navigation_group),
         )
         .route(
+            "/api/apps/{app_id}/navigation/groups/{group_id}",
+            patch(navigation::update_navigation_group).delete(navigation::delete_navigation_group),
+        )
+        .route(
+            "/api/apps/{app_id}/navigation/forms/{form_uuid}",
+            patch(navigation::move_form_navigation),
+        )
+        .route(
             "/api/apps/{app_id}/forms",
             get(forms::list_forms).post(forms::create_form),
         )
@@ -435,6 +447,14 @@ pub(crate) fn build(state: AppState) -> Router {
             get(forms::list_form_records).post(forms::create_form_record),
         )
         .route(
+            "/api/forms/{form_uuid}/records/query",
+            axum::routing::post(forms::query_form_records),
+        )
+        .route(
+            "/api/forms/{form_uuid}/bootstrap",
+            get(forms::get_form_bootstrap),
+        )
+        .route(
             "/api/forms/{form_uuid}/records/{record_uuid}",
             patch(forms::update_form_record).delete(forms::delete_form_record),
         )
@@ -460,7 +480,9 @@ pub(crate) fn build(state: AppState) -> Router {
         )
         .route(
             "/api/forms/{form_uuid}",
-            get(forms::get_form).delete(forms::delete_form),
+            get(forms::get_form)
+                .patch(forms::update_form_name)
+                .delete(forms::delete_form),
         )
         .with_state(state.clone())
         .layer(middleware::from_fn_with_state(state, require_authenticated))

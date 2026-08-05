@@ -5,17 +5,17 @@ use crate::infrastructure::entities::{iam_user_entity, organization_unit_entity}
 use crate::modules::automations;
 use crate::modules::navigation::{
     ensure_system_navigation_for_app, next_navigation_sort_order, normalize_navigation_orders,
-    sync_navigation_title,
+    resolve_group_parent_id, sync_navigation_title,
 };
 use crate::modules::recycle_bin;
 use crate::platform::authorization;
 use crate::platform::form_storage::{delete_storage_definition, sync_published_storage_plan};
 use crate::platform::prelude::*;
-use crate::platform::records::{RecordRepository, StoredFormRecord};
+use crate::platform::records::{QueryFieldKind, RecordRepository, StoredFormRecord};
 use crate::shared::*;
 use axum::http::{HeaderMap, StatusCode};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use utoipa::ToSchema;
 
 #[derive(Serialize, ToSchema)]
@@ -277,7 +277,14 @@ pub(crate) async fn create_form(
     Json(payload): Json<CreateFormRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<ApiFormSummary>>), AppError> {
     let form_type = normalize_form_type(payload.form_type.as_deref())?;
-    let definition = create_blank_form(&state.db, &app_id, None, form_type).await?;
+    let definition = create_blank_form(
+        &state.db,
+        &app_id,
+        None,
+        form_type,
+        payload.parent_id.as_deref(),
+    )
+    .await?;
     Ok((
         StatusCode::CREATED,
         Json(success_response(
@@ -548,6 +555,7 @@ pub(crate) async fn create_blank_form(
     app_id: &str,
     requested_name: Option<String>,
     form_type: &str,
+    parent_id: Option<&str>,
 ) -> Result<form_definition_entity::Model, AppError> {
     let now = Utc::now();
     let form_uuid = generate_form_uuid();
@@ -557,6 +565,7 @@ pub(crate) async fn create_blank_form(
         .unwrap_or_else(|| "未命名表单".to_string());
     ensure_system_navigation_for_app(db, app_id).await?;
     normalize_navigation_orders(db, app_id).await?;
+    let parent_uuid = resolve_group_parent_id(db, app_id, parent_id).await?;
     let existing_form_count = AppNavigationEntity::find()
         .filter(app_navigation_entity::Column::AppRouteAppId.eq(app_id))
         .filter(app_navigation_entity::Column::ItemType.eq("form"))
@@ -570,7 +579,7 @@ pub(crate) async fn create_blank_form(
         > 0;
     let is_default_entry = !has_default_entry;
     let slug = build_form_slug(existing_form_count);
-    let sort_order = next_navigation_sort_order(db, app_id, None).await?;
+    let sort_order = next_navigation_sort_order(db, app_id, parent_uuid).await?;
     let initial_schema = build_blank_schema(&form_uuid, &form_name);
 
     let txn = db.begin().await?;
@@ -600,7 +609,7 @@ pub(crate) async fn create_blank_form(
         path_slug: Set(definition.slug.clone()),
         sort_order: Set(sort_order),
         is_default_entry: Set(is_default_entry),
-        parent_id: Set(None),
+        parent_id: Set(parent_uuid),
         visibility_rule: Set(None),
         created_at: Set(now.into()),
         updated_at: Set(now.into()),
@@ -785,6 +794,54 @@ pub(crate) async fn get_form(
     )))
 }
 
+pub(crate) async fn get_form_bootstrap(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(form_uuid): Path<String>,
+    Query(query): Query<FormBootstrapQuery>,
+) -> Result<Json<ApiResponse<FormBootstrapResponse>>, AppError> {
+    let definition = find_form_definition(&state.db, &form_uuid).await?;
+    let schema =
+        load_schema_version(&state.db, &form_uuid, definition.published_schema_version).await?;
+    let metadata = ApiFormSummary::from(definition.clone());
+    let schema = build_schema_payload(&definition, schema);
+
+    let Json(navigation_response) = crate::modules::navigation::list_navigation_items(
+        State(state.clone()),
+        headers,
+        Path(query.app_id),
+    )
+    .await?;
+    let navigation = navigation_response.data.ok_or_else(|| {
+        AppError::Server(std::io::Error::other(
+            "navigation response contained no data",
+        ))
+    })?;
+
+    let Json(records_response) = list_form_records(
+        State(state),
+        Path(form_uuid),
+        Query(ListFormRecordsQuery {
+            page: query.page,
+            page_size: query.page_size,
+        }),
+    )
+    .await?;
+    let records = records_response.data.ok_or_else(|| {
+        AppError::Server(std::io::Error::other("records response contained no data"))
+    })?;
+
+    Ok(Json(success_response(
+        "获取表单启动数据成功",
+        FormBootstrapResponse {
+            metadata,
+            schema,
+            navigation,
+            records,
+        },
+    )))
+}
+
 pub(crate) async fn ensure_workflow_process_flow(
     State(state): State<AppState>,
     Path(form_uuid): Path<String>,
@@ -955,6 +1012,34 @@ pub(crate) async fn delete_form(
     )))
 }
 
+pub(crate) async fn update_form_name(
+    State(state): State<AppState>,
+    Path(form_uuid): Path<String>,
+    Json(payload): Json<UpdateFormNameRequest>,
+) -> Result<Json<ApiResponse<ApiSchemaPayload>>, AppError> {
+    let name = payload.name.trim();
+    if name.is_empty() {
+        return Err(AppError::BadRequest("form name required".to_string()));
+    }
+    let definition = find_form_definition(&state.db, &form_uuid).await?;
+    let latest =
+        load_schema_version(&state.db, &form_uuid, definition.latest_schema_version).await?;
+    let mut schema = latest.schema_json;
+    let object = schema
+        .as_object_mut()
+        .ok_or_else(|| AppError::BadRequest("form schema must be an object".to_string()))?;
+    object.insert("formName".to_string(), Value::String(name.to_string()));
+    save_form_schema(
+        State(state),
+        Path(form_uuid),
+        Json(SaveSchemaRequest {
+            schema,
+            change_log: Some(format!("rename form to {name}")),
+        }),
+    )
+    .await
+}
+
 pub(crate) async fn get_form_schema(
     State(state): State<AppState>,
     Path(form_uuid): Path<String>,
@@ -1058,6 +1143,102 @@ pub(crate) async fn list_form_records(
         .cache_set_json(&cache_key, &response, state.cache_ttl_seconds())
         .await;
     Ok(Json(success_response("获取表单数据成功", response)))
+}
+
+pub(crate) async fn query_form_records(
+    State(state): State<AppState>,
+    Path(form_uuid): Path<String>,
+    Json(request): Json<QueryFormRecordsRequest>,
+) -> Result<Json<ApiResponse<ApiFormRecordList>>, AppError> {
+    if request.filters.len() > 20 {
+        return Err(AppError::BadRequest(
+            "record query supports at most 20 filters".to_string(),
+        ));
+    }
+    if request.sorts.len() > 5 {
+        return Err(AppError::BadRequest(
+            "record query supports at most 5 sorts".to_string(),
+        ));
+    }
+
+    let definition = find_form_definition(&state.db, &form_uuid).await?;
+    if definition.form_type == "detail" {
+        return Err(AppError::BadRequest(
+            "detail forms do not support record query yet".to_string(),
+        ));
+    }
+    let published =
+        load_schema_version(&state.db, &form_uuid, definition.published_schema_version).await?;
+    let mut field_kinds = HashMap::from([
+        ("id".to_string(), QueryFieldKind::Text),
+        ("recordUuid".to_string(), QueryFieldKind::Text),
+        ("instanceId".to_string(), QueryFieldKind::Text),
+        ("schemaVersion".to_string(), QueryFieldKind::Number),
+        ("createdBy".to_string(), QueryFieldKind::Text),
+        ("submitter".to_string(), QueryFieldKind::Text),
+        ("updatedBy".to_string(), QueryFieldKind::Text),
+        ("createdAt".to_string(), QueryFieldKind::DateTime),
+        ("updatedAt".to_string(), QueryFieldKind::DateTime),
+        ("workflowApprovalStatus".to_string(), QueryFieldKind::Text),
+        ("workflowInstanceStatus".to_string(), QueryFieldKind::Text),
+        (
+            "workflowCurrentApprovalNode".to_string(),
+            QueryFieldKind::Text,
+        ),
+        ("workflowSubmitter".to_string(), QueryFieldKind::Text),
+    ]);
+    collect_queryable_field_kinds(&published.schema_json, &mut field_kinds);
+    for field_id in request
+        .filters
+        .iter()
+        .map(|rule| &rule.field_id)
+        .chain(request.sorts.iter().map(|rule| &rule.field_id))
+    {
+        if !field_kinds.contains_key(field_id) {
+            return Err(AppError::BadRequest(format!(
+                "field is not queryable: {field_id}"
+            )));
+        }
+    }
+
+    let (page, page_size) = normalize_record_pagination(request.page, request.page_size);
+    let (items, total) = RecordRepository::new(&state.db)
+        .query_page(&form_uuid, &request, &field_kinds, page, page_size)
+        .await?;
+    let submitter_profiles = load_submitter_profiles(
+        &state.db,
+        items.iter().map(|record| record.created_by.as_str()),
+    )
+    .await?;
+    let response = ApiFormRecordList {
+        items: items
+            .into_iter()
+            .map(|record| form_record_response(record, &submitter_profiles))
+            .collect(),
+        total,
+        page,
+        page_size,
+    };
+    Ok(Json(success_response("查询表单数据成功", response)))
+}
+
+fn collect_queryable_field_kinds(schema: &Value, output: &mut HashMap<String, QueryFieldKind>) {
+    let Some(fields) = schema.get("fields").and_then(Value::as_array) else {
+        return;
+    };
+    for field in fields {
+        if let Some(id) = field.get("id").and_then(Value::as_str) {
+            let kind = match field.get("type").and_then(Value::as_str) {
+                Some("number" | "rating" | "slider" | "progress") => QueryFieldKind::Number,
+                Some("date" | "dateTime" | "datetime" | "time") => QueryFieldKind::DateTime,
+                _ => QueryFieldKind::Text,
+            };
+            output.insert(id.to_string(), kind);
+        }
+        if let Some(children) = field.get("children").and_then(Value::as_array) {
+            collect_queryable_field_kinds(&serde_json::json!({ "fields": children }), output);
+        }
+    }
 }
 
 fn form_records_cache_version_key(form_uuid: &str) -> String {

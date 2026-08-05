@@ -182,7 +182,7 @@ pub struct AgentRegistry {
     pub skills: Vec<AgentSkillDefinition>,
     #[serde(default)]
     pub knowledge_bases: Vec<AgentKnowledgeBaseDefinition>,
-    #[serde(default = "default_personas")]
+    #[serde(default)]
     pub personas: Vec<AgentPersonaDefinition>,
 }
 
@@ -509,13 +509,6 @@ pub struct DingTalkSettings {
     pub allow_jit_provisioning: bool,
 }
 
-#[derive(Clone, Default, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RbacPermissionSettings {
-    #[serde(default)]
-    pub grants: HashMap<String, Vec<String>>,
-}
-
 #[derive(Deserialize, Serialize)]
 struct StoredSettings {
     database: DatabaseSettings,
@@ -722,40 +715,6 @@ pub fn save_valkey_settings(settings: &ValkeySettings) -> Result<(), std::io::Er
     fs::rename(temporary_path, path)
 }
 
-pub fn load_agent_registry() -> AgentRegistry {
-    let mut registry = fs::read_to_string(agent_registry_path())
-        .ok()
-        .and_then(|content| serde_json::from_str::<AgentRegistry>(&content).ok())
-        .unwrap_or_else(default_agent_registry);
-    ensure_default_agent_resources_in_registry(&mut registry);
-    registry
-}
-
-pub fn save_agent_registry(registry: &AgentRegistry) -> Result<(), std::io::Error> {
-    let path = agent_registry_path();
-    let temporary_path = path.with_extension("tmp");
-    let content = serde_json::to_vec_pretty(registry).expect("agent registry is serializable");
-    fs::write(&temporary_path, content)?;
-    if path.exists() {
-        fs::remove_file(&path)?;
-    }
-    fs::rename(temporary_path, path)
-}
-
-pub fn ensure_default_agent_resources() -> Result<(), std::io::Error> {
-    let path = agent_registry_path();
-    let mut registry = fs::read_to_string(&path)
-        .ok()
-        .and_then(|content| serde_json::from_str::<AgentRegistry>(&content).ok())
-        .unwrap_or_else(default_agent_registry);
-    let resources_changed = ensure_default_agent_resources_in_registry(&mut registry);
-    let packages_changed = ensure_skill_packages_in_registry(&mut registry)?;
-    if resources_changed || packages_changed || !path.exists() {
-        save_agent_registry(&registry)?;
-    }
-    Ok(())
-}
-
 pub fn ensure_skill_package(skill: &mut AgentSkillDefinition) -> Result<bool, std::io::Error> {
     let mut changed = false;
     if skill.package_name.trim().is_empty() {
@@ -785,10 +744,6 @@ pub fn ensure_skill_package(skill: &mut AgentSkillDefinition) -> Result<bool, st
         changed = true;
     }
     Ok(changed)
-}
-
-pub fn read_skill_markdown(skill: &AgentSkillDefinition) -> Result<String, std::io::Error> {
-    fs::read_to_string(skill_markdown_path(skill))
 }
 
 pub fn write_skill_markdown(
@@ -886,14 +841,6 @@ pub fn import_skill_package(
     Ok(())
 }
 
-fn ensure_skill_packages_in_registry(registry: &mut AgentRegistry) -> Result<bool, std::io::Error> {
-    let mut changed = false;
-    for skill in &mut registry.skills {
-        changed |= ensure_skill_package(skill)?;
-    }
-    Ok(changed)
-}
-
 fn skill_markdown_path(skill: &AgentSkillDefinition) -> PathBuf {
     skill_packages_root()
         .join(&skill.package_name)
@@ -923,160 +870,6 @@ fn skill_packages_root() -> PathBuf {
     std::env::var_os("YAYA_SKILLS_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("resources/skills"))
-}
-
-fn ensure_default_agent_resources_in_registry(registry: &mut AgentRegistry) -> bool {
-    let mut changed = false;
-    // New installations start with no provider, profile, or Agent. Existing
-    // records are always preserved, including legacy IDs such as
-    // `provider-default`, because administrators may have customized them.
-    for skill in default_agent_skills() {
-        if let Some(existing) = registry.skills.iter_mut().find(|item| item.id == skill.id) {
-            if skill.is_system {
-                if existing.package_name.trim().is_empty() {
-                    existing.package_name = skill.package_name.clone();
-                    changed = true;
-                }
-                if existing.source == "local" {
-                    existing.source = skill.source.clone();
-                    changed = true;
-                }
-                if !existing.is_system {
-                    existing.is_system = true;
-                    changed = true;
-                }
-            }
-            // Built-in Skills may gain a newly implemented platform tool after an
-            // installation already has its resource registry. Only fill missing
-            // defaults so custom instructions and explicit settings remain intact.
-            for tool in skill.allowed_tools {
-                if !existing
-                    .allowed_tools
-                    .iter()
-                    .any(|allowed| allowed == &tool)
-                {
-                    existing.allowed_tools.push(tool);
-                    changed = true;
-                }
-            }
-        } else {
-            registry.skills.push(skill);
-            changed = true;
-        }
-    }
-    for knowledge_base in default_agent_knowledge_bases() {
-        if !registry
-            .knowledge_bases
-            .iter()
-            .any(|item| item.id == knowledge_base.id)
-        {
-            registry.knowledge_bases.push(knowledge_base);
-            changed = true;
-        }
-    }
-    for plugin in default_agent_plugins() {
-        if !registry.plugins.iter().any(|item| item.id == plugin.id) {
-            registry.plugins.push(plugin);
-            changed = true;
-        }
-    }
-    changed
-}
-
-fn default_agent_skills() -> Vec<AgentSkillDefinition> {
-    vec![
-        AgentSkillDefinition {
-            id: "skill-form-designer".to_string(),
-            name: "表单设计顾问".to_string(),
-            package_name: "yaya-form-designer".to_string(),
-            source: "system".to_string(),
-            version: "1.0.0".to_string(),
-            package_path: String::new(),
-            is_system: true,
-            description: "根据业务目标设计可维护的 YaYa 表单结构。".to_string(),
-            enabled: true,
-            allowed_tools: vec!["list_apps".to_string(), "get_application_business_context".to_string(), "list_forms".to_string(), "get_form_schema".to_string(), "get_form_relationships".to_string(), "get_related_records".to_string(), "list_form_records".to_string(), "query_form_records".to_string(), "aggregate_form_records".to_string(), "get_detail_form_definition".to_string(), "list_detail_records".to_string(), "create_form_draft".to_string(), "create_detail_form_draft".to_string(), "save_form_schema_draft".to_string()],
-            instructions: "分析或设计表单时，先确认业务对象、提交人、关键字段、选项来源、必填规则和审批/自动化触发点。优先复用已有表单的字段命名和结构。给出字段清单时包含字段标签、组件类型、字段 ID 建议、是否必填、选项或约束。需要分析业务数据时，先读取应用业务地图；涉及多个表单时，再读取关系图谱确认关联字段和目标表单，逐表按受控条件查询经授权记录。查询结果仅覆盖返回的扫描页，若工具提示可能存在更多匹配项，必须说明分析范围有限。仅基于读取结果总结，不得虚构、泄露或修改数据。分析明细表时，先读取其父表关系，再按需要读取有限明细行。创建明细表必须指定父表的已发布 subform 字段，并等待用户确认；不要声称已经发布表单。".to_string(),
-            requires_confirmation: false,
-        },
-        AgentSkillDefinition {
-            id: "skill-form-draft-assistant".to_string(),
-            name: "表单草稿填写助手".to_string(),
-            package_name: "yaya-form-draft-assistant".to_string(),
-            source: "system".to_string(),
-            version: "1.0.0".to_string(),
-            package_path: String::new(),
-            is_system: true,
-            description: "在运行时协助填写可自动填写的字段。".to_string(),
-            enabled: true,
-            allowed_tools: vec!["get_form_schema".to_string()],
-            instructions: "协助填写草稿时，只填写当前页面明确允许自动填写且值可从用户消息推导的字段。单选、多选和成员/部门字段必须使用可用选项值；日期使用 YYYY-MM-DD；附件、图片、子表单、按钮和未知组件必须要求用户操作。永远不要代替用户提交表单。".to_string(),
-            requires_confirmation: false,
-        },
-        AgentSkillDefinition {
-            id: "skill-automation-reviewer".to_string(),
-            name: "自动化流程审查".to_string(),
-            package_name: "yaya-automation-reviewer".to_string(),
-            source: "system".to_string(),
-            version: "1.0.0".to_string(),
-            package_path: String::new(),
-            is_system: true,
-            description: "分析触发器、节点与连线，识别流程风险。".to_string(),
-            enabled: true,
-            allowed_tools: vec!["list_automations".to_string(), "get_automation_graph".to_string(), "create_automation_draft".to_string(), "get_workflow_process_definition".to_string(), "get_workflow_record_runtime".to_string()],
-            instructions: "审查自动化或工作流时，先读取实际流程图或流程定义。检查触发条件是否过宽、字段引用是否存在、失败重试是否可能重复执行、节点是否存在不可达分支，以及外部请求是否可能暴露敏感数据。分析单条工作流记录时，只根据实例、待办和动作轨迹说明当前状态与阻塞点；不得提交、审批、驳回、撤回或修改流程。只提出修改建议，不执行或发布自动化。".to_string(),
-            requires_confirmation: false,
-        },
-    ]
-}
-
-fn default_agent_knowledge_bases() -> Vec<AgentKnowledgeBaseDefinition> {
-    vec![
-        AgentKnowledgeBaseDefinition {
-            id: "knowledge-form-components".to_string(),
-            name: "YaYa 表单组件规范".to_string(),
-            description: "当前表单运行时组件、值类型和 Agent 填写边界。".to_string(),
-            enabled: true,
-            retrieval_mode: "keyword".to_string(),
-            content: "YaYa 表单组件：singleLineText 为单行字符串；multiLineText 为多行字符串；number 为数值，需遵守最小值、最大值和步长；radio 与 select 为单选，值必须在选项中；checkbox 与 multiSelect 为字符串数组，所有值必须在选项中；date 为 YYYY-MM-DD；dateRange 为两个 YYYY-MM-DD 字符串组成的数组；member 和 department 的值必须来自可用选项。groupContainer、description、link 不产生可填写业务值。attachment、imageUpload、subform、button 需要用户交互，Agent 不能自动填写。未知组件一律禁止自动填写。字段设计优先使用稳定、语义明确的字段 ID，并将选项值与显示标签分离。".to_string(),
-            source_ids: vec!["web/app/lib/form-component-agent-capabilities.ts".to_string()],
-        },
-        AgentKnowledgeBaseDefinition {
-            id: "knowledge-automation-review".to_string(),
-            name: "YaYa 自动化审查规范".to_string(),
-            description: "自动化流程分析和变更建议的安全边界。".to_string(),
-            enabled: true,
-            retrieval_mode: "keyword".to_string(),
-            content: "YaYa 自动化由触发配置、节点和连线构成。审查时先确认触发表单和触发事件，再检查节点输入引用、条件分支、错误处理和重试行为。涉及 HTTP 请求时不得把密钥、身份凭据或无关个人数据写入请求参数。可能产生外部副作用的节点应具备幂等键、人工确认或清晰的失败处理。Agent 可以读取和解释自动化，不能创建、修改、执行、重试或发布自动化。".to_string(),
-            source_ids: vec!["api/src/modules/automations".to_string()],
-        },
-    ]
-}
-
-fn default_agent_plugins() -> Vec<AgentPluginDefinition> {
-    vec![AgentPluginDefinition {
-        id: "plugin-http-json-template".to_string(),
-        name: "HTTP JSON 插件模板".to_string(),
-        description: "用于创建受控 HTTP 插件的禁用模板；配置有效 Manifest 和服务端点后再启用。".to_string(),
-        enabled: false,
-        version: "1.0.0".to_string(),
-        entrypoint: "template.http-json".to_string(),
-        manifest_json: r#"{"endpoint":"https://plugin.example.com/agent-tools","tools":[{"name":"lookup","description":"查询外部业务数据","requiresConfirmation":true}]}"#.to_string(),
-        requires_confirmation: true,
-    }]
-}
-
-pub fn resolve_agent_runtime(agent_id: Option<&str>) -> Result<ResolvedAgentRuntime, String> {
-    resolve_agent_runtime_for_scope(agent_id, None, None)
-}
-
-pub fn resolve_agent_runtime_for_scope(
-    agent_id: Option<&str>,
-    app_id: Option<&str>,
-    business_id: Option<&str>,
-) -> Result<ResolvedAgentRuntime, String> {
-    let registry = load_agent_registry();
-    resolve_agent_runtime_from_registry(&registry, agent_id, app_id, business_id)
 }
 
 pub(crate) fn resolve_agent_runtime_from_registry(
@@ -1394,111 +1187,6 @@ mod tests {
         assert!(runtime.validate_scope(Some("hr"), None).is_err());
         assert!(runtime.validate_scope(None, None).is_err());
     }
-
-    #[test]
-    fn system_resources_are_added_without_rebinding_existing_model_setup() {
-        let mut registry = registry();
-        registry.profiles[0].id = "profile-default".to_string();
-        registry.profiles[0].skill_ids.clear();
-        registry.profiles[0].knowledge_base_ids.clear();
-        registry.skills.clear();
-        registry.knowledge_bases.clear();
-        registry.plugins.clear();
-
-        assert!(ensure_default_agent_resources_in_registry(&mut registry));
-        assert!(registry.skills.iter().any(|item| {
-            item.id == "skill-form-designer"
-                && item
-                    .allowed_tools
-                    .iter()
-                    .any(|tool| tool == "create_form_draft")
-                && item
-                    .allowed_tools
-                    .iter()
-                    .any(|tool| tool == "list_form_records")
-                && item
-                    .allowed_tools
-                    .iter()
-                    .any(|tool| tool == "get_form_relationships")
-                && item
-                    .allowed_tools
-                    .iter()
-                    .any(|tool| tool == "get_related_records")
-                && item
-                    .allowed_tools
-                    .iter()
-                    .any(|tool| tool == "query_form_records")
-                && item
-                    .allowed_tools
-                    .iter()
-                    .any(|tool| tool == "aggregate_form_records")
-                && item
-                    .allowed_tools
-                    .iter()
-                    .any(|tool| tool == "get_application_business_context")
-                && item
-                    .allowed_tools
-                    .iter()
-                    .any(|tool| tool == "get_detail_form_definition")
-                && item
-                    .allowed_tools
-                    .iter()
-                    .any(|tool| tool == "list_detail_records")
-                && item
-                    .allowed_tools
-                    .iter()
-                    .any(|tool| tool == "create_detail_form_draft")
-        }));
-        assert!(registry.skills.iter().any(|item| {
-            item.id == "skill-automation-reviewer"
-                && item
-                    .allowed_tools
-                    .iter()
-                    .any(|tool| tool == "get_workflow_process_definition")
-                && item
-                    .allowed_tools
-                    .iter()
-                    .any(|tool| tool == "get_workflow_record_runtime")
-        }));
-        assert!(
-            registry
-                .knowledge_bases
-                .iter()
-                .any(|item| item.id == "knowledge-form-components")
-        );
-        assert!(
-            registry
-                .plugins
-                .iter()
-                .any(|item| item.id == "plugin-http-json-template" && !item.enabled)
-        );
-        assert_eq!(registry.profiles.len(), 1);
-        assert!(registry.profiles[0].skill_ids.is_empty());
-        assert!(registry.profiles[0].knowledge_base_ids.is_empty());
-        assert_eq!(registry.agents.len(), 1);
-        assert!(!ensure_default_agent_resources_in_registry(&mut registry));
-    }
-
-    #[test]
-    fn new_registry_has_no_default_provider_profile_or_agent() {
-        let registry = default_agent_registry();
-
-        assert!(registry.providers.is_empty());
-        assert!(registry.profiles.is_empty());
-        assert!(registry.agents.is_empty());
-    }
-}
-
-fn default_agent_registry() -> AgentRegistry {
-    AgentRegistry {
-        providers: Vec::new(),
-        profiles: Vec::new(),
-        agents: Vec::new(),
-        plugins: Vec::new(),
-        skills: Vec::new(),
-        knowledge_bases: Vec::new(),
-        personas: default_personas(),
-    }
 }
 
 fn default_max_retries() -> usize {
@@ -1525,40 +1213,6 @@ fn default_context_keep_recent_ratio() -> f64 {
 fn default_max_context_tokens() -> usize {
     128_000
 }
-fn default_personas() -> Vec<AgentPersonaDefinition> {
-    vec![
-        AgentPersonaDefinition {
-            id: "persona-default".to_string(),
-            name: "默认人格".to_string(),
-            description: "通用低代码平台助手".to_string(),
-            system_prompt: "你是 YaYa 低代码平台助手。帮助用户设计表单、编排自动化和分析业务配置。"
-                .to_string(),
-            plugin_ids: Vec::new(),
-            skill_ids: Vec::new(),
-            knowledge_base_ids: Vec::new(),
-        },
-        AgentPersonaDefinition {
-            id: "persona-business".to_string(),
-            name: "业务分析师".to_string(),
-            description: "聚焦业务流程和需求分析".to_string(),
-            system_prompt: "你是一名业务分析师，擅长梳理业务流程、数据关系与系统需求。".to_string(),
-            plugin_ids: Vec::new(),
-            skill_ids: Vec::new(),
-            knowledge_base_ids: Vec::new(),
-        },
-        AgentPersonaDefinition {
-            id: "persona-builder".to_string(),
-            name: "低代码实施顾问".to_string(),
-            description: "聚焦应用搭建与自动化实施".to_string(),
-            system_prompt: "你是一名低代码实施顾问，擅长表单设计、自动化编排和应用治理。"
-                .to_string(),
-            plugin_ids: Vec::new(),
-            skill_ids: Vec::new(),
-            knowledge_base_ids: Vec::new(),
-        },
-    ]
-}
-
 pub fn load_identity_source_settings() -> Option<IdentitySourceSettings> {
     let content = fs::read_to_string(identity_settings_path()).ok()?;
     serde_json::from_str::<IdentitySourceSettings>(&content).ok()
@@ -1594,11 +1248,6 @@ pub fn save_application_business_context_settings(
         fs::remove_file(&path)?;
     }
     fs::rename(temporary_path, path)
-}
-
-pub fn load_rbac_permission_settings() -> Option<RbacPermissionSettings> {
-    let content = fs::read_to_string(rbac_permission_settings_path()).ok()?;
-    serde_json::from_str::<RbacPermissionSettings>(&content).ok()
 }
 
 pub fn load_notification_settings() -> Option<NotificationSettings> {
@@ -1724,16 +1373,8 @@ fn application_business_context_settings_path() -> PathBuf {
     )
 }
 
-fn agent_registry_path() -> PathBuf {
-    runtime_state_path("YAYA_AGENT_REGISTRY_PATH", "agent-registry.json")
-}
-
 fn identity_settings_path() -> PathBuf {
     runtime_state_path("YAYA_IDENTITY_SETTINGS_PATH", "identity.json")
-}
-
-fn rbac_permission_settings_path() -> PathBuf {
-    runtime_state_path("YAYA_RBAC_PERMISSION_SETTINGS_PATH", "rbac.json")
 }
 
 fn notification_settings_path() -> PathBuf {
@@ -1802,27 +1443,25 @@ fn runtime_state_path(variable: &str, file_name: &str) -> PathBuf {
 /// existing runtime directory. Explicit `YAYA_*_PATH` values are left alone.
 pub fn migrate_legacy_runtime_layout() -> Result<(), std::io::Error> {
     let state_migrations = [
-        ("YAYA_SETTINGS_PATH", ".yaya-lowcode-settings.json", "database.json"),
-        ("YAYA_VALKEY_SETTINGS_PATH", ".yaya-valkey-settings.json", "valkey.json"),
+        (
+            "YAYA_SETTINGS_PATH",
+            ".yaya-lowcode-settings.json",
+            "database.json",
+        ),
+        (
+            "YAYA_VALKEY_SETTINGS_PATH",
+            ".yaya-valkey-settings.json",
+            "valkey.json",
+        ),
         (
             "YAYA_APPLICATION_BUSINESS_CONTEXT_PATH",
             ".yaya-application-business-context.json",
             "application-business-context.json",
         ),
         (
-            "YAYA_AGENT_REGISTRY_PATH",
-            ".yaya-agent-registry.json",
-            "agent-registry.json",
-        ),
-        (
             "YAYA_IDENTITY_SETTINGS_PATH",
             ".yaya-identity-settings.json",
             "identity.json",
-        ),
-        (
-            "YAYA_RBAC_PERMISSION_SETTINGS_PATH",
-            ".yaya-rbac-permissions.json",
-            "rbac.json",
         ),
         (
             "YAYA_NOTIFICATION_SETTINGS_PATH",
@@ -1839,7 +1478,11 @@ pub fn migrate_legacy_runtime_layout() -> Result<(), std::io::Error> {
             ".yaya-recycle-bin.json",
             "recycle-bin.json",
         ),
-        ("YAYA_LICENSE_SETTINGS_PATH", ".yaya-license.json", "license.json"),
+        (
+            "YAYA_LICENSE_SETTINGS_PATH",
+            ".yaya-license.json",
+            "license.json",
+        ),
     ];
 
     fs::create_dir_all("runtime/state")?;

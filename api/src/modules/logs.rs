@@ -30,6 +30,7 @@ pub(crate) struct PlatformLogResponse {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PlatformLogListResponse {
     records: Vec<PlatformLogResponse>,
+    total_count: usize,
     total_size_bytes: u64,
 }
 
@@ -54,7 +55,7 @@ pub(crate) async fn list_platform_logs(
     }
     let limit = query.limit.unwrap_or(200).clamp(1, 500) as usize;
     let offset = query.offset.unwrap_or(0).min(100_000) as usize;
-    let records = logging::list_events(level, offset, limit).await;
+    let (records, total_count) = logging::list_events(level, offset, limit).await;
     Ok(Json(success_response(
         "platform logs loaded",
         PlatformLogListResponse {
@@ -69,6 +70,7 @@ pub(crate) async fn list_platform_logs(
                     fields: record.fields,
                 })
                 .collect(),
+            total_count,
             total_size_bytes: logging::total_size_bytes().await,
         },
     )))

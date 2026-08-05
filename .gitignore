@@ -44,6 +44,7 @@ yarn-error.log*
 .env*
 deploy/.env
 deploy/secrets/
+deploy/backups/
 !api/.env.example
 !deploy/.env.example
 

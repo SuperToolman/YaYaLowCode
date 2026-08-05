@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Dropdown } from "@heroui/react";
-import { listWorkflowNotifications, readWorkflowNotification } from "../lib/api-client";
+import { listWorkflowNotifications, readWorkflowNotification } from "@/features/workflow/api";
 
 type Notification = {
   id: string;

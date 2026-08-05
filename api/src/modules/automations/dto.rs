@@ -8,8 +8,8 @@ use crate::infrastructure::entities::{
     automation_flow_entity, automation_flow_version_entity, automation_run_node_entity,
 };
 use crate::shared::{
-    automation_trigger_events, automation_trigger_label, calculate_duration_ms,
-    AutomationFlowType, AutomationStatus, AutomationTriggerEvent,
+    AutomationFlowType, AutomationStatus, AutomationTriggerEvent, automation_trigger_events,
+    automation_trigger_label, calculate_duration_ms,
 };
 
 #[derive(Debug, Serialize, ToSchema)]

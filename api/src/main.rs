@@ -38,11 +38,13 @@ async fn main() -> Result<(), AppError> {
         .with(platform::logging::PlatformLogLayer)
         .init();
 
-    let openapi_output = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("openapi/openapi.json");
-    if std::env::args().skip(1).any(|argument| argument == "--export-openapi") {
-        openapi::export_to_file(&openapi_output)
-            .map_err(AppError::Server)?;
+    let openapi_output =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("openapi/openapi.json");
+    if std::env::args()
+        .skip(1)
+        .any(|argument| argument == "--export-openapi")
+    {
+        openapi::export_to_file(&openapi_output).map_err(AppError::Server)?;
         return Ok(());
     }
 

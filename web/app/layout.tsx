@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
-import { AppToastProvider } from "./components/app-toast-provider";
-import { AuthenticatedAppShell } from "./components/authenticated-app-shell";
-import { ThemeProvider } from "./components/theme-provider";
+import { WebVitalsReporter } from "./components/web-vitals-reporter";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -17,10 +15,8 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" className="h-full antialiased" suppressHydrationWarning>
       <body className="min-h-full">
-        <ThemeProvider>
-          <AuthenticatedAppShell>{children}</AuthenticatedAppShell>
-          <AppToastProvider />
-        </ThemeProvider>
+        {children}
+        <WebVitalsReporter />
       </body>
     </html>
   );

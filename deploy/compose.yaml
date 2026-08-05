@@ -32,9 +32,7 @@ services:
       YAYA_VALKEY_SETTINGS_PATH: /var/lib/yaya/config/valkey.json
       YAYA_AGENT_SETTINGS_PATH: /var/lib/yaya/config/agent-settings.json
       YAYA_PLATFORM_AGENT_ASSISTANT_SETTINGS_PATH: /var/lib/yaya/config/agent-assistant.json
-      YAYA_AGENT_REGISTRY_PATH: /var/lib/yaya/config/agent-registry.json
       YAYA_IDENTITY_SETTINGS_PATH: /var/lib/yaya/config/identity.json
-      YAYA_RBAC_PERMISSION_SETTINGS_PATH: /var/lib/yaya/config/rbac.json
       YAYA_NOTIFICATION_SETTINGS_PATH: /var/lib/yaya/config/notifications.json
       YAYA_LICENSE_SETTINGS_PATH: /var/lib/yaya/config/license.json
       YAYA_SKILLS_PATH: /var/lib/yaya/skills

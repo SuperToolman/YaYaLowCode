@@ -9,6 +9,7 @@ use sea_orm::{
     Value as SeaValue, sea_query::Expr,
 };
 use serde_json::Value;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::AppError;
@@ -105,6 +106,151 @@ where
                 AppError::Server(std::io::Error::other("record count query returned no row"))
             })?;
         let total = total_row.try_get("", "total")?;
+        let records = rows
+            .into_iter()
+            .map(|row| stored_record_from_row(&row, form_uuid).map_err(AppError::from))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok((records, total))
+    }
+
+    pub(crate) async fn query_page(
+        &self,
+        form_uuid: &str,
+        request: &forms::QueryFormRecordsRequest,
+        field_kinds: &HashMap<String, QueryFieldKind>,
+        page: u64,
+        page_size: u64,
+    ) -> Result<(Vec<StoredFormRecord>, i64), AppError> {
+        let plan = self.storage_plan(form_uuid).await?;
+        let source_sql = format!(
+            "SELECT {} FROM \"{}\" WHERE deleted_at IS NULL",
+            base_select_columns(&plan),
+            plan.main_table,
+        );
+        let mut values = Vec::<SeaValue>::new();
+        let mut predicates = Vec::<String>::new();
+
+        for filter in &request.filters {
+            let field_kind = field_kinds
+                .get(&filter.field_id)
+                .copied()
+                .unwrap_or(QueryFieldKind::Text);
+            let expression = query_field_expression(&filter.field_id, field_kind, &mut values);
+            let predicate = match filter.operator {
+                forms::RecordFilterOperator::IsEmpty => format!("NULLIF({expression}, '') IS NULL"),
+                forms::RecordFilterOperator::IsNotEmpty => {
+                    format!("NULLIF({expression}, '') IS NOT NULL")
+                }
+                forms::RecordFilterOperator::In => {
+                    let items = filter
+                        .value
+                        .as_ref()
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default();
+                    if items.is_empty() {
+                        "FALSE".to_string()
+                    } else {
+                        let placeholders = items
+                            .into_iter()
+                            .map(|item| {
+                                values.push(SeaValue::String(Some(query_value_text(&item))));
+                                query_value_placeholder(field_kind, values.len())
+                            })
+                            .collect::<Vec<_>>();
+                        format!("{expression} IN ({})", placeholders.join(", "))
+                    }
+                }
+                operator => {
+                    let value = filter
+                        .value
+                        .as_ref()
+                        .map(query_value_text)
+                        .unwrap_or_default();
+                    values.push(SeaValue::String(Some(value)));
+                    let placeholder = query_value_placeholder(field_kind, values.len());
+                    match operator {
+                        forms::RecordFilterOperator::Eq => format!("{expression} = {placeholder}"),
+                        forms::RecordFilterOperator::Neq => {
+                            format!("{expression} IS DISTINCT FROM {placeholder}")
+                        }
+                        forms::RecordFilterOperator::Contains => {
+                            format!("COALESCE({expression}, '') ILIKE '%' || {placeholder} || '%'")
+                        }
+                        forms::RecordFilterOperator::Gt => format!("{expression} > {placeholder}"),
+                        forms::RecordFilterOperator::Gte => {
+                            format!("{expression} >= {placeholder}")
+                        }
+                        forms::RecordFilterOperator::Lt => format!("{expression} < {placeholder}"),
+                        forms::RecordFilterOperator::Lte => {
+                            format!("{expression} <= {placeholder}")
+                        }
+                        forms::RecordFilterOperator::In
+                        | forms::RecordFilterOperator::IsEmpty
+                        | forms::RecordFilterOperator::IsNotEmpty => unreachable!(),
+                    }
+                }
+            };
+            predicates.push(predicate);
+        }
+
+        let where_sql = if predicates.is_empty() {
+            "TRUE".to_string()
+        } else {
+            predicates.join(" AND ")
+        };
+        let count_values = values.clone();
+        let count_sql =
+            format!("SELECT COUNT(*) AS total FROM ({source_sql}) AS source WHERE {where_sql}");
+        let total_row = self
+            .db
+            .query_one_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                count_sql,
+                count_values,
+            ))
+            .await?
+            .ok_or_else(|| {
+                AppError::Server(std::io::Error::other("record query count returned no row"))
+            })?;
+        let total = total_row.try_get("", "total")?;
+
+        let mut order_parts = Vec::new();
+        for sort in &request.sorts {
+            let expression = query_field_expression(
+                &sort.field_id,
+                field_kinds
+                    .get(&sort.field_id)
+                    .copied()
+                    .unwrap_or(QueryFieldKind::Text),
+                &mut values,
+            );
+            let direction = match sort.direction {
+                forms::RecordSortDirection::Asc => "ASC",
+                forms::RecordSortDirection::Desc => "DESC",
+            };
+            order_parts.push(format!("{expression} {direction} NULLS LAST"));
+        }
+        if order_parts.is_empty() {
+            order_parts.push("created_at DESC".to_string());
+        }
+
+        values.push(SeaValue::BigInt(Some(page_size as i64)));
+        let limit_placeholder = values.len();
+        values.push(SeaValue::BigInt(Some(((page - 1) * page_size) as i64)));
+        let offset_placeholder = values.len();
+        let query_sql = format!(
+            "SELECT * FROM ({source_sql}) AS source WHERE {where_sql} ORDER BY {} LIMIT ${limit_placeholder} OFFSET ${offset_placeholder}",
+            order_parts.join(", "),
+        );
+        let rows = self
+            .db
+            .query_all_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                query_sql,
+                values,
+            ))
+            .await?;
         let records = rows
             .into_iter()
             .map(|row| stored_record_from_row(&row, form_uuid).map_err(AppError::from))
@@ -369,6 +515,59 @@ where
                 .await?;
         }
         Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum QueryFieldKind {
+    Text,
+    Number,
+    DateTime,
+}
+
+fn query_field_expression(
+    field_id: &str,
+    kind: QueryFieldKind,
+    values: &mut Vec<SeaValue>,
+) -> String {
+    match field_id {
+        "id" | "recordUuid" | "instanceId" => "record_uuid".to_string(),
+        "schemaVersion" => "schema_version".to_string(),
+        "createdBy" | "submitter" => "created_by".to_string(),
+        "updatedBy" => "updated_by".to_string(),
+        "createdAt" => "created_at".to_string(),
+        "updatedAt" => "updated_at".to_string(),
+        _ => {
+            values.push(SeaValue::String(Some(field_id.to_string())));
+            let text = format!("record_data ->> ${}", values.len());
+            match kind {
+                QueryFieldKind::Text => text,
+                QueryFieldKind::Number => format!(
+                    "CASE WHEN {text} ~ '^[+-]?[0-9]+(?:\\.[0-9]+)?$' THEN ({text})::numeric END"
+                ),
+                QueryFieldKind::DateTime => format!(
+                    "CASE WHEN {text} ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}' THEN ({text})::timestamptz END"
+                ),
+            }
+        }
+    }
+}
+
+fn query_value_text(value: &Value) -> String {
+    match value {
+        Value::Null => String::new(),
+        Value::String(value) => value.clone(),
+        Value::Bool(value) => value.to_string(),
+        Value::Number(value) => value.to_string(),
+        value => value.to_string(),
+    }
+}
+
+fn query_value_placeholder(kind: QueryFieldKind, index: usize) -> String {
+    match kind {
+        QueryFieldKind::Text => format!("${index}"),
+        QueryFieldKind::Number => format!("NULLIF(${index}, '')::numeric"),
+        QueryFieldKind::DateTime => format!("NULLIF(${index}, '')::timestamptz"),
     }
 }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -39,6 +40,6 @@ const compactMarkdownComponents: Components = {
   pre: ({ children }) => <pre className="my-2 overflow-x-auto rounded-lg bg-[var(--color-bg-subtle)] p-3 text-[11px] leading-5">{children}</pre>,
 };
 
-export function AgentMarkdown({ content, compact = false }: { content: string; compact?: boolean }) {
+export const AgentMarkdown = memo(function AgentMarkdown({ content, compact = false }: { content: string; compact?: boolean }) {
   return <ReactMarkdown remarkPlugins={[remarkGfm]} components={compact ? compactMarkdownComponents : markdownComponents}>{content}</ReactMarkdown>;
-}
+});

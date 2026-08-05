@@ -9,6 +9,14 @@ use utoipa::ToSchema;
 
 use super::config::{PlatformLicenseSettings, load_platform_license_settings};
 
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformAiEmployeeEntitlement {
+    pub id: String,
+    pub title: String,
+    pub expires_at: i64,
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlatformLicenseClaims {
@@ -18,6 +26,10 @@ pub struct PlatformLicenseClaims {
     pub exp: usize,
     #[serde(default)]
     pub module_expires_at: HashMap<String, i64>,
+    #[serde(default)]
+    pub module_titles: HashMap<String, String>,
+    #[serde(default)]
+    pub ai_employees: Vec<PlatformAiEmployeeEntitlement>,
     pub iss: String,
     pub aud: String,
 }
@@ -33,6 +45,9 @@ pub struct PlatformLicenseStatus {
     pub modules: Vec<String>,
     pub expires_at: Option<i64>,
     pub module_expires_at: HashMap<String, i64>,
+    pub module_titles: HashMap<String, String>,
+    pub ai_employees: Vec<PlatformAiEmployeeEntitlement>,
+    pub ai_employee_statuses: HashMap<String, String>,
     pub platform_status: String,
     pub module_statuses: HashMap<String, String>,
 }
@@ -118,6 +133,28 @@ pub fn license_module_expires_at(module: &str) -> Option<i64> {
     }
 }
 
+pub fn license_has_ai_employee(employee_id: &str) -> bool {
+    let Some(settings) = load_platform_license_settings() else {
+        return false;
+    };
+    validate_license_token(&settings.license).is_ok_and(|claims| {
+        claims.ai_employees.iter().any(|entitlement| {
+            entitlement.id == employee_id
+                && entitlement.expires_at >= chrono::Utc::now().timestamp()
+        })
+    })
+}
+
+pub fn license_ai_employee_expires_at(employee_id: &str) -> Option<i64> {
+    let settings = load_platform_license_settings()?;
+    let claims = validate_license_token(&settings.license).ok()?;
+    claims
+        .ai_employees
+        .iter()
+        .find(|entitlement| entitlement.id == employee_id)
+        .map(|entitlement| entitlement.expires_at)
+}
+
 pub async fn validate_license_remotely() -> Result<(), String> {
     let settings = load_platform_license_settings().ok_or_else(|| "尚未激活许可证".to_string())?;
     let claims = validate_license_token(&settings.license)?;
@@ -197,6 +234,20 @@ fn status_from_claims(
     valid: bool,
     reason: Option<String>,
 ) -> PlatformLicenseStatus {
+    let module_titles = claims
+        .modules
+        .iter()
+        .map(|module| {
+            (
+                module.clone(),
+                claims
+                    .module_titles
+                    .get(module)
+                    .cloned()
+                    .unwrap_or_else(|| default_module_title(module)),
+            )
+        })
+        .collect();
     let module_expires_at = claims
         .modules
         .iter()
@@ -217,6 +268,20 @@ fn status_from_claims(
             )
         })
         .collect();
+    let ai_employee_statuses = claims
+        .ai_employees
+        .iter()
+        .map(|entitlement| {
+            (
+                entitlement.id.clone(),
+                if valid && entitlement.expires_at >= chrono::Utc::now().timestamp() {
+                    "running".to_string()
+                } else {
+                    "expired".to_string()
+                },
+            )
+        })
+        .collect();
     PlatformLicenseStatus {
         valid,
         reason,
@@ -226,6 +291,9 @@ fn status_from_claims(
         modules: claims.modules,
         expires_at: Some(claims.exp as i64),
         module_expires_at,
+        module_titles,
+        ai_employees: claims.ai_employees,
+        ai_employee_statuses,
         platform_status: if valid {
             "running".to_string()
         } else {
@@ -245,6 +313,9 @@ fn invalid_status(reason: &str, license_center_url: Option<String>) -> PlatformL
         modules: Vec::new(),
         expires_at: None,
         module_expires_at: HashMap::new(),
+        module_titles: HashMap::new(),
+        ai_employees: Vec::new(),
+        ai_employee_statuses: HashMap::new(),
         platform_status: "expired".to_string(),
         module_statuses: HashMap::new(),
     }
@@ -256,4 +327,12 @@ fn module_expiry(claims: &PlatformLicenseClaims, module: &str) -> i64 {
         .get(module)
         .copied()
         .unwrap_or(claims.exp as i64)
+}
+
+fn default_module_title(module: &str) -> String {
+    match module {
+        "platform" => "低代码平台".to_string(),
+        "communication" => "通讯模型".to_string(),
+        _ => module.to_string(),
+    }
 }

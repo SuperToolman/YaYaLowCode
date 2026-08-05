@@ -5,7 +5,7 @@ use utoipa::ToSchema;
 
 use crate::infrastructure::entities::app_entity;
 use crate::platform::config::ApplicationBusinessContext;
-use crate::shared::{format_date, AppStatus};
+use crate::shared::{AppStatus, format_date};
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]

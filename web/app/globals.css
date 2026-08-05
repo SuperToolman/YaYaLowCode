@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "@heroui/styles"; 
-@import "@xyflow/react/dist/style.css";
 
 .chat-mention-token {
   display: inline-block;
@@ -458,6 +457,15 @@ body::-webkit-scrollbar-thumb,
   width: max(100%, var(--data-table-minimum-width)) !important;
 }
 
+/* Keep record grids compact without changing HeroUI's native table typography. */
+.data-table-content :is(.table__cell, .table__column) {
+  padding: 4px 6px !important;
+}
+
+.data-table-content .table__cell {
+  font-size: 14px !important;
+}
+
 .data-table-horizontal-scroll::-webkit-scrollbar {
   display: block !important;
   width: 8px !important;
@@ -475,6 +483,37 @@ body::-webkit-scrollbar-thumb,
 
 .data-table-horizontal-scroll::-webkit-scrollbar-corner {
   background: var(--color-bg-subtle) !important;
+}
+
+/* The recycle-bin table owns the space below its page header and action bar. */
+main.theme-page-shell:has([aria-label="回收站数据"]) {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+main.theme-page-shell:has([aria-label="回收站数据"]) > section {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+main.theme-page-shell:has([aria-label="回收站数据"]) [data-slot="table"] {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+main.theme-page-shell:has([aria-label="回收站数据"]) [data-slot="table-scroll-container"] {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
 }
 
 /* Keep automation node configuration dense without changing shared form controls. */
@@ -592,6 +631,16 @@ select {
 
 .app-main-glass:has(.theme-page-shell.settings-page-shell) {
   overflow: clip;
+}
+
+.license-checking-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--color-bg-canvas) 88%, transparent);
+  cursor: progress;
 }
 
 .theme-page-shell {

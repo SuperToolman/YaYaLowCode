@@ -3,70 +3,47 @@
 import {
   useCallback,
   useEffect,
-  Fragment,
+  memo,
   useMemo,
   useRef,
   useState,
   type Dispatch,
+  type RefObject,
   type SetStateAction,
 } from "react";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowChevronLeft, ArrowChevronRight, ArrowDown, ChevronDown, Code, Ellipsis, FaceRobot, Gear, PaperPlane, Paperclip, Plus, Sparkles, Xmark } from "@gravity-ui/icons";
 import { Button, Dropdown, Tabs } from "@heroui/react";
 import { Drawer } from "@heroui/react/drawer";
-import { createAgentSession, deleteAgentSession, listAgentMessages, listAgentSessions, updateAgentSession } from "../lib/api-client";
 import { AgentMarkdown } from "./agent-markdown";
 import { useAuth } from "./auth-provider";
-import { requestApi } from "../lib/api-request";
-
-type PendingAction = { id: string; actionType: string; summary: string; status: "pending"; createdAt: string; expiresAt: string };
-
-type AgentMessage = {
-  id: string;
-  role: "assistant" | "user";
-  content: string;
-  createdAt?: string;
-  metadata?: unknown;
-  runId?: string;
-  toolActivities?: AgentToolActivity[];
-  attachments?: AttachedImage[];
-  pendingActions?: PendingAction[];
-};
-
-type AttachedImage = { id: string; name: string; previewUrl: string };
-
-type AgentToolActivity = { id: string; name: string; status: "running" | "completed" };
-
-type AgentSession = {
-  id: string;
-  agentId: string;
-  title: string;
-  appId?: string;
-  status: string;
-  source: SessionSource;
-  isPinned: boolean;
-  modelProvider?: string | null;
-  updatedAt: string;
-};
-
-type SessionSource = "general" | "schema_analysis" | "form_fill";
-type SessionFilter = "all" | SessionSource;
-
-type AgentPageContext = {
-  appId?: string;
-  formUuid?: string;
-  automationId?: string;
-  route: string;
-};
-
-type ApiEnvelope<T> = {
-  code: number;
-  message: string;
-  data: T | null;
-};
-
-type AgentRunTrace = { runId: string; status: string; steps: Array<{ index: number; tool: string; arguments: unknown; summary: unknown; status: string }> };
+import {
+  createAgentSessionData,
+  deleteAgentSessionData,
+  fetchAvailableAgents,
+  fetchAgentMessages,
+  fetchPendingActions,
+  fetchAgentRunTrace,
+  openAgentMessageStream,
+  resolvePendingAction,
+  updateAgentSessionData,
+} from "@/features/agent-assistant/api";
+import { parseAgentSseFrame } from "@/features/agent-assistant/sse";
+import type {
+  AgentMessage,
+  AgentOption,
+  AgentApprovalMode,
+  AgentPageContext,
+  AgentRunTrace,
+  AgentSession,
+  AttachedImage,
+  PendingAction,
+  SessionFilter,
+} from "@/features/agent-assistant/types";
+import { useAgentSessionsQuery } from "@/features/agent-assistant/hooks";
 
 const suggestions = [
   "帮我分析当前应用结构",
@@ -77,20 +54,51 @@ const suggestions = [
   "根据当前配置给出下一步建议",
 ];
 
-export default function AgentAssistantLauncher() {
+const approvalModeLabels: Record<AgentApprovalMode, string> = {
+  request_approval: "请求批准",
+  approve_on_behalf: "替我审批",
+  full_access: "完全访问",
+};
+
+const destructiveAgentActions = new Set(["delete_automation", "delete_navigation_group", "delete_form"]);
+
+type AgentAssistantLauncherProps = {
+  initialOpen?: boolean;
+  hideTrigger?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+};
+
+export default function AgentAssistantLauncher({
+  initialOpen = false,
+  hideTrigger = false,
+  open,
+  onOpenChange,
+}: AgentAssistantLauncherProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { hasPermission, user } = useAuth();
+  const queryClient = useQueryClient();
   const canConfigureAgents = hasPermission("settings.agent");
   const pageContext = useMemo(() => buildPageContext(pathname), [pathname]);
-  const [isOpen, setIsOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(initialOpen);
+  const isOpen = open ?? internalOpen;
+  const setIsOpen = useCallback((nextOpen: boolean) => {
+    if (open === undefined) setInternalOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  }, [onOpenChange, open]);
+  const { refetch: refetchAgentSessions } = useAgentSessionsQuery(isOpen);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const [pendingActions, setPendingActions] = useState<PendingAction[]>([]);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const [agents, setAgents] = useState<AgentOption[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessionFilter, setSessionFilter] = useState<SessionFilter>("all");
   const [isHistoryCollapsed, setIsHistoryCollapsed] = useState(false);
   const [pendingImages, setPendingImages] = useState<AttachedImage[]>([]);
+  const [approvalMode, setApprovalMode] = useState<AgentApprovalMode>("approve_on_behalf");
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [statusText, setStatusText] = useState("准备就绪");
@@ -99,7 +107,9 @@ export default function AgentAssistantLauncher() {
   const localMessageSequence = useRef(0);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const shouldAutoScrollRef = useRef(true);
+  const scrollFrameRef = useRef<number | null>(null);
 
   const scrollMessagesToBottom = useCallback(() => {
     const container = messagesContainerRef.current;
@@ -122,32 +132,69 @@ export default function AgentAssistantLauncher() {
     return () => window.cancelAnimationFrame(frame);
   }, [errorMessage, isOpen, messages, scrollMessagesToBottom]);
 
+  useEffect(() => {
+    resizeComposer(composerRef.current);
+  }, [input]);
+
+  useEffect(() => () => {
+    if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
+  }, []);
+
+  const handleMessagesScroll = useCallback((container: HTMLDivElement) => {
+    if (scrollFrameRef.current !== null) return;
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= 48;
+      shouldAutoScrollRef.current = isNearBottom;
+      setIsNearMessagesBottom((current) => current === isNearBottom ? current : isNearBottom);
+    });
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const savedMode = window.localStorage.getItem("agent-approval-mode");
+      if (savedMode === "request_approval" || savedMode === "approve_on_behalf" || savedMode === "full_access") {
+        setApprovalMode(savedMode);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const changeApprovalMode = useCallback((mode: AgentApprovalMode) => {
+    setApprovalMode(mode);
+    window.localStorage.setItem("agent-approval-mode", mode);
+  }, []);
+
   const loadMessages = useCallback(async (sessionId: string) => {
-    const { data, error } = await listAgentMessages({ path: { sessionId }, responseStyle: "fields" });
-    const payload = data as ApiEnvelope<AgentMessage[]> | undefined;
-    if (error || payload?.code !== 0 || !payload.data) throw new Error(payload?.message || "无法加载 Agent 消息");
-    const messages = payload.data;
+    const [messages, actions] = await Promise.all([
+      fetchAgentMessages(sessionId),
+      fetchPendingActions(sessionId).catch(() => []),
+    ]);
+    queryClient.setQueryData(["agent-messages", sessionId], messages);
     shouldAutoScrollRef.current = true;
     setIsNearMessagesBottom(true);
-    const pendingActions = await requestApi<PendingAction[]>(`/api/agent/sessions/${encodeURIComponent(sessionId)}/pending-actions`, { cache: "no-store" }).catch(() => []);
-    const restored = pendingActions.length ? [{ id: `pending-actions-${sessionId}`, role: "assistant" as const, content: "", createdAt: pendingActions[0].createdAt, pendingActions }] : [];
-    setMessages([...messages, ...restored]);
-  }, []);
+    setMessages(messages);
+    setPendingActions(actions);
+  }, [queryClient]);
 
   const loadSessions = useCallback(async (preferredSessionId?: string) => {
     setIsLoading(true);
     setErrorMessage("");
     try {
-      const { data, error } = await listAgentSessions({ responseStyle: "fields" });
-      const payload = data as ApiEnvelope<AgentSession[]> | undefined;
-      if (error || payload?.code !== 0 || !payload.data) throw new Error(payload?.message || "无法加载 Agent 会话");
-      const loadedSessions = payload.data;
+      const loadedSessions = (await refetchAgentSessions()).data ?? [];
       const sortedSessions = [...loadedSessions].sort((left, right) => Number(right.isPinned) - Number(left.isPinned) || Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
       setSessions(sortedSessions);
       const sessionId = preferredSessionId ?? sortedSessions[0]?.id ?? null;
       setActiveSessionId(sessionId);
-      if (sessionId) await loadMessages(sessionId);
-      else setMessages([]);
+      if (sessionId) {
+        const session = sortedSessions.find((candidate) => candidate.id === sessionId);
+        if (session) setSelectedAgentId(session.agentId);
+        await loadMessages(sessionId);
+      }
+      else {
+        setMessages([]);
+        setPendingActions([]);
+      }
       setStatusText("准备就绪");
     } catch (reason) {
       setStatusText("Agent 服务不可用");
@@ -155,26 +202,32 @@ export default function AgentAssistantLauncher() {
     } finally {
       setIsLoading(false);
     }
-  }, [loadMessages]);
+  }, [loadMessages, refetchAgentSessions]);
+
+  const loadAgents = useCallback(async () => {
+    const loadedAgents = await fetchAvailableAgents(pageContext);
+    setAgents(loadedAgents);
+    setSelectedAgentId((current) => current ?? loadedAgents[0]?.id ?? null);
+  }, [pageContext]);
 
   useEffect(() => {
     if (!isOpen) return;
     const timer = window.setTimeout(() => {
       void (async () => {
-        await loadSessions();
+        await Promise.all([loadAgents(), loadSessions()]);
       })().catch((reason) => setErrorMessage(reason instanceof Error ? reason.message : "无法加载 Agent"));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [isOpen, loadSessions]);
+  }, [isOpen, loadAgents, loadSessions]);
 
-  async function createSession() {
-    const { data, error } = await createAgentSession({ body: { source: "general", context: pageContext }, responseStyle: "fields" });
-    const payload = data as ApiEnvelope<AgentSession> | undefined;
-    if (error || payload?.code !== 0 || !payload.data) throw new Error(payload?.message || "无法创建 Agent 会话");
-    const session = payload.data;
+  async function createSession(agentId = selectedAgentId ?? undefined) {
+    const session = await createAgentSessionData(pageContext, agentId);
+    queryClient.setQueryData<AgentSession[]>(["agent-sessions"], (current = []) => [session, ...current]);
     setSessions((current) => [session, ...current]);
     setActiveSessionId(session.id);
+    setSelectedAgentId(session.agentId);
     setMessages([]);
+    setPendingActions([]);
     return session.id;
   }
 
@@ -191,13 +244,38 @@ export default function AgentAssistantLauncher() {
   async function selectSession(sessionId: string) {
     if (sessionId === activeSessionId || isStreaming) return;
     setActiveSessionId(sessionId);
+    const session = sessions.find((candidate) => candidate.id === sessionId);
+    if (session) setSelectedAgentId(session.agentId);
     setIsLoading(true);
     setErrorMessage("");
     try {
+      await queryClient.invalidateQueries({ queryKey: ["agent-messages", sessionId] });
       await loadMessages(sessionId);
       setStatusText("准备就绪");
     } catch (reason) {
       setErrorMessage(reason instanceof Error ? reason.message : "无法加载 Agent 消息");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function selectAgent(agentId: string) {
+    if (agentId === selectedAgentId || isStreaming) return;
+    const previousAgentId = selectedAgentId;
+    setSelectedAgentId(agentId);
+    setErrorMessage("");
+    const existingSession = sessions.find((session) => session.agentId === agentId);
+    if (existingSession) {
+      await selectSession(existingSession.id);
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await createSession(agentId);
+      setStatusText("准备就绪");
+    } catch (reason) {
+      setSelectedAgentId(previousAgentId);
+      setErrorMessage(reason instanceof Error ? reason.message : "无法切换机器人");
     } finally {
       setIsLoading(false);
     }
@@ -217,6 +295,19 @@ export default function AgentAssistantLauncher() {
     const messageSequence = localMessageSequence.current;
     const assistantMessageId = `local-assistant-${messageSequence}`;
     const createdAt = new Date().toISOString();
+    let pendingDelta = "";
+    let deltaTimer: number | null = null;
+    const flushDelta = () => {
+      deltaTimer = null;
+      if (!pendingDelta) return;
+      const delta = pendingDelta;
+      pendingDelta = "";
+      setMessages((current) => updateAssistantDelta(current, assistantMessageId, delta));
+    };
+    const enqueueDelta = (delta: string) => {
+      pendingDelta += delta;
+      if (deltaTimer === null) deltaTimer = window.setTimeout(flushDelta, 40);
+    };
 
     try {
       const sessionId = activeSessionId ?? await createSession();
@@ -227,18 +318,7 @@ export default function AgentAssistantLauncher() {
         { id: `local-user-${messageSequence}`, role: "user", content: normalized, attachments, createdAt },
         { id: assistantMessageId, role: "assistant", content: "", createdAt, toolActivities: [] },
       ]);
-      const response = await fetch(
-        `/api/agent/sessions/${encodeURIComponent(sessionId)}/messages`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json", accept: "text/event-stream" },
-          body: JSON.stringify({ content: normalized, context: pageContext }),
-        },
-      );
-      if (!response.ok || !response.body) {
-        const payload = (await response.json()) as ApiEnvelope<never>;
-        throw new Error(payload.message || "Agent 请求失败");
-      }
+      const response = await openAgentMessageStream(sessionId, normalized, pageContext, approvalMode);
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -248,15 +328,17 @@ export default function AgentAssistantLauncher() {
         buffer += decoder.decode(value, { stream: !done });
         const frames = buffer.split("\n\n");
         buffer = frames.pop() ?? "";
-        frames.forEach((frame) =>
-          handleSseFrame(frame, assistantMessageId, sessionId, setMessages, setStatusText, setErrorMessage),
-        );
+        frames.forEach((frame) => handleSseFrame(frame, assistantMessageId, approvalMode, enqueueDelta, setMessages, setPendingActions, setStatusText, setErrorMessage));
         if (done) {
           if (buffer.trim()) {
-            handleSseFrame(buffer, assistantMessageId, sessionId, setMessages, setStatusText, setErrorMessage);
+            handleSseFrame(buffer, assistantMessageId, approvalMode, enqueueDelta, setMessages, setPendingActions, setStatusText, setErrorMessage);
           }
           break;
         }
+      }
+      if (deltaTimer !== null) {
+        window.clearTimeout(deltaTimer);
+        flushDelta();
       }
       await loadMessages(sessionId);
       setSessions((current) => {
@@ -279,27 +361,52 @@ export default function AgentAssistantLauncher() {
           : item,
       ));
     } finally {
+      if (deltaTimer !== null) {
+        window.clearTimeout(deltaTimer);
+        flushDelta();
+      }
       setIsStreaming(false);
     }
   }
 
   async function updateSession(sessionId: string, update: { title?: string; isPinned?: boolean }) {
-    const { data, error } = await updateAgentSession({ path: { sessionId }, body: update, responseStyle: "fields" });
-    const payload = data as ApiEnvelope<AgentSession> | undefined;
-    if (error || payload?.code !== 0 || !payload.data) throw new Error(payload?.message || "无法更新会话");
-    const updatedSession = payload.data;
+    const updatedSession = await updateAgentSessionData(sessionId, update);
+    queryClient.setQueryData<AgentSession[]>(["agent-sessions"], (current = []) => current.map((session) => session.id === sessionId ? updatedSession : session));
     setSessions((current) => current.map((session) => session.id === sessionId ? updatedSession : session)
       .sort((left, right) => Number(right.isPinned) - Number(left.isPinned) || Date.parse(right.updatedAt) - Date.parse(left.updatedAt)));
   }
 
   async function deleteSession(sessionId: string) {
-    const { data, error } = await deleteAgentSession({ path: { sessionId }, responseStyle: "fields" });
-    const payload = data as ApiEnvelope<unknown> | undefined;
-    if (error || payload?.code !== 0) throw new Error(payload?.message || "无法删除会话");
+    await deleteAgentSessionData(sessionId);
+    queryClient.setQueryData<AgentSession[]>(["agent-sessions"], (current = []) => current.filter((session) => session.id !== sessionId));
     setSessions((current) => current.filter((session) => session.id !== sessionId));
     if (activeSessionId === sessionId) {
       setActiveSessionId(null);
       setMessages([]);
+      setPendingActions([]);
+    }
+  }
+
+  async function handlePendingActions(
+    actions: PendingAction[],
+    operation: "confirm" | "cancel",
+    continueAfter = false,
+  ) {
+    if (!activeSessionId || actions.length === 0) return;
+    let completed = false;
+    try {
+      for (const action of actions) {
+        await resolvePendingAction(activeSessionId, action.id, operation);
+      }
+      completed = true;
+      const handledIds = new Set(actions.map((action) => action.id));
+      setPendingActions((current) => current.filter((action) => !handledIds.has(action.id)));
+    } finally {
+      await queryClient.invalidateQueries({ queryKey: ["agent-messages", activeSessionId] });
+      await loadMessages(activeSessionId);
+    }
+    if (completed && continueAfter && operation === "confirm") {
+      await sendMessage("以上待确认操作已全部确认。请立即校验实际执行结果，并继续完成我最初的任务；不要只做总结。若仍需确认，请合并为一个批次。");
     }
   }
 
@@ -342,7 +449,7 @@ export default function AgentAssistantLauncher() {
 
   return (
     <>
-      <button
+      {!hideTrigger ? <button
         type="button"
         aria-label="打开 YaYa Agent"
         className="group flex h-[68px] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border border-transparent bg-transparent px-2 text-center text-[var(--color-text-secondary)] transition-all duration-200 backdrop-blur-xl hover:border-[var(--sidebar-soft-border)] hover:bg-[var(--sidebar-soft-bg)] hover:text-[var(--color-text-primary)]"
@@ -353,7 +460,7 @@ export default function AgentAssistantLauncher() {
           <span className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--color-bg-canvas)] ${errorMessage ? "bg-[var(--color-danger)]" : "bg-[var(--color-success)]"}`} />
         </span>
         <span className="text-[11px] font-medium leading-4">Agent</span>
-      </button>
+      </button> : null}
 
       <Drawer isOpen={isOpen} onOpenChange={setIsOpen}>
         <Drawer.Backdrop className="theme-modal-backdrop" isDismissable>
@@ -393,6 +500,27 @@ export default function AgentAssistantLauncher() {
                 <Drawer.CloseTrigger aria-label="关闭 Agent" className="!static !ml-2 shrink-0" />
               </Drawer.Header>
 
+              <div className="shrink-0 border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-2">
+                <div className="flex min-h-11 items-center gap-2 overflow-x-auto" aria-label="机器人列表">
+                  {agents.map((agent) => {
+                    const isSelected = agent.id === selectedAgentId;
+                    return <button
+                      key={agent.id}
+                      type="button"
+                      aria-pressed={isSelected}
+                      title={agent.description || agent.name}
+                      disabled={isStreaming || isLoading}
+                      className={`flex h-10 shrink-0 items-center gap-2 rounded-md border px-3 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isSelected ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] font-medium text-[var(--color-primary)]" : "border-[var(--color-border)] bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-text-primary)]"}`}
+                      onClick={() => void selectAgent(agent.id)}
+                    >
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--color-control-soft)]"><FaceRobot className="h-3.5 w-3.5" /></span>
+                      <span className="max-w-36 truncate">{agent.name}</span>
+                    </button>;
+                  })}
+                  {!agents.length && !isLoading ? <span className="px-1 text-xs text-[var(--color-text-secondary)]">暂无可用机器人</span> : null}
+                </div>
+              </div>
+
               <Drawer.Body className="min-h-0 flex-1 overflow-hidden p-0">
                 <div className="flex h-full min-h-0">
                   <aside className={`${isHistoryCollapsed ? "hidden" : "hidden sm:flex"} w-[216px] shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-control-soft)]`}>
@@ -417,12 +545,7 @@ export default function AgentAssistantLauncher() {
                     <div
                       ref={messagesContainerRef}
                       className="min-h-0 flex-1 overflow-y-auto p-0"
-                      onScroll={(event) => {
-                        const container = event.currentTarget;
-                        const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= 48;
-                        shouldAutoScrollRef.current = isNearBottom;
-                        setIsNearMessagesBottom(isNearBottom);
-                      }}
+                      onScroll={(event) => handleMessagesScroll(event.currentTarget)}
                     >
                       {errorMessage ? <div className="mx-auto mb-5 max-w-[800px] rounded-2xl border border-[var(--color-danger)]/20 bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">{errorMessage}</div> : null}
                       {!hasMessages ? (
@@ -435,27 +558,39 @@ export default function AgentAssistantLauncher() {
                           </div>
                         </div>
                       ) : (
-                        <div className="mx-auto w-full max-w-[888px] space-y-6 py-6">
-                            {messages.map((message) => (
-                            <MessageRow key={message.id} message={message} sessionId={activeSessionId} userName={user?.displayName ?? user?.username ?? "我"} onPendingAction={async (action, operation) => {
-                              const endpoint = `/api/agent/sessions/${encodeURIComponent(activeSessionId ?? "")}/pending-actions/${encodeURIComponent(action.id)}/${operation}`;
-                              await requestApi<unknown>(endpoint, { method: "POST" });
-                              if (activeSessionId) await loadMessages(activeSessionId);
-                            }} />
-                          ))}
-                        </div>
+                        <VirtualMessageList
+                          messages={messages}
+                          scrollRef={messagesContainerRef}
+                          sessionId={activeSessionId}
+                          userName={user?.displayName ?? user?.username ?? "我"}
+                        />
                       )}
                     </div>
 
-                    <div className="relative bg-[var(--color-bg-canvas)] p-0">
+                    <div className="relative bg-[var(--color-bg-canvas)] px-4 pb-5 pt-3">
                       {hasMessages && !isNearMessagesBottom ? <Button isIconOnly aria-label="回到最新消息" className="absolute bottom-full right-4 mb-3 h-9 w-9 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-0 text-[var(--color-text-primary)] shadow-[var(--shadow-sm)]" onClick={scrollMessagesToBottom}><ArrowDown className="h-4 w-4" /></Button> : null}
+                      {pendingActions.length ? <ApprovalTray actions={pendingActions} mode={approvalMode} onAction={handlePendingActions} /> : null}
                       <div className="mx-auto max-w-[800px] rounded-[22px] border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-2 shadow-[var(--shadow-sm)] focus-within:border-[var(--color-primary)] focus-within:ring-4 focus-within:ring-[var(--color-primary-soft)]">
                         {pendingImages.length ? <div className="flex flex-wrap gap-2 px-1 pb-2">{pendingImages.map((image) => <div key={image.id} className="group relative h-14 w-14 overflow-hidden rounded-md border border-[var(--color-border)]"><Image src={image.previewUrl} alt={image.name} width={56} height={56} unoptimized className="h-full w-full object-cover" /><button type="button" aria-label={`移除 ${image.name}`} className="absolute right-0.5 top-0.5 hidden h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white group-hover:flex" onClick={() => removePendingImage(image.id)}><Xmark className="h-3 w-3" /></button></div>)}</div> : null}
-                        <div className="flex items-end gap-2">
+                        <textarea ref={composerRef} aria-label="给 Agent 发送消息" className="min-h-10 w-full resize-none overflow-y-hidden bg-transparent px-2 py-2 text-sm leading-6 text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-disabled)]" placeholder="询问当前应用、表单或自动化…" rows={1} value={input} disabled={isStreaming} onChange={(event) => setInput(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} />
+                        <div className="mt-1 flex h-10 items-center justify-between border-t border-[var(--color-border)]/70 px-1 pt-1">
                           <input ref={imageInputRef} aria-label="上传图片" className="hidden" type="file" accept="image/*" multiple onChange={(event) => { addImages(event.currentTarget.files); event.currentTarget.value = ""; }} />
-                          <Button isIconOnly variant="ghost" aria-label="上传图片" className="h-10 min-h-10 w-10 min-w-10 rounded-xl text-[var(--color-text-secondary)]" isDisabled={isStreaming} onPress={() => imageInputRef.current?.click()}><Paperclip className="h-4 w-4" /></Button>
-                          <textarea aria-label="给 Agent 发送消息" className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-1 py-2 text-sm text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-disabled)]" placeholder="询问当前应用、表单或自动化…" rows={1} value={input} disabled={isStreaming} onChange={(event) => setInput(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} />
-                          <Button isIconOnly aria-label="发送消息" className="h-10 min-h-10 w-10 min-w-10 rounded-xl bg-[var(--color-primary)] p-0 text-[var(--color-text-on-primary)] disabled:opacity-40" isDisabled={!input.trim() || isStreaming} onClick={() => void sendMessage()}><PaperPlane className="h-4 w-4" /></Button>
+                          <div className="flex items-center gap-1">
+                            <Button isIconOnly variant="ghost" aria-label="上传图片" className="h-9 min-h-9 w-9 min-w-9 rounded-lg text-[var(--color-text-secondary)]" isDisabled={isStreaming} onPress={() => imageInputRef.current?.click()}><Paperclip className="h-4 w-4" /></Button>
+                            <Dropdown>
+                              <Dropdown.Trigger aria-label="批准操作" className="inline-flex h-9 items-center gap-1 rounded-lg px-2 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]">
+                                <span>{approvalModeLabels[approvalMode]}</span><ChevronDown className="h-3 w-3" />
+                              </Dropdown.Trigger>
+                              <Dropdown.Popover>
+                                <Dropdown.Menu aria-label="批准操作" className="min-w-64">
+                                  <Dropdown.Item id="request_approval" textValue="请求批准" onAction={() => changeApprovalMode("request_approval")}><div><div className="text-sm">请求批准{approvalMode === "request_approval" ? " ✓" : ""}</div><div className="text-xs text-[var(--color-text-secondary)]">每个写操作都需要确认</div></div></Dropdown.Item>
+                                  <Dropdown.Item id="approve_on_behalf" textValue="替我审批" onAction={() => changeApprovalMode("approve_on_behalf")}><div><div className="text-sm">替我审批{approvalMode === "approve_on_behalf" ? " ✓" : ""}</div><div className="text-xs text-[var(--color-text-secondary)]">自动批准，删除等危险操作除外</div></div></Dropdown.Item>
+                                  <Dropdown.Item id="full_access" textValue="完全访问" onAction={() => changeApprovalMode("full_access")}><div><div className="text-sm">完全访问{approvalMode === "full_access" ? " ✓" : ""}</div><div className="text-xs text-[var(--color-text-secondary)]">所有允许的操作均不确认</div></div></Dropdown.Item>
+                                </Dropdown.Menu>
+                              </Dropdown.Popover>
+                            </Dropdown>
+                          </div>
+                          <Button isIconOnly aria-label="发送消息" className="h-9 min-h-9 w-9 min-w-9 rounded-lg bg-[var(--color-primary)] p-0 text-[var(--color-text-on-primary)] disabled:opacity-40" isDisabled={!input.trim() || isStreaming} onClick={() => void sendMessage()}><PaperPlane className="h-4 w-4" /></Button>
                         </div>
                       </div>
                     </div>
@@ -470,11 +605,12 @@ export default function AgentAssistantLauncher() {
   );
 }
 
-function MessageRow({ message, sessionId, userName, onPendingAction }: { message: AgentMessage; sessionId: string | null; userName: string; onPendingAction: (action: PendingAction, operation: "confirm" | "cancel") => Promise<void> }) {
+type PendingActionHandler = (actions: PendingAction[], operation: "confirm" | "cancel", continueAfter?: boolean) => Promise<void>;
+
+const MessageRow = memo(function MessageRow({ message, sessionId, userName }: { message: AgentMessage; sessionId: string | null; userName: string }) {
   const isUser = message.role === "user";
-  const pendingOutcome = parsePendingActionOutcome(message.metadata);
   return (
-    <div className="relative w-full px-[44px]">
+    <div className="relative w-full px-[44px]" style={{ contentVisibility: "auto", containIntrinsicSize: "auto 160px" }}>
       <div className={`absolute top-0 flex h-8 w-8 items-center justify-center rounded-full ${isUser ? "right-0 bg-[var(--color-control-selected)] text-[var(--color-primary)]" : "left-0 bg-[var(--color-primary-soft)] text-[var(--color-primary)]"}`}>
         {isUser ? <span className="text-xs font-semibold">{avatarLabel(userName)}</span> : <FaceRobot className="h-4 w-4" />}
       </div>
@@ -487,40 +623,57 @@ function MessageRow({ message, sessionId, userName, onPendingAction }: { message
           {message.attachments?.length ? <div className="mb-2 flex flex-wrap gap-2">{message.attachments.map((image) => <Image key={image.id} src={image.previewUrl} alt={image.name} width={224} height={192} unoptimized className="max-h-48 max-w-56 rounded-md border border-[var(--color-border)] object-cover" />)}</div> : null}
           {message.content ? (
             <MessageContent content={message.content} compact={isUser} />
-          ) : pendingOutcome ? null : <span className="inline-flex items-center gap-2 text-[var(--color-text-secondary)]"><span className="h-2 w-2 animate-pulse rounded-full bg-[var(--color-primary)]" />正在思考…</span>}
-          {pendingOutcome ? <PendingActionOutcomeCard outcome={pendingOutcome} /> : null}
-          {message.role === "assistant" && message.toolActivities?.length ? <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-3">{message.toolActivities.map((tool) => <span key={tool.id} className={tool.status === "completed" ? "inline-flex items-center gap-1.5 rounded-md bg-[var(--color-success-soft)] px-2 py-1 text-[11px] text-[var(--color-success)]" : "inline-flex items-center gap-1.5 rounded-md bg-[var(--color-primary-soft)] px-2 py-1 text-[11px] text-[var(--color-primary)]"}><span className={`h-1.5 w-1.5 rounded-full ${tool.status === "completed" ? "bg-[var(--color-success)]" : "animate-pulse bg-[var(--color-primary)]"}`} />{tool.status === "completed" ? "已查询" : "查询中"} {toolLabel(tool.name)}</span>)}</div> : null}
+          ) : <span className="inline-flex items-center gap-2 text-[var(--color-text-secondary)]"><span className="h-2 w-2 animate-pulse rounded-full bg-[var(--color-primary)]" />正在思考…</span>}
+          {message.role === "assistant" && message.toolActivities?.length ? <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-3">{message.toolActivities.map((tool) => <span key={tool.id} className={tool.status === "completed" ? "inline-flex max-w-full items-center gap-1.5 rounded-md bg-[var(--color-success-soft)] px-2 py-1 text-[11px] text-[var(--color-success)]" : "inline-flex max-w-full items-center gap-1.5 rounded-md bg-[var(--color-primary-soft)] px-2 py-1 text-[11px] text-[var(--color-primary)]"}><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tool.status === "completed" ? "bg-[var(--color-success)]" : "animate-pulse bg-[var(--color-primary)]"}`} /><span className="truncate">{tool.status === "completed" ? "已查询" : "查询中"} {toolLabel(tool.name)}{tool.resourceName ? ` · ${tool.resourceName}` : ""}</span></span>)}</div> : null}
           {message.role === "assistant" && message.runId && sessionId ? <RunTracePanel sessionId={sessionId} runId={message.runId} /> : null}
-          {message.pendingActions?.length ? <PendingActionPanel actions={message.pendingActions} onAction={onPendingAction} /> : null}
         </div>
       </div>
     </div>
   );
-}
+});
 
-type PendingActionOutcome = { status: "confirmed" | "completed"; summary: string; actionType: string; result?: Record<string, unknown> };
+function VirtualMessageList({ messages, scrollRef, sessionId, userName }: {
+  messages: AgentMessage[];
+  scrollRef: RefObject<HTMLDivElement | null>;
+  sessionId: string | null;
+  userName: string;
+}) {
+  const shouldVirtualize = messages.length > 40;
+  // TanStack Virtual intentionally returns mutable measurement functions.
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const virtualizer = useVirtualizer({
+    count: shouldVirtualize ? messages.length : 0,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 132,
+    overscan: 8,
+  });
 
-function parsePendingActionOutcome(metadata: unknown): PendingActionOutcome | null {
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
-  const value = metadata as Record<string, unknown>;
-  const status = value.status;
-  if ((status !== "confirmed" && status !== "completed") || typeof value.pendingActionId !== "string" || typeof value.summary !== "string" || typeof value.actionType !== "string") return null;
-  const result = value.result;
-  return { status, summary: value.summary, actionType: value.actionType, result: result && typeof result === "object" && !Array.isArray(result) ? result as Record<string, unknown> : undefined };
-}
+  if (!shouldVirtualize) {
+    return (
+      <div className="mx-auto w-full max-w-[888px] space-y-6 py-6">
+        {messages.map((message) => <MessageRow key={message.id} message={message} sessionId={sessionId} userName={userName} />)}
+      </div>
+    );
+  }
 
-function PendingActionOutcomeCard({ outcome }: { outcome: PendingActionOutcome }) {
-  const completed = outcome.status === "completed";
-  return <div className={`mt-1 w-full border p-3 text-sm ${completed ? "border-[var(--color-success)]/30 bg-[var(--color-success-soft)]" : "border-[var(--color-primary)]/30 bg-[var(--color-primary-soft)]"}`}><p className="font-medium">{completed ? "已完成" : "已确认执行"}</p><p className="mt-1 text-xs text-[var(--color-text-secondary)]">{outcome.summary}</p>{completed && outcome.result ? <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-t border-[var(--color-border)]/70 pt-2 text-xs">{Object.entries(outcome.result).map(([key, value]) => <Fragment key={key}><dt className="text-[var(--color-text-secondary)]">{outcomeResultLabel(key)}</dt><dd className="min-w-0 break-all text-[var(--color-text-primary)]">{formatOutcomeValue(value)}</dd></Fragment>)}</dl> : null}</div>;
-}
-
-function outcomeResultLabel(key: string) {
-  return ({ id: "ID", name: "名称", title: "名称", status: "状态", formUuid: "表单 ID", sourceFormUuid: "父表 ID", subformFieldId: "明细字段", version: "版本", flowType: "类型" } as Record<string, string>)[key] ?? key;
-}
-
-function formatOutcomeValue(value: unknown) {
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
-  return JSON.stringify(value);
+  return (
+    <div className="relative mx-auto w-full max-w-[888px]" style={{ height: virtualizer.getTotalSize() }}>
+      {virtualizer.getVirtualItems().map((item) => {
+        const message = messages[item.index];
+        return (
+          <div
+            key={message.id}
+            ref={virtualizer.measureElement}
+            data-index={item.index}
+            className="absolute left-0 top-0 w-full pb-6"
+            style={{ transform: `translateY(${item.start}px)` }}
+          >
+            <MessageRow message={message} sessionId={sessionId} userName={userName} />
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function RunTracePanel({ sessionId, runId }: { sessionId: string; runId: string }) {
@@ -530,7 +683,7 @@ function RunTracePanel({ sessionId, runId }: { sessionId: string; runId: string 
   async function loadTrace() {
     setLoading(true); setError("");
     try {
-      const nextTrace = await requestApi<AgentRunTrace>(`/api/agent/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}/trace`, { cache: "no-store" });
+      const nextTrace = await fetchAgentRunTrace(sessionId, runId);
       setTrace(nextTrace);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "无法读取分析依据"); }
     finally { setLoading(false); }
@@ -542,10 +695,22 @@ function RunTracePanel({ sessionId, runId }: { sessionId: string; runId: string 
   </div>;
 }
 
-function PendingActionPanel({ actions, onAction }: { actions: PendingAction[]; onAction: (action: PendingAction, operation: "confirm" | "cancel") => Promise<void> }) {
+function ApprovalTray({ actions, mode, onAction }: { actions: PendingAction[]; mode: AgentApprovalMode; onAction: PendingActionHandler }) {
   const [error, setError] = useState("");
-  const perform = (action: PendingAction, operation: "confirm" | "cancel") => void onAction(action, operation).catch((reason) => setError(reason instanceof Error ? reason.message : "操作失败"));
-  return <div className="mt-3 border border-[var(--color-warning)]/30 bg-[var(--color-warning-soft)] p-3 text-sm"><p className="font-medium">待确认操作（{actions.length} 项）</p><div className="mt-2 divide-y divide-[var(--color-warning)]/20">{actions.map((action) => <div key={action.id} className="py-3 first:pt-0 last:pb-0"><p className="text-xs text-[var(--color-text-secondary)]">{action.summary}</p>{action.actionType === "save_form_schema_draft" ? <p className="mt-1 text-xs text-[var(--color-text-secondary)]">将创建一个未发布的新 Schema 草稿版本。</p> : null}<div className="mt-2 flex gap-2"><Button size="sm" onPress={() => perform(action, "confirm")}>确认执行</Button><Button size="sm" variant="ghost" onPress={() => perform(action, "cancel")}>取消</Button></div></div>)}</div>{error ? <p className="mt-2 text-xs text-[var(--color-danger)]">{error}</p> : null}</div>;
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const perform = async (selected: PendingAction[], operation: "confirm" | "cancel", continueAfter = false) => {
+    setError("");
+    setBusyKey(selected.length === actions.length ? "all" : selected[0]?.id ?? null);
+    try {
+      await onAction(selected, operation, continueAfter);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "操作失败");
+    } finally {
+      setBusyKey(null);
+    }
+  };
+  const hasDestructiveAction = actions.some((action) => destructiveAgentActions.has(action.actionType));
+  return <div className="mx-auto mb-2 max-w-[800px] rounded-lg border border-[var(--color-warning)]/40 bg-[var(--color-bg-surface)] px-3 py-2.5 shadow-[var(--shadow-sm)]"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className={`text-sm font-medium ${hasDestructiveAction ? "text-[var(--color-danger)]" : "text-[var(--color-text-primary)]"}`}>{hasDestructiveAction ? "需要确认危险操作" : "Agent 正在等待批准"}</p><p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">{actions.length} 项操作 · {approvalModeLabels[mode]}</p></div><div className="flex shrink-0 gap-2"><Button size="sm" variant="ghost" isDisabled={busyKey !== null} onPress={() => void perform(actions, "cancel")}>拒绝</Button><Button size="sm" isPending={busyKey !== null} isDisabled={busyKey !== null} className={hasDestructiveAction ? "bg-[var(--color-danger)] text-white" : undefined} onPress={() => void perform(actions, "confirm", true)}>{hasDestructiveAction ? "允许删除" : "允许"}</Button></div></div><div className="mt-2 max-h-24 space-y-1 overflow-y-auto border-t border-[var(--color-border)] pt-2">{actions.map((action) => <p key={action.id} className="truncate text-xs text-[var(--color-text-secondary)]">{action.summary}</p>)}</div>{error ? <p className="mt-2 text-xs text-[var(--color-danger)]">{error}</p> : null}</div>;
 }
 
 function MessageContent({ content, compact = false }: { content: string; compact?: boolean }) {
@@ -682,26 +847,22 @@ function buildPageContext(pathname: string): AgentPageContext {
 function handleSseFrame(
   frame: string,
   assistantMessageId: string,
-  sessionId: string,
+  approvalMode: AgentApprovalMode,
+  enqueueDelta: (delta: string) => void,
   setMessages: Dispatch<SetStateAction<AgentMessage[]>>,
+  setPendingActions: Dispatch<SetStateAction<PendingAction[]>>,
   setStatusText: Dispatch<SetStateAction<string>>,
   setErrorMessage: Dispatch<SetStateAction<string>>,
 ) {
-  let eventName = "message";
-  const dataLines: string[] = [];
-  for (const line of frame.split(/\r?\n/)) {
-    if (line.startsWith("event:")) eventName = line.slice(6).trim();
-    if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
-  }
-  if (dataLines.length === 0) return;
-  let payload: Record<string, unknown> = {};
-  try { payload = JSON.parse(dataLines.join("\n")) as Record<string, unknown>; } catch { return; }
+  const event = parseAgentSseFrame(frame);
+  if (!event) return;
 
-  if (eventName === "message.delta" && typeof payload.delta === "string") {
-    setMessages((current) => current.map((message) => message.id === assistantMessageId ? { ...message, content: message.content + payload.delta } : message));
-  } else if (eventName === "tool.started") {
-    const name = String(payload.name ?? "工具");
-    setStatusText(`正在读取 ${toolLabel(name)}`);
+  switch (event.type) {
+  case "message.delta":
+    enqueueDelta(event.delta);
+    break;
+  case "tool.started":
+    setStatusText(`正在读取 ${toolLabel(event.name)}`);
     setMessages((current) => current.map((message) => {
       if (message.id !== assistantMessageId) return message;
       const activities = message.toolActivities ?? [];
@@ -709,12 +870,14 @@ function handleSseFrame(
         ...message,
         toolActivities: [...activities, {
           id: `${assistantMessageId}-tool-${activities.length + 1}`,
-          name,
+          name: event.name,
+          resourceName: event.resourceName,
           status: "running",
         }],
       };
     }));
-  } else if (eventName === "tool.completed") {
+    break;
+  case "tool.completed":
     setStatusText("已读取数据，正在整理回答");
     setMessages((current) => current.map((message) => {
       if (message.id !== assistantMessageId || !message.toolActivities?.length) return message;
@@ -723,29 +886,71 @@ function handleSseFrame(
       if (index >= 0) activities[index] = { ...activities[index], status: "completed" };
       return { ...message, toolActivities: activities };
     }));
-    const result = payload.result as { pendingAction?: { id?: string; summary?: string; type?: string; expiresInSeconds?: number } } | undefined;
-    const action = result?.pendingAction;
-    const actionId = action?.id;
-    if (actionId) setMessages((current) => current.map((message) => message.id === assistantMessageId ? { ...message, pendingActions: [...(message.pendingActions ?? []), { id: actionId, summary: action?.summary ?? "Agent 提议执行写操作", actionType: action?.type ?? "", status: "pending", createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + Number(action?.expiresInSeconds ?? 86_400) * 1_000).toISOString() }] } : message));
-  } else if (eventName === "status") {
-    setStatusText("正在思考");
-  } else if (eventName === "run.completed") {
-    setStatusText("回答完成");
-  } else if (eventName === "run.failed") {
-    const message = typeof payload.message === "string" ? payload.message : "Agent 运行失败";
-    setErrorMessage(message);
-    setStatusText("运行失败");
-  } else if (eventName === "message.completed") {
-    const completed = payload.message as { runId?: unknown } | undefined;
-    if (typeof completed?.runId === "string") {
-      const runId = completed.runId;
-      setMessages((current) => current.map((message) => message.id === assistantMessageId ? { ...message, runId } : message));
+    if (event.pendingAction && (approvalMode === "request_approval" || (approvalMode === "approve_on_behalf" && destructiveAgentActions.has(event.pendingAction.actionType)))) {
+      const action = event.pendingAction;
+      setPendingActions((current) => current.some((item) => item.id === action.id) ? current : [...current, { id: action.id, summary: action.summary, actionType: action.actionType, status: "pending", createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + action.expiresInSeconds * 1_000).toISOString() }]);
     }
+    break;
+  case "status":
+    setStatusText("正在思考");
+    break;
+  case "run.completed":
+    setStatusText("回答完成");
+    break;
+  case "run.failed":
+  case "message.failed":
+    setErrorMessage(event.message);
+    setStatusText("运行失败");
+    break;
+  case "message.completed":
+    if (event.runId) setMessages((current) => current.map((message) => message.id === assistantMessageId ? { ...message, runId: event.runId } : message));
+    break;
+  case "unknown":
+    break;
   }
 }
 
+function updateAssistantDelta(messages: AgentMessage[], assistantMessageId: string, delta: string) {
+  return messages.map((message) => message.id === assistantMessageId
+    ? { ...message, content: message.content + delta }
+    : message);
+}
+
+function resizeComposer(element: HTMLTextAreaElement | null) {
+  if (!element) return;
+  element.style.height = "auto";
+  const styles = window.getComputedStyle(element);
+  const lineHeight = Number.parseFloat(styles.lineHeight) || 24;
+  const verticalPadding = (Number.parseFloat(styles.paddingTop) || 0) + (Number.parseFloat(styles.paddingBottom) || 0);
+  const maxHeight = lineHeight * 13 + verticalPadding;
+  element.style.height = `${Math.min(element.scrollHeight, maxHeight)}px`;
+  element.style.overflowY = element.scrollHeight > maxHeight ? "auto" : "hidden";
+}
+
 function toolLabel(name: string) {
-  return ({ list_forms: "表单列表", get_form_schema: "表单 Schema", list_automations: "自动化列表", get_automation_graph: "自动化流程", call_plugin_tool: "插件工具" } as Record<string, string>)[name] ?? name;
+  return ({
+    list_apps: "应用列表",
+    get_application_business_context: "应用业务地图",
+    list_forms: "表单列表",
+    list_navigation_groups: "导航分组",
+    create_navigation_group: "创建导航分组",
+    delete_navigation_group: "删除导航分组",
+    get_form_schema: "表单 Schema",
+    get_form_relationships: "表单关系",
+    list_form_records: "表单记录",
+    query_form_records: "查询记录",
+    aggregate_form_records: "汇总记录",
+    create_form_draft: "创建表单",
+    move_form_to_group: "移动表单",
+    publish_form: "发布表单",
+    delete_form: "删除表单",
+    save_form_schema_draft: "保存 Schema",
+    list_automations: "自动化列表",
+    get_automation_graph: "自动化流程",
+    create_automation_draft: "创建自动化",
+    delete_automation: "删除自动化",
+    call_plugin_tool: "插件工具",
+  } as Record<string, string>)[name] ?? name;
 }
 
 function conversationTitle(content: string) {

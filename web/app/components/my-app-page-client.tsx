@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Avatar, Button, Card, Dropdown, Input } from "@heroui/react";
+import { Avatar, Button, Card, Dropdown, Input, ListBox, SearchField, Select } from "@heroui/react";
 import { AlertDialog } from "@heroui/react/alert-dialog";
 import { Modal } from "@heroui/react/modal";
 import {
@@ -12,11 +12,10 @@ import {
   Calendar,
   Ellipsis,
   Clock,
-  Magnifier,
   Plus,
   Rocket,
 } from "@gravity-ui/icons";
-import { createApp, listApps, type App as ApiApp } from "../lib/api-client";
+import { createApp, listApps, type App as ApiApp } from "@/features/application/api";
 import { AppIcon } from "./app-icons";
 import { HomeQuickAccess } from "./home-page-client";
 import { useAuth } from "./auth-provider";
@@ -199,9 +198,10 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
   }
 
   return (
-    <div className="theme-page-shell px-1 py-2 sm:px-3 sm:py-4">
-      <main className="mx-auto flex w-full max-w-[1600px] flex-col gap-7 pb-6">
-        <header className="flex flex-col gap-5 border-b border-[var(--color-border)] pb-6 lg:flex-row lg:items-end lg:justify-between">
+    <div className="theme-page-shell h-full min-h-0">
+      <main className="mx-auto flex h-full min-h-0 w-full flex-col gap-4 pb-6">
+        <Card className="shrink-0 border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4 shadow-none sm:p-5">
+          <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
             <p className="text-sm font-medium text-[var(--color-primary)]">应用中心</p>
             <h1 className="mt-1 text-2xl font-semibold leading-tight text-[var(--color-text-primary)]">你好，{user?.displayName || "管理员"}</h1>
@@ -228,12 +228,13 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                   </Button>
                 ) : null}
           </div>
-        </header>
+          </header>
+        </Card>
 
-        <HomeQuickAccess apps={apps} />
+        <Card className="flex min-h-0 flex-1 flex-col border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4 shadow-none sm:p-5">
+          <HomeQuickAccess apps={apps} />
 
-        <section aria-labelledby="applications-heading" className="border-t border-[var(--color-border)] pt-5">
-          <Card className="border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4 shadow-none sm:p-5">
+          <section aria-labelledby="applications-heading" className="mt-6 flex min-h-0 flex-1 flex-col border-t border-[var(--color-border)] pt-5">
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
               <div>
                 <div className="flex items-center gap-3">
@@ -241,17 +242,28 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                   <span className="text-sm text-[var(--color-text-secondary)]">{filteredApps.length} / {apps.length}</span>
                 </div>
                 <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <div className="flex h-9 w-fit items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-1">
-                    {(["all", "enabled", "paused"] as const).map((status) => (
-                      <button key={status} type="button" onClick={() => setStatusFilter(status)} className={`h-7 rounded-md px-2.5 text-xs font-medium transition-colors ${statusFilter === status ? "bg-[var(--color-bg-surface)] text-[var(--color-primary)] shadow-[var(--shadow-xs)]" : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"}`}>
-                        {{ all: "全部", enabled: "已启用", paused: "已停用" }[status]}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex h-10 w-full items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 sm:max-w-[320px]">
-                    <Magnifier className="h-4 w-4 shrink-0 text-[var(--color-text-secondary)]" />
-                    <Input aria-label="搜索应用" value={query} onChange={(event) => setQuery(event.currentTarget.value)} className="flex-1" placeholder="搜索应用名称或负责人" />
-                  </div>
+                  <Select
+                    aria-label="应用状态筛选"
+                    className="w-full sm:w-36"
+                    selectedKey={statusFilter}
+                    onSelectionChange={(key) => setStatusFilter(String(key ?? "all") as typeof statusFilter)}
+                  >
+                    <Select.Trigger><Select.Value /><Select.Indicator /></Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        <ListBox.Item id="all">全部状态</ListBox.Item>
+                        <ListBox.Item id="enabled">已启用</ListBox.Item>
+                        <ListBox.Item id="paused">已停用</ListBox.Item>
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                  <SearchField aria-label="搜索应用" value={query} onChange={setQuery} className="w-full sm:max-w-[320px]">
+                    <SearchField.Group>
+                      <SearchField.SearchIcon />
+                      <SearchField.Input placeholder="搜索应用名称或负责人" />
+                      <SearchField.ClearButton aria-label="清除应用搜索" />
+                    </SearchField.Group>
+                  </SearchField>
                 </div>
               </div>
               <dl className="grid grid-cols-2 gap-x-5 gap-y-4 border-t border-[var(--color-border)] pt-4 sm:grid-cols-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
@@ -261,14 +273,13 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                 <SummaryMetric label="数据记录" value={totalRecords} />
               </dl>
             </div>
-          </Card>
           <div className="mt-6 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">全部应用</h2>
             <span className="text-sm text-[var(--color-text-secondary)]">按创建时间排序</span>
           </div>
-          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+          <div className="mt-5 grid min-h-0 flex-1 grid-cols-1 content-start gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
             {filteredApps.map((app) => (
-              <Card
+              <article
                 key={app.id}
                 className="group flex min-w-0 flex-col border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-3.5 shadow-none transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-bg-hover)]"
               >
@@ -366,11 +377,12 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                     <ArrowRight className="h-3.5 w-3.5" />
                   </Link>
                 </div>
-              </Card>
+              </article>
             ))}
             {filteredApps.length === 0 ? <div className="col-span-full border border-dashed border-[var(--color-border)] py-12 text-center text-sm text-[var(--color-text-secondary)]">未找到匹配的应用</div> : null}
           </div>
           </section>
+        </Card>
       </main>
 
       <Modal isOpen={renameApp !== null} onOpenChange={(isOpen) => !isOpen && setRenameApp(null)}>

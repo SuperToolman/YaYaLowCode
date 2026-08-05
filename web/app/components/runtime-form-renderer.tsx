@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import {
@@ -28,7 +29,7 @@ import { RuntimeAssociationField } from "./runtime-association-field";
 import { RuntimeMemberSelect } from "./runtime-member-select";
 import { RuntimeCascaderSelect } from "./runtime-cascader-select";
 import { RuntimeSubformTable } from "./runtime-subform-table";
-import { RichTextEditor, type RichTextDocument } from "./rich-text-editor";
+import type { RichTextDocument } from "./rich-text-editor";
 import { RuntimeDefinedComponent } from "./runtime-defined-component";
 import {
   Counter,
@@ -40,6 +41,14 @@ import {
   RuntimeSelect,
   RuntimeUpload,
 } from "./runtime-form-field-controls";
+
+const RichTextEditor = dynamic(
+  () => import("./rich-text-editor").then((module) => module.RichTextEditor),
+  {
+    ssr: false,
+    loading: () => <div aria-label="富文本加载中" className="flex min-h-32 w-full animate-pulse flex-col rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)]"><div className="h-9 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]" /><div className="m-3 h-4 w-2/5 rounded bg-[var(--color-bg-subtle)]" /></div>,
+  },
+);
 import type {
   RuntimeDataSource,
   RuntimeDebugEvent,
@@ -881,10 +890,12 @@ const FormField = memo(function FormField({
         >
           {options.map((option) => (
             <Radio key={option.value} value={option.value}>
-              <Radio.Control>
-                <Radio.Indicator />
-              </Radio.Control>
-              <Radio.Content className="text-[12px]">{option.label}</Radio.Content>
+              <Radio.Content className="text-[12px]">
+                <Radio.Control>
+                  <Radio.Indicator />
+                </Radio.Control>
+                {option.label}
+              </Radio.Content>
             </Radio>
           ))}
         </RadioGroup>

@@ -1298,6 +1298,52 @@
         }
       }
     },
+    "/api/apps/{appId}/navigation/forms/{formUuid}": {
+      "patch": {
+        "tags": [],
+        "operationId": "moveFormNavigation",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveFormNavigationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiNavigationItem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/apps/{appId}/navigation/groups": {
       "post": {
         "tags": [],
@@ -1317,6 +1363,86 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateNavigationGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiNavigationItem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{appId}/navigation/groups/{groupId}": {
+      "delete": {
+        "tags": [],
+        "operationId": "deleteNavigationGroup",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DeleteNavigationGroupResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [],
+        "operationId": "updateNavigationGroup",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNavigationGroupRequest"
               }
             }
           },
@@ -2132,6 +2258,98 @@
             "description": "Successful response"
           }
         }
+      },
+      "patch": {
+        "tags": [],
+        "operationId": "updateFormName",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFormNameRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiSchemaPayload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/bootstrap": {
+      "get": {
+        "tags": [],
+        "operationId": "getFormBootstrap",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "appId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_FormBootstrapResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/forms/{formUuid}/detail-forms": {
@@ -2303,6 +2521,44 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_ApiFormRecord"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/records/query": {
+      "post": {
+        "tags": [],
+        "operationId": "queryFormRecords",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueryFormRecordsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiFormRecordList"
                 }
               }
             }
@@ -7385,6 +7641,46 @@
           }
         }
       },
+      "ApiResponse_DeleteNavigationGroupResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "id",
+              "title",
+              "reparentedItems"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "reparentedItems": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
       "ApiResponse_DepartmentSyncResponse": {
         "type": "object",
         "required": [
@@ -7464,6 +7760,52 @@
               },
               "username": {
                 "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_FormBootstrapResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "metadata",
+              "schema",
+              "navigation",
+              "records"
+            ],
+            "properties": {
+              "metadata": {
+                "$ref": "#/components/schemas/ApiFormSummary"
+              },
+              "navigation": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ApiNavigationItem"
+                }
+              },
+              "records": {
+                "$ref": "#/components/schemas/ApiFormRecordList"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/ApiSchemaPayload"
               }
             }
           },
@@ -7708,6 +8050,7 @@
               "valid",
               "modules",
               "moduleExpiresAt",
+              "moduleTitles",
               "platformStatus",
               "moduleStatuses"
             ],
@@ -7742,6 +8085,15 @@
                 }
               },
               "moduleStatuses": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "propertyNames": {
+                  "type": "string"
+                }
+              },
+              "moduleTitles": {
                 "type": "object",
                 "additionalProperties": {
                   "type": "string"
@@ -9845,6 +10197,12 @@
                 "recordUuid": {
                   "type": "string"
                 },
+                "sourceAppName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "sourceFormName": {
                   "type": "string"
                 }
@@ -10677,6 +11035,12 @@
                 "$ref": "#/components/schemas/FormType"
               }
             ]
+          },
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -10841,6 +11205,26 @@
           }
         }
       },
+      "DeleteNavigationGroupResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "reparentedItems"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reparentedItems": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
       "DepartmentSyncResponse": {
         "type": "object",
         "required": [
@@ -10994,6 +11378,32 @@
           },
           "label": {
             "type": "string"
+          }
+        }
+      },
+      "FormBootstrapResponse": {
+        "type": "object",
+        "required": [
+          "metadata",
+          "schema",
+          "navigation",
+          "records"
+        ],
+        "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/ApiFormSummary"
+          },
+          "navigation": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApiNavigationItem"
+            }
+          },
+          "records": {
+            "$ref": "#/components/schemas/ApiFormRecordList"
+          },
+          "schema": {
+            "$ref": "#/components/schemas/ApiSchemaPayload"
           }
         }
       },
@@ -11262,6 +11672,17 @@
           }
         }
       },
+      "MoveFormNavigationRequest": {
+        "type": "object",
+        "properties": {
+          "parent_group_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "OrganizationMemberResponse": {
         "type": "object",
         "required": [
@@ -11408,6 +11829,7 @@
           "valid",
           "modules",
           "moduleExpiresAt",
+          "moduleTitles",
           "platformStatus",
           "moduleStatuses"
         ],
@@ -11442,6 +11864,15 @@
             }
           },
           "moduleStatuses": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "moduleTitles": {
             "type": "object",
             "additionalProperties": {
               "type": "string"
@@ -11742,6 +12173,39 @@
           }
         }
       },
+      "QueryFormRecordsRequest": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecordFilterRule"
+            }
+          },
+          "page": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "pageSize": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "sorts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecordSortRule"
+            }
+          }
+        }
+      },
       "RecallCommunicationMessageRequest": {
         "type": "object",
         "properties": {
@@ -11750,6 +12214,59 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "RecordFilterOperator": {
+        "type": "string",
+        "enum": [
+          "eq",
+          "neq",
+          "contains",
+          "in",
+          "isEmpty",
+          "isNotEmpty",
+          "gt",
+          "gte",
+          "lt",
+          "lte"
+        ]
+      },
+      "RecordFilterRule": {
+        "type": "object",
+        "required": [
+          "fieldId",
+          "operator"
+        ],
+        "properties": {
+          "fieldId": {
+            "type": "string"
+          },
+          "operator": {
+            "$ref": "#/components/schemas/RecordFilterOperator"
+          },
+          "value": {}
+        }
+      },
+      "RecordSortDirection": {
+        "type": "string",
+        "enum": [
+          "asc",
+          "desc"
+        ]
+      },
+      "RecordSortRule": {
+        "type": "object",
+        "required": [
+          "fieldId",
+          "direction"
+        ],
+        "properties": {
+          "direction": {
+            "$ref": "#/components/schemas/RecordSortDirection"
+          },
+          "fieldId": {
+            "type": "string"
           }
         }
       },
@@ -11784,6 +12301,12 @@
           "recordData": {},
           "recordUuid": {
             "type": "string"
+          },
+          "sourceAppName": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "sourceFormName": {
             "type": "string"
@@ -12203,6 +12726,17 @@
           }
         }
       },
+      "UpdateFormNameRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "UpdateFormRecordRequest": {
         "type": "object",
         "required": [
@@ -12264,6 +12798,23 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "UpdateNavigationGroupRequest": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
           }
         }
       },

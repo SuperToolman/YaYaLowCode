@@ -27,6 +27,7 @@ pub(crate) struct RecycleBinEntry {
     id: String,
     form_uuid: String,
     record_uuid: String,
+    source_app_name: Option<String>,
     source_form_name: String,
     form_type: String,
     deleted_at: String,
@@ -84,12 +85,24 @@ pub(crate) async fn list_recycle_bin(
 ) -> Result<Json<crate::platform::api::ApiResponse<Vec<RecycleBinEntry>>>, AppError> {
     purge_expired(&state.db).await?;
     let settings = load_recycle_bin_settings();
-    let (statement, values) = if let Some(form_uuid) = query.form_uuid.filter(|value| !value.trim().is_empty()) {
-        ("SELECT id, form_uuid, record_uuid, source_form_name, form_type, record_data, deleted_at FROM form_recycle_bin_entries WHERE form_uuid = $1 ORDER BY deleted_at DESC".to_string(), vec![SeaValue::String(Some(form_uuid))])
-    } else {
-        ("SELECT id, form_uuid, record_uuid, source_form_name, form_type, record_data, deleted_at FROM form_recycle_bin_entries ORDER BY deleted_at DESC".to_string(), vec![])
-    };
-    let rows = state.db.query_all_raw(Statement::from_sql_and_values(DbBackend::Postgres, statement, values)).await?;
+    let select = "SELECT recycle.id, recycle.form_uuid, recycle.record_uuid, apps.name AS source_app_name, recycle.source_form_name, recycle.form_type, recycle.record_data, recycle.deleted_at FROM form_recycle_bin_entries AS recycle LEFT JOIN form_definitions AS forms ON forms.form_uuid = recycle.form_uuid LEFT JOIN apps ON apps.route_app_id = forms.app_route_app_id";
+    let (statement, values) =
+        if let Some(form_uuid) = query.form_uuid.filter(|value| !value.trim().is_empty()) {
+            (
+                format!("{select} WHERE recycle.form_uuid = $1 ORDER BY recycle.deleted_at DESC"),
+                vec![SeaValue::String(Some(form_uuid))],
+            )
+        } else {
+            (format!("{select} ORDER BY recycle.deleted_at DESC"), vec![])
+        };
+    let rows = state
+        .db
+        .query_all_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            statement,
+            values,
+        ))
+        .await?;
     let entries = rows
         .into_iter()
         .map(|row| -> Result<RecycleBinEntry, AppError> {
@@ -98,6 +111,7 @@ pub(crate) async fn list_recycle_bin(
                 id: row.try_get::<Uuid>("", "id")?.to_string(),
                 form_uuid: row.try_get("", "form_uuid")?,
                 record_uuid: row.try_get("", "record_uuid")?,
+                source_app_name: row.try_get("", "source_app_name")?,
                 source_form_name: row.try_get("", "source_form_name")?,
                 form_type: row.try_get("", "form_type")?,
                 record_data: row.try_get("", "record_data")?,

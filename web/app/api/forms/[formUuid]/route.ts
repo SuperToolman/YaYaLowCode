@@ -11,3 +11,8 @@ export async function DELETE(request: Request, { params }: Context) {
   const { formUuid } = await params;
   return proxyBackendJson(request, `/api/forms/${encodeURIComponent(formUuid)}`);
 }
+
+export async function PATCH(request: Request, { params }: Context) {
+  const { formUuid } = await params;
+  return proxyBackendJson(request, `/api/forms/${encodeURIComponent(formUuid)}`);
+}

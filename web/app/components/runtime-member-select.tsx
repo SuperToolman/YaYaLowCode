@@ -2,68 +2,15 @@
 
 import { Avatar, ListBox, Select } from "@heroui/react";
 import { useEffect, useMemo, useState, type Key } from "react";
-import { listRoles, listUsers } from "../lib/api-client";
+import { fetchRuntimeIdentityCatalog } from "@/features/form-runtime/api";
+import type { IdentityRole, IdentityUser, RuntimeIdentityCatalog } from "@/features/form-runtime/types";
 import type { RuntimeFieldProps, RuntimeSchemaField } from "./runtime-form-renderer";
-
-type IdentityUser = {
-  avatarUrl: string | null;
-  id: string;
-  displayName: string;
-  jobNumber: string | null;
-  sourceType: string;
-  status: string;
-  roles: string[];
-};
-
-type IdentityRole = {
-  id: string;
-  name: string;
-  sourceType: string;
-  status: string;
-};
-
-type RuntimeIdentityCatalog = {
-  roles: IdentityRole[];
-  users: IdentityUser[];
-};
 
 let catalogPromise: Promise<RuntimeIdentityCatalog> | null = null;
 
 function loadIdentityCatalog() {
   if (!catalogPromise) {
-    catalogPromise = Promise.all([
-      listUsers({ responseStyle: "fields" }),
-      listRoles({ responseStyle: "fields" }),
-    ])
-      .then(([usersResult, rolesResult]) => {
-        const usersData = usersResult.data;
-        const rolesData = rolesResult.data;
-        if (
-          usersResult.error ||
-          !usersData ||
-          usersData.code !== 0 ||
-          !usersData.data ||
-          rolesResult.error ||
-          !rolesData ||
-          rolesData.code !== 0 ||
-          !rolesData.data
-        ) {
-          throw new Error("无法加载成员目录");
-        }
-
-        return {
-          users: usersData.data.map((user) => ({
-            avatarUrl: user.avatarUrl ?? null,
-            displayName: user.displayName,
-            id: user.id,
-            jobNumber: user.jobNumber ?? null,
-            roles: user.roles,
-            sourceType: user.sourceType,
-            status: user.status,
-          })),
-          roles: rolesData.data,
-        };
-      })
+    catalogPromise = fetchRuntimeIdentityCatalog()
       .catch((error) => {
         catalogPromise = null;
         throw error;

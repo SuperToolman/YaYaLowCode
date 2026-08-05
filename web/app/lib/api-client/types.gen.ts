@@ -806,6 +806,17 @@ export type ApiResponseDatabaseSettingsResponse = {
     time: string;
 };
 
+export type ApiResponseDeleteNavigationGroupResponse = {
+    code: number;
+    data?: {
+        id: string;
+        reparentedItems: number;
+        title: string;
+    };
+    message: string;
+    time: string;
+};
+
 export type ApiResponseDepartmentSyncResponse = {
     code: number;
     data?: {
@@ -825,6 +836,18 @@ export type ApiResponseDingTalkLoginUserResponse = {
         displayName: string;
         id: string;
         username: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseFormBootstrapResponse = {
+    code: number;
+    data?: {
+        metadata: ApiFormSummary;
+        navigation: Array<ApiNavigationItem>;
+        records: ApiFormRecordList;
+        schema: ApiSchemaPayload;
     };
     message: string;
     time: string;
@@ -898,6 +921,9 @@ export type ApiResponsePlatformLicenseStatus = {
             [key: string]: number;
         };
         moduleStatuses: {
+            [key: string]: string;
+        };
+        moduleTitles: {
             [key: string]: string;
         };
         modules: Array<string>;
@@ -1414,6 +1440,7 @@ export type ApiResponseVecRecycleBinEntry = {
         id: string;
         recordData: unknown;
         recordUuid: string;
+        sourceAppName?: string | null;
         sourceFormName: string;
     }>;
     message: string;
@@ -1618,6 +1645,7 @@ export type CreateFormRecordRequest = {
 
 export type CreateFormRequest = {
     formType?: null | FormType;
+    parentId?: string | null;
 };
 
 export type CreateGroupConversationRequest = {
@@ -1662,6 +1690,12 @@ export type DatabaseSettingsResponse = {
     password: string;
     port: number;
     username: string;
+};
+
+export type DeleteNavigationGroupResponse = {
+    id: string;
+    reparentedItems: number;
+    title: string;
 };
 
 export type DepartmentSyncResponse = {
@@ -1709,6 +1743,13 @@ export type EmailAddressRequest = {
 export type EmailAddressResponse = {
     email: string;
     label: string;
+};
+
+export type FormBootstrapResponse = {
+    metadata: ApiFormSummary;
+    navigation: Array<ApiNavigationItem>;
+    records: ApiFormRecordList;
+    schema: ApiSchemaPayload;
 };
 
 export type FormStatus = 'draft' | 'published';
@@ -1785,6 +1826,10 @@ export type MarkConversationReadRequest = {
     sequence?: number | null;
 };
 
+export type MoveFormNavigationRequest = {
+    parent_group_id?: string | null;
+};
+
 export type OrganizationMemberResponse = {
     avatarUrl?: string | null;
     displayName: string;
@@ -1831,6 +1876,9 @@ export type PlatformLicenseStatus = {
         [key: string]: number;
     };
     moduleStatuses: {
+        [key: string]: string;
+    };
+    moduleTitles: {
         [key: string]: string;
     };
     modules: Array<string>;
@@ -1909,8 +1957,30 @@ export type ProviderResponse = {
     websiteUrl: string;
 };
 
+export type QueryFormRecordsRequest = {
+    filters?: Array<RecordFilterRule>;
+    page?: number | null;
+    pageSize?: number | null;
+    sorts?: Array<RecordSortRule>;
+};
+
 export type RecallCommunicationMessageRequest = {
     reason?: string | null;
+};
+
+export type RecordFilterOperator = 'eq' | 'neq' | 'contains' | 'in' | 'isEmpty' | 'isNotEmpty' | 'gt' | 'gte' | 'lt' | 'lte';
+
+export type RecordFilterRule = {
+    fieldId: string;
+    operator: RecordFilterOperator;
+    value?: unknown;
+};
+
+export type RecordSortDirection = 'asc' | 'desc';
+
+export type RecordSortRule = {
+    direction: RecordSortDirection;
+    fieldId: string;
 };
 
 export type RecycleBinEntry = {
@@ -1921,6 +1991,7 @@ export type RecycleBinEntry = {
     id: string;
     recordData: unknown;
     recordUuid: string;
+    sourceAppName?: string | null;
     sourceFormName: string;
 };
 
@@ -2038,6 +2109,10 @@ export type UpdateDatabaseSettingsRequest = {
     username: string;
 };
 
+export type UpdateFormNameRequest = {
+    name: string;
+};
+
 export type UpdateFormRecordRequest = {
     data: unknown;
 };
@@ -2055,6 +2130,11 @@ export type UpdateIdentitySourceSettingsRequest = {
 export type UpdateLocalRoleRequest = {
     name?: string | null;
     status?: string | null;
+};
+
+export type UpdateNavigationGroupRequest = {
+    parent_id?: string | null;
+    title: string;
 };
 
 export type UpdateRecycleBinSettingsRequest = {
@@ -2863,6 +2943,22 @@ export type SetDefaultNavigationEntryResponses = {
 
 export type SetDefaultNavigationEntryResponse = SetDefaultNavigationEntryResponses[keyof SetDefaultNavigationEntryResponses];
 
+export type MoveFormNavigationData = {
+    body: MoveFormNavigationRequest;
+    path: {
+        appId: string;
+        formUuid: string;
+    };
+    query?: never;
+    url: '/api/apps/{appId}/navigation/forms/{formUuid}';
+};
+
+export type MoveFormNavigationResponses = {
+    200: ApiResponseApiNavigationItem;
+};
+
+export type MoveFormNavigationResponse = MoveFormNavigationResponses[keyof MoveFormNavigationResponses];
+
 export type CreateNavigationGroupData = {
     body: CreateNavigationGroupRequest;
     path: {
@@ -2877,6 +2973,38 @@ export type CreateNavigationGroupResponses = {
 };
 
 export type CreateNavigationGroupResponse = CreateNavigationGroupResponses[keyof CreateNavigationGroupResponses];
+
+export type DeleteNavigationGroupData = {
+    body?: never;
+    path: {
+        appId: string;
+        groupId: string;
+    };
+    query?: never;
+    url: '/api/apps/{appId}/navigation/groups/{groupId}';
+};
+
+export type DeleteNavigationGroupResponses = {
+    200: ApiResponseDeleteNavigationGroupResponse;
+};
+
+export type DeleteNavigationGroupResponse2 = DeleteNavigationGroupResponses[keyof DeleteNavigationGroupResponses];
+
+export type UpdateNavigationGroupData = {
+    body: UpdateNavigationGroupRequest;
+    path: {
+        appId: string;
+        groupId: string;
+    };
+    query?: never;
+    url: '/api/apps/{appId}/navigation/groups/{groupId}';
+};
+
+export type UpdateNavigationGroupResponses = {
+    200: ApiResponseApiNavigationItem;
+};
+
+export type UpdateNavigationGroupResponse = UpdateNavigationGroupResponses[keyof UpdateNavigationGroupResponses];
 
 export type DeleteAutomationFlowData = {
     body?: never;
@@ -3241,6 +3369,40 @@ export type GetFormResponses = {
 
 export type GetFormResponse = GetFormResponses[keyof GetFormResponses];
 
+export type UpdateFormNameData = {
+    body: UpdateFormNameRequest;
+    path: {
+        formUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}';
+};
+
+export type UpdateFormNameResponses = {
+    200: ApiResponseApiSchemaPayload;
+};
+
+export type UpdateFormNameResponse = UpdateFormNameResponses[keyof UpdateFormNameResponses];
+
+export type GetFormBootstrapData = {
+    body?: never;
+    path: {
+        formUuid: string;
+    };
+    query: {
+        appId: string;
+        page?: number;
+        pageSize?: number;
+    };
+    url: '/api/forms/{formUuid}/bootstrap';
+};
+
+export type GetFormBootstrapResponses = {
+    200: ApiResponseFormBootstrapResponse;
+};
+
+export type GetFormBootstrapResponse = GetFormBootstrapResponses[keyof GetFormBootstrapResponses];
+
 export type ListDetailFormsData = {
     body?: never;
     path: {
@@ -3318,6 +3480,21 @@ export type CreateFormRecordResponses = {
 };
 
 export type CreateFormRecordResponse = CreateFormRecordResponses[keyof CreateFormRecordResponses];
+
+export type QueryFormRecordsData = {
+    body: QueryFormRecordsRequest;
+    path: {
+        formUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/records/query';
+};
+
+export type QueryFormRecordsResponses = {
+    200: ApiResponseApiFormRecordList;
+};
+
+export type QueryFormRecordsResponse = QueryFormRecordsResponses[keyof QueryFormRecordsResponses];
 
 export type DeleteFormRecordData = {
     body?: never;

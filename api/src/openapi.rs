@@ -30,8 +30,9 @@ use crate::modules::dingtalk::{
 use crate::modules::forms::{
     ApiAppFieldOutline, ApiDetailForm, ApiFormRecord, ApiFormRecordList, ApiFormSummary,
     ApiFormVersionSummary, ApiSchemaPayload, CreateDetailFormRequest, CreateFormRecordRequest,
-    CreateFormRequest, FormViewResponse, RestoreVersionRequest, SaveFormViewRequest,
-    SaveSchemaRequest, UpdateFormRecordRequest,
+    CreateFormRequest, FormBootstrapResponse, FormViewResponse, QueryFormRecordsRequest,
+    RestoreVersionRequest, SaveFormViewRequest, SaveSchemaRequest, UpdateFormNameRequest,
+    UpdateFormRecordRequest,
 };
 use crate::modules::identity::{
     CreateLocalOrganizationUnitRequest, CreateLocalRoleRequest, CreateLocalUserRequest,
@@ -40,8 +41,9 @@ use crate::modules::identity::{
 };
 use crate::modules::locations::{ImportLocationsRequest, LocationResponse};
 use crate::modules::navigation::{
-    ApiNavigationItem, CreateNavigationGroupRequest, ReorderNavigationRequest,
-    SetDefaultNavigationEntryRequest,
+    ApiNavigationItem, CreateNavigationGroupRequest, DeleteNavigationGroupResponse,
+    MoveFormNavigationRequest, ReorderNavigationRequest, SetDefaultNavigationEntryRequest,
+    UpdateNavigationGroupRequest,
 };
 use crate::modules::recycle_bin::{RecycleBinEntry, UpdateRecycleBinSettingsRequest};
 use crate::modules::settings::{
@@ -957,6 +959,32 @@ typed_endpoint!(
     ApiResponse<ApiNavigationItem>
 );
 typed_endpoint!(
+    update_navigation_group,
+    patch,
+    "/api/apps/{appId}/navigation/groups/{groupId}",
+    "updateNavigationGroup",
+    (("appId" = String, Path), ("groupId" = String, Path)),
+    UpdateNavigationGroupRequest,
+    ApiResponse<ApiNavigationItem>
+);
+typed_endpoint!(
+    delete_navigation_group,
+    delete,
+    "/api/apps/{appId}/navigation/groups/{groupId}",
+    "deleteNavigationGroup",
+    (("appId" = String, Path), ("groupId" = String, Path)),
+    ApiResponse<DeleteNavigationGroupResponse>
+);
+typed_endpoint!(
+    move_form_navigation,
+    patch,
+    "/api/apps/{appId}/navigation/forms/{formUuid}",
+    "moveFormNavigation",
+    (("appId" = String, Path), ("formUuid" = String, Path)),
+    MoveFormNavigationRequest,
+    ApiResponse<ApiNavigationItem>
+);
+typed_endpoint!(
     get_app_field_outline,
     get,
     "/api/apps/{appId}/field-outline",
@@ -1192,6 +1220,16 @@ fn update_form_view() {}
 fn delete_form_view() {}
 typed_endpoint!(list_form_records, get, "/api/forms/{formUuid}/records", "listFormRecords", (("formUuid" = String, Path), ("page" = Option<u64>, Query), ("pageSize" = Option<u64>, Query)), ApiResponse<ApiFormRecordList>);
 typed_endpoint!(
+    query_form_records,
+    post,
+    "/api/forms/{formUuid}/records/query",
+    "queryFormRecords",
+    (("formUuid" = String, Path)),
+    QueryFormRecordsRequest,
+    ApiResponse<ApiFormRecordList>
+);
+typed_endpoint!(get_form_bootstrap, get, "/api/forms/{formUuid}/bootstrap", "getFormBootstrap", (("formUuid" = String, Path), ("appId" = String, Query), ("page" = Option<u64>, Query), ("pageSize" = Option<u64>, Query)), ApiResponse<FormBootstrapResponse>);
+typed_endpoint!(
     list_detail_forms,
     get,
     "/api/forms/{formUuid}/detail-forms",
@@ -1283,6 +1321,15 @@ typed_endpoint!(
     "getForm",
     (("formUuid" = String, Path)),
     ApiResponse<ApiFormSummary>
+);
+typed_endpoint!(
+    update_form_name,
+    patch,
+    "/api/forms/{formUuid}",
+    "updateFormName",
+    (("formUuid" = String, Path)),
+    UpdateFormNameRequest,
+    ApiResponse<ApiSchemaPayload>
 );
 endpoint!(
     delete_form,
@@ -1404,6 +1451,9 @@ endpoint!(
         reorder_navigation_item,
         set_default_navigation_entry,
         create_navigation_group,
+        update_navigation_group,
+        delete_navigation_group,
+        move_form_navigation,
         get_app_field_outline,
         list_forms,
         create_form,
@@ -1436,6 +1486,8 @@ endpoint!(
         update_form_view,
         delete_form_view,
         list_form_records,
+        query_form_records,
+        get_form_bootstrap,
         list_detail_forms,
         create_detail_form,
         create_form_record,
@@ -1447,6 +1499,7 @@ endpoint!(
         restore_form_version,
         save_form_schema,
         get_form,
+        update_form_name,
         delete_form
     )
 )]

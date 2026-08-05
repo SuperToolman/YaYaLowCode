@@ -38,7 +38,6 @@ pub mod iam_user_role_entity;
 pub mod location_entity;
 pub mod organization_unit_entity;
 pub mod platform_agent_assistant_settings_entity;
-pub mod platform_log_entity;
 pub mod workflow_action_entity;
 pub mod workflow_comment_entity;
 pub mod workflow_instance_entity;

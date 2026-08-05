@@ -24,6 +24,21 @@ pub(crate) struct CreateAgentSessionRequest {
     pub(crate) context: Option<AgentPageContext>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AvailableAgentsQuery {
+    pub(crate) app_id: Option<String>,
+    pub(crate) business_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ApiAvailableAgent {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) description: String,
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct UpdateAgentSessionRequest {
@@ -36,6 +51,7 @@ pub(crate) struct UpdateAgentSessionRequest {
 pub(crate) struct SendAgentMessageRequest {
     pub(crate) content: String,
     pub(crate) context: Option<AgentPageContext>,
+    pub(crate) approval_mode: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

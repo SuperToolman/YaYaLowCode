@@ -95,23 +95,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearAppResourceCache();
     if (!sessionReady || !token) return;
     let cancelled = false;
-    void fetch("/api/authorization/grants", { cache: "no-store" })
-      .then(async (response) => {
-        const payload = (await response.json()) as { code: number; data: string[] | null };
-        if (!response.ok || payload.code !== 0 || !payload.data) throw new Error("无法加载权限");
-        if (!cancelled) {
-          setPermissions(payload.data);
-          setPermissionsLoadedFor(token);
+    let retryTimer: number | null = null;
+    let attempt = 0;
+
+    const loadPermissions = async () => {
+      try {
+        const response = await fetch("/api/authorization/grants", { cache: "no-store" });
+        const payload = (await response.json()) as { code: number; data: string[] | null; message?: string };
+        if (!response.ok || payload.code !== 0 || !Array.isArray(payload.data)) {
+          throw new Error(payload.message || `权限加载失败 (${response.status})`);
         }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setPermissions([]);
-          setPermissionsLoadedFor(token);
-        }
-      });
+        if (cancelled) return;
+        attempt = 0;
+        setPermissions(payload.data);
+        setPermissionsLoadedFor(token);
+      } catch {
+        if (cancelled) return;
+        // A transport/auth failure is not equivalent to an empty grant set.
+        setPermissionsLoadedFor(null);
+        retryTimer = window.setTimeout(loadPermissions, Math.min(30_000, 1_000 * 2 ** attempt++));
+      }
+    };
+
+    const refreshOnFocus = () => {
+      if (document.visibilityState === "visible") void loadPermissions();
+    };
+    void loadPermissions();
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnFocus);
     return () => {
       cancelled = true;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnFocus);
     };
   }, [sessionReady, token]);
 

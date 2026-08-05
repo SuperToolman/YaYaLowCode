@@ -199,6 +199,7 @@ async fn required_permission(
             Some("settings.roles")
         }
         _ if path.starts_with("/api/agent/sessions") => Some("agent.window"),
+        "/api/agent/available-agents" => Some("agent.window"),
         // Communication is licensed at the platform level. Every active member can use it
         // when the communication module is present in the current license.
         _ if path.starts_with("/api/communication/") => None,

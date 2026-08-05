@@ -5,8 +5,9 @@ use serde_json::Value;
 use utoipa::ToSchema;
 
 use crate::infrastructure::entities::form_definition_entity;
+use crate::modules::navigation::ApiNavigationItem;
 use crate::platform::records::StoredFormRecord;
-use crate::shared::{format_date, FormStatus, FormType};
+use crate::shared::{FormStatus, FormType, format_date};
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -73,6 +74,23 @@ pub(crate) struct ApiFormRecordList {
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct FormBootstrapResponse {
+    pub(crate) metadata: ApiFormSummary,
+    pub(crate) schema: ApiSchemaPayload,
+    pub(crate) navigation: Vec<ApiNavigationItem>,
+    pub(crate) records: ApiFormRecordList,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FormBootstrapQuery {
+    pub(crate) app_id: String,
+    pub(crate) page: Option<u64>,
+    pub(crate) page_size: Option<u64>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ApiFieldOutlineField {
     pub(crate) id: String,
     pub(crate) label: String,
@@ -100,6 +118,12 @@ pub(crate) struct ApiFieldOutlineForm {
 pub(crate) struct CreateFormRequest {
     #[schema(value_type = Option<FormType>)]
     pub(crate) form_type: Option<String>,
+    pub(crate) parent_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub(crate) struct UpdateFormNameRequest {
+    pub(crate) name: String,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -135,6 +159,54 @@ pub(crate) struct ApiAppFieldOutline {
 pub(crate) struct ListFormRecordsQuery {
     pub(crate) page: Option<u64>,
     pub(crate) page_size: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum RecordFilterOperator {
+    Eq,
+    Neq,
+    Contains,
+    In,
+    IsEmpty,
+    IsNotEmpty,
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RecordFilterRule {
+    pub(crate) field_id: String,
+    pub(crate) operator: RecordFilterOperator,
+    pub(crate) value: Option<Value>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum RecordSortDirection {
+    Asc,
+    Desc,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RecordSortRule {
+    pub(crate) field_id: String,
+    pub(crate) direction: RecordSortDirection,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct QueryFormRecordsRequest {
+    pub(crate) page: Option<u64>,
+    pub(crate) page_size: Option<u64>,
+    #[serde(default)]
+    pub(crate) filters: Vec<RecordFilterRule>,
+    #[serde(default)]
+    pub(crate) sorts: Vec<RecordSortRule>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

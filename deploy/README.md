@@ -49,6 +49,16 @@ docker compose exec -T yaya pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > custome
 
 Keep the matching `api-state` backup with the database backup. Restore both together when recovering a customer.
 
+## Migrate a local database
+
+To replace an existing customer database with the complete local PostgreSQL database, including dynamic form tables and platform tables, run:
+
+```powershell
+.\deploy\migrate-database.ps1 -ContainerName yaya-customer-a -ConfirmRemoteOverwrite
+```
+
+The script reads `api/runtime/state/database.json`, creates a full plain-SQL local dump for PostgreSQL-version compatibility, removes the PostgreSQL 18-only `transaction_timeout` setting, uploads it, creates a custom-format backup of the remote database at `backups/pre-local-database-migration-<timestamp>.dump`, stops the API and Web processes, replaces the remote `public` schema, restores the dump, synchronizes local skill packages and uploads, then waits for the API health check. It intentionally requires `-ConfirmRemoteOverwrite` because it replaces all remote database data and runtime files.
+
 ## Upgrade and rollback
 
 Build a versioned image, take backups, then run `docker compose up -d`. The API applies database migrations during the container's single-instance startup. Keep the previous image tag until the customer smoke test passes: login, create a record, upload/download a file, and complete one workflow task.

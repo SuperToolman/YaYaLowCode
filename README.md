@@ -2,7 +2,9 @@
 
 一个面向表单设计、数据录入、集成自动化与智能辅助场景的低代码平台原型项目。当前仓库已经包含应用管理、表单设计器、表单运行时、自动化工作流编辑器、身份认证与 RBAC 权限中心、受控 Agent、许可证控制的即时通讯，以及基于 Rust + PostgreSQL 的后端服务。
 
-当前版本：**0.97a**（内部语义化版本：`0.2.0-alpha.0`）
+当前版本：**1.01a**（内部语义化版本：`0.2.0-alpha.0`）
+
+系统组件、请求链路、数据边界与部署关系参见 [系统架构](docs/system-architecture.md) 和 [HTML 架构图](docs/system-architecture.html)。
 
 ## 当前状态
 
@@ -27,6 +29,11 @@
 - 使用 RS256 平台许可证控制受保护 API；许可证失效或被吊销时仅开放许可证设置，通讯模块由许可证声明控制
 - 在已授权通讯模块中进行单聊、群聊、附件消息和 WebSocket 实时收发
 - 从侧栏进入消息工作台与回收站；许可证不可用时通过管理弹窗更新授权
+- 首屏使用固定尺寸应用壳、Skeleton、Web Vitals/Long Task RUM 和许可证状态遮罩，许可证请求不会阻塞应用渲染
+- 受保护页面采用独立路由组；Agent、Tiptap、XYFlow、Monaco 等重型依赖按路由懒加载，登录页不加载认证与许可证客户端边界
+- 表单记录通过 bootstrap 聚合接口和服务端查询接口加载，支持服务端分页、筛选、排序及 React Query 缓存；Agent 会话支持预取、SSE 增量批处理和长消息虚拟滚动
+- Excel 导入、导出与字段匹配使用 Worker；记录搜索使用延迟输入和预计算索引
+- 前端领域 API、类型和 Hook 按 `features/agent-assistant`、`features/records`、`features/form-runtime`、`features/automation-editor` 组织，统一请求超时、取消和错误分类
 
 ## 技术栈
 
@@ -41,6 +48,8 @@
 - `@hey-api/openapi-ts`
 - `react-markdown` / `remark-gfm`
 - `xlsx`
+- `@tanstack/react-query`
+- `@tanstack/react-virtual`
 
 ### 后端
 
@@ -70,6 +79,7 @@
 - 分组导航
 - 分组递归嵌套
 - 导航拖拽排序
+- 分组创建、重命名、跨层级移动和删除；删除分组时内部项目自动上移，不删除表单数据
 
 ### 3. 表单设计器
 
@@ -161,7 +171,7 @@
 - 按配置档案授权访问表单、应用和自动化工具；可受控创建表单草稿及保存 Schema 草稿
 - 已绑定 Skill、知识库和插件工具可参与 Agent 运行，并保留资源与工具调用审计
 - 会话、消息、运行和步骤审计记录
-- 当前 Agent 仅支持配置档案授权的有限写入，不支持发布或删除操作
+- Agent 可在配置档案授权与当前审批模式允许的范围内创建、移动、发布或删除表单，以及创建或删除导航分组；`request_approval` 模式下写操作需界面批准，`approve_on_behalf` 模式下仅删除表单、删除分组和删除自动化保留批准，`full_access` 模式下直接执行已授权写操作
 
 ### 8. 平台与应用设置
 
@@ -188,6 +198,8 @@
 - 表单发布
 - 表单版本查询与恢复
 - 表单记录保存、查询、编辑、删除（按已发布表单的独立动态表持久化）
+- 表单启动聚合接口：`GET /api/forms/{formUuid}/bootstrap`
+- 表单记录查询接口：`POST /api/forms/{formUuid}/records/query`，支持服务端分页、筛选和排序
 - 自动化增删改查
 - 自动化版本查询与恢复
 - 自动化运行日志与重试接口
@@ -206,7 +218,7 @@
 - 平台许可证必须包含 `platform` 模块；包含 `communication` 时自动开启通讯模块，无需单独激活。
 - 通讯模块支持单聊、群聊、消息已读、撤回、重新编辑、表情、附件和 WebSocket 实时事件；其数据仅在许可证已授权时创建和开放。
 
-部署变量与启动方式见 [部署说明](deploy/README.md)，完整接口契约由 `api/openapi/openapi.json` 导出。生产环境应使用 HTTPS 的许可中心地址，并将许可证公钥保存到部署平台的密钥管理中。
+部署变量、启动方式与远程数据迁移见 [部署说明](deploy/README.md)。需要以本地完整数据库替换客户环境时，使用 `deploy/migrate-database.ps1 -ConfirmRemoteOverwrite`；该操作会先保留远端备份，再替换远端数据库和运行时文件。完整接口契约由 `api/openapi/openapi.json` 导出。生产环境应使用 HTTPS 的许可中心地址，并将许可证公钥保存到部署平台的密钥管理中。
 
 ## 表单数据存储结构
 
@@ -330,7 +342,7 @@ DATABASE_URL=postgres://postgres:your_password@localhost:5432/yaya_low_code
 
 在 `/settings/model-providers` 配置模型供应商，在 `/settings/agent-profiles` 配置对话模型、Embedding 模型、Temperature 等参数，在 `/settings/agents` 创建和管理 Agent 定义。Agent 可按平台/应用/业务范围分配，并指定人格（Persona）。
 
-Agent 配置保存在 `.yaya-agent-registry.json`，该文件可能包含 API Key，已被 Git 忽略。Agent 启用后可通过全局侧边栏入口创建会话，当前只允许读取应用、表单和自动化信息。
+模型供应商、配置档案、Agent 定义、人格、插件、Skill 和知识库均保存在数据库中；本地 Skill 包文件保存在 `resources/skills`（可通过 `YAYA_SKILLS_PATH` 覆盖）。Agent 启用后可通过全局侧边栏入口创建会话，并按绑定 Skill 的工具白名单及当前批准模式执行受控操作。
 
 ## 身份源配置
 
@@ -375,7 +387,7 @@ pnpm check:api
 cd web && cargo check --manifest-path src-tauri/Cargo.toml
 ```
 
-`0.3b` 发布前，应完成上述前后端核心检查，并验证动态表、索引和子表单触发器可在目标 PostgreSQL 环境正常执行。
+`1.01a` 发布前，应完成上述前后端核心检查，并验证动态表、索引和子表单触发器可在目标 PostgreSQL 环境正常执行。
 
 发布前还应确认本地设置文件未被 Git 跟踪，并避免在文档、日志或提交内容中写入数据库密码和模型 API Key。
 
@@ -395,7 +407,6 @@ cd web && cargo check --manifest-path src-tauri/Cargo.toml
 - 更细粒度的数据记录与字段级权限
 - 动作脚本调试增强
 - 更多字段类型与运行时校验能力
-- Agent 写操作的人工确认与权限审计
 - Agent 插件运行时加载与执行引擎
 - 知识库文档处理、Embedding 与 pgvector 检索
 - Skills 加载器、工具白名单和知识范围配置

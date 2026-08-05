@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 
+use axum::extract::{Path, State};
+use axum::http::HeaderMap;
 use rig_core::tool::Tool;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
@@ -10,13 +12,14 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::infrastructure::entities::{
-    agent_pending_action_entity, app_entity, automation_flow_entity, form_definition_entity,
-    form_detail_definition_entity, form_schema_entity, iam_organization_membership_entity,
-    iam_user_entity, organization_unit_entity, workflow_action_entity, workflow_instance_entity,
-    workflow_task_entity,
+    agent_pending_action_entity, app_entity, app_navigation_entity, automation_flow_entity,
+    form_definition_entity, form_detail_definition_entity, form_schema_entity,
+    iam_organization_membership_entity, iam_user_entity, organization_unit_entity,
+    workflow_action_entity, workflow_instance_entity, workflow_task_entity,
 };
 use crate::platform::config::load_application_business_context_settings;
 use crate::platform::records::RecordRepository;
+use crate::platform::runtime::AppState;
 
 #[derive(Debug)]
 pub(crate) struct AgentToolError(String);
@@ -39,6 +42,15 @@ pub(crate) fn tool_error(message: impl Into<String>) -> AgentToolError {
 pub(crate) struct AgentAccessScope {
     grants: HashSet<String>,
     principal_user_id: Option<uuid::Uuid>,
+    action_execution: Option<AgentActionExecutionContext>,
+}
+
+#[derive(Clone)]
+struct AgentActionExecutionContext {
+    state: AppState,
+    headers: HeaderMap,
+    session_uuid: String,
+    approval_mode: String,
 }
 
 impl AgentAccessScope {
@@ -46,7 +58,24 @@ impl AgentAccessScope {
         Self {
             grants,
             principal_user_id: Some(principal_user_id),
+            action_execution: None,
         }
+    }
+
+    pub(crate) fn with_action_execution(
+        mut self,
+        state: AppState,
+        headers: HeaderMap,
+        session_uuid: String,
+        approval_mode: String,
+    ) -> Self {
+        self.action_execution = Some(AgentActionExecutionContext {
+            state,
+            headers,
+            session_uuid,
+            approval_mode,
+        });
+        self
     }
 
     pub(crate) fn require_app_access(&self, app_id: &str) -> Result<(), String> {
@@ -93,6 +122,21 @@ impl AgentAccessScope {
 
     pub(crate) fn can_edit_form(&self, app_id: &str) -> bool {
         self.grants.contains("*") || self.grants.contains(&format!("app:{app_id}:edit_form"))
+    }
+
+    pub(crate) fn can_publish_form(&self, form_uuid: &str) -> bool {
+        self.grants.contains("*") || self.grants.contains(&format!("form:{form_uuid}:publish"))
+    }
+
+    pub(crate) fn can_delete_form(&self, form_uuid: &str) -> bool {
+        self.grants.contains("*")
+            || self
+                .grants
+                .contains(&format!("form:{form_uuid}:delete_form"))
+    }
+
+    pub(crate) fn can_manage_navigation_groups(&self, app_id: &str) -> bool {
+        self.grants.contains("*") || self.grants.contains(&format!("app:{app_id}:create_group"))
     }
 
     pub(crate) fn can_manage_automations(&self, app_id: &str) -> bool {
@@ -262,6 +306,7 @@ async fn filter_agent_records_by_data_scope(
 async fn create_pending_action(
     db: &DatabaseConnection,
     session_id: uuid::Uuid,
+    access: &AgentAccessScope,
     action_type: &str,
     payload: Value,
     summary: String,
@@ -285,9 +330,40 @@ async fn create_pending_action(
     .insert(db)
     .await
     .map_err(|error| tool_error(error.to_string()))?;
+    let should_execute = access
+        .action_execution
+        .as_ref()
+        .is_some_and(|execution| should_execute_action(&execution.approval_mode, action_type));
+    if should_execute {
+        let execution = access.action_execution.as_ref().expect("checked above");
+        let response = crate::modules::agents::confirm_pending_action(
+            State(execution.state.clone()),
+            execution.headers.clone(),
+            Path((execution.session_uuid.clone(), action_uuid)),
+        )
+        .await
+        .map_err(|error| tool_error(format!("action execution failed: {error:?}")))?;
+        let result = response.0.data.unwrap_or(Value::Null);
+        return Ok(json!({
+            "executedAction": {
+                "type": action_type,
+                "summary": summary,
+                "result": result
+            }
+        }));
+    }
     Ok(
         json!({"pendingAction": {"id": action_uuid, "type": action_type, "summary": summary, "expiresInSeconds": 86400}}),
     )
+}
+
+fn should_execute_action(approval_mode: &str, action_type: &str) -> bool {
+    approval_mode == "full_access"
+        || (approval_mode == "approve_on_behalf"
+            && !matches!(
+                action_type,
+                "delete_automation" | "delete_navigation_group" | "delete_form"
+            ))
 }
 
 #[derive(Clone)]
@@ -1877,6 +1953,258 @@ pub(crate) struct CreateFormDraftTool {
 }
 
 #[derive(Clone)]
+pub(crate) struct ListNavigationGroupsTool {
+    pub(crate) db: DatabaseConnection,
+    pub(crate) access: AgentAccessScope,
+    pub(crate) allowed_app_id: Option<String>,
+    pub(crate) enabled: bool,
+}
+
+#[derive(Clone)]
+pub(crate) struct CreateNavigationGroupTool {
+    pub(crate) db: DatabaseConnection,
+    pub(crate) session_id: uuid::Uuid,
+    pub(crate) access: AgentAccessScope,
+    pub(crate) allowed_app_id: Option<String>,
+    pub(crate) enabled: bool,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct CreateNavigationGroupArgs {
+    app_id: Option<String>,
+    title: String,
+    #[serde(default)]
+    parent_group_id: Option<String>,
+}
+
+impl Tool for CreateNavigationGroupTool {
+    const NAME: &'static str = "create_navigation_group";
+    type Error = AgentToolError;
+    type Args = CreateNavigationGroupArgs;
+    type Output = Value;
+
+    fn description(&self) -> String {
+        "生成创建应用导航分组的提案；嵌套创建前先调用 list_navigation_groups 获取真实父分组 ID。"
+            .to_string()
+    }
+
+    fn parameters(&self) -> Value {
+        json!({"type":"object","required":["title"],"properties":{"app_id":{"type":"string","description":"应用 ID；当前页面已有应用上下文时可省略"},"title":{"type":"string","description":"分组名称"},"parent_group_id":{"type":["string","null"],"description":"父分组 ID；为空表示根级"}}})
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        ensure_enabled(self.enabled, Self::NAME)?;
+        let app_id = resolve_app_id(&self.allowed_app_id, args.app_id)?;
+        self.access
+            .require_app_access(&app_id)
+            .map_err(tool_error)?;
+        if !self.access.can_manage_navigation_groups(&app_id) {
+            return Err(tool_error("navigation group permission denied"));
+        }
+        let title = args.title.trim();
+        if title.is_empty() {
+            return Err(tool_error("group title required"));
+        }
+        crate::modules::navigation::resolve_group_parent_id(
+            &self.db,
+            &app_id,
+            args.parent_group_id.as_deref(),
+        )
+        .await
+        .map_err(|error| tool_error(format!("{error:?}")))?;
+        create_pending_action(
+            &self.db,
+            self.session_id,
+            &self.access,
+            Self::NAME,
+            json!({"appId": app_id, "title": title, "parentGroupId": args.parent_group_id}),
+            format!("创建导航分组“{title}”"),
+        )
+        .await
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct DeleteNavigationGroupTool {
+    pub(crate) db: DatabaseConnection,
+    pub(crate) session_id: uuid::Uuid,
+    pub(crate) access: AgentAccessScope,
+    pub(crate) allowed_app_id: Option<String>,
+    pub(crate) enabled: bool,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct DeleteNavigationGroupArgs {
+    group_id: String,
+}
+
+impl Tool for DeleteNavigationGroupTool {
+    const NAME: &'static str = "delete_navigation_group";
+    type Error = AgentToolError;
+    type Args = DeleteNavigationGroupArgs;
+    type Output = Value;
+
+    fn description(&self) -> String {
+        "生成删除导航分组的提案。只删除分组容器，内部表单和子分组会上移到父级；需用户确认。"
+            .to_string()
+    }
+
+    fn parameters(&self) -> Value {
+        json!({"type":"object","required":["group_id"],"properties":{"group_id":{"type":"string","description":"list_navigation_groups 返回的分组 ID"}}})
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        ensure_enabled(self.enabled, Self::NAME)?;
+        let group_id = uuid::Uuid::parse_str(args.group_id.trim())
+            .map_err(|_| tool_error("navigation group not found"))?;
+        let group = app_navigation_entity::Entity::find_by_id(group_id)
+            .one(&self.db)
+            .await
+            .map_err(|error| tool_error(error.to_string()))?
+            .filter(|item| item.item_type == "group")
+            .ok_or_else(|| tool_error("navigation group not found"))?;
+        if self
+            .allowed_app_id
+            .as_deref()
+            .is_some_and(|app_id| app_id != group.app_route_app_id)
+        {
+            return Err(tool_error("group is outside the current Agent context"));
+        }
+        self.access
+            .require_app_access(&group.app_route_app_id)
+            .map_err(tool_error)?;
+        if !self
+            .access
+            .can_manage_navigation_groups(&group.app_route_app_id)
+        {
+            return Err(tool_error("navigation group permission denied"));
+        }
+        create_pending_action(
+            &self.db,
+            self.session_id,
+            &self.access,
+            Self::NAME,
+            json!({"appId": group.app_route_app_id, "groupId": group.id.to_string(), "title": group.title}),
+            format!("删除导航分组“{}”（内部项目将上移）", group.title),
+        )
+        .await
+    }
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ListNavigationGroupsArgs {
+    app_id: Option<String>,
+}
+
+impl Tool for ListNavigationGroupsTool {
+    const NAME: &'static str = "list_navigation_groups";
+    type Error = AgentToolError;
+    type Args = ListNavigationGroupsArgs;
+    type Output = Value;
+
+    fn description(&self) -> String {
+        "读取应用导航分组的真实 ID、名称和父分组；创建或移动表单到分组前必须先调用。".to_string()
+    }
+
+    fn parameters(&self) -> Value {
+        json!({"type":"object","properties":{"app_id":{"type":"string","description":"应用 ID；当前页面已有应用上下文时可省略"}}})
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        ensure_enabled(self.enabled, Self::NAME)?;
+        let app_id = resolve_app_id(&self.allowed_app_id, args.app_id)?;
+        self.access
+            .require_app_access(&app_id)
+            .map_err(tool_error)?;
+        let groups = app_navigation_entity::Entity::find()
+            .filter(app_navigation_entity::Column::AppRouteAppId.eq(app_id.clone()))
+            .filter(app_navigation_entity::Column::ItemType.eq("group"))
+            .order_by_asc(app_navigation_entity::Column::SortOrder)
+            .all(&self.db)
+            .await
+            .map_err(|error| tool_error(error.to_string()))?;
+        Ok(json!({
+            "appId": app_id,
+            "groups": groups.into_iter().map(|group| json!({
+                "id": group.id.to_string(),
+                "name": group.title,
+                "parentId": group.parent_id.map(|id| id.to_string()),
+            })).collect::<Vec<_>>()
+        }))
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct MoveFormToGroupTool {
+    pub(crate) db: DatabaseConnection,
+    pub(crate) session_id: uuid::Uuid,
+    pub(crate) access: AgentAccessScope,
+    pub(crate) allowed_app_id: Option<String>,
+    pub(crate) enabled: bool,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct MoveFormToGroupArgs {
+    form_uuid: String,
+    #[serde(default)]
+    parent_group_id: Option<String>,
+}
+
+impl Tool for MoveFormToGroupTool {
+    const NAME: &'static str = "move_form_to_group";
+    type Error = AgentToolError;
+    type Args = MoveFormToGroupArgs;
+    type Output = Value;
+
+    fn description(&self) -> String {
+        "生成将已有表单移动到指定导航分组的提案；parent_group_id 为空表示移动到导航根级。需用户确认。".to_string()
+    }
+
+    fn parameters(&self) -> Value {
+        json!({"type":"object","required":["form_uuid"],"properties":{"form_uuid":{"type":"string","description":"表单 UUID"},"parent_group_id":{"type":["string","null"],"description":"list_navigation_groups 返回的分组 ID；为空表示根级"}}})
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        ensure_enabled(self.enabled, Self::NAME)?;
+        let form = form_definition_entity::Entity::find()
+            .filter(form_definition_entity::Column::FormUuid.eq(args.form_uuid.trim()))
+            .one(&self.db)
+            .await
+            .map_err(|error| tool_error(error.to_string()))?
+            .ok_or_else(|| tool_error("form not found"))?;
+        if self
+            .allowed_app_id
+            .as_deref()
+            .is_some_and(|app_id| app_id != form.app_route_app_id)
+        {
+            return Err(tool_error("form is outside the current Agent context"));
+        }
+        self.access
+            .require_app_access(&form.app_route_app_id)
+            .map_err(tool_error)?;
+        if !self.access.can_edit_form(&form.app_route_app_id) {
+            return Err(tool_error("form edit permission denied"));
+        }
+        crate::modules::navigation::resolve_group_parent_id(
+            &self.db,
+            &form.app_route_app_id,
+            args.parent_group_id.as_deref(),
+        )
+        .await
+        .map_err(|error| tool_error(format!("{error:?}")))?;
+        create_pending_action(
+            &self.db,
+            self.session_id,
+            &self.access,
+            "move_form_to_group",
+            json!({"appId": form.app_route_app_id, "formUuid": form.form_uuid, "formName": form.name, "parentGroupId": args.parent_group_id}),
+            format!("移动表单“{}”到指定导航分组", form.name),
+        )
+        .await
+    }
+}
+
+#[derive(Clone)]
 pub(crate) struct CreateDetailFormDraftTool {
     pub(crate) db: DatabaseConnection,
     pub(crate) session_id: uuid::Uuid,
@@ -1892,6 +2220,80 @@ pub(crate) struct CreateAutomationDraftTool {
     pub(crate) access: AgentAccessScope,
     pub(crate) allowed_app_id: Option<String>,
     pub(crate) enabled: bool,
+}
+
+#[derive(Clone)]
+pub(crate) struct DeleteAutomationTool {
+    pub(crate) db: DatabaseConnection,
+    pub(crate) session_id: uuid::Uuid,
+    pub(crate) access: AgentAccessScope,
+    pub(crate) allowed_app_id: Option<String>,
+    pub(crate) enabled: bool,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct DeleteAutomationArgs {
+    automation_id: String,
+}
+
+impl Tool for DeleteAutomationTool {
+    const NAME: &'static str = "delete_automation";
+    type Error = AgentToolError;
+    type Args = DeleteAutomationArgs;
+    type Output = Value;
+
+    fn description(&self) -> String {
+        "生成删除普通事件集成自动化的提案。删除不可恢复，始终需要用户确认；不能删除流程表单的 process 工作流。".to_string()
+    }
+
+    fn parameters(&self) -> Value {
+        json!({"type":"object","required":["automation_id"],"properties":{"automation_id":{"type":"string","description":"要删除的自动化 ID"}}})
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        ensure_enabled(self.enabled, Self::NAME)?;
+        let flow = automation_flow_entity::Entity::find()
+            .filter(automation_flow_entity::Column::FlowUuid.eq(args.automation_id.trim()))
+            .one(&self.db)
+            .await
+            .map_err(|error| tool_error(error.to_string()))?
+            .ok_or_else(|| tool_error("automation not found"))?;
+        ensure_agent_deletable_automation(&flow.flow_type)?;
+        if self
+            .allowed_app_id
+            .as_deref()
+            .is_some_and(|app_id| app_id != flow.app_route_app_id)
+        {
+            return Err(tool_error(
+                "automation is outside the current Agent context",
+            ));
+        }
+        self.access
+            .require_app_access(&flow.app_route_app_id)
+            .map_err(tool_error)?;
+        if !self.access.can_manage_automations(&flow.app_route_app_id) {
+            return Err(tool_error("automation permission denied"));
+        }
+        create_pending_action(
+            &self.db,
+            self.session_id,
+            &self.access,
+            "delete_automation",
+            json!({"automationId": flow.flow_uuid, "appId": flow.app_route_app_id, "name": flow.name}),
+            format!("永久删除集成自动化“{}”", flow.name),
+        )
+        .await
+    }
+}
+
+fn ensure_agent_deletable_automation(flow_type: &str) -> Result<(), AgentToolError> {
+    if flow_type == "process" {
+        Err(tool_error(
+            "process workflow automation cannot be deleted by Agent",
+        ))
+    } else {
+        Ok(())
+    }
 }
 #[derive(Deserialize)]
 pub(crate) struct CreateAutomationDraftArgs {
@@ -1932,7 +2334,7 @@ impl Tool for CreateAutomationDraftTool {
         if args.name.trim().is_empty() || !args.nodes.is_array() || !args.edges.is_array() {
             return Err(tool_error("automation name, nodes and edges are required"));
         }
-        create_pending_action(&self.db, self.session_id, "create_automation_draft", json!({"appId":app_id,"name":args.name.trim(),"description":args.description,"triggerFormUuid":args.trigger_form_uuid,"triggerEvent":args.trigger_event,"nodes":args.nodes,"edges":args.edges}), format!("在应用 {} 中创建自动化草稿“{}”", app_id, args.name.trim())).await
+        create_pending_action(&self.db, self.session_id, &self.access, "create_automation_draft", json!({"appId":app_id,"name":args.name.trim(),"description":args.description,"triggerFormUuid":args.trigger_form_uuid,"triggerEvent":args.trigger_event,"nodes":args.nodes,"edges":args.edges}), format!("在应用 {} 中创建自动化草稿“{}”", app_id, args.name.trim())).await
     }
 }
 
@@ -1943,6 +2345,120 @@ pub(crate) struct SaveFormSchemaDraftTool {
     pub(crate) access: AgentAccessScope,
     pub(crate) allowed_app_id: Option<String>,
     pub(crate) enabled: bool,
+}
+
+#[derive(Clone)]
+pub(crate) struct PublishFormTool {
+    pub(crate) db: DatabaseConnection,
+    pub(crate) session_id: uuid::Uuid,
+    pub(crate) access: AgentAccessScope,
+    pub(crate) allowed_app_id: Option<String>,
+    pub(crate) enabled: bool,
+}
+
+#[derive(Clone)]
+pub(crate) struct DeleteFormTool {
+    pub(crate) db: DatabaseConnection,
+    pub(crate) session_id: uuid::Uuid,
+    pub(crate) access: AgentAccessScope,
+    pub(crate) allowed_app_id: Option<String>,
+    pub(crate) enabled: bool,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct FormLifecycleArgs {
+    form_uuid: String,
+}
+
+impl Tool for PublishFormTool {
+    const NAME: &'static str = "publish_form";
+    type Error = AgentToolError;
+    type Args = FormLifecycleArgs;
+    type Output = Value;
+
+    fn description(&self) -> String {
+        "生成发布表单当前草稿 Schema 的提案。发布会更新运行时物理存储计划，需用户确认。".to_string()
+    }
+
+    fn parameters(&self) -> Value {
+        json!({"type":"object","required":["form_uuid"],"properties":{"form_uuid":{"type":"string","description":"目标表单 UUID"}}})
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        ensure_enabled(self.enabled, Self::NAME)?;
+        let form = load_agent_form(&self.db, &args.form_uuid).await?;
+        ensure_form_tool_scope(&self.access, self.allowed_app_id.as_deref(), &form)?;
+        if !self.access.can_publish_form(&form.form_uuid) {
+            return Err(tool_error("form publish permission denied"));
+        }
+        create_pending_action(
+            &self.db,
+            self.session_id,
+            &self.access,
+            Self::NAME,
+            json!({"appId": form.app_route_app_id, "formUuid": form.form_uuid, "name": form.name}),
+            format!("发布表单“{}”的当前草稿", form.name),
+        )
+        .await
+    }
+}
+
+impl Tool for DeleteFormTool {
+    const NAME: &'static str = "delete_form";
+    type Error = AgentToolError;
+    type Args = FormLifecycleArgs;
+    type Output = Value;
+
+    fn description(&self) -> String {
+        "生成永久删除表单的提案。表单定义、Schema、记录、导航、视图及关联流程都会删除，始终要求用户确认。".to_string()
+    }
+
+    fn parameters(&self) -> Value {
+        json!({"type":"object","required":["form_uuid"],"properties":{"form_uuid":{"type":"string","description":"目标表单 UUID"}}})
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        ensure_enabled(self.enabled, Self::NAME)?;
+        let form = load_agent_form(&self.db, &args.form_uuid).await?;
+        ensure_form_tool_scope(&self.access, self.allowed_app_id.as_deref(), &form)?;
+        if !self.access.can_delete_form(&form.form_uuid) {
+            return Err(tool_error("form delete permission denied"));
+        }
+        create_pending_action(
+            &self.db,
+            self.session_id,
+            &self.access,
+            Self::NAME,
+            json!({"appId": form.app_route_app_id, "formUuid": form.form_uuid, "name": form.name}),
+            format!("永久删除表单“{}”及其数据", form.name),
+        )
+        .await
+    }
+}
+
+async fn load_agent_form(
+    db: &DatabaseConnection,
+    form_uuid: &str,
+) -> Result<form_definition_entity::Model, AgentToolError> {
+    form_definition_entity::Entity::find()
+        .filter(form_definition_entity::Column::FormUuid.eq(form_uuid.trim()))
+        .one(db)
+        .await
+        .map_err(|error| tool_error(error.to_string()))?
+        .ok_or_else(|| tool_error("form not found"))
+}
+
+fn ensure_form_tool_scope(
+    access: &AgentAccessScope,
+    allowed_app_id: Option<&str>,
+    form: &form_definition_entity::Model,
+) -> Result<(), AgentToolError> {
+    if allowed_app_id.is_some_and(|app_id| app_id != form.app_route_app_id) {
+        return Err(tool_error("form is outside the current Agent context"));
+    }
+    access
+        .require_app_access(&form.app_route_app_id)
+        .map_err(tool_error)
 }
 #[derive(Deserialize)]
 pub(crate) struct SaveFormSchemaDraftArgs {
@@ -1985,6 +2501,7 @@ impl Tool for SaveFormSchemaDraftTool {
         create_pending_action(
             &self.db,
             self.session_id,
+            &self.access,
             "save_form_schema_draft",
             json!({"formUuid": args.form_uuid, "schema": args.schema}),
             format!("保存表单“{}”的 Schema 草稿", definition.name),
@@ -1999,6 +2516,8 @@ pub(crate) struct CreateFormDraftArgs {
     name: String,
     #[serde(default = "default_form_type")]
     form_type: String,
+    #[serde(default)]
+    parent_group_id: Option<String>,
 }
 
 fn default_form_type() -> String {
@@ -2023,7 +2542,8 @@ impl Tool for CreateFormDraftTool {
             "properties": {
                 "app_id": { "type": "string", "description": "目标应用 ID；当前页面有应用上下文时可省略" },
                 "name": { "type": "string", "description": "新表单名称" },
-                "form_type": { "type": "string", "enum": ["normal", "workflow", "defined"], "description": "表单类型；省略时为 normal" }
+                "form_type": { "type": "string", "enum": ["normal", "workflow", "defined"], "description": "表单类型；省略时为 normal" },
+                "parent_group_id": { "type": ["string", "null"], "description": "list_navigation_groups 返回的分组 ID；省略时创建在根级" }
             }
         })
     }
@@ -2045,11 +2565,19 @@ impl Tool for CreateFormDraftTool {
                 "form_type must be normal, workflow, or defined; detail forms require a parent form",
             ));
         }
+        crate::modules::navigation::resolve_group_parent_id(
+            &self.db,
+            &app_id,
+            args.parent_group_id.as_deref(),
+        )
+        .await
+        .map_err(|error| tool_error(format!("{error:?}")))?;
         create_pending_action(
             &self.db,
             self.session_id,
+            &self.access,
             "create_form_draft",
-            json!({"appId": app_id, "name": args.name.trim(), "formType": args.form_type}),
+            json!({"appId": app_id, "name": args.name.trim(), "formType": args.form_type, "parentGroupId": args.parent_group_id}),
             format!(
                 "在应用 {} 中创建{}草稿“{}”",
                 app_id,
@@ -2162,6 +2690,7 @@ impl Tool for CreateDetailFormDraftTool {
         create_pending_action(
             &self.db,
             self.session_id,
+            &self.access,
             "create_detail_form_draft",
             json!({"sourceFormUuid": source.form_uuid, "subformFieldId": args.subform_field_id.trim(), "title": title, "primaryDisplayFieldId": args.primary_display_field_id, "secondaryDisplayFieldId": args.secondary_display_field_id}),
             format!("为父表“{}”的子表字段“{}”生成明细表", source.name, args.subform_field_id.trim()),
@@ -2406,5 +2935,25 @@ mod tests {
         assert_eq!(result.get("phone"), Some(&json!("***")));
         assert_eq!(result.get("privateNote"), None);
         assert_eq!(result.get("publicName"), Some(&json!("采购单")));
+    }
+
+    #[test]
+    fn agent_can_only_delete_non_process_automations() {
+        assert!(ensure_agent_deletable_automation("trigger").is_ok());
+        assert!(ensure_agent_deletable_automation("process").is_err());
+    }
+
+    #[test]
+    fn approval_modes_execute_only_the_expected_actions() {
+        assert!(!should_execute_action(
+            "request_approval",
+            "create_navigation_group"
+        ));
+        assert!(should_execute_action(
+            "approve_on_behalf",
+            "create_navigation_group"
+        ));
+        assert!(!should_execute_action("approve_on_behalf", "delete_form"));
+        assert!(should_execute_action("full_access", "delete_form"));
     }
 }

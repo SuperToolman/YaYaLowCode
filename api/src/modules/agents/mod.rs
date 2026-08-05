@@ -18,21 +18,70 @@ use sea_orm::{ActiveModelTrait, IntoActiveModel};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
+use crate::infrastructure::entities::agent_definition_entity::Entity as AgentDefinitionEntity;
 use crate::modules::agent_config::resolve_database_agent_runtime;
 use crate::modules::forms::{
     create_blank_form, dto::CreateDetailFormRequest, validate_schema_for_form_type,
 };
 use crate::modules::settings::load_platform_agent_assistant_settings;
 use crate::platform::authorization;
+use crate::platform::config::AgentDefinition;
 use crate::platform::prelude::*;
 use crate::shared::success_response;
 
 pub(crate) use self::dto::{
     AgentPageContext, ApiAgentMessage, ApiAgentRunTrace, ApiAgentRunTraceStep, ApiAgentSession,
-    ApiPendingAgentAction, CreateAgentSessionRequest, SendAgentMessageRequest,
-    UpdateAgentSessionRequest,
+    ApiAvailableAgent, ApiPendingAgentAction, AvailableAgentsQuery, CreateAgentSessionRequest,
+    SendAgentMessageRequest, UpdateAgentSessionRequest,
 };
 use self::runner::execute_agent_run;
+
+pub(crate) async fn list_available_agents(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<AvailableAgentsQuery>,
+) -> Result<Json<ApiResponse<Vec<ApiAvailableAgent>>>, AppError> {
+    let user = authorization::current_user(&headers, &state).await?;
+    let access =
+        tools::AgentAccessScope::for_user(authorization::grants(&headers, &state).await?, user.id);
+    let default_agent_id = load_platform_agent_assistant_settings(&state.db)
+        .await?
+        .navigation_agent_id;
+    let rows = AgentDefinitionEntity::find().all(&state.db).await?;
+    let mut agents = rows
+        .into_iter()
+        .map(|row| {
+            serde_json::from_value::<AgentDefinition>(row.configuration_json)
+                .map_err(|error| AppError::BadRequest(format!("invalid stored agent: {error}")))
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .filter(|agent| {
+            agent.enabled
+                && match agent.scope_type.as_str() {
+                    "platform" => true,
+                    "application" => agent.scope_ref_id.as_deref() == query.app_id.as_deref(),
+                    "business" => agent.scope_ref_id.as_deref() == query.business_id.as_deref(),
+                    _ => false,
+                }
+                && (default_agent_id.as_deref() == Some(agent.id.as_str())
+                    || access.require_agent_use(&agent.id).is_ok())
+        })
+        .map(|agent| ApiAvailableAgent {
+            id: agent.id,
+            name: agent.name,
+            description: agent.description,
+        })
+        .collect::<Vec<_>>();
+    agents.sort_by(|left, right| {
+        let left_default = default_agent_id.as_deref() == Some(left.id.as_str());
+        let right_default = default_agent_id.as_deref() == Some(right.id.as_str());
+        right_default
+            .cmp(&left_default)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    Ok(Json(success_response("available agents loaded", agents)))
+}
 
 pub(crate) async fn list_agent_sessions(
     State(state): State<AppState>,
@@ -78,7 +127,21 @@ pub(crate) async fn create_agent_session(
             .ok_or_else(|| {
                 AppError::BadRequest("请先在 Agent 协助设置中配置平台导航助手".to_string())
             })?;
-        resolve_database_agent_runtime(&state, Some(&navigation_agent_id), None, None).await
+        let selected_agent_id = requested_agent_id
+            .as_deref()
+            .unwrap_or(&navigation_agent_id);
+        if selected_agent_id != navigation_agent_id {
+            access
+                .require_agent_use(selected_agent_id)
+                .map_err(AppError::Forbidden)?;
+        }
+        resolve_database_agent_runtime(
+            &state,
+            Some(selected_agent_id),
+            context.app_id.as_deref(),
+            context.business_id.as_deref(),
+        )
+        .await
     } else {
         resolve_database_agent_runtime(
             &state,
@@ -248,9 +311,6 @@ pub(crate) async fn confirm_pending_action(
             "pending action was already handled".to_string(),
         ));
     }
-    let action_id = action.action_uuid.clone();
-    let action_type = action.action_type.clone();
-    let action_summary = action.summary.clone();
     let execution = async {
     let result = match action.action_type.as_str() {
         "create_automation_draft" => {
@@ -274,6 +334,23 @@ pub(crate) async fn confirm_pending_action(
             let flow = updated.data.ok_or_else(|| AppError::BadRequest("automation update missing".to_string()))?;
             json!({"id": flow.id, "name": flow.name, "status": flow.status, "flowType": flow.flow_type})
         }
+        "delete_automation" => {
+            let automation_id = action.payload_json.get("automationId").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
+            let flow = AutomationFlowEntity::find()
+                .filter(automation_flow_entity::Column::FlowUuid.eq(automation_id))
+                .one(&state.db)
+                .await?
+                .ok_or_else(|| AppError::NotFound("automation flow not found".to_string()))?;
+            if flow.flow_type == "process" { return Err(AppError::BadRequest("process workflow automation cannot be deleted by Agent".to_string())); }
+            access.require_app_access(&flow.app_route_app_id).map_err(AppError::Forbidden)?;
+            if !access.can_manage_automations(&flow.app_route_app_id) { return Err(AppError::Forbidden("automation permission denied".to_string())); }
+            let name = flow.name.clone();
+            let _ = crate::modules::automations::delete_automation_flow(
+                State(state.clone()),
+                Path(automation_id.to_string()),
+            ).await?;
+            json!({"id": automation_id, "name": name, "deleted": true})
+        }
         "create_form_draft" => {
             let app_id = action.payload_json.get("appId").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
             let name = action.payload_json.get("name").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
@@ -281,8 +358,55 @@ pub(crate) async fn confirm_pending_action(
             if !access.can_create_form(app_id) { return Err(AppError::Forbidden("form creation permission denied".to_string())); }
             let form_type = action.payload_json.get("formType").and_then(Value::as_str).unwrap_or("normal");
             if !matches!(form_type, "normal" | "workflow" | "defined") { return Err(AppError::BadRequest("invalid form type".to_string())); }
-            let form = create_blank_form(&state.db, app_id, Some(name.to_string()), form_type).await?;
-            json!({"id": form.form_uuid, "appId": form.app_route_app_id, "name": form.name, "formType": form.form_type, "status": form.status})
+            let parent_group_id = action.payload_json.get("parentGroupId").and_then(Value::as_str);
+            let form = create_blank_form(&state.db, app_id, Some(name.to_string()), form_type, parent_group_id).await?;
+            json!({"id": form.form_uuid, "appId": form.app_route_app_id, "name": form.name, "formType": form.form_type, "status": form.status, "parentGroupId": parent_group_id})
+        }
+        "move_form_to_group" => {
+            let app_id = action.payload_json.get("appId").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
+            let form_uuid = action.payload_json.get("formUuid").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
+            let parent_group_id = action.payload_json.get("parentGroupId").and_then(Value::as_str);
+            access.require_app_access(app_id).map_err(AppError::Forbidden)?;
+            if !access.can_edit_form(app_id) { return Err(AppError::Forbidden("form edit permission denied".to_string())); }
+            let form = FormDefinitionEntity::find()
+                .filter(form_definition_entity::Column::FormUuid.eq(form_uuid))
+                .filter(form_definition_entity::Column::AppRouteAppId.eq(app_id))
+                .one(&state.db)
+                .await?
+                .ok_or_else(|| AppError::NotFound("form not found".to_string()))?;
+            crate::modules::navigation::move_form_navigation_to_group(
+                &state.db,
+                app_id,
+                form_uuid,
+                parent_group_id,
+            ).await?;
+            json!({"formUuid": form.form_uuid, "name": form.name, "parentGroupId": parent_group_id})
+        }
+        "create_navigation_group" => {
+            let app_id = action.payload_json.get("appId").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
+            let title = action.payload_json.get("title").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
+            let parent_id = action.payload_json.get("parentGroupId").and_then(Value::as_str).map(ToString::to_string);
+            access.require_app_access(app_id).map_err(AppError::Forbidden)?;
+            if !access.can_manage_navigation_groups(app_id) { return Err(AppError::Forbidden("navigation group permission denied".to_string())); }
+            let (_, Json(response)) = crate::modules::navigation::create_navigation_group(
+                State(state.clone()),
+                Path(app_id.to_string()),
+                Json(crate::modules::navigation::CreateNavigationGroupRequest { title: title.to_string(), parent_id }),
+            ).await?;
+            let group = response.data.ok_or_else(|| AppError::BadRequest("navigation group response missing data".to_string()))?;
+            json!({"id": group.id, "name": group.title, "parentId": group.parent_id})
+        }
+        "delete_navigation_group" => {
+            let app_id = action.payload_json.get("appId").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
+            let group_id = action.payload_json.get("groupId").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
+            access.require_app_access(app_id).map_err(AppError::Forbidden)?;
+            if !access.can_manage_navigation_groups(app_id) { return Err(AppError::Forbidden("navigation group permission denied".to_string())); }
+            let Json(response) = crate::modules::navigation::delete_navigation_group(
+                State(state.clone()),
+                Path((app_id.to_string(), group_id.to_string())),
+            ).await?;
+            let result = response.data.ok_or_else(|| AppError::BadRequest("navigation group response missing data".to_string()))?;
+            json!({"id": result.id, "name": result.title, "deleted": true, "reparentedItems": result.reparented_items})
         }
         "create_detail_form_draft" => {
             let source_form_uuid = action.payload_json.get("sourceFormUuid").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
@@ -318,6 +442,24 @@ pub(crate) async fn confirm_pending_action(
             form.draft_schema_version = Set(version); form.latest_schema_version = Set(version); form.updated_at = Set(now.into()); form.update(&state.db).await?;
             json!({"formUuid": form_uuid, "version": version, "status": "draft"})
         }
+        "publish_form" => {
+            let app_id = action.payload_json.get("appId").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
+            let form_uuid = action.payload_json.get("formUuid").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
+            access.require_app_access(app_id).map_err(AppError::Forbidden)?;
+            if !access.can_publish_form(form_uuid) { return Err(AppError::Forbidden("form publish permission denied".to_string())); }
+            let Json(response) = crate::modules::forms::publish_form_schema(State(state.clone()), Path(form_uuid.to_string())).await?;
+            let published = response.data.ok_or_else(|| AppError::BadRequest("publish response missing data".to_string()))?;
+            json!({"formUuid": published.form_uuid, "version": published.version, "published": true})
+        }
+        "delete_form" => {
+            let app_id = action.payload_json.get("appId").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
+            let form_uuid = action.payload_json.get("formUuid").and_then(Value::as_str).ok_or_else(|| AppError::BadRequest("invalid pending action".to_string()))?;
+            let name = action.payload_json.get("name").and_then(Value::as_str).unwrap_or("表单");
+            access.require_app_access(app_id).map_err(AppError::Forbidden)?;
+            if !access.can_delete_form(form_uuid) { return Err(AppError::Forbidden("form delete permission denied".to_string())); }
+            let _ = crate::modules::forms::delete_form(State(state.clone()), Path(form_uuid.to_string())).await?;
+            json!({"formUuid": form_uuid, "name": name, "deleted": true})
+        }
         _ => return Err(AppError::BadRequest("unsupported pending action".to_string())),
     };
     Ok::<Value, AppError>(result)
@@ -328,36 +470,6 @@ pub(crate) async fn confirm_pending_action(
             active.status = Set("completed".to_string());
             active.completed_at = Set(Some(Utc::now().into()));
             active.update(&state.db).await?;
-            let now = Utc::now();
-            let confirmation = "".to_string();
-            let outcome = "".to_string();
-            for (role, content, metadata) in [
-                (
-                    "user",
-                    confirmation,
-                    json!({"pendingActionId": action_id.clone(), "actionType": action_type.clone(), "summary": action_summary.clone(), "status": "confirmed"}),
-                ),
-                (
-                    "assistant",
-                    outcome,
-                    json!({"pendingActionId": action_id.clone(), "actionType": action_type.clone(), "summary": action_summary.clone(), "status": "completed", "result": result.clone()}),
-                ),
-            ] {
-                if let Err(error) = (agent_message_entity::ActiveModel {
-                    id: Set(Uuid::new_v4()),
-                    message_uuid: Set(format!("AMSG-{}", Uuid::new_v4().simple())),
-                    session_id: Set(session.id),
-                    role: Set(role.to_string()),
-                    content: Set(content),
-                    metadata_json: Set(metadata),
-                    created_at: Set(now.into()),
-                })
-                .insert(&state.db)
-                .await
-                {
-                    error!(%error, action_id = %action_id, "failed to persist Agent pending action outcome");
-                }
-            }
             Ok(Json(success_response("pending action completed", result)))
         }
         Err(error) => {
@@ -486,21 +598,78 @@ pub(crate) async fn send_agent_message(
     if !runtime.settings.enabled {
         return Err(AppError::BadRequest("agent is disabled".to_string()));
     }
-    let approval_mode = runtime.approval_mode.clone();
+    let approval_mode = payload
+        .approval_mode
+        .as_deref()
+        .unwrap_or(&runtime.approval_mode)
+        .to_string();
+    if !matches!(
+        approval_mode.as_str(),
+        "request_approval" | "approve_on_behalf" | "full_access"
+    ) {
+        return Err(AppError::BadRequest(
+            "invalid Agent approval mode".to_string(),
+        ));
+    }
+    if approval_mode != "request_approval" {
+        let mut stale_actions = AgentPendingActionEntity::update_many()
+            .filter(agent_pending_action_entity::Column::SessionId.eq(session.id))
+            .filter(agent_pending_action_entity::Column::Status.eq("pending"));
+        if approval_mode == "approve_on_behalf" {
+            stale_actions =
+                stale_actions.filter(agent_pending_action_entity::Column::ActionType.is_not_in([
+                    "delete_automation",
+                    "delete_navigation_group",
+                    "delete_form",
+                ]));
+        }
+        stale_actions
+            .col_expr(
+                agent_pending_action_entity::Column::Status,
+                Expr::value("cancelled"),
+            )
+            .col_expr(
+                agent_pending_action_entity::Column::ErrorMessage,
+                Expr::value("superseded by current approval mode"),
+            )
+            .col_expr(
+                agent_pending_action_entity::Column::CompletedAt,
+                Expr::value(Utc::now()),
+            )
+            .exec(&state.db)
+            .await?;
+    }
+    let access = access.with_action_execution(
+        state.clone(),
+        headers.clone(),
+        session.session_uuid.clone(),
+        approval_mode.clone(),
+    );
 
     let history_models = AgentMessageEntity::find()
         .filter(agent_message_entity::Column::SessionId.eq(session.id))
         .order_by_asc(agent_message_entity::Column::CreatedAt)
         .all(&state.db)
         .await?;
-    let history = history_models
+    let mut history = history_models
         .into_iter()
-        .filter_map(|message| match message.role.as_str() {
-            "user" => Some(Message::user(message.content)),
-            "assistant" => Some(Message::assistant(message.content)),
-            _ => None,
+        .filter_map(|message| {
+            if message.content.trim().is_empty()
+                || message.metadata_json.get("pendingActionId").is_some()
+            {
+                return None;
+            }
+            match message.role.as_str() {
+                "user" => Some(Message::user(message.content)),
+                "assistant" => Some(Message::assistant(message.content)),
+                _ => None,
+            }
         })
         .collect::<Vec<_>>();
+    const MAX_AGENT_HISTORY_MESSAGES: usize = 60;
+    if history.len() > MAX_AGENT_HISTORY_MESSAGES {
+        history.drain(..history.len() - MAX_AGENT_HISTORY_MESSAGES);
+    }
     let context = payload
         .context
         .or_else(|| serde_json::from_value::<AgentPageContext>(session.context_json.clone()).ok())
@@ -551,8 +720,6 @@ pub(crate) async fn send_agent_message(
 
     let (event_tx, event_rx) = mpsc::channel::<Event>(64);
     let db = state.db.clone();
-    let app_state = state.clone();
-    let request_headers = headers.clone();
     tokio::spawn(async move {
         let _ = event_tx
             .send(
@@ -568,6 +735,7 @@ pub(crate) async fn send_agent_message(
             runtime,
             access,
             context,
+            approval_mode,
             content.clone(),
             history,
             event_tx.clone(),
@@ -575,39 +743,6 @@ pub(crate) async fn send_agent_message(
         .await
         {
             Ok(output) => {
-                if approval_mode != "request_approval" {
-                    let mut pending_query = AgentPendingActionEntity::find()
-                        .filter(agent_pending_action_entity::Column::SessionId.eq(session.id))
-                        .filter(agent_pending_action_entity::Column::Status.eq("pending"));
-                    if approval_mode == "approve_on_behalf" {
-                        pending_query = pending_query.filter(
-                            agent_pending_action_entity::Column::ActionType.is_in([
-                                "create_automation_draft",
-                                "create_form_draft",
-                                "create_detail_form_draft",
-                                "save_form_schema_draft",
-                            ]),
-                        );
-                    }
-                    match pending_query.all(&db).await {
-                        Ok(actions) => {
-                            for action in actions {
-                                if let Err(error) = confirm_pending_action(
-                                    State(app_state.clone()),
-                                    request_headers.clone(),
-                                    Path((session.session_uuid.clone(), action.action_uuid)),
-                                )
-                                .await
-                                {
-                                    error!(?error, "failed to auto-confirm Agent pending action");
-                                }
-                            }
-                        }
-                        Err(error) => {
-                            error!(%error, "failed to load Agent pending actions for auto-confirmation")
-                        }
-                    }
-                }
                 let completed_at = Utc::now();
                 let assistant_message = agent_message_entity::ActiveModel {
                     id: Set(Uuid::new_v4()),

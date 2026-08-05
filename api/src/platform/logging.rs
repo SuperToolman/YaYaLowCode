@@ -70,10 +70,10 @@ pub(crate) async fn list_events(
     level: Option<&str>,
     offset: usize,
     limit: usize,
-) -> Vec<PlatformLogEvent> {
+) -> (Vec<PlatformLogEvent>, usize) {
     let mut paths = match log_files().await {
         Ok(paths) => paths,
-        Err(_) => return Vec::new(),
+        Err(_) => return (Vec::new(), 0),
     };
     paths.sort_by(|left, right| right.file_name().cmp(&left.file_name()));
 
@@ -90,7 +90,11 @@ pub(crate) async fn list_events(
     }
     events.retain(|event| level.is_none_or(|selected| event.level == selected));
     events.sort_by(|left, right| right.occurred_at.cmp(&left.occurred_at));
-    events.into_iter().skip(offset).take(limit).collect()
+    let total_count = events.len();
+    (
+        events.into_iter().skip(offset).take(limit).collect(),
+        total_count,
+    )
 }
 
 pub(crate) async fn total_size_bytes() -> u64 {

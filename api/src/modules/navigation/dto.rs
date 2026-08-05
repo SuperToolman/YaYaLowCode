@@ -26,6 +26,25 @@ pub(crate) struct CreateNavigationGroupRequest {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+pub(crate) struct UpdateNavigationGroupRequest {
+    pub(crate) title: String,
+    pub(crate) parent_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub(crate) struct MoveFormNavigationRequest {
+    pub(crate) parent_group_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DeleteNavigationGroupResponse {
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) reparented_items: usize,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct ReorderNavigationRequest {
     pub(crate) item_id: String,
     pub(crate) target_item_id: String,

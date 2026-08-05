@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>丫丫低代码平台系统架构</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --page: #f5f7fa;
+      --surface: #ffffff;
+      --surface-2: #eef2f6;
+      --text: #17212b;
+      --muted: #5d6975;
+      --line: #cbd4dc;
+      --web: #176b87;
+      --api: #216e4e;
+      --data: #8a5a12;
+      --external: #7a3f68;
+      --risk: #a13d32;
+      --shadow: 0 8px 24px rgba(23, 33, 43, 0.08);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --page: #11161c;
+        --surface: #192129;
+        --surface-2: #222c35;
+        --text: #edf2f6;
+        --muted: #aab5bf;
+        --line: #3a4651;
+        --web: #52b6d6;
+        --api: #69bf91;
+        --data: #ddb160;
+        --external: #d68fbd;
+        --risk: #ef8174;
+        --shadow: none;
+      }
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--text);
+      font-family: Inter, "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+      line-height: 1.55;
+    }
+    main { width: min(1440px, 100%); margin: 0 auto; padding: 28px; }
+    header { margin-bottom: 24px; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 8px; font-size: clamp(24px, 3vw, 38px); }
+    h2 { margin: 0 0 16px; font-size: 20px; }
+    h3 { margin-bottom: 8px; font-size: 15px; }
+    .subtitle { max-width: 980px; margin: 0; color: var(--muted); }
+    code { font-family: "Cascadia Code", Consolas, monospace; font-size: 0.9em; }
+
+    .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 18px; color: var(--muted); font-size: 13px; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+    .web-color { color: var(--web); }
+    .api-color { color: var(--api); }
+    .data-color { color: var(--data); }
+    .external-color { color: var(--external); }
+
+    .diagram {
+      display: grid;
+      grid-template-columns: minmax(160px, 0.7fr) minmax(250px, 1.25fr) minmax(250px, 1.25fr) minmax(180px, 0.85fr);
+      gap: 16px;
+      align-items: stretch;
+    }
+    .lane {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-top: 4px solid var(--lane-color);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .lane > h2 { padding: 16px 16px 0; color: var(--lane-color); }
+    .lane-body { display: grid; gap: 10px; padding: 0 12px 14px; }
+    .client { --lane-color: var(--muted); }
+    .frontend { --lane-color: var(--web); }
+    .backend { --lane-color: var(--api); }
+    .resources { --lane-color: var(--data); }
+
+    .node {
+      position: relative;
+      padding: 12px;
+      border: 1px solid var(--line);
+      background: var(--surface-2);
+      min-width: 0;
+    }
+    .node strong { display: block; margin-bottom: 4px; font-size: 14px; }
+    .node p { margin: 0; color: var(--muted); font-size: 12px; }
+    .node ul { margin: 7px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
+    .flow-label {
+      padding: 7px 10px;
+      border-left: 3px solid var(--lane-color);
+      color: var(--muted);
+      font-size: 11px;
+      background: color-mix(in srgb, var(--lane-color) 8%, var(--surface));
+    }
+    .arrow { text-align: center; color: var(--muted); font-size: 18px; line-height: 1; }
+    .critical { border-color: color-mix(in srgb, var(--risk) 60%, var(--line)); }
+    .critical strong { color: var(--risk); }
+
+    .cross-flow {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 0;
+      align-items: center;
+      margin: 2px 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .cross-flow span { padding: 7px 8px; text-align: center; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .cross-flow .active { color: var(--text); background: var(--surface-2); }
+
+    .detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 22px; }
+    .section { padding: 18px; border: 1px solid var(--line); background: var(--surface); }
+    .section h2 { font-size: 18px; }
+    .sequence { margin: 0; padding: 0; list-style: none; counter-reset: step; }
+    .sequence li { position: relative; padding: 0 0 14px 34px; color: var(--muted); font-size: 13px; }
+    .sequence li:last-child { padding-bottom: 0; }
+    .sequence li::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 0;
+      top: 0;
+      display: grid;
+      place-items: center;
+      width: 23px;
+      height: 23px;
+      border-radius: 50%;
+      color: var(--surface);
+      background: var(--api);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .sequence li:not(:last-child)::after { content: ""; position: absolute; left: 11px; top: 25px; bottom: 2px; border-left: 1px solid var(--line); }
+    .sequence strong { color: var(--text); }
+    .facts { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .facts th, .facts td { padding: 9px 7px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    .facts th { color: var(--muted); font-weight: 600; }
+    .facts tr:last-child td { border-bottom: 0; }
+    .callout { margin-top: 22px; padding: 16px 18px; border-left: 4px solid var(--risk); background: var(--surface); }
+    .callout strong { color: var(--risk); }
+    footer { margin-top: 22px; color: var(--muted); font-size: 12px; }
+
+    @media (max-width: 980px) {
+      main { padding: 18px; }
+      .diagram { grid-template-columns: 1fr 1fr; }
+      .cross-flow { grid-template-columns: 1fr; }
+      .cross-flow span { border: 1px solid var(--line); border-bottom: 0; }
+      .cross-flow span:last-child { border-bottom: 1px solid var(--line); }
+      .detail-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 620px) {
+      .diagram { grid-template-columns: 1fr; }
+    }
+    @media print {
+      :root { color-scheme: light; }
+      body { background: #fff; }
+      main { width: 100%; padding: 12mm; }
+      .lane, .section { box-shadow: none; break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>丫丫低代码平台系统架构</h1>
+      <p class="subtitle">当前系统是一个同仓库、双运行时的模块化单体：Next.js 负责页面渲染、客户端交互和同源 BFF；Rust/Axum 负责安全边界、领域规则、Agent 执行与持久化。PostgreSQL 是唯一事实源，Valkey 只提供可降级缓存。</p>
+      <div class="legend" aria-label="图例">
+        <span class="web-color"><i class="dot"></i>前端与 BFF</span>
+        <span class="api-color"><i class="dot"></i>后端领域与执行</span>
+        <span class="data-color"><i class="dot"></i>数据与运行时状态</span>
+        <span class="external-color"><i class="dot"></i>外部系统</span>
+      </div>
+    </header>
+
+    <section class="diagram" aria-label="系统分层架构图">
+      <article class="lane client">
+        <h2>客户端</h2>
+        <div class="lane-body">
+          <div class="node"><strong>浏览器 / Tauri</strong><p>用户界面、Cookie 会话、文件选择与页面导航。</p></div>
+          <div class="arrow">&darr;</div>
+          <div class="node"><strong>网络入口 :3000</strong><p>浏览器只访问 Next.js 同源地址，不直接持有后端内部地址。</p></div>
+        </div>
+      </article>
+
+      <article class="lane frontend">
+        <h2>Next.js 16 / React 19</h2>
+        <div class="lane-body">
+          <div class="node"><strong>路由保护</strong><p><code>proxy.ts</code> 验证 JWT Cookie 的基本可用性，区分公开与受保护页面。</p></div>
+          <div class="arrow">&darr;</div>
+          <div class="node"><strong>Server Layout / RSC</strong><p>根布局保持服务端；受保护布局按需装配 Theme、React Query、Auth 与应用壳。</p></div>
+          <div class="node"><strong>Feature domains</strong><p>Agent、Records、Form Runtime、Designer、Automation、IAM、Workflow。</p></div>
+          <div class="node"><strong>客户端性能层</strong><p>React Query 缓存、路由懒加载、Worker、SSE 40ms 批处理、长列表虚拟化。</p></div>
+          <div class="arrow">&darr;</div>
+          <div class="node critical"><strong>同源 BFF Route Handlers</strong><p>将 Cookie 转换为 Bearer Token，转发 JSON、上传和 SSE。每个后端接口必须有对应 BFF 动态路由。</p></div>
+          <div class="flow-label">HTTP / JSON / SSE &rarr; 127.0.0.1:8787</div>
+        </div>
+      </article>
+
+      <article class="lane backend">
+        <h2>Rust / Axum / Tokio</h2>
+        <div class="lane-body">
+          <div class="node critical"><strong>统一安全中间件</strong><p>JWT 身份、RBAC 授权、远程许可证校验、缓存命中与失效、请求日志。</p></div>
+          <div class="arrow">&darr;</div>
+          <div class="node"><strong>领域模块</strong><p>应用导航、表单 Schema、动态记录、自动化、流程、通讯、身份、回收站与设置。</p></div>
+          <div class="node"><strong>Agent Runtime</strong><p>Rig 多轮流式执行；Skill 决定工具集合；工具再次执行应用、表单和数据范围校验。</p></div>
+          <div class="node"><strong>受控写入</strong><p>创建或变更生成 Pending Action；删除自动化和导航分组始终保留用户确认边界。</p></div>
+          <div class="arrow">&darr;</div>
+          <div class="node"><strong>Infrastructure</strong><p>SeaORM、迁移、动态表编译、文件存储、平台日志和广播事件。</p></div>
+        </div>
+      </article>
+
+      <article class="lane resources">
+        <h2>数据与外部资源</h2>
+        <div class="lane-body">
+          <div class="node"><strong>PostgreSQL</strong><p>平台元数据、Agent 会话、工作流、通讯，以及每个已发布表单的动态记录表。</p></div>
+          <div class="node"><strong>Valkey</strong><p>可选响应缓存和版本号失效；连接失败不阻断业务，PostgreSQL 始终是事实源。</p></div>
+          <div class="node"><strong>Runtime State</strong><p>上传附件、许可证、配置文件、导入的 Skill 包与本地运行日志。</p></div>
+          <div class="node" style="border-color: var(--external);"><strong>模型服务</strong><p>OpenAI-compatible Chat Completion，由 Agent Runtime 受控访问。</p></div>
+          <div class="node" style="border-color: var(--external);"><strong>许可证中心</strong><p>RS256 本地验签加远程状态/吊销校验，控制受保护 API 和通讯模块。</p></div>
+          <div class="node" style="border-color: var(--external);"><strong>钉钉</strong><p>扫码登录、访问令牌、部门与用户同步。</p></div>
+        </div>
+      </article>
+
+      <div class="cross-flow" aria-label="OpenAPI 契约生成链路">
+        <span class="active">Rust DTO + <code>ToSchema</code></span>
+        <span>&rarr;</span>
+        <span class="active"><code>openapi.json</code></span>
+        <span>&rarr;</span>
+        <span class="active">生成 TypeScript SDK &rarr; Feature API</span>
+      </div>
+    </section>
+
+    <section class="detail-grid" aria-label="关键运行链路">
+      <article class="section">
+        <h2>普通业务请求</h2>
+        <ol class="sequence">
+          <li><strong>页面调用领域 Hook。</strong> UI 不直接拼接后端协议。</li>
+          <li><strong>生成 SDK 请求同源 BFF。</strong> React Query 管理缓存、取消和失效。</li>
+          <li><strong>BFF 转发认证。</strong> Cookie 转为后端 Bearer Token。</li>
+          <li><strong>Axum 执行安全链。</strong> RBAC 与许可证先于领域 Handler。</li>
+          <li><strong>领域服务读写 PostgreSQL。</strong> 成功写入触发 Valkey 分类版本递增。</li>
+        </ol>
+      </article>
+
+      <article class="section">
+        <h2>Agent 流式请求</h2>
+        <ol class="sequence">
+          <li><strong>会话绑定用户与页面上下文。</strong> 应用、业务和表单资源先校验归属。</li>
+          <li><strong>运行时解析 Profile、Skill 与 Tool。</strong> 未授权工具不会注册为可调用能力。</li>
+          <li><strong>模型产生工具调用。</strong> 每个工具再次执行 RBAC 和数据范围检查。</li>
+          <li><strong>SSE 返回增量事件。</strong> 前端批量合并 token，并展示资源名称与工具状态。</li>
+          <li><strong>写操作进入确认链。</strong> 审计记录、Pending Action 和最终结果都持久化。</li>
+        </ol>
+      </article>
+
+      <article class="section">
+        <h2>数据所有权</h2>
+        <table class="facts">
+          <thead><tr><th>数据</th><th>事实源</th><th>恢复策略</th></tr></thead>
+          <tbody>
+            <tr><td>应用、表单、记录、流程</td><td>PostgreSQL</td><td>必须备份</td></tr>
+            <tr><td>Agent 会话与审计</td><td>PostgreSQL</td><td>随业务库恢复</td></tr>
+            <tr><td>附件、Skill、许可证配置</td><td><code>api-state</code></td><td>与数据库成对备份</td></tr>
+            <tr><td>响应缓存</td><td>Valkey</td><td>无需备份，可重建</td></tr>
+            <tr><td>前端 Query Cache</td><td>浏览器内存</td><td>无需恢复</td></tr>
+          </tbody>
+        </table>
+      </article>
+    </section>
+
+    <aside class="callout">
+      <strong>当前最重要的架构约束：</strong>
+      后端新增接口需要同时完成 Axum 路由、带 <code>ToSchema</code> 的 DTO、OpenAPI endpoint、生成 SDK 和 Next.js BFF Route Handler。任何一层缺失都会形成“后端能力已存在，但浏览器同源请求不可达”的断点。
+    </aside>
+
+    <footer>部署形态：开发环境为独立 Next.js、Axum、PostgreSQL、可选 Valkey；单容器交付由 Supervisor 管理 Web、API 与 Valkey，入口脚本初始化本地 PostgreSQL，持久化数据位于 PostgreSQL 数据目录与 <code>/var/lib/yaya</code>。</footer>
+  </main>
+</body>
+</html>

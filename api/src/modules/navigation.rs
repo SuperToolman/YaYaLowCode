@@ -93,6 +93,22 @@ pub(crate) async fn create_navigation_group(
 
     let parent_uuid =
         resolve_group_parent_id(&state.db, &app_id, payload.parent_id.as_deref()).await?;
+    if let Some(existing) = AppNavigationEntity::find()
+        .filter(app_navigation_entity::Column::AppRouteAppId.eq(app_id.clone()))
+        .filter(app_navigation_entity::Column::ItemType.eq("group"))
+        .filter(app_navigation_entity::Column::ParentId.eq(parent_uuid))
+        .filter(app_navigation_entity::Column::Title.eq(title.to_string()))
+        .one(&state.db)
+        .await?
+    {
+        return Ok((
+            StatusCode::OK,
+            Json(success_response(
+                "分组已存在",
+                ApiNavigationItem::from(existing),
+            )),
+        ));
+    }
     let sort_order = next_navigation_sort_order(&state.db, &app_id, parent_uuid).await?;
     let group_slug = build_group_slug(title);
 
@@ -124,6 +140,96 @@ pub(crate) async fn create_navigation_group(
     ))
 }
 
+pub(crate) async fn update_navigation_group(
+    State(state): State<AppState>,
+    Path((app_id, group_id)): Path<(String, String)>,
+    Json(payload): Json<UpdateNavigationGroupRequest>,
+) -> Result<Json<ApiResponse<ApiNavigationItem>>, AppError> {
+    ensure_system_navigation_for_app(&state.db, &app_id).await?;
+    let group_uuid = Uuid::parse_str(group_id.trim())
+        .map_err(|_| AppError::NotFound("navigation group not found".to_string()))?;
+    let group = AppNavigationEntity::find_by_id(group_uuid)
+        .one(&state.db)
+        .await?
+        .filter(|item| item.app_route_app_id == app_id && item.item_type == "group")
+        .ok_or_else(|| AppError::NotFound("navigation group not found".to_string()))?;
+    let title = payload.title.trim();
+    if title.is_empty() {
+        return Err(AppError::BadRequest("group title required".to_string()));
+    }
+    let parent_id =
+        resolve_group_parent_id(&state.db, &app_id, payload.parent_id.as_deref()).await?;
+    if parent_id == Some(group.id) {
+        return Err(AppError::BadRequest(
+            "group cannot be its own parent".to_string(),
+        ));
+    }
+    let items = AppNavigationEntity::find()
+        .filter(app_navigation_entity::Column::AppRouteAppId.eq(app_id.clone()))
+        .all(&state.db)
+        .await?;
+    if parent_id.is_some_and(|id| collect_navigation_descendants(&items, group.id).contains(&id)) {
+        return Err(AppError::BadRequest(
+            "group cannot be moved into its descendant".to_string(),
+        ));
+    }
+    let parent_changed = group.parent_id != parent_id;
+    let sort_order = if parent_changed {
+        next_navigation_sort_order(&state.db, &app_id, parent_id).await?
+    } else {
+        group.sort_order
+    };
+    let mut active: app_navigation_entity::ActiveModel = group.into();
+    active.title = Set(title.to_string());
+    active.path_slug = Set(build_group_slug(title));
+    active.parent_id = Set(parent_id);
+    active.sort_order = Set(sort_order);
+    active.updated_at = Set(Utc::now().into());
+    let updated = active.update(&state.db).await?;
+    normalize_navigation_orders(&state.db, &app_id).await?;
+    Ok(Json(success_response(
+        "更新分组成功",
+        ApiNavigationItem::from(updated),
+    )))
+}
+
+pub(crate) async fn delete_navigation_group(
+    State(state): State<AppState>,
+    Path((app_id, group_id)): Path<(String, String)>,
+) -> Result<Json<ApiResponse<DeleteNavigationGroupResponse>>, AppError> {
+    ensure_system_navigation_for_app(&state.db, &app_id).await?;
+    let group_uuid = Uuid::parse_str(group_id.trim())
+        .map_err(|_| AppError::NotFound("navigation group not found".to_string()))?;
+    let group = AppNavigationEntity::find_by_id(group_uuid)
+        .one(&state.db)
+        .await?
+        .filter(|item| item.app_route_app_id == app_id && item.item_type == "group")
+        .ok_or_else(|| AppError::NotFound("navigation group not found".to_string()))?;
+    let children = AppNavigationEntity::find()
+        .filter(app_navigation_entity::Column::AppRouteAppId.eq(app_id.clone()))
+        .filter(app_navigation_entity::Column::ParentId.eq(Some(group.id)))
+        .all(&state.db)
+        .await?;
+    let reparented_items = children.len();
+    for child in children {
+        let mut active: app_navigation_entity::ActiveModel = child.into();
+        active.parent_id = Set(group.parent_id);
+        active.updated_at = Set(Utc::now().into());
+        active.update(&state.db).await?;
+    }
+    let title = group.title.clone();
+    group.delete(&state.db).await?;
+    normalize_navigation_orders(&state.db, &app_id).await?;
+    Ok(Json(success_response(
+        "删除分组成功",
+        DeleteNavigationGroupResponse {
+            id: group_id,
+            title,
+            reparented_items,
+        },
+    )))
+}
+
 pub(crate) async fn reorder_navigation_item(
     State(state): State<AppState>,
     Path(app_id): Path<String>,
@@ -143,6 +249,31 @@ pub(crate) async fn reorder_navigation_item(
     Ok(Json(success_response(
         "更新导航顺序成功",
         items.into_iter().map(ApiNavigationItem::from).collect(),
+    )))
+}
+
+pub(crate) async fn move_form_navigation(
+    State(state): State<AppState>,
+    Path((app_id, form_uuid)): Path<(String, String)>,
+    Json(payload): Json<MoveFormNavigationRequest>,
+) -> Result<Json<ApiResponse<ApiNavigationItem>>, AppError> {
+    move_form_navigation_to_group(
+        &state.db,
+        &app_id,
+        &form_uuid,
+        payload.parent_group_id.as_deref(),
+    )
+    .await?;
+    let item = AppNavigationEntity::find()
+        .filter(app_navigation_entity::Column::AppRouteAppId.eq(app_id))
+        .filter(app_navigation_entity::Column::ItemType.eq("form"))
+        .filter(app_navigation_entity::Column::TargetFormUuid.eq(Some(form_uuid)))
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("form navigation item not found".to_string()))?;
+    Ok(Json(success_response(
+        "移动表单成功",
+        ApiNavigationItem::from(item),
     )))
 }
 
@@ -564,6 +695,32 @@ pub(crate) async fn apply_navigation_reorder(
     }
 
     Ok(())
+}
+
+pub(crate) async fn move_form_navigation_to_group(
+    db: &DatabaseConnection,
+    app_id: &str,
+    form_uuid: &str,
+    parent_id: Option<&str>,
+) -> Result<(), AppError> {
+    let parent_uuid = resolve_group_parent_id(db, app_id, parent_id).await?;
+    let item = AppNavigationEntity::find()
+        .filter(app_navigation_entity::Column::AppRouteAppId.eq(app_id.to_string()))
+        .filter(app_navigation_entity::Column::ItemType.eq("form"))
+        .filter(app_navigation_entity::Column::TargetFormUuid.eq(Some(form_uuid.to_string())))
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("form navigation item not found".to_string()))?;
+    if item.parent_id == parent_uuid {
+        return Ok(());
+    }
+    let sort_order = next_navigation_sort_order(db, app_id, parent_uuid).await?;
+    let mut active: app_navigation_entity::ActiveModel = item.into();
+    active.parent_id = Set(parent_uuid);
+    active.sort_order = Set(sort_order);
+    active.updated_at = Set(Utc::now().into());
+    active.update(db).await?;
+    normalize_navigation_orders(db, app_id).await
 }
 
 pub(crate) fn collect_navigation_descendants(

@@ -2,13 +2,9 @@
 
 import { ListBox, Select } from "@heroui/react";
 import { useEffect, useMemo, useState, type Key } from "react";
-import { listFormRecords } from "../lib/api-client";
+import { fetchAssociationRecords } from "@/features/form-runtime/api";
+import type { AssociationRecord } from "@/features/form-runtime/types";
 import type { RuntimeFieldProps, RuntimeSchemaField } from "./runtime-form-renderer";
-
-type AssociationRecord = {
-  id: string;
-  data: Record<string, unknown>;
-};
 
 const recordsCache = new Map<string, Promise<AssociationRecord[]>>();
 const MAX_CACHED_FORMS = 50;
@@ -17,21 +13,7 @@ function loadRecords(formId: string) {
   const cached = recordsCache.get(formId);
   if (cached) return cached;
 
-  const request = listFormRecords({
-    path: { formUuid: formId },
-    query: { page: 1, pageSize: 100 },
-    responseStyle: "fields",
-  })
-    .then(({ data, error }) => {
-      if (error || !data || data.code !== 0 || !data.data) {
-        throw new Error(data?.message || "无法加载关联记录");
-      }
-
-      return data.data.items.map((record) => ({
-        id: record.id,
-        data: isRecordData(record.data) ? record.data : {},
-      }));
-    })
+  const request = fetchAssociationRecords(formId)
     .catch((error) => {
       recordsCache.delete(formId);
       throw error;
@@ -44,10 +26,6 @@ function loadRecords(formId: string) {
   }
 
   return request;
-}
-
-function isRecordData(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 export function RuntimeAssociationField({

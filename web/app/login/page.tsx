@@ -1,10 +1,10 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState, type FormEvent } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Button, Card, Input } from "@heroui/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAuth } from "../components/auth-provider";
 import { CompactThemeSwitcher } from "../components/theme-switcher-menu";
+import { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY, type AuthUser, writeAuthStorage } from "../lib/auth";
 
 type LoginMode = "password" | "dingtalk";
 type LoginResponse = {
@@ -27,7 +27,8 @@ export default function LoginPage() {
 function LoginScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { completeLogin, isAuthenticated, isReady } = useAuth();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isReady, setIsReady] = useState(false);
   const [mode, setMode] = useState<LoginMode>("password");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -40,6 +41,12 @@ function LoginScreen() {
   const dingtalkError = searchParams.get("dingtalkError") ?? "";
   const activeMode: LoginMode = dingtalkError ? "dingtalk" : mode;
   const visibleError = dingtalkError || error;
+
+  const completeLogin = useCallback((token: string, user: AuthUser) => {
+    writeAuthStorage(AUTH_TOKEN_STORAGE_KEY, token);
+    writeAuthStorage(AUTH_USER_STORAGE_KEY, JSON.stringify(user));
+    setIsAuthenticated(true);
+  }, []);
 
   async function login(nextUsername: string, nextPassword: string, shouldRememberPassword: boolean, shouldAutoLogin: boolean) {
     const response = await fetch("/api/auth/login", {
@@ -61,6 +68,19 @@ function LoginScreen() {
   }, [isAuthenticated, isReady, router]);
 
   useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/auth/session", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json() as LoginResponse;
+        if (!response.ok || payload.code !== 0 || !payload.data) return;
+        if (!cancelled) completeLogin(payload.data.token, payload.data.user);
+      })
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setIsReady(true); });
+    return () => { cancelled = true; };
+  }, [completeLogin]);
+
+  useEffect(() => {
     if (isAuthenticated || searchParams.get("dingtalkComplete") !== "1") return;
     void fetch("/api/auth/session", { cache: "no-store" })
       .then(async (response) => {
@@ -73,14 +93,17 @@ function LoginScreen() {
   }, [completeLogin, isAuthenticated, router, searchParams]);
 
   useEffect(() => {
-    if (isAuthenticated || autoLoginAttempted.current || searchParams.get("dingtalkComplete") === "1" || dingtalkError) return;
+    if (!isReady || isAuthenticated || autoLoginAttempted.current || searchParams.get("dingtalkComplete") === "1" || dingtalkError) return;
     autoLoginAttempted.current = true;
     const remembered = readRememberedCredentials();
     if (!remembered?.autoLogin) return;
-    void login(remembered.username, remembered.password, true, true);
+    const timer = window.setTimeout(() => {
+      void login(remembered.username, remembered.password, true, true);
+    }, 0);
+    return () => window.clearTimeout(timer);
   // The login function intentionally reads the latest credentials from this effect invocation.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dingtalkError, isAuthenticated, searchParams]);
+  }, [dingtalkError, isAuthenticated, isReady, searchParams]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

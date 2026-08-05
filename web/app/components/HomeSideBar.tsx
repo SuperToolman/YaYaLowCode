@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Badge, Dropdown } from "@heroui/react";
 import {
+  ArrowRight,
   Comment,
   Gear,
   House,
@@ -13,10 +14,19 @@ import {
   SquareListUl,
   TrashBin,
 } from "@gravity-ui/icons";
-import AgentAssistantLauncher from "./agent-assistant-launcher";
+import { AgentAssistantTrigger } from "./agent-assistant-trigger";
 import { useAuth } from "./auth-provider";
 import { WorkflowNotificationItems } from "./workflow-notification-items";
-import { listCommunicationConversations, type CommunicationConversationResponse } from "../lib/api-client";
+import { AppIcon } from "./app-icons";
+import {
+  listApps,
+  type App,
+} from "@/features/application/api";
+import {
+  listCommunicationConversations,
+  type CommunicationConversationResponse,
+} from "@/features/communication/api";
+import { appColorToneClass, normalizeAppColorTone } from "../lib/apps";
 
 type NavItem = {
   badgeCount?: number;
@@ -78,6 +88,21 @@ export default function HomeSideBar() {
   const { logout, user, permissions, permissionsReady, hasPermission } = useAuth();
   const [messageUnreadCount, setMessageUnreadCount] = useState(0);
   const [communicationEnabled, setCommunicationEnabled] = useState(false);
+  const [apps, setApps] = useState<App[]>([]);
+  const [appsLoading, setAppsLoading] = useState(true);
+  useEffect(() => {
+    if (!permissionsReady) return;
+    let cancelled = false;
+    void listApps({ responseStyle: "fields" })
+      .then(({ data, error }) => {
+        if (!cancelled && !error && data?.code === 0 && data.data) {
+          setApps(data.data);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setAppsLoading(false); });
+    return () => { cancelled = true; };
+  }, [permissionsReady]);
   useEffect(() => {
     if (!permissionsReady) {
       return;
@@ -134,14 +159,19 @@ export default function HomeSideBar() {
   }
 
   return (
-    <aside className="sticky top-2 hidden h-[calc(100dvh-16px)] w-[54px] shrink-0 lg:flex lg:flex-col">
+    <aside className="sticky top-2 z-50 hidden h-[calc(100dvh-16px)] w-[54px] shrink-0 lg:flex lg:flex-col">
       <div className="flex h-full flex-col">
         <div className="mb-4"><UserMenu user={user} onLogout={() => void handleLogout()} /></div>
 
         <div className="flex flex-1 flex-col justify-between">
           <div className="flex flex-col gap-2">
-            <NavGroup items={visiblePrimaryNavItems.map((item) => item.href === "/messages" ? { ...item, badgeCount: messageUnreadCount } : item)} pathname={pathname} />
-            {permissionsReady && hasPermission("agent.window") ? <AgentAssistantLauncher /> : null}
+            <NavGroup
+              apps={apps}
+              appsLoading={appsLoading}
+              items={visiblePrimaryNavItems.map((item) => item.href === "/messages" ? { ...item, badgeCount: messageUnreadCount } : item)}
+              pathname={pathname}
+            />
+            {permissionsReady && hasPermission("agent.window") ? <AgentAssistantTrigger /> : null}
             <ThemeSwitcherMenu />
           </div>
           <div>
@@ -209,9 +239,13 @@ function LogoutIcon() {
 }
 
 function NavGroup({
+  apps = [],
+  appsLoading = false,
   items,
   pathname,
 }: {
+  apps?: App[];
+  appsLoading?: boolean;
   items: NavItem[];
   pathname: string;
 }) {
@@ -221,9 +255,8 @@ function NavGroup({
         const Icon = item.icon;
         const isActive = item.match(pathname);
 
-        return (
+        const navLink = (
           <Link
-            key={item.label}
             href={item.href}
             title={item.label}
             aria-current={isActive ? "page" : undefined}
@@ -249,6 +282,42 @@ function NavGroup({
             </span>
             <span className="text-[11px] font-medium leading-4">{item.label}</span>
           </Link>
+        );
+
+        if (item.href !== "/") return <div key={item.label}>{navLink}</div>;
+
+        return (
+          <div key={item.label} className="group/home relative">
+            {navLink}
+            <div className="pointer-events-none absolute left-full top-0 z-[60] w-[184px] translate-x-1 pl-1.5 opacity-0 transition-[opacity,transform] duration-150 group-hover/home:pointer-events-auto group-hover/home:translate-x-0 group-hover/home:opacity-100 group-focus-within/home:pointer-events-auto group-focus-within/home:translate-x-0 group-focus-within/home:opacity-100">
+              <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-menu)] shadow-[var(--shadow-floating)] backdrop-blur-2xl">
+                <div className="max-h-[min(360px,calc(100dvh-32px))] overflow-y-auto p-1">
+                  {appsLoading ? (
+                    <p className="px-2 py-3 text-center text-[11px] text-[var(--color-text-secondary)]">正在加载应用…</p>
+                  ) : apps.length === 0 ? (
+                    <p className="px-2 py-3 text-center text-[11px] text-[var(--color-text-secondary)]">暂无可访问的应用</p>
+                  ) : apps.map((app) => {
+                    const colorClass = appColorToneClass[normalizeAppColorTone(app.color)];
+                    return (
+                      <a
+                        key={app.id}
+                        href={`/${app.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group/app flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-bg-hover)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]"
+                      >
+                        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md [&>svg]:h-4 [&>svg]:w-4 ${colorClass}`}>
+                          <AppIcon type={app.icon} />
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-xs font-medium text-[var(--color-text-primary)]">{app.name}</span>
+                        <ArrowRight className="h-3.5 w-3.5 shrink-0 text-[var(--color-text-disabled)] transition-transform group-hover/app:translate-x-0.5 group-hover/app:text-[var(--color-primary)]" />
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
         );
       })}
     </nav>
