@@ -40,6 +40,21 @@ export function parseAgentSseFrame(frame: string): AgentSseEvent | null {
     }
     case "status": return { type: "status" };
     case "run.completed": return { type: "run.completed" };
+    case "run.paused": {
+      const action = isRecord(record.action) ? record.action : null;
+      if (!action || typeof action.id !== "string" || typeof action.actionType !== "string") return null;
+      return {
+        type: "run.paused",
+        action: {
+          id: action.id,
+          actionType: action.actionType,
+          summary: typeof action.summary === "string" ? action.summary : "Agent 请求审批",
+          status: "pending",
+          createdAt: typeof action.createdAt === "string" ? action.createdAt : new Date().toISOString(),
+          expiresAt: typeof action.expiresAt === "string" ? action.expiresAt : new Date(Date.now() + 86_400_000).toISOString(),
+        },
+      };
+    }
     case "run.failed": return { type: "run.failed", message: typeof record.message === "string" ? record.message : "Agent 运行失败" };
     case "message.failed": return { type: "message.failed", message: typeof record.message === "string" ? record.message : "Agent 消息生成失败" };
     default: return { type: "unknown", eventName, payload };

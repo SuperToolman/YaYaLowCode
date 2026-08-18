@@ -1,7 +1,9 @@
 packages:
   - web
+  - agent
 
 allowBuilds:
+  esbuild: true
   sharp: false
   unrs-resolver: false
 ignoredBuiltDependencies:

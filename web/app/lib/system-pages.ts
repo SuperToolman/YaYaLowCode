@@ -6,31 +6,18 @@ export type SystemPageDefinition = {
 
 export const SYSTEM_PAGES: SystemPageDefinition[] = [
   {
-    slug: "todo",
-    title: "待我处理",
-    description: "当前应用下等待我处理的任务。",
-  },
-  {
-    slug: "processed",
-    title: "我处理的",
-    description: "当前应用下我已经处理过的任务。",
-  },
-  {
-    slug: "created",
-    title: "我创建的",
-    description: "当前应用下由我发起的数据和流程。",
-  },
-  {
-    slug: "copied",
-    title: "抄送我的",
-    description: "当前应用下抄送给我的通知与记录。",
+    slug: "tasks",
+    title: "任务",
+    description: "查看所有应用中的待办、已处理、已创建和抄送任务。",
   },
 ];
 
+const LEGACY_TASK_PAGE_SLUGS = new Set(["todo", "processed", "created", "copied"]);
+
 export function isSystemPageSlug(slug: string) {
-  return SYSTEM_PAGES.some((item) => item.slug === slug);
+  return SYSTEM_PAGES.some((item) => item.slug === slug) || LEGACY_TASK_PAGE_SLUGS.has(slug);
 }
 
 export function getSystemPageBySlug(slug: string) {
-  return SYSTEM_PAGES.find((item) => item.slug === slug);
+  return SYSTEM_PAGES.find((item) => item.slug === slug) ?? (LEGACY_TASK_PAGE_SLUGS.has(slug) ? SYSTEM_PAGES[0] : undefined);
 }

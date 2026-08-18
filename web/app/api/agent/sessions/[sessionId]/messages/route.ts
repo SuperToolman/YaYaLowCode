@@ -1,13 +1,13 @@
-import { proxyBackendJson, proxyBackendStream } from "../../../../_lib/backend-json-proxy";
+import { proxyAgentRuntimeJson, proxyAgentRuntimeStream } from "../../../../_lib/agent-runtime-proxy";
 
 type Context = { params: Promise<{ sessionId: string }> };
 
 export async function GET(request: Request, { params }: Context) {
   const { sessionId } = await params;
-  return proxyBackendJson(request, `/api/agent/sessions/${encodeURIComponent(sessionId)}/messages`);
+  return proxyAgentRuntimeJson(request, `/api/agent/sessions/${encodeURIComponent(sessionId)}/messages`);
 }
 
 export async function POST(request: Request, { params }: Context) {
   const { sessionId } = await params;
-  return proxyBackendStream(request, `/api/agent/sessions/${encodeURIComponent(sessionId)}/messages`);
+  return proxyAgentRuntimeStream(request, `/api/agent/sessions/${encodeURIComponent(sessionId)}/messages`);
 }

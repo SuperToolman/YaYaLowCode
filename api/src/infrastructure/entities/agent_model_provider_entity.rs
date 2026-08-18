@@ -8,6 +8,7 @@ pub struct Model {
     pub name: String,
     pub kind: String,
     pub enabled: bool,
+    pub is_default: bool,
     pub api_base_url: String,
     pub api_key: String,
     pub website_url: String,

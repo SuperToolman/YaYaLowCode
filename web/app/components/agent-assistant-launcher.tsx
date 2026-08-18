@@ -16,7 +16,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowChevronLeft, ArrowChevronRight, ArrowDown, ChevronDown, Code, Ellipsis, FaceRobot, Gear, PaperPlane, Paperclip, Plus, Sparkles, Xmark } from "@gravity-ui/icons";
-import { Button, Dropdown, Tabs } from "@heroui/react";
+import { Button, Dropdown, Tabs, toast } from "@heroui/react";
 import { Drawer } from "@heroui/react/drawer";
 import { AgentMarkdown } from "./agent-markdown";
 import { useAuth } from "./auth-provider";
@@ -60,7 +60,7 @@ const approvalModeLabels: Record<AgentApprovalMode, string> = {
   full_access: "完全访问",
 };
 
-const destructiveAgentActions = new Set(["delete_automation", "delete_navigation_group", "delete_form"]);
+const destructiveAgentActions = new Set(["delete_automation", "delete_navigation_group", "delete_form", "run_skill_script"]);
 
 type AgentAssistantLauncherProps = {
   initialOpen?: boolean;
@@ -102,7 +102,6 @@ export default function AgentAssistantLauncher({
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [statusText, setStatusText] = useState("准备就绪");
-  const [errorMessage, setErrorMessage] = useState("");
   const [isNearMessagesBottom, setIsNearMessagesBottom] = useState(true);
   const localMessageSequence = useRef(0);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -130,7 +129,7 @@ export default function AgentAssistantLauncher({
     if (!isOpen || !shouldAutoScrollRef.current) return;
     const frame = window.requestAnimationFrame(scrollMessagesToBottom);
     return () => window.cancelAnimationFrame(frame);
-  }, [errorMessage, isOpen, messages, scrollMessagesToBottom]);
+  }, [isOpen, messages, scrollMessagesToBottom]);
 
   useEffect(() => {
     resizeComposer(composerRef.current);
@@ -163,6 +162,9 @@ export default function AgentAssistantLauncher({
   const changeApprovalMode = useCallback((mode: AgentApprovalMode) => {
     setApprovalMode(mode);
     window.localStorage.setItem("agent-approval-mode", mode);
+    if (mode === "full_access") {
+      toast.warning("已启用完全访问", { description: "允许已授权的 Skill 脚本直接在后端主机上执行，不使用受限 Python 模式。请只对可信员工包使用。" });
+    }
   }, []);
 
   const loadMessages = useCallback(async (sessionId: string) => {
@@ -177,12 +179,13 @@ export default function AgentAssistantLauncher({
     setPendingActions(actions);
   }, [queryClient]);
 
-  const loadSessions = useCallback(async (preferredSessionId?: string) => {
+  const loadSessions = useCallback(async (allowedAgentIds: Set<string>, preferredSessionId?: string) => {
     setIsLoading(true);
-    setErrorMessage("");
     try {
       const loadedSessions = (await refetchAgentSessions()).data ?? [];
-      const sortedSessions = [...loadedSessions].sort((left, right) => Number(right.isPinned) - Number(left.isPinned) || Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+      const sortedSessions = loadedSessions
+        .filter((session) => allowedAgentIds.has(session.agentId))
+        .sort((left, right) => Number(right.isPinned) - Number(left.isPinned) || Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
       setSessions(sortedSessions);
       const sessionId = preferredSessionId ?? sortedSessions[0]?.id ?? null;
       setActiveSessionId(sessionId);
@@ -197,8 +200,8 @@ export default function AgentAssistantLauncher({
       }
       setStatusText("准备就绪");
     } catch (reason) {
-      setStatusText("Agent 服务不可用");
-      setErrorMessage(reason instanceof Error ? reason.message : "无法加载 Agent 会话");
+      setStatusText("准备就绪");
+      notifyAgentError(reason instanceof Error ? reason.message : "无法加载 Agent 会话");
     } finally {
       setIsLoading(false);
     }
@@ -206,16 +209,19 @@ export default function AgentAssistantLauncher({
 
   const loadAgents = useCallback(async () => {
     const loadedAgents = await fetchAvailableAgents(pageContext);
-    setAgents(loadedAgents);
-    setSelectedAgentId((current) => current ?? loadedAgents[0]?.id ?? null);
+    const aiEmployees = loadedAgents.filter((agent) => agent.isAiEmployee);
+    setAgents(aiEmployees);
+    setSelectedAgentId((current) => aiEmployees.some((agent) => agent.id === current) ? current : aiEmployees[0]?.id ?? null);
+    return aiEmployees;
   }, [pageContext]);
 
   useEffect(() => {
     if (!isOpen) return;
     const timer = window.setTimeout(() => {
       void (async () => {
-        await Promise.all([loadAgents(), loadSessions()]);
-      })().catch((reason) => setErrorMessage(reason instanceof Error ? reason.message : "无法加载 Agent"));
+        const aiEmployees = await loadAgents();
+        await loadSessions(new Set(aiEmployees.map((employee) => employee.id)));
+      })().catch((reason) => notifyAgentError(reason instanceof Error ? reason.message : "无法加载 Agent"));
     }, 0);
     return () => window.clearTimeout(timer);
   }, [isOpen, loadAgents, loadSessions]);
@@ -233,11 +239,10 @@ export default function AgentAssistantLauncher({
 
   async function startNewSession() {
     if (isStreaming) return;
-    setErrorMessage("");
     try {
       await createSession();
     } catch (reason) {
-      setErrorMessage(reason instanceof Error ? reason.message : "无法创建 Agent 会话");
+      notifyAgentError(reason instanceof Error ? reason.message : "无法创建 Agent 会话");
     }
   }
 
@@ -247,13 +252,12 @@ export default function AgentAssistantLauncher({
     const session = sessions.find((candidate) => candidate.id === sessionId);
     if (session) setSelectedAgentId(session.agentId);
     setIsLoading(true);
-    setErrorMessage("");
     try {
       await queryClient.invalidateQueries({ queryKey: ["agent-messages", sessionId] });
       await loadMessages(sessionId);
       setStatusText("准备就绪");
     } catch (reason) {
-      setErrorMessage(reason instanceof Error ? reason.message : "无法加载 Agent 消息");
+      notifyAgentError(reason instanceof Error ? reason.message : "无法加载 Agent 消息");
     } finally {
       setIsLoading(false);
     }
@@ -263,7 +267,6 @@ export default function AgentAssistantLauncher({
     if (agentId === selectedAgentId || isStreaming) return;
     const previousAgentId = selectedAgentId;
     setSelectedAgentId(agentId);
-    setErrorMessage("");
     const existingSession = sessions.find((session) => session.agentId === agentId);
     if (existingSession) {
       await selectSession(existingSession.id);
@@ -275,7 +278,7 @@ export default function AgentAssistantLauncher({
       setStatusText("准备就绪");
     } catch (reason) {
       setSelectedAgentId(previousAgentId);
-      setErrorMessage(reason instanceof Error ? reason.message : "无法切换机器人");
+      notifyAgentError(reason instanceof Error ? reason.message : "无法切换 AI 员工");
     } finally {
       setIsLoading(false);
     }
@@ -288,7 +291,6 @@ export default function AgentAssistantLauncher({
     const attachments = pendingImages;
     setInput("");
     setPendingImages([]);
-    setErrorMessage("");
     setIsStreaming(true);
     setStatusText("正在连接模型");
     localMessageSequence.current += 1;
@@ -328,10 +330,10 @@ export default function AgentAssistantLauncher({
         buffer += decoder.decode(value, { stream: !done });
         const frames = buffer.split("\n\n");
         buffer = frames.pop() ?? "";
-        frames.forEach((frame) => handleSseFrame(frame, assistantMessageId, approvalMode, enqueueDelta, setMessages, setPendingActions, setStatusText, setErrorMessage));
+        frames.forEach((frame) => handleSseFrame(frame, assistantMessageId, approvalMode, enqueueDelta, setMessages, setPendingActions, setStatusText));
         if (done) {
           if (buffer.trim()) {
-            handleSseFrame(buffer, assistantMessageId, approvalMode, enqueueDelta, setMessages, setPendingActions, setStatusText, setErrorMessage);
+            handleSseFrame(buffer, assistantMessageId, approvalMode, enqueueDelta, setMessages, setPendingActions, setStatusText);
           }
           break;
         }
@@ -353,13 +355,9 @@ export default function AgentAssistantLauncher({
       });
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : "Agent 请求失败";
-      setErrorMessage(message);
-      setStatusText("运行失败");
-      setMessages((current) => current.map((item) =>
-        item.id === assistantMessageId && !item.content
-          ? { ...item, content: `Agent 运行失败：${message}` }
-          : item,
-      ));
+      setStatusText("准备就绪");
+      notifyAgentError(message);
+      setMessages((current) => current.filter((item) => item.id !== assistantMessageId || Boolean(item.content)));
     } finally {
       if (deltaTimer !== null) {
         window.clearTimeout(deltaTimer);
@@ -420,7 +418,7 @@ export default function AgentAssistantLauncher({
       }
       if (action === "delete" && window.confirm(`删除“${session.title}”？`)) await deleteSession(session.id);
     } catch (reason) {
-      setErrorMessage(reason instanceof Error ? reason.message : "会话操作失败");
+      notifyAgentError(reason instanceof Error ? reason.message : "会话操作失败");
     }
   }
 
@@ -455,9 +453,9 @@ export default function AgentAssistantLauncher({
         className="group flex h-[68px] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border border-transparent bg-transparent px-2 text-center text-[var(--color-text-secondary)] transition-all duration-200 backdrop-blur-xl hover:border-[var(--sidebar-soft-border)] hover:bg-[var(--sidebar-soft-bg)] hover:text-[var(--color-text-primary)]"
         onClick={() => setIsOpen(true)}
       >
-        <span className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary)] transition-colors group-hover:bg-[var(--color-control-selected)]">
+          <span className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary)] transition-colors group-hover:bg-[var(--color-control-selected)]">
           <FaceRobot className="h-5 w-5" />
-          <span className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--color-bg-canvas)] ${errorMessage ? "bg-[var(--color-danger)]" : "bg-[var(--color-success)]"}`} />
+          <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--color-bg-canvas)] bg-[var(--color-success)]" />
         </span>
         <span className="text-[11px] font-medium leading-4">Agent</span>
       </button> : null}
@@ -479,11 +477,11 @@ export default function AgentAssistantLauncher({
                 </div>
                 <div className="ml-auto hidden shrink-0 items-center gap-2 whitespace-nowrap sm:flex">
                   <div className="flex items-center gap-1.5 rounded-md bg-[var(--color-control-soft)] px-2 py-1.5 text-[11px] text-[var(--color-text-secondary)]">
-                    <span className={`h-2 w-2 rounded-full ${isStreaming ? "animate-pulse bg-[var(--color-primary)]" : errorMessage ? "bg-[var(--color-danger)]" : "bg-[var(--color-success)]"}`} />
+                    <span className={`h-2 w-2 rounded-full ${isStreaming ? "animate-pulse bg-[var(--color-primary)]" : "bg-[var(--color-success)]"}`} />
                     {statusText}
                   </div>
                   {activeSession?.modelProvider ? <span className="max-w-44 truncate rounded-md border border-[var(--color-border)] px-2 py-1.5 text-[11px] text-[var(--color-text-secondary)]" title={activeSession.modelProvider}>{activeSession.modelProvider}</span> : null}
-                  {canConfigureAgents ? <Button variant="ghost" className="h-9 rounded-lg px-3 text-sm text-[var(--color-text-secondary)]" onClick={() => { setIsOpen(false); router.push("/settings/agents"); }}>
+                  {canConfigureAgents ? <Button variant="ghost" className="h-9 rounded-lg px-3 text-sm text-[var(--color-text-secondary)]" onClick={() => { setIsOpen(false); router.push("/settings/ai-employee-market"); }}>
                     <Gear className="h-4 w-4" />配置
                   </Button> : null}
                   <Tabs variant="secondary" selectedKey={sessionFilter} onSelectionChange={(key) => setSessionFilter(key as SessionFilter)} className="mr-1 hidden w-auto shrink-0 !gap-0 lg:flex">
@@ -501,7 +499,7 @@ export default function AgentAssistantLauncher({
               </Drawer.Header>
 
               <div className="shrink-0 border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-2">
-                <div className="flex min-h-11 items-center gap-2 overflow-x-auto" aria-label="机器人列表">
+                <div className="flex min-h-11 items-center gap-2 overflow-x-auto" aria-label="AI员工列表">
                   {agents.map((agent) => {
                     const isSelected = agent.id === selectedAgentId;
                     return <button
@@ -517,7 +515,7 @@ export default function AgentAssistantLauncher({
                       <span className="max-w-36 truncate">{agent.name}</span>
                     </button>;
                   })}
-                  {!agents.length && !isLoading ? <span className="px-1 text-xs text-[var(--color-text-secondary)]">暂无可用机器人</span> : null}
+                  {!agents.length && !isLoading ? <span className="px-1 text-xs text-[var(--color-text-secondary)]">暂无已配置的 AI 员工</span> : null}
                 </div>
               </div>
 
@@ -536,7 +534,7 @@ export default function AgentAssistantLauncher({
                     <div className="border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] p-0 sm:hidden">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)]">
-                          <span className={`h-2 w-2 rounded-full ${isStreaming ? "animate-pulse bg-[var(--color-primary)]" : errorMessage ? "bg-[var(--color-danger)]" : "bg-[var(--color-success)]"}`} />
+                          <span className={`h-2 w-2 rounded-full ${isStreaming ? "animate-pulse bg-[var(--color-primary)]" : "bg-[var(--color-success)]"}`} />
                           {statusText}
                         </div>
                         <Button variant="ghost" className="h-8 rounded-xl px-2.5 text-xs" isDisabled={isStreaming} onClick={() => void startNewSession()}><Plus className="h-4 w-4" />新对话</Button>
@@ -547,7 +545,6 @@ export default function AgentAssistantLauncher({
                       className="min-h-0 flex-1 overflow-y-auto p-0"
                       onScroll={(event) => handleMessagesScroll(event.currentTarget)}
                     >
-                      {errorMessage ? <div className="mx-auto mb-5 max-w-[800px] rounded-2xl border border-[var(--color-danger)]/20 bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">{errorMessage}</div> : null}
                       {!hasMessages ? (
                         <div className="mx-auto flex min-h-full max-w-[800px] flex-col justify-center py-10">
                           <div className="flex items-center gap-3 text-sm font-medium text-[var(--color-primary)]"><Sparkles className="h-5 w-5" />基于当前页面上下文</div>
@@ -585,7 +582,7 @@ export default function AgentAssistantLauncher({
                                 <Dropdown.Menu aria-label="批准操作" className="min-w-64">
                                   <Dropdown.Item id="request_approval" textValue="请求批准" onAction={() => changeApprovalMode("request_approval")}><div><div className="text-sm">请求批准{approvalMode === "request_approval" ? " ✓" : ""}</div><div className="text-xs text-[var(--color-text-secondary)]">每个写操作都需要确认</div></div></Dropdown.Item>
                                   <Dropdown.Item id="approve_on_behalf" textValue="替我审批" onAction={() => changeApprovalMode("approve_on_behalf")}><div><div className="text-sm">替我审批{approvalMode === "approve_on_behalf" ? " ✓" : ""}</div><div className="text-xs text-[var(--color-text-secondary)]">自动批准，删除等危险操作除外</div></div></Dropdown.Item>
-                                  <Dropdown.Item id="full_access" textValue="完全访问" onAction={() => changeApprovalMode("full_access")}><div><div className="text-sm">完全访问{approvalMode === "full_access" ? " ✓" : ""}</div><div className="text-xs text-[var(--color-text-secondary)]">所有允许的操作均不确认</div></div></Dropdown.Item>
+                                   <Dropdown.Item id="full_access" textValue="完全访问" onAction={() => changeApprovalMode("full_access")}><div><div className="text-sm">完全访问{approvalMode === "full_access" ? " ✓" : ""}</div><div className="text-xs text-[var(--color-danger)]">脚本可直接访问后端主机，不使用受限模式</div></div></Dropdown.Item>
                                 </Dropdown.Menu>
                               </Dropdown.Popover>
                             </Dropdown>
@@ -844,6 +841,10 @@ function buildPageContext(pathname: string): AgentPageContext {
   return { appId, formUuid, automationId, route: pathname };
 }
 
+function notifyAgentError(message: string) {
+  toast.danger("AI 员工运行失败", { description: message });
+}
+
 function handleSseFrame(
   frame: string,
   assistantMessageId: string,
@@ -852,7 +853,6 @@ function handleSseFrame(
   setMessages: Dispatch<SetStateAction<AgentMessage[]>>,
   setPendingActions: Dispatch<SetStateAction<PendingAction[]>>,
   setStatusText: Dispatch<SetStateAction<string>>,
-  setErrorMessage: Dispatch<SetStateAction<string>>,
 ) {
   const event = parseAgentSseFrame(frame);
   if (!event) return;
@@ -897,10 +897,15 @@ function handleSseFrame(
   case "run.completed":
     setStatusText("回答完成");
     break;
+  case "run.paused":
+    setStatusText("等待审批");
+    setPendingActions((current) => current.some((item) => item.id === event.action.id) ? current : [...current, event.action]);
+    break;
   case "run.failed":
   case "message.failed":
-    setErrorMessage(event.message);
-    setStatusText("运行失败");
+    setStatusText("准备就绪");
+    notifyAgentError(event.message);
+    setMessages((current) => current.filter((message) => message.id !== assistantMessageId || Boolean(message.content)));
     break;
   case "message.completed":
     if (event.runId) setMessages((current) => current.map((message) => message.id === assistantMessageId ? { ...message, runId: event.runId } : message));

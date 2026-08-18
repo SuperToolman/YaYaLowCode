@@ -15,7 +15,7 @@ import { parseAgentSseFrame } from "@/features/agent-assistant/sse";
 type SchemaField = RuntimeSchemaField;
 type FormAgentMessage = { id: string; role: "user" | "assistant"; content: string };
 
-export function FormAgentPanel({ agentId, analysis, appId, currentValues, fields, formName, formUuid, onApplyValues, prompt }: { agentId: string; analysis: string; appId: string; currentValues: Record<string, unknown>; fields: SchemaField[]; formName: string; formUuid: string; onApplyValues: (values: Record<string, unknown>) => void; prompt: string }) {
+export function FormAgentPanel({ analysis, appId, currentValues, fields, formName, formUuid, onApplyValues, prompt }: { analysis: string; appId: string; currentValues: Record<string, unknown>; fields: SchemaField[]; formName: string; formUuid: string; onApplyValues: (values: Record<string, unknown>) => void; prompt: string }) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<FormAgentMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -32,8 +32,7 @@ export function FormAgentPanel({ agentId, analysis, appId, currentValues, fields
   const context = { appId, formUuid, formDraftAssist: true, route: `/${appId}/${formUuid}` };
 
   async function createSession() {
-    if (!agentId) throw new Error("当前表单尚未选择机器人");
-    const session = await createAgentSessionData(context, agentId, "form_fill");
+    const session = await createAgentSessionData(context, undefined, "form_fill");
     setSessionId(session.id);
     return session.id;
   }
@@ -131,9 +130,9 @@ export function FormAgentPanel({ agentId, analysis, appId, currentValues, fields
             fullWidth
             rows={2}
             aria-label="向表单 Agent 提问"
-            placeholder={agentId ? "描述需要 Agent 处理的业务…" : "请先在设计器中选择机器人"}
+            placeholder="描述需要系统 AI 处理的业务…"
             value={input}
-            disabled={!agentId || streaming}
+            disabled={streaming}
             className="h-[58px] min-h-[58px] max-h-[58px] resize-none overflow-y-auto text-sm leading-5"
             onChange={(event) => setInput(event.currentTarget.value)}
             onKeyDown={(event) => {
@@ -144,7 +143,7 @@ export function FormAgentPanel({ agentId, analysis, appId, currentValues, fields
               }
             }}
           />
-          <Button isIconOnly aria-label="发送消息" isDisabled={!agentId || !input.trim() || streaming} onPress={() => void sendMessage()}><PaperPlane className="h-4 w-4" /></Button>
+          <Button isIconOnly aria-label="发送消息" isDisabled={!input.trim() || streaming} onPress={() => void sendMessage()}><PaperPlane className="h-4 w-4" /></Button>
         </div>
       </div>
     </aside>

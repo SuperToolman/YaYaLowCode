@@ -3,13 +3,10 @@
 
 pub mod agent_config_profile_entity;
 pub mod agent_definition_entity;
-pub mod agent_message_entity;
 pub mod agent_model_provider_entity;
 pub mod agent_pending_action_entity;
 pub mod agent_provider_model_entity;
 pub mod agent_resource_entity;
-pub mod agent_run_entity;
-pub mod agent_run_step_entity;
 pub mod agent_session_entity;
 pub mod app_entity;
 pub mod app_navigation_entity;
@@ -37,7 +34,6 @@ pub mod iam_user_entity;
 pub mod iam_user_role_entity;
 pub mod location_entity;
 pub mod organization_unit_entity;
-pub mod platform_agent_assistant_settings_entity;
 pub mod workflow_action_entity;
 pub mod workflow_comment_entity;
 pub mod workflow_instance_entity;

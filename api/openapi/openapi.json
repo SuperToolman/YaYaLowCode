@@ -9,107 +9,6 @@
     "version": "0.2.0-alpha.0"
   },
   "paths": {
-    "/api/agent/config-profiles": {
-      "get": {
-        "tags": [],
-        "operationId": "listConfigProfiles",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_AgentConfigProfile"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [],
-        "operationId": "createConfigProfile",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProfileRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentConfigProfile"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agent/config-profiles/{id}": {
-      "put": {
-        "tags": [],
-        "operationId": "updateConfigProfile",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProfileRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentConfigProfile"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [],
-        "operationId": "deleteConfigProfile",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
     "/api/agent/knowledge-bases": {
       "get": {
         "tags": [],
@@ -207,118 +106,6 @@
         "responses": {
           "200": {
             "description": "Successful response"
-          }
-        }
-      }
-    },
-    "/api/agent/personas": {
-      "get": {
-        "tags": [],
-        "operationId": "listPersonas",
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      },
-      "post": {
-        "tags": [],
-        "operationId": "createPersona",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PersonaRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentPersonaDefinition"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agent/personas/{id}": {
-      "put": {
-        "tags": [],
-        "operationId": "updatePersona",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PersonaRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentPersonaDefinition"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [],
-        "operationId": "deletePersona",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
-    "/api/agent/platform-tools": {
-      "get": {
-        "tags": [],
-        "operationId": "listPlatformTools",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_PlatformToolResponse"
-                }
-              }
-            }
           }
         }
       }
@@ -626,315 +413,20 @@
         }
       }
     },
-    "/api/agent/sessions/{sessionId}/messages": {
+    "/api/agent/system-ai/status": {
       "get": {
         "tags": [],
-        "operationId": "listAgentMessages",
-        "parameters": [
-          {
-            "name": "sessionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "getSystemAiStatus",
         "responses": {
           "200": {
             "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_ApiAgentMessage"
+                  "$ref": "#/components/schemas/ApiResponse_SystemAiStatusResponse"
                 }
               }
             }
-          }
-        }
-      },
-      "post": {
-        "tags": [],
-        "operationId": "sendAgentMessage",
-        "parameters": [
-          {
-            "name": "sessionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
-    "/api/agent/skills": {
-      "get": {
-        "tags": [],
-        "operationId": "listSkills",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_AgentSkillDefinition"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [],
-        "operationId": "createSkill",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SkillRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentSkillDefinition"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agent/skills/{id}": {
-      "put": {
-        "tags": [],
-        "operationId": "updateSkill",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SkillRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentSkillDefinition"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [],
-        "operationId": "deleteSkill",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
-    "/api/agent/skills/{id}/file": {
-      "get": {
-        "tags": [],
-        "operationId": "getSkillFile",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_SkillFileResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": [],
-        "operationId": "updateSkillFile",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SkillFileRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_SkillFileResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agents": {
-      "get": {
-        "tags": [],
-        "operationId": "listAgents",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_AgentDefinition"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [],
-        "operationId": "createAgent",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentDefinition"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agents/{id}": {
-      "put": {
-        "tags": [],
-        "operationId": "updateAgent",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentDefinition"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [],
-        "operationId": "deleteAgent",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
           }
         }
       }
@@ -3788,31 +3280,110 @@
         }
       }
     },
-    "/api/settings/agent-assistant": {
+    "/api/settings/ai-employee-market": {
       "get": {
         "tags": [],
-        "operationId": "getPlatformAgentAssistantSettings",
+        "operationId": "getAiEmployeeMarket",
         "responses": {
           "200": {
             "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_PlatformAgentAssistantSettings"
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AiEmployeeMarketItem"
                 }
               }
             }
           }
         }
-      },
+      }
+    },
+    "/api/settings/ai-employee-market/{employee_id}/install": {
+      "post": {
+        "tags": [],
+        "operationId": "installAiEmployee",
+        "parameters": [
+          {
+            "name": "employee_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/settings/ai-employee-market/{employee_id}/test-purchase": {
+      "post": {
+        "tags": [],
+        "operationId": "testPurchaseAiEmployee",
+        "parameters": [
+          {
+            "name": "employee_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MarketPurchaseReceipt"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/ai-employees/configurations": {
+      "get": {
+        "tags": [],
+        "operationId": "listAiEmployeeConfigurations",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AiEmployeeConfigurationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/ai-employees/configurations/{employee_id}": {
       "put": {
         "tags": [],
-        "operationId": "updatePlatformAgentAssistantSettings",
+        "operationId": "updateAiEmployeeConfiguration",
+        "parameters": [
+          {
+            "name": "employee_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PlatformAgentAssistantSettingsRequest"
+                "$ref": "#/components/schemas/UpdateAiEmployeeConfigurationRequest"
               }
             }
           },
@@ -3824,7 +3395,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_PlatformAgentAssistantSettings"
+                  "$ref": "#/components/schemas/ApiResponse_AiEmployeeConfigurationResponse"
                 }
               }
             }
@@ -4137,6 +3708,24 @@
         }
       }
     },
+    "/api/settings/license/latest": {
+      "post": {
+        "tags": [],
+        "operationId": "applyLatestPlatformLicense",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PlatformLicenseStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/permissions/{roleId}": {
       "get": {
         "tags": [],
@@ -4371,7 +3960,7 @@
           {
             "name": "appId",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -4525,176 +4114,6 @@
           }
         }
       },
-      "AgentConfigProfile": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "providerId",
-          "chatModel",
-          "embeddingModel",
-          "temperature",
-          "maxSteps"
-        ],
-        "properties": {
-          "allowCreateApps": {
-            "type": "boolean"
-          },
-          "allowCreateAutomations": {
-            "type": "boolean"
-          },
-          "allowCreateForms": {
-            "type": "boolean"
-          },
-          "approvalMode": {
-            "type": "string"
-          },
-          "chatModel": {
-            "type": "string"
-          },
-          "contextCompressionPrompt": {
-            "type": "string"
-          },
-          "contextCompressionProviderId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "contextDiscardTurns": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "contextKeepRecentRatio": {
-            "type": "number",
-            "format": "double"
-          },
-          "contextMaxTurns": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "contextOverflowStrategy": {
-            "type": "string"
-          },
-          "embeddingModel": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "imageCaptionModel": {
-            "type": "string"
-          },
-          "knowledgeBaseIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "maxContextTokens": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "maxRetries": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "maxSteps": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "name": {
-            "type": "string"
-          },
-          "personaId": {
-            "type": "string"
-          },
-          "pluginIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "providerId": {
-            "type": "string"
-          },
-          "skillIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "temperature": {
-            "type": "number",
-            "format": "double"
-          },
-          "webSearchEnabled": {
-            "type": "boolean"
-          }
-        }
-      },
-      "AgentDefinition": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "enabled",
-          "isDefault",
-          "scopeType",
-          "profileId",
-          "systemPrompt"
-        ],
-        "properties": {
-          "description": {
-            "type": "string"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "id": {
-            "type": "string"
-          },
-          "isDefault": {
-            "type": "boolean"
-          },
-          "knowledgeBaseIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "name": {
-            "type": "string"
-          },
-          "pluginIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "profileId": {
-            "type": "string"
-          },
-          "scopeRefId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "scopeType": {
-            "type": "string"
-          },
-          "skillIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "systemPrompt": {
-            "type": "string"
-          }
-        }
-      },
       "AgentKnowledgeBaseDefinition": {
         "type": "object",
         "required": [
@@ -4771,47 +4190,6 @@
           }
         }
       },
-      "AgentPersonaDefinition": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "description",
-          "systemPrompt"
-        ],
-        "properties": {
-          "description": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "knowledgeBaseIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "name": {
-            "type": "string"
-          },
-          "pluginIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "skillIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "systemPrompt": {
-            "type": "string"
-          }
-        }
-      },
       "AgentPluginDefinition": {
         "type": "object",
         "required": [
@@ -4848,143 +4226,107 @@
           }
         }
       },
-      "AgentRequest": {
+      "AiEmployeeConfigurationResponse": {
         "type": "object",
         "required": [
-          "name",
-          "description",
-          "enabled",
-          "isDefault",
-          "scopeType",
-          "profileId",
-          "systemPrompt"
+          "employeeId",
+          "title",
+          "enabled"
         ],
         "properties": {
-          "description": {
-            "type": "string"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "isDefault": {
-            "type": "boolean"
-          },
-          "knowledgeBaseIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "name": {
-            "type": "string"
-          },
-          "pluginIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "profileId": {
-            "type": "string"
-          },
-          "scopeRefId": {
+          "agentId": {
             "type": [
               "string",
               "null"
             ]
           },
-          "scopeType": {
-            "type": "string"
+          "chatModel": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
-          "skillIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "systemPrompt": {
-            "type": "string"
-          }
-        }
-      },
-      "AgentSkillDefinition": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "enabled",
-          "requiresConfirmation"
-        ],
-        "properties": {
-          "allowedTools": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "description": {
+          "employeeId": {
             "type": "string"
           },
           "enabled": {
             "type": "boolean"
           },
+          "providerId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "AiEmployeeMarketItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "description",
+          "category",
+          "priceCents",
+          "billingCycle",
+          "version",
+          "latestPackageVersion",
+          "owned",
+          "installed"
+        ],
+        "properties": {
+          "billingCycle": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "id": {
             "type": "string"
           },
-          "instructions": {
-            "type": "string"
-          },
-          "isSystem": {
+          "installed": {
             "type": "boolean"
           },
-          "name": {
+          "installedPackageVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "installedVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latestPackageVersion": {
             "type": "string"
           },
-          "packageName": {
-            "type": "string"
-          },
-          "packagePath": {
-            "type": "string"
-          },
-          "requiresConfirmation": {
+          "owned": {
             "type": "boolean"
           },
-          "source": {
+          "priceCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "title": {
             "type": "string"
           },
           "version": {
             "type": "string"
-          }
-        }
-      },
-      "ApiAgentMessage": {
-        "type": "object",
-        "required": [
-          "id",
-          "role",
-          "content",
-          "metadata",
-          "createdAt"
-        ],
-        "properties": {
-          "content": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "metadata": {},
-          "role": {
-            "type": "string"
-          },
-          "runId": {
-            "type": [
-              "string",
-              "null"
-            ]
           }
         }
       },
@@ -5843,216 +5185,6 @@
           }
         }
       },
-      "ApiResponse_AgentConfigProfile": {
-        "type": "object",
-        "required": [
-          "code",
-          "message",
-          "time"
-        ],
-        "properties": {
-          "code": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "data": {
-            "type": "object",
-            "required": [
-              "id",
-              "name",
-              "providerId",
-              "chatModel",
-              "embeddingModel",
-              "temperature",
-              "maxSteps"
-            ],
-            "properties": {
-              "allowCreateApps": {
-                "type": "boolean"
-              },
-              "allowCreateAutomations": {
-                "type": "boolean"
-              },
-              "allowCreateForms": {
-                "type": "boolean"
-              },
-              "approvalMode": {
-                "type": "string"
-              },
-              "chatModel": {
-                "type": "string"
-              },
-              "contextCompressionPrompt": {
-                "type": "string"
-              },
-              "contextCompressionProviderId": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "contextDiscardTurns": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "contextKeepRecentRatio": {
-                "type": "number",
-                "format": "double"
-              },
-              "contextMaxTurns": {
-                "type": "integer",
-                "format": "int32"
-              },
-              "contextOverflowStrategy": {
-                "type": "string"
-              },
-              "embeddingModel": {
-                "type": "string"
-              },
-              "id": {
-                "type": "string"
-              },
-              "imageCaptionModel": {
-                "type": "string"
-              },
-              "knowledgeBaseIds": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "maxContextTokens": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "maxRetries": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "maxSteps": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "name": {
-                "type": "string"
-              },
-              "personaId": {
-                "type": "string"
-              },
-              "pluginIds": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "providerId": {
-                "type": "string"
-              },
-              "skillIds": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "temperature": {
-                "type": "number",
-                "format": "double"
-              },
-              "webSearchEnabled": {
-                "type": "boolean"
-              }
-            }
-          },
-          "message": {
-            "type": "string"
-          },
-          "time": {
-            "type": "string"
-          }
-        }
-      },
-      "ApiResponse_AgentDefinition": {
-        "type": "object",
-        "required": [
-          "code",
-          "message",
-          "time"
-        ],
-        "properties": {
-          "code": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "data": {
-            "type": "object",
-            "required": [
-              "id",
-              "name",
-              "enabled",
-              "isDefault",
-              "scopeType",
-              "profileId",
-              "systemPrompt"
-            ],
-            "properties": {
-              "description": {
-                "type": "string"
-              },
-              "enabled": {
-                "type": "boolean"
-              },
-              "id": {
-                "type": "string"
-              },
-              "isDefault": {
-                "type": "boolean"
-              },
-              "knowledgeBaseIds": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "name": {
-                "type": "string"
-              },
-              "pluginIds": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "profileId": {
-                "type": "string"
-              },
-              "scopeRefId": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "scopeType": {
-                "type": "string"
-              },
-              "skillIds": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "systemPrompt": {
-                "type": "string"
-              }
-            }
-          },
-          "message": {
-            "type": "string"
-          },
-          "time": {
-            "type": "string"
-          }
-        }
-      },
       "ApiResponse_AgentKnowledgeBaseDefinition": {
         "type": "object",
         "required": [
@@ -6097,67 +5229,6 @@
                 "items": {
                   "type": "string"
                 }
-              }
-            }
-          },
-          "message": {
-            "type": "string"
-          },
-          "time": {
-            "type": "string"
-          }
-        }
-      },
-      "ApiResponse_AgentPersonaDefinition": {
-        "type": "object",
-        "required": [
-          "code",
-          "message",
-          "time"
-        ],
-        "properties": {
-          "code": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "data": {
-            "type": "object",
-            "required": [
-              "id",
-              "name",
-              "description",
-              "systemPrompt"
-            ],
-            "properties": {
-              "description": {
-                "type": "string"
-              },
-              "id": {
-                "type": "string"
-              },
-              "knowledgeBaseIds": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "name": {
-                "type": "string"
-              },
-              "pluginIds": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "skillIds": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "systemPrompt": {
-                "type": "string"
               }
             }
           },
@@ -6225,7 +5296,7 @@
           }
         }
       },
-      "ApiResponse_AgentSkillDefinition": {
+      "ApiResponse_AiEmployeeConfigurationResponse": {
         "type": "object",
         "required": [
           "code",
@@ -6240,49 +5311,36 @@
           "data": {
             "type": "object",
             "required": [
-              "id",
-              "name",
-              "enabled",
-              "requiresConfirmation"
+              "employeeId",
+              "title",
+              "enabled"
             ],
             "properties": {
-              "allowedTools": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
+              "agentId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
-              "description": {
+              "chatModel": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "employeeId": {
                 "type": "string"
               },
               "enabled": {
                 "type": "boolean"
               },
-              "id": {
-                "type": "string"
+              "providerId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
-              "instructions": {
-                "type": "string"
-              },
-              "isSystem": {
-                "type": "boolean"
-              },
-              "name": {
-                "type": "string"
-              },
-              "packageName": {
-                "type": "string"
-              },
-              "packagePath": {
-                "type": "string"
-              },
-              "requiresConfirmation": {
-                "type": "boolean"
-              },
-              "source": {
-                "type": "string"
-              },
-              "version": {
+              "title": {
                 "type": "string"
               }
             }
@@ -7933,6 +6991,49 @@
           }
         }
       },
+      "ApiResponse_MarketPurchaseReceipt": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "orderId",
+              "orderNo",
+              "licenseId",
+              "status"
+            ],
+            "properties": {
+              "licenseId": {
+                "type": "string"
+              },
+              "orderId": {
+                "type": "string"
+              },
+              "orderNo": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
       "ApiResponse_OrganizationUnitResponse": {
         "type": "object",
         "required": [
@@ -7998,40 +7099,6 @@
           }
         }
       },
-      "ApiResponse_PlatformAgentAssistantSettings": {
-        "type": "object",
-        "required": [
-          "code",
-          "message",
-          "time"
-        ],
-        "properties": {
-          "code": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "navigationAgentId": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "schemaAnalysisPrompt": {
-                "type": "string"
-              }
-            }
-          },
-          "message": {
-            "type": "string"
-          },
-          "time": {
-            "type": "string"
-          }
-        }
-      },
       "ApiResponse_PlatformLicenseStatus": {
         "type": "object",
         "required": [
@@ -8048,19 +7115,54 @@
             "type": "object",
             "required": [
               "valid",
+              "deploymentType",
               "modules",
               "moduleExpiresAt",
               "moduleTitles",
+              "aiEmployees",
+              "aiEmployeeStatuses",
               "platformStatus",
-              "moduleStatuses"
+              "moduleStatuses",
+              "updateAvailable"
             ],
             "properties": {
+              "aiEmployeeStatuses": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "propertyNames": {
+                  "type": "string"
+                }
+              },
+              "aiEmployees": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PlatformAiEmployeeEntitlement"
+                }
+              },
+              "deploymentType": {
+                "type": "string"
+              },
               "expiresAt": {
                 "type": [
                   "integer",
                   "null"
                 ],
                 "format": "int64"
+              },
+              "latestIssuedAt": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64"
+              },
+              "latestLicenseId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "licenseCenterUrl": {
                 "type": [
@@ -8123,6 +7225,9 @@
                   "null"
                 ]
               },
+              "updateAvailable": {
+                "type": "boolean"
+              },
               "valid": {
                 "type": "boolean"
               }
@@ -8155,6 +7260,7 @@
               "name",
               "kind",
               "enabled",
+              "isDefault",
               "apiBaseUrl",
               "apiKey",
               "websiteUrl",
@@ -8180,6 +7286,9 @@
               },
               "id": {
                 "type": "string"
+              },
+              "isDefault": {
+                "type": "boolean"
               },
               "kind": {
                 "type": "string"
@@ -8329,7 +7438,7 @@
           }
         }
       },
-      "ApiResponse_SkillFileResponse": {
+      "ApiResponse_SystemAiStatusResponse": {
         "type": "object",
         "required": [
           "code",
@@ -8344,23 +7453,29 @@
           "data": {
             "type": "object",
             "required": [
-              "id",
-              "packageName",
-              "path",
-              "content"
+              "available"
             ],
             "properties": {
-              "content": {
-                "type": "string"
+              "available": {
+                "type": "boolean"
               },
-              "id": {
-                "type": "string"
+              "providerId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
-              "packageName": {
-                "type": "string"
+              "providerName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
-              "path": {
-                "type": "string"
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             }
           },
@@ -8709,222 +7824,6 @@
           }
         }
       },
-      "ApiResponse_Vec_AgentConfigProfile": {
-        "type": "object",
-        "required": [
-          "code",
-          "message",
-          "time"
-        ],
-        "properties": {
-          "code": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "data": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "id",
-                "name",
-                "providerId",
-                "chatModel",
-                "embeddingModel",
-                "temperature",
-                "maxSteps"
-              ],
-              "properties": {
-                "allowCreateApps": {
-                  "type": "boolean"
-                },
-                "allowCreateAutomations": {
-                  "type": "boolean"
-                },
-                "allowCreateForms": {
-                  "type": "boolean"
-                },
-                "approvalMode": {
-                  "type": "string"
-                },
-                "chatModel": {
-                  "type": "string"
-                },
-                "contextCompressionPrompt": {
-                  "type": "string"
-                },
-                "contextCompressionProviderId": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "contextDiscardTurns": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "contextKeepRecentRatio": {
-                  "type": "number",
-                  "format": "double"
-                },
-                "contextMaxTurns": {
-                  "type": "integer",
-                  "format": "int32"
-                },
-                "contextOverflowStrategy": {
-                  "type": "string"
-                },
-                "embeddingModel": {
-                  "type": "string"
-                },
-                "id": {
-                  "type": "string"
-                },
-                "imageCaptionModel": {
-                  "type": "string"
-                },
-                "knowledgeBaseIds": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "maxContextTokens": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "maxRetries": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "maxSteps": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "name": {
-                  "type": "string"
-                },
-                "personaId": {
-                  "type": "string"
-                },
-                "pluginIds": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "providerId": {
-                  "type": "string"
-                },
-                "skillIds": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "temperature": {
-                  "type": "number",
-                  "format": "double"
-                },
-                "webSearchEnabled": {
-                  "type": "boolean"
-                }
-              }
-            }
-          },
-          "message": {
-            "type": "string"
-          },
-          "time": {
-            "type": "string"
-          }
-        }
-      },
-      "ApiResponse_Vec_AgentDefinition": {
-        "type": "object",
-        "required": [
-          "code",
-          "message",
-          "time"
-        ],
-        "properties": {
-          "code": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "data": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "id",
-                "name",
-                "enabled",
-                "isDefault",
-                "scopeType",
-                "profileId",
-                "systemPrompt"
-              ],
-              "properties": {
-                "description": {
-                  "type": "string"
-                },
-                "enabled": {
-                  "type": "boolean"
-                },
-                "id": {
-                  "type": "string"
-                },
-                "isDefault": {
-                  "type": "boolean"
-                },
-                "knowledgeBaseIds": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "name": {
-                  "type": "string"
-                },
-                "pluginIds": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "profileId": {
-                  "type": "string"
-                },
-                "scopeRefId": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "scopeType": {
-                  "type": "string"
-                },
-                "skillIds": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "systemPrompt": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "message": {
-            "type": "string"
-          },
-          "time": {
-            "type": "string"
-          }
-        }
-      },
       "ApiResponse_Vec_AgentKnowledgeBaseDefinition": {
         "type": "object",
         "required": [
@@ -9042,7 +7941,7 @@
           }
         }
       },
-      "ApiResponse_Vec_AgentSkillDefinition": {
+      "ApiResponse_Vec_AiEmployeeConfigurationResponse": {
         "type": "object",
         "required": [
           "code",
@@ -9059,49 +7958,36 @@
             "items": {
               "type": "object",
               "required": [
-                "id",
-                "name",
-                "enabled",
-                "requiresConfirmation"
+                "employeeId",
+                "title",
+                "enabled"
               ],
               "properties": {
-                "allowedTools": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
+                "agentId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
-                "description": {
+                "chatModel": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "employeeId": {
                   "type": "string"
                 },
                 "enabled": {
                   "type": "boolean"
                 },
-                "id": {
-                  "type": "string"
+                "providerId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
-                "instructions": {
-                  "type": "string"
-                },
-                "isSystem": {
-                  "type": "boolean"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "packageName": {
-                  "type": "string"
-                },
-                "packagePath": {
-                  "type": "string"
-                },
-                "requiresConfirmation": {
-                  "type": "boolean"
-                },
-                "source": {
-                  "type": "string"
-                },
-                "version": {
+                "title": {
                   "type": "string"
                 }
               }
@@ -9115,7 +8001,7 @@
           }
         }
       },
-      "ApiResponse_Vec_ApiAgentMessage": {
+      "ApiResponse_Vec_AiEmployeeMarketItem": {
         "type": "object",
         "required": [
           "code",
@@ -9133,30 +8019,66 @@
               "type": "object",
               "required": [
                 "id",
-                "role",
-                "content",
-                "metadata",
-                "createdAt"
+                "title",
+                "description",
+                "category",
+                "priceCents",
+                "billingCycle",
+                "version",
+                "latestPackageVersion",
+                "owned",
+                "installed"
               ],
               "properties": {
-                "content": {
+                "billingCycle": {
                   "type": "string"
                 },
-                "createdAt": {
+                "category": {
                   "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "expiresAt": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "int64"
                 },
                 "id": {
                   "type": "string"
                 },
-                "metadata": {},
-                "role": {
-                  "type": "string"
+                "installed": {
+                  "type": "boolean"
                 },
-                "runId": {
+                "installedPackageVersion": {
                   "type": [
                     "string",
                     "null"
                   ]
+                },
+                "installedVersion": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "latestPackageVersion": {
+                  "type": "string"
+                },
+                "owned": {
+                  "type": "boolean"
+                },
+                "priceCents": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
                 }
               }
             }
@@ -10028,56 +8950,6 @@
           }
         }
       },
-      "ApiResponse_Vec_PlatformToolResponse": {
-        "type": "object",
-        "required": [
-          "code",
-          "message",
-          "time"
-        ],
-        "properties": {
-          "code": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "data": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "id",
-                "name",
-                "description",
-                "category",
-                "riskLevel"
-              ],
-              "properties": {
-                "category": {
-                  "type": "string"
-                },
-                "description": {
-                  "type": "string"
-                },
-                "id": {
-                  "type": "string"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "riskLevel": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "message": {
-            "type": "string"
-          },
-          "time": {
-            "type": "string"
-          }
-        }
-      },
       "ApiResponse_Vec_ProviderResponse": {
         "type": "object",
         "required": [
@@ -10099,6 +8971,7 @@
                 "name",
                 "kind",
                 "enabled",
+                "isDefault",
                 "apiBaseUrl",
                 "apiKey",
                 "websiteUrl",
@@ -10124,6 +8997,9 @@
                 },
                 "id": {
                   "type": "string"
+                },
+                "isDefault": {
+                  "type": "boolean"
                 },
                 "kind": {
                   "type": "string"
@@ -10891,12 +9767,6 @@
       "CreateAgentSessionRequest": {
         "type": "object",
         "properties": {
-          "agentId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "context": {
             "oneOf": [
               {
@@ -10905,12 +9775,6 @@
               {
                 "$ref": "#/components/schemas/AgentPageContext"
               }
-            ]
-          },
-          "source": {
-            "type": [
-              "string",
-              "null"
             ]
           }
         }
@@ -11672,6 +10536,29 @@
           }
         }
       },
+      "MarketPurchaseReceipt": {
+        "type": "object",
+        "required": [
+          "orderId",
+          "orderNo",
+          "licenseId",
+          "status"
+        ],
+        "properties": {
+          "licenseId": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "orderNo": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
       "MoveFormNavigationRequest": {
         "type": "object",
         "properties": {
@@ -11759,66 +10646,114 @@
           }
         }
       },
-      "PersonaRequest": {
+      "PlatformAiEmployeeEntitlement": {
         "type": "object",
         "required": [
-          "name",
+          "id",
+          "title",
+          "expiresAt"
+        ],
+        "properties": {
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "persona": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlatformAiEmployeePersona"
+              }
+            ]
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlatformAiEmployeeSkill"
+            }
+          },
+          "systemPrompt": {
+            "type": "string"
+          },
+          "templateVersion": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "PlatformAiEmployeePersona": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "description",
           "systemPrompt"
         ],
         "properties": {
           "description": {
             "type": "string"
           },
-          "knowledgeBaseIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "name": {
+          "id": {
             "type": "string"
-          },
-          "pluginIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "skillIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
           },
           "systemPrompt": {
             "type": "string"
-          }
-        }
-      },
-      "PlatformAgentAssistantSettings": {
-        "type": "object",
-        "properties": {
-          "navigationAgentId": {
-            "type": [
-              "string",
-              "null"
-            ]
           },
-          "schemaAnalysisPrompt": {
+          "title": {
             "type": "string"
           }
         }
       },
-      "PlatformAgentAssistantSettingsRequest": {
+      "PlatformAiEmployeeSkill": {
         "type": "object",
+        "required": [
+          "id",
+          "title",
+          "description",
+          "instructions"
+        ],
         "properties": {
-          "navigationAgentId": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "allowedTools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
-          "schemaAnalysisPrompt": {
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "isSystem": {
+            "type": "boolean"
+          },
+          "packageName": {
+            "type": "string"
+          },
+          "packagePath": {
+            "type": "string"
+          },
+          "requiresConfirmation": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
             "type": "string"
           }
         }
@@ -11827,19 +10762,54 @@
         "type": "object",
         "required": [
           "valid",
+          "deploymentType",
           "modules",
           "moduleExpiresAt",
           "moduleTitles",
+          "aiEmployees",
+          "aiEmployeeStatuses",
           "platformStatus",
-          "moduleStatuses"
+          "moduleStatuses",
+          "updateAvailable"
         ],
         "properties": {
+          "aiEmployeeStatuses": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "aiEmployees": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlatformAiEmployeeEntitlement"
+            }
+          },
+          "deploymentType": {
+            "type": "string"
+          },
           "expiresAt": {
             "type": [
               "integer",
               "null"
             ],
             "format": "int64"
+          },
+          "latestIssuedAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "latestLicenseId": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "licenseCenterUrl": {
             "type": [
@@ -11902,35 +10872,11 @@
               "null"
             ]
           },
+          "updateAvailable": {
+            "type": "boolean"
+          },
           "valid": {
             "type": "boolean"
-          }
-        }
-      },
-      "PlatformToolResponse": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "description",
-          "category",
-          "riskLevel"
-        ],
-        "properties": {
-          "category": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "riskLevel": {
-            "type": "string"
           }
         }
       },
@@ -11968,120 +10914,6 @@
           }
         }
       },
-      "ProfileRequest": {
-        "type": "object",
-        "required": [
-          "name",
-          "providerId",
-          "chatModel",
-          "embeddingModel",
-          "temperature",
-          "maxSteps",
-          "maxRetries",
-          "imageCaptionModel",
-          "personaId",
-          "webSearchEnabled",
-          "contextMaxTurns",
-          "contextDiscardTurns",
-          "contextOverflowStrategy",
-          "contextCompressionPrompt",
-          "contextKeepRecentRatio",
-          "maxContextTokens"
-        ],
-        "properties": {
-          "allowCreateApps": {
-            "type": "boolean"
-          },
-          "allowCreateAutomations": {
-            "type": "boolean"
-          },
-          "allowCreateForms": {
-            "type": "boolean"
-          },
-          "approvalMode": {
-            "type": "string"
-          },
-          "chatModel": {
-            "type": "string"
-          },
-          "contextCompressionPrompt": {
-            "type": "string"
-          },
-          "contextCompressionProviderId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "contextDiscardTurns": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "contextKeepRecentRatio": {
-            "type": "number",
-            "format": "double"
-          },
-          "contextMaxTurns": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "contextOverflowStrategy": {
-            "type": "string"
-          },
-          "embeddingModel": {
-            "type": "string"
-          },
-          "imageCaptionModel": {
-            "type": "string"
-          },
-          "knowledgeBaseIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "maxContextTokens": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "maxRetries": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "maxSteps": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "name": {
-            "type": "string"
-          },
-          "personaId": {
-            "type": "string"
-          },
-          "pluginIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "providerId": {
-            "type": "string"
-          },
-          "skillIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "temperature": {
-            "type": "number",
-            "format": "double"
-          },
-          "webSearchEnabled": {
-            "type": "boolean"
-          }
-        }
-      },
       "ProviderRequest": {
         "type": "object",
         "required": [
@@ -12104,6 +10936,9 @@
             "type": "string"
           },
           "enabled": {
+            "type": "boolean"
+          },
+          "isDefault": {
             "type": "boolean"
           },
           "kind": {
@@ -12130,6 +10965,7 @@
           "name",
           "kind",
           "enabled",
+          "isDefault",
           "apiBaseUrl",
           "apiKey",
           "websiteUrl",
@@ -12155,6 +10991,9 @@
           },
           "id": {
             "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
           },
           "kind": {
             "type": "string"
@@ -12512,70 +11351,32 @@
           }
         }
       },
-      "SkillFileRequest": {
+      "SystemAiStatusResponse": {
         "type": "object",
         "required": [
-          "content"
+          "available"
         ],
         "properties": {
-          "content": {
-            "type": "string"
-          }
-        }
-      },
-      "SkillFileResponse": {
-        "type": "object",
-        "required": [
-          "id",
-          "packageName",
-          "path",
-          "content"
-        ],
-        "properties": {
-          "content": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "packageName": {
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          }
-        }
-      },
-      "SkillRequest": {
-        "type": "object",
-        "required": [
-          "name",
-          "description",
-          "enabled",
-          "allowedTools",
-          "requiresConfirmation"
-        ],
-        "properties": {
-          "allowedTools": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "description": {
-            "type": "string"
-          },
-          "enabled": {
+          "available": {
             "type": "boolean"
           },
-          "instructions": {
-            "type": "string"
+          "providerId": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
-          "name": {
-            "type": "string"
+          "providerName": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
-          "requiresConfirmation": {
-            "type": "boolean"
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -12604,6 +11405,21 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "UpdateAiEmployeeConfigurationRequest": {
+        "type": "object",
+        "required": [
+          "providerId",
+          "chatModel"
+        ],
+        "properties": {
+          "chatModel": {
+            "type": "string"
+          },
+          "providerId": {
+            "type": "string"
           }
         }
       },

@@ -40,7 +40,7 @@ pub(crate) struct WorkflowTaskActionRequest {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct WorkflowTaskListQuery {
-    pub(crate) app_id: String,
+    pub(crate) app_id: Option<String>,
     pub(crate) scope: String,
 }
 
@@ -313,11 +313,16 @@ pub(crate) async fn list_workflow_tasks(
         ));
     }
 
-    let flows = automation_flow_entity::Entity::find()
-        .filter(automation_flow_entity::Column::AppRouteAppId.eq(&query.app_id))
-        .filter(automation_flow_entity::Column::FlowType.eq("process"))
-        .all(&state.db)
-        .await?;
+    let mut flows_query = automation_flow_entity::Entity::find()
+        .filter(automation_flow_entity::Column::FlowType.eq("process"));
+    if let Some(app_id) = query
+        .app_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        flows_query = flows_query.filter(automation_flow_entity::Column::AppRouteAppId.eq(app_id));
+    }
+    let flows = flows_query.all(&state.db).await?;
     let flow_ids = flows.iter().map(|flow| flow.id).collect::<Vec<_>>();
     if flow_ids.is_empty() {
         return Ok(Json(success_response(
@@ -383,6 +388,7 @@ pub(crate) async fn list_workflow_tasks(
             let flow = flows_by_id.get(&instance.process_flow_id)?;
             Some(json!({
                 "id": task.task_uuid,
+                "appId": flow.app_route_app_id,
                 "taskType": task.task_type,
                 "status": task.status,
                 "formUuid": instance.form_uuid,
@@ -408,6 +414,7 @@ pub(crate) async fn list_workflow_tasks(
         let flow = flows_by_id.get(&instance.process_flow_id)?;
         Some(json!({
             "id": instance.instance_uuid,
+            "appId": flow.app_route_app_id,
             "taskType": "created",
             "status": instance.status,
             "formUuid": instance.form_uuid,

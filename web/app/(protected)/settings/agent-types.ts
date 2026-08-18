@@ -20,6 +20,7 @@ export type AgentModelProvider = {
   name: string;
   kind: string;
   enabled: boolean;
+  isDefault: boolean;
   apiBaseUrl: string;
   apiKey: string;
   websiteUrl: string;

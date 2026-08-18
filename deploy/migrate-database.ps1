@@ -176,7 +176,7 @@ try {
     'restore_services',
     'trap cleanup EXIT',
     'attempt=0',
-    'until docker exec "$container_name" curl -fsS http://127.0.0.1:8787/healthz >/dev/null; do attempt=$((attempt + 1)); [ "$attempt" -lt 30 ] || { echo "Backend health check timed out after database restore." >&2; exit 3; }; sleep 2; done',
+    'until docker exec "$container_name" curl -fsS http://127.0.0.1:8788/healthz >/dev/null; do attempt=$((attempt + 1)); [ "$attempt" -lt 30 ] || { echo "Backend health check timed out after database restore." >&2; exit 3; }; sleep 2; done',
     'echo "Database migration completed. Remote backup retained at: $backup_path"'
   ) -join "`n"
   $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remoteScript))

@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRotateRight, TrashBin } from "@gravity-ui/icons";
-import { Button, Modal, Tooltip } from "@heroui/react";
+import { ArrowRotateRight, Eye, TrashBin } from "@gravity-ui/icons";
+import { Alert, Button, Chip, EmptyState, Modal, Table, Tooltip } from "@heroui/react";
 import { SettingsContentCard } from "../_components/settings-content-card";
 
 type LogLevel = "all" | "debug" | "info" | "warn" | "error";
@@ -24,11 +24,11 @@ const levelLabels: Record<Exclude<LogLevel, "all">, string> = {
   error: "错误",
 };
 
-const levelClasses: Record<Exclude<LogLevel, "all">, string> = {
-  debug: "bg-[var(--color-control-soft)] text-[var(--color-text-secondary)]",
-  info: "bg-[var(--color-info-soft)] text-[var(--color-info)]",
-  warn: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
-  error: "bg-[var(--color-danger-soft)] text-[var(--color-danger)]",
+const levelColors: Record<Exclude<LogLevel, "all">, "default" | "accent" | "warning" | "danger"> = {
+  debug: "default",
+  info: "accent",
+  warn: "warning",
+  error: "danger",
 };
 
 const PAGE_SIZE = 200;
@@ -59,6 +59,7 @@ export default function PlatformLogsPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [totalSizeBytes, setTotalSizeBytes] = useState(0);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [viewing, setViewing] = useState<PlatformLog | null>(null);
   const [clearing, setClearing] = useState(false);
   const [error, setError] = useState("");
 
@@ -128,16 +129,18 @@ export default function PlatformLogsPage() {
           ))}
           <span className="ml-auto text-xs text-[var(--color-text-secondary)]">{loading ? "正在加载" : `已加载 ${logs.length} / 共 ${totalCount} 条 · 日志文件占用 ${formatFileSize(totalSizeBytes)}`}</span>
         </div>
-        {error ? <div className="shrink-0 rounded-md border border-[var(--color-danger)]/30 bg-[var(--color-danger-soft)] px-3 py-2 text-sm text-[var(--color-danger)]">{error}</div> : null}
+        {error ? <Alert status="danger" className="shrink-0"><Alert.Content><Alert.Description>{error}</Alert.Description></Alert.Content></Alert> : null}
         <div className="settings-scroll-area min-h-0 flex-1 overflow-auto rounded-md border border-[var(--color-border)]">
-          {logs.length ? <table className="w-full min-w-[760px] border-collapse text-left text-sm">
-            <thead className="sticky top-0 z-10 bg-[var(--color-control-soft)] text-xs text-[var(--color-text-secondary)]"><tr><th className="px-3 py-2 font-medium">时间</th><th className="px-3 py-2 font-medium">级别</th><th className="px-3 py-2 font-medium">来源</th><th className="px-3 py-2 font-medium">内容</th></tr></thead>
-            <tbody>{logs.map((log) => <tr key={log.id} className="border-t border-[var(--color-border)] align-top hover:bg-[var(--color-bg-hover)]"><td className="whitespace-nowrap px-3 py-2 text-xs text-[var(--color-text-secondary)]">{new Date(log.occurredAt).toLocaleString("zh-CN", { hour12: false })}</td><td className="px-3 py-2"><span className={`inline-flex min-w-10 justify-center rounded px-2 py-0.5 text-xs font-medium ${levelClasses[log.level]}`}>{levelLabels[log.level]}</span></td><td className="max-w-48 truncate px-3 py-2 font-mono text-xs text-[var(--color-text-secondary)]" title={log.target}>{log.target}</td><td className="px-3 py-2"><p className="break-words text-[var(--color-text-primary)]">{log.message}</p>{Object.keys(log.fields ?? {}).length ? <pre className="mt-1 max-w-[680px] overflow-x-auto whitespace-pre-wrap break-words text-xs text-[var(--color-text-secondary)]">{JSON.stringify(log.fields, null, 2)}</pre> : null}</td></tr>)}</tbody>
-          </table> : <div className="flex h-full min-h-40 items-center justify-center px-4 text-sm text-[var(--color-text-secondary)]">{loading ? "正在加载日志…" : "当前筛选条件下没有日志"}</div>}
+          <Table className="h-full min-w-[620px]"><Table.ScrollContainer className="h-full overflow-auto"><Table.Content aria-label="平台日志"><Table.Header><Table.Column id="occurred-at" isRowHeader>时间</Table.Column><Table.Column id="level">级别</Table.Column><Table.Column id="target">来源</Table.Column><Table.Column id="actions" className="w-20 text-right">操作</Table.Column></Table.Header><Table.Body renderEmptyState={() => <EmptyState className="min-h-40 py-8 text-sm text-[var(--color-text-secondary)]">{loading ? "正在加载日志…" : "当前筛选条件下没有日志"}</EmptyState>}><Table.Collection items={logs}>{(log) => <Table.Row key={log.id} id={log.id}><Table.Cell><span className="whitespace-nowrap text-xs text-[var(--color-text-secondary)]">{new Date(log.occurredAt).toLocaleString("zh-CN", { hour12: false })}</span></Table.Cell><Table.Cell><Chip size="sm" color={levelColors[log.level]} variant="soft">{levelLabels[log.level]}</Chip></Table.Cell><Table.Cell><span className="block max-w-80 truncate font-mono text-xs text-[var(--color-text-secondary)]" title={log.target}>{log.target}</span></Table.Cell><Table.Cell><div className="flex justify-end"><Tooltip><Tooltip.Trigger><Button isIconOnly size="sm" variant="ghost" aria-label={`查看 ${log.target} 日志`} onPress={() => setViewing(log)}><Eye className="h-4 w-4" /></Button></Tooltip.Trigger><Tooltip.Content>查看日志</Tooltip.Content></Tooltip></div></Table.Cell></Table.Row>}</Table.Collection></Table.Body></Table.Content></Table.ScrollContainer></Table>
         </div>
         {hasMore ? <div className="flex shrink-0 justify-center"><Button size="sm" variant="secondary" isDisabled={loadingMore} onPress={() => void loadLogs(level, logs.length)}>{loadingMore ? "正在加载…" : "加载更多"}</Button></div> : null}
       </div>
       <Modal isOpen={clearConfirmOpen} onOpenChange={(open) => !clearing && setClearConfirmOpen(open)}><Modal.Backdrop className="theme-modal-backdrop" isDismissable={!clearing}><Modal.Container placement="center" size="sm"><Modal.Dialog className="rounded-md bg-[var(--color-bg-surface)]"><Modal.Header><Modal.Heading>清空平台日志</Modal.Heading><Modal.CloseTrigger aria-label="关闭" isDisabled={clearing} /></Modal.Header><Modal.Body><p className="text-sm leading-6 text-[var(--color-text-secondary)]">将删除当前保留期内的全部日志文件，共 {formatFileSize(totalSizeBytes)}。此操作不可恢复。</p></Modal.Body><Modal.Footer><Button variant="ghost" isDisabled={clearing} onPress={() => setClearConfirmOpen(false)}>取消</Button><Button className="bg-[var(--color-danger)] text-white" isDisabled={clearing} onPress={() => void clearLogs()}>{clearing ? "清空中…" : "确认清空"}</Button></Modal.Footer></Modal.Dialog></Modal.Container></Modal.Backdrop></Modal>
+      <Modal isOpen={viewing !== null} onOpenChange={(open) => !open && setViewing(null)}><Modal.Backdrop className="theme-modal-backdrop" isDismissable><Modal.Container placement="center" size="lg"><Modal.Dialog className="rounded-md bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]"><Modal.Header><Modal.Heading>日志详情</Modal.Heading><Modal.CloseTrigger aria-label="关闭" /></Modal.Header><Modal.Body className="space-y-5"><div className="grid gap-4 sm:grid-cols-3"><LogDetail label="时间">{viewing ? new Date(viewing.occurredAt).toLocaleString("zh-CN", { hour12: false }) : "-"}</LogDetail><LogDetail label="级别">{viewing ? <Chip size="sm" color={levelColors[viewing.level]} variant="soft">{levelLabels[viewing.level]}</Chip> : "-"}</LogDetail><LogDetail label="来源"><span className="break-all font-mono text-xs">{viewing?.target ?? "-"}</span></LogDetail></div><LogDetail label="内容"><p className="whitespace-pre-wrap break-words text-sm leading-6">{viewing?.message || "-"}</p></LogDetail>{viewing && Object.keys(viewing.fields ?? {}).length ? <LogDetail label="附加字段"><pre className="max-h-80 overflow-auto rounded-md bg-[var(--color-bg-subtle)] p-3 text-xs leading-5 text-[var(--color-text-secondary)]">{JSON.stringify(viewing.fields, null, 2)}</pre></LogDetail> : null}</Modal.Body><Modal.Footer><Button onPress={() => setViewing(null)}>关闭</Button></Modal.Footer></Modal.Dialog></Modal.Container></Modal.Backdrop></Modal>
     </SettingsContentCard>
   </section>;
+}
+
+function LogDetail({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div className="min-w-0"><p className="text-xs text-[var(--color-text-secondary)]">{label}</p><div className="mt-1.5 text-sm text-[var(--color-text-primary)]">{children}</div></div>;
 }

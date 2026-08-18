@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { backendAuthorizationHeaders, proxyBackendJson } from "../../_lib/backend-json-proxy";
 
 const backendBaseUrl =
-  process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8787";
+  process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8788";
 
 function buildErrorResponse(message: string, status: number) {
   return NextResponse.json(

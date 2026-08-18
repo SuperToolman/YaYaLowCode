@@ -4,35 +4,96 @@ use axum::Json;
 use axum::extract::Path;
 use axum::http::StatusCode;
 use sea_orm::{
-    ActiveModelTrait, ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DbBackend,
-    EntityTrait, IntoActiveModel, Set, Statement, TransactionTrait, Value as SeaValue,
+    ConnectOptions, ConnectionTrait, Database, DbBackend, Statement, TransactionTrait,
+    Value as SeaValue,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use utoipa::ToSchema;
 
-use crate::infrastructure::entities::{
-    agent_definition_entity::Entity as AgentDefinitionEntity,
-    platform_agent_assistant_settings_entity::{
-        ActiveModel as PlatformAgentAssistantSettingsActiveModel,
-        Entity as PlatformAgentAssistantSettingsEntity,
-    },
-};
 use crate::platform::authorization;
 use crate::platform::config::{
     CommunicationModuleSettings, DatabaseSettings, DingTalkSettings, IdentitySourceSettings,
-    NotificationSettings, PlatformAgentAssistantSettings, ValkeySettings, database_url_from_env,
-    load_communication_settings, load_database_settings, load_identity_source_settings,
-    load_notification_settings, load_valkey_settings, runtime_database_settings,
+    NotificationSettings, ValkeySettings, database_url_from_env, load_communication_settings,
+    load_database_settings, load_identity_source_settings, load_installed_ai_employee_packages,
+    load_installed_ai_employees, load_notification_settings, load_platform_license_settings,
+    load_valkey_settings, remove_installed_ai_employee_package, runtime_database_settings,
     save_communication_settings, save_database_settings, save_identity_source_settings,
-    save_notification_settings, save_valkey_settings,
+    save_installed_ai_employee_package, save_installed_ai_employees, save_notification_settings,
+    save_valkey_settings,
 };
 use crate::platform::license::{
-    PlatformLicenseStatus, license_has_module, license_module_expires_at, license_status,
-    mark_license_running_remotely, validate_license_center_url, validate_license_remotely,
-    validate_license_token,
+    PlatformAiEmployeeEntitlement, PlatformLicenseStatus, apply_latest_license_remotely,
+    license_allows_database_configuration, license_has_module, license_module_expires_at,
+    license_status, mark_license_running_remotely, validate_license_center_url,
+    validate_license_remotely, validate_license_token,
 };
 use crate::platform::prelude::{ApiResponse, AppError, AppState};
+
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AiEmployeeMarketItem {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub category: String,
+    pub price_cents: i64,
+    pub billing_cycle: String,
+    pub version: String,
+    pub installed_version: Option<String>,
+    pub latest_package_version: String,
+    pub installed_package_version: Option<String>,
+    pub owned: bool,
+    pub installed: bool,
+    pub expires_at: Option<i64>,
+}
+
+#[derive(Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MarketPurchaseReceipt {
+    pub order_id: String,
+    pub order_no: String,
+    pub license_id: String,
+    pub status: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OperationMarketProduct {
+    id: String,
+    title: String,
+    description: String,
+    category: String,
+    price_cents: i64,
+    billing_cycle: String,
+    version: String,
+}
+
+#[derive(Deserialize)]
+struct OperationMarketEnvelope<T> {
+    #[serde(default)]
+    code: i32,
+    #[serde(default)]
+    message: String,
+    data: Option<T>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AiEmployeeInstallationStatus {
+    employee_id: String,
+    installed: bool,
+}
+
+fn require_local_deployment() -> Result<(), AppError> {
+    if license_allows_database_configuration() {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "数据库配置仅对本地部署许可证开放".to_string(),
+        ))
+    }
+}
 use crate::shared::success_response;
 
 #[derive(Serialize, ToSchema)]
@@ -90,14 +151,6 @@ pub(crate) struct UpdateValkeySettingsRequest {
     cache_ttl_hours: u8,
 }
 
-#[derive(Deserialize, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct PlatformAgentAssistantSettingsRequest {
-    navigation_agent_id: Option<String>,
-    #[serde(default)]
-    schema_analysis_prompt: String,
-}
-
 #[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct UpdateIdentitySourceSettingsRequest {
@@ -144,17 +197,328 @@ pub(crate) struct CommunicationCleanupResponse {
 pub(crate) async fn get_platform_license_status() -> Json<ApiResponse<PlatformLicenseStatus>> {
     let mut status = license_status();
     if status.valid {
-        if let Err(reason) = validate_license_remotely().await {
-            status.valid = false;
-            status.reason = Some(reason);
-            status.platform_status = "expired".to_string();
-            status
-                .module_statuses
-                .values_mut()
-                .for_each(|module_status| *module_status = "expired".to_string());
+        match validate_license_remotely().await {
+            Err(reason) => {
+                status.valid = false;
+                status.reason = Some(reason);
+                status.platform_status = "expired".to_string();
+                status
+                    .module_statuses
+                    .values_mut()
+                    .for_each(|module_status| *module_status = "expired".to_string());
+            }
+            Ok(Some(update)) => {
+                status.update_available = true;
+                status.latest_license_id = Some(update.license_id);
+                status.latest_issued_at = update.issued_at;
+            }
+            Ok(None) => {}
         }
     }
     Json(success_response("platform license status loaded", status))
+}
+
+pub(crate) async fn apply_latest_platform_license(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> Result<Json<ApiResponse<PlatformLicenseStatus>>, AppError> {
+    if !apply_latest_license_remotely()
+        .await
+        .map_err(AppError::BadRequest)?
+    {
+        return Err(AppError::BadRequest("当前已经是最新许可证".to_string()));
+    }
+    let status = license_status();
+    if status.valid && license_has_module("communication") {
+        crate::infrastructure::legacy_bootstrap::ensure_communication_tables(&state.db).await?;
+    }
+    Ok(Json(success_response("平台许可证已更新", status)))
+}
+
+pub(crate) async fn get_ai_employee_market()
+-> Result<Json<ApiResponse<Vec<AiEmployeeMarketItem>>>, AppError> {
+    let status = license_status();
+    // Keep the local signature untouched, but use the newer signed payload for
+    // market ownership while the user is deciding whether to apply it.
+    let pending_claims = if status.valid {
+        validate_license_remotely()
+            .await
+            .ok()
+            .flatten()
+            .and_then(|update| validate_license_token(&update.license).ok())
+    } else {
+        None
+    };
+    let operation_url = status
+        .license_center_url
+        .as_deref()
+        .ok_or_else(|| AppError::BadRequest("请先配置运营管理平台地址和许可证".to_string()))?;
+    let url = format!(
+        "{}/api/market/ai-employees",
+        operation_url.trim_end_matches('/')
+    );
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|error| AppError::Server(std::io::Error::other(error)))?
+        .get(url)
+        .send()
+        .await
+        .map_err(|_| AppError::BadRequest("运营管理平台暂时不可访问".to_string()))?;
+    if !response.status().is_success() {
+        return Err(AppError::BadRequest(
+            "运营管理平台拒绝了市场目录请求".to_string(),
+        ));
+    }
+    let products = response
+        .json::<OperationMarketEnvelope<Vec<OperationMarketProduct>>>()
+        .await
+        .map_err(|_| AppError::BadRequest("运营管理平台返回了无效的市场目录".to_string()))?
+        .data
+        .unwrap_or_default();
+    let installed_ids = load_installed_ai_employees();
+    let installed_packages = load_installed_ai_employee_packages();
+    let items = products
+        .into_iter()
+        .map(|product| {
+            let entitlement = pending_claims
+                .as_ref()
+                .and_then(|claims| {
+                    claims
+                        .ai_employees
+                        .iter()
+                        .find(|item| item.id == product.id)
+                })
+                .or_else(|| {
+                    status
+                        .ai_employees
+                        .iter()
+                        .find(|item| item.id == product.id)
+                });
+            let owned = status.valid
+                && entitlement
+                    .is_some_and(|item| item.expires_at >= chrono::Utc::now().timestamp());
+            let installed_package_version = installed_packages
+                .get(&product.id)
+                .and_then(|package| package.get("templateVersion"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string);
+            AiEmployeeMarketItem {
+                // Preserve the local installation state after an entitlement expires so the
+                // client can surface it as expired and still allow the administrator to remove it.
+                installed: installed_ids.contains(&product.id),
+                installed_version: installed_package_version.clone(),
+                installed_package_version,
+                latest_package_version: product.version.clone(),
+                expires_at: entitlement.map(|value| value.expires_at),
+                owned,
+                id: product.id,
+                title: product.title,
+                description: product.description,
+                category: product.category,
+                price_cents: product.price_cents,
+                billing_cycle: product.billing_cycle,
+                version: product.version,
+            }
+        })
+        .collect();
+    Ok(Json(success_response("AI 员工市场已读取", items)))
+}
+
+pub(crate) async fn install_ai_employee(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    Path(employee_id): Path<String>,
+) -> Result<Json<ApiResponse<AiEmployeeInstallationStatus>>, AppError> {
+    license_status()
+        .ai_employees
+        .into_iter()
+        .find(|entitlement| {
+            entitlement.id == employee_id
+                && entitlement.expires_at >= chrono::Utc::now().timestamp()
+        })
+        .ok_or_else(|| AppError::Forbidden("当前许可证未包含该 AI 员工，无法安装".to_string()))?;
+    let settings = load_platform_license_settings()
+        .ok_or_else(|| AppError::BadRequest("请先配置运营管理平台地址和许可证".to_string()))?;
+    let entitlement = fetch_owned_ai_employee_package(
+        &settings.license_center_url,
+        &settings.license,
+        &employee_id,
+    )
+    .await?;
+    sync_ai_employee_skill_packages(
+        &state,
+        &settings.license_center_url,
+        &settings.license,
+        &entitlement,
+    )
+    .await?;
+    save_installed_ai_employee_package(
+        &employee_id,
+        serde_json::to_value(&entitlement)
+            .map_err(|error| AppError::Server(std::io::Error::other(error)))?,
+    )
+    .map_err(AppError::Server)?;
+    crate::modules::agent_config::sync_installed_ai_employee_runtime(&state, &entitlement).await?;
+    let mut installed = load_installed_ai_employees();
+    installed.insert(employee_id.clone());
+    save_installed_ai_employees(&installed).map_err(AppError::Server)?;
+    Ok(Json(success_response(
+        "AI 员工已安装",
+        AiEmployeeInstallationStatus {
+            employee_id,
+            installed: true,
+        },
+    )))
+}
+
+pub(crate) async fn uninstall_ai_employee(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    Path(employee_id): Path<String>,
+) -> Result<Json<ApiResponse<AiEmployeeInstallationStatus>>, AppError> {
+    let mut installed = load_installed_ai_employees();
+    if !installed.remove(&employee_id) {
+        return Err(AppError::NotFound("该 AI 员工尚未安装".to_string()));
+    }
+    save_installed_ai_employees(&installed).map_err(AppError::Server)?;
+    remove_installed_ai_employee_package(&employee_id).map_err(AppError::Server)?;
+    crate::modules::agent_config::disable_installed_ai_employee_runtime(&state, &employee_id)
+        .await?;
+    Ok(Json(success_response(
+        "AI 员工已移除",
+        AiEmployeeInstallationStatus {
+            employee_id,
+            installed: false,
+        },
+    )))
+}
+
+async fn fetch_owned_ai_employee_package(
+    operation_url: &str,
+    license: &str,
+    employee_id: &str,
+) -> Result<PlatformAiEmployeeEntitlement, AppError> {
+    let url = format!(
+        "{}/api/market/ai-employees/{}/package",
+        operation_url.trim_end_matches('/'),
+        employee_id
+    );
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|error| AppError::Server(std::io::Error::other(error)))?
+        .get(url)
+        .bearer_auth(license)
+        .send()
+        .await
+        .map_err(|_| AppError::BadRequest("运营管理平台暂时不可访问".to_string()))?;
+    let status = response.status();
+    let payload = response
+        .json::<OperationMarketEnvelope<PlatformAiEmployeeEntitlement>>()
+        .await
+        .map_err(|_| AppError::BadRequest("运营管理平台返回了无效的 AI 员工安装包".to_string()))?;
+    if !status.is_success() || payload.code != 0 {
+        return Err(AppError::BadRequest(if payload.message.trim().is_empty() {
+            "运营管理平台拒绝了 AI 员工同步请求".to_string()
+        } else {
+            payload.message
+        }));
+    }
+    payload
+        .data
+        .ok_or_else(|| AppError::BadRequest("运营管理平台未返回 AI 员工安装包".to_string()))
+}
+
+async fn sync_ai_employee_skill_packages(
+    state: &AppState,
+    operation_url: &str,
+    license: &str,
+    entitlement: &PlatformAiEmployeeEntitlement,
+) -> Result<(), AppError> {
+    for skill in &entitlement.skills {
+        let archive = fetch_owned_ai_employee_skill_archive(
+            operation_url,
+            license,
+            &entitlement.id,
+            &skill.id,
+        )
+        .await?;
+        crate::modules::agent_config::install_ai_employee_skill_package(state, skill, &archive)
+            .await?;
+    }
+    Ok(())
+}
+
+async fn fetch_owned_ai_employee_skill_archive(
+    operation_url: &str,
+    license: &str,
+    employee_id: &str,
+    skill_id: &str,
+) -> Result<Vec<u8>, AppError> {
+    let url = format!(
+        "{}/api/market/ai-employees/{}/skills/{}/archive",
+        operation_url.trim_end_matches('/'),
+        employee_id,
+        skill_id,
+    );
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|error| AppError::Server(std::io::Error::other(error)))?
+        .get(url)
+        .bearer_auth(license)
+        .send()
+        .await
+        .map_err(|_| AppError::BadRequest("运营管理平台 Skill 文件包暂时不可访问".to_string()))?;
+    if !response.status().is_success() {
+        return Err(AppError::BadRequest("运营管理平台拒绝了 AI 员工 Skill 文件包请求".to_string()));
+    }
+    let archive = response
+        .bytes()
+        .await
+        .map_err(|_| AppError::BadRequest("运营管理平台返回了无效的 AI 员工 Skill 文件包".to_string()))?;
+    if archive.is_empty() {
+        return Err(AppError::BadRequest("运营管理平台返回了空的 AI 员工 Skill 文件包".to_string()));
+    }
+    Ok(archive.to_vec())
+}
+
+pub(crate) async fn test_purchase_ai_employee(
+    Path(employee_id): Path<String>,
+) -> Result<Json<ApiResponse<MarketPurchaseReceipt>>, AppError> {
+    let settings = load_platform_license_settings()
+        .ok_or_else(|| AppError::BadRequest("请先配置运营管理平台地址和许可证".to_string()))?;
+    validate_license_token(&settings.license).map_err(AppError::BadRequest)?;
+    let mut url = reqwest::Url::parse(&settings.license_center_url)
+        .map_err(|_| AppError::BadRequest("运营管理平台地址无效".to_string()))?;
+    url.path_segments_mut()
+        .map_err(|_| AppError::BadRequest("运营管理平台地址无效".to_string()))?
+        .extend([
+            "api",
+            "market",
+            "ai-employees",
+            employee_id.trim(),
+            "test-purchase",
+        ]);
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|error| AppError::Server(std::io::Error::other(error)))?
+        .post(url)
+        .bearer_auth(&settings.license)
+        .send()
+        .await
+        .map_err(|_| AppError::BadRequest("运营管理平台暂时不可访问".to_string()))?;
+    let status = response.status();
+    let payload = response
+        .json::<OperationMarketEnvelope<MarketPurchaseReceipt>>()
+        .await
+        .map_err(|_| AppError::BadRequest("运营管理平台返回了无效的购买结果".to_string()))?;
+    if !status.is_success() || payload.code != 0 {
+        return Err(AppError::BadRequest(payload.message));
+    }
+    let receipt = payload
+        .data
+        .ok_or_else(|| AppError::BadRequest("运营管理平台未返回订单信息".to_string()))?;
+    Ok(Json(success_response("测试支付已完成", receipt)))
 }
 
 pub(crate) async fn activate_platform_license(
@@ -369,6 +733,7 @@ pub(crate) async fn update_notification_settings(
 pub(crate) async fn get_database_settings(
     axum::extract::State(_state): axum::extract::State<AppState>,
 ) -> Result<Json<ApiResponse<DatabaseSettingsResponse>>, AppError> {
+    require_local_deployment()?;
     let (settings, database_url) = match runtime_database_settings() {
         Some((settings, database_url)) => (settings, Some(database_url)),
         None => (
@@ -385,6 +750,7 @@ pub(crate) async fn update_database_settings(
     axum::extract::State(state): axum::extract::State<AppState>,
     Json(payload): Json<UpdateDatabaseSettingsRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<DatabaseSettingsResponse>>), AppError> {
+    require_local_deployment()?;
     if database_url_from_env().is_some() {
         return Err(AppError::BadRequest(
             "数据库连接由部署环境 DATABASE_URL 管理，不能从设置页覆盖".to_string(),
@@ -424,6 +790,7 @@ pub(crate) async fn update_database_settings(
 pub(crate) async fn test_database_connection(
     Json(payload): Json<UpdateDatabaseSettingsRequest>,
 ) -> Result<Json<ApiResponse<DatabaseConnectionTestResponse>>, AppError> {
+    require_local_deployment()?;
     if database_url_from_env().is_some() {
         return Err(AppError::BadRequest(
             "数据库连接由部署环境 DATABASE_URL 管理，不能从设置页测试或覆盖".to_string(),
@@ -493,6 +860,7 @@ async fn verify_database_url(database_url: &str) -> Result<(), sea_orm::DbErr> {
 pub(crate) async fn get_valkey_settings(
     axum::extract::State(_state): axum::extract::State<AppState>,
 ) -> Result<Json<ApiResponse<ValkeySettingsResponse>>, AppError> {
+    require_local_deployment()?;
     let settings = load_valkey_settings().unwrap_or_else(default_valkey_settings);
     let response = valkey_settings_response(settings).await;
     Ok(Json(success_response("Valkey settings loaded", response)))
@@ -502,6 +870,7 @@ pub(crate) async fn update_valkey_settings(
     axum::extract::State(state): axum::extract::State<AppState>,
     Json(payload): Json<UpdateValkeySettingsRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<ValkeySettingsResponse>>), AppError> {
+    require_local_deployment()?;
     let previous = load_valkey_settings();
     let password = payload
         .password
@@ -535,6 +904,7 @@ pub(crate) async fn update_valkey_settings(
 pub(crate) async fn test_valkey_connection(
     Json(payload): Json<UpdateValkeySettingsRequest>,
 ) -> Result<Json<ApiResponse<DatabaseConnectionTestResponse>>, AppError> {
+    require_local_deployment()?;
     let settings = ValkeySettings {
         enabled: payload.enabled,
         host: payload.host.trim().to_string(),
@@ -613,47 +983,6 @@ async fn verify_valkey_connection(settings: &ValkeySettings) -> Result<(), AppEr
     .map_err(|_| AppError::BadRequest("Valkey ping timed out".to_string()))?
     .map_err(|error| AppError::BadRequest(format!("Valkey ping failed: {error}")))?;
     Ok(())
-}
-
-pub(crate) async fn get_platform_agent_assistant_settings(
-    axum::extract::State(state): axum::extract::State<AppState>,
-) -> Result<Json<ApiResponse<PlatformAgentAssistantSettings>>, AppError> {
-    Ok(Json(success_response(
-        "platform agent assistant settings loaded",
-        load_platform_agent_assistant_settings(&state.db).await?,
-    )))
-}
-
-pub(crate) async fn update_platform_agent_assistant_settings(
-    axum::extract::State(state): axum::extract::State<AppState>,
-    Json(payload): Json<PlatformAgentAssistantSettingsRequest>,
-) -> Result<Json<ApiResponse<PlatformAgentAssistantSettings>>, AppError> {
-    let navigation_agent_id = payload
-        .navigation_agent_id
-        .map(|id| id.trim().to_string())
-        .filter(|id| !id.is_empty());
-    if let Some(agent_id) = &navigation_agent_id {
-        let agent = AgentDefinitionEntity::find_by_id(agent_id)
-            .one(&state.db)
-            .await?;
-        if !agent.is_some_and(|agent| agent.enabled) {
-            return Err(AppError::BadRequest("请选择一个已启用的机器人".to_string()));
-        }
-    }
-    if payload.schema_analysis_prompt.len() > 32 * 1024 {
-        return Err(AppError::BadRequest(
-            "Schema 分析提示词不能超过 32 KB".to_string(),
-        ));
-    }
-    let settings = PlatformAgentAssistantSettings {
-        navigation_agent_id,
-        schema_analysis_prompt: payload.schema_analysis_prompt.trim().to_string(),
-    };
-    save_platform_agent_assistant_settings(&state.db, &settings).await?;
-    Ok(Json(success_response(
-        "platform agent assistant settings saved",
-        settings,
-    )))
 }
 
 pub(crate) async fn get_identity_source_settings(
@@ -774,47 +1103,6 @@ fn default_valkey_settings() -> ValkeySettings {
         password: String::new(),
         cache_ttl_hours: 8,
     }
-}
-
-pub(crate) async fn load_platform_agent_assistant_settings(
-    db: &DatabaseConnection,
-) -> Result<PlatformAgentAssistantSettings, AppError> {
-    Ok(PlatformAgentAssistantSettingsEntity::find_by_id(1_i16)
-        .one(db)
-        .await?
-        .map(|settings| PlatformAgentAssistantSettings {
-            navigation_agent_id: settings.navigation_agent_id,
-            schema_analysis_prompt: settings.schema_analysis_prompt,
-        })
-        .unwrap_or_default())
-}
-
-async fn save_platform_agent_assistant_settings(
-    db: &DatabaseConnection,
-    settings: &PlatformAgentAssistantSettings,
-) -> Result<(), AppError> {
-    let now = chrono::Utc::now();
-    if let Some(existing) = PlatformAgentAssistantSettingsEntity::find_by_id(1_i16)
-        .one(db)
-        .await?
-    {
-        let mut active = existing.into_active_model();
-        active.navigation_agent_id = Set(settings.navigation_agent_id.clone());
-        active.schema_analysis_prompt = Set(settings.schema_analysis_prompt.clone());
-        active.updated_at = Set(now);
-        active.update(db).await?;
-    } else {
-        PlatformAgentAssistantSettingsActiveModel {
-            id: Set(1),
-            navigation_agent_id: Set(settings.navigation_agent_id.clone()),
-            schema_analysis_prompt: Set(settings.schema_analysis_prompt.clone()),
-            created_at: Set(now),
-            updated_at: Set(now),
-        }
-        .insert(db)
-        .await?;
-    }
-    Ok(())
 }
 
 pub(crate) fn default_identity_source_settings() -> IdentitySourceSettings {

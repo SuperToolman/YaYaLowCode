@@ -337,27 +337,27 @@ function IndexPanel({
   );
 }
 
-type DesignerAgentOption = {
-  id: string;
-  name: string;
-  enabled: boolean;
+type SystemAiStatus = {
+  available: boolean;
+  providerId?: string;
+  providerName?: string;
+  reason?: string;
 };
 
 function AgentPanel({ analysisStale, isAnalyzing, onAnalyze, value, onChange }: { analysisStale: boolean; isAnalyzing: boolean; onAnalyze: () => void; value: PageDesignerProps["agent"]; onChange: (value: PageDesignerProps["agent"]) => void }) {
-  const [agents, setAgents] = useState<DesignerAgentOption[]>([]);
+  const [systemAi, setSystemAi] = useState<SystemAiStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
-        const response = await fetch("/api/agents", { cache: "no-store" });
-        const payload = (await response.json()) as { code: number; message: string; data: DesignerAgentOption[] | null };
-        if (!response.ok || !payload.data) throw new Error(payload.message || "无法加载机器人");
-        if (!cancelled) setAgents(payload.data.filter((item) => item.enabled));
+        const response = await fetch("/api/agent/system-ai/status", { cache: "no-store" });
+        const payload = (await response.json()) as { code: number; message: string; data: SystemAiStatus | null };
+        if (!response.ok || !payload.data) throw new Error(payload.message || "无法加载系统 AI 状态");
+        if (!cancelled) setSystemAi(payload.data);
       } catch (reason) {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : "无法加载机器人");
+        if (!cancelled) setSystemAi({ available: false, reason: reason instanceof Error ? reason.message : "无法加载系统 AI 状态" });
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -365,7 +365,6 @@ function AgentPanel({ analysisStale, isAnalyzing, onAnalyze, value, onChange }: 
     return () => { cancelled = true; };
   }, []);
 
-  const selectedAgent = agents.find((item) => item.id === value.agentId);
   const analysisStatus = isAnalyzing ? "analyzing" : analysisStale && value.context.generated ? "stale" : value.context.status;
   const analysisStatusMeta = {
     idle: { label: "未分析", className: "bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]" },
@@ -379,23 +378,17 @@ function AgentPanel({ analysisStale, isAnalyzing, onAnalyze, value, onChange }: 
   return (
     <div className="space-y-4 p-1">
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-3">
-        <Switch isSelected={value.enabled} onChange={(enabled) => onChange({ ...value, enabled })}>
+        <Switch isSelected={value.enabled} isDisabled={loading || !systemAi?.available} onChange={(enabled) => onChange({ ...value, enabled })}>
           <Switch.Content className="w-full items-center justify-between">
-            <span><span className="block text-sm font-medium text-[var(--color-text-primary)]">开启 Agent</span><span className="mt-1 block text-xs leading-5 text-[var(--color-text-secondary)]">发布后，新增数据抽屉将使用全屏表单和 Agent 对话双栏。</span></span>
+            <span><span className="block text-sm font-medium text-[var(--color-text-primary)]">开启系统 AI 填表</span><span className="mt-1 block text-xs leading-5 text-[var(--color-text-secondary)]">发布后，新增数据抽屉将使用默认模型供应商提供 AI 填表。</span></span>
             <Switch.Control><Switch.Thumb /></Switch.Control>
           </Switch.Content>
         </Switch>
       </div>
+      {!loading ? <p className="text-xs leading-5 text-[var(--color-text-secondary)]">{systemAi?.available ? `当前默认供应商：${systemAi.providerName ?? "已配置"}` : (systemAi?.reason ?? "系统 AI 暂不可用")}</p> : null}
 
       {value.enabled ? (
         <>
-          <div>
-            <div className="mb-2 text-xs font-medium text-[var(--color-text-secondary)]">选择机器人</div>
-            <Select aria-label="选择机器人" fullWidth selectedKey={value.agentId || null} isDisabled={loading} onSelectionChange={(key) => onChange({ ...value, agentId: key === null ? "" : String(key) })}>
-              <Select.Trigger><Select.Value>{selectedAgent?.name ?? (loading ? "正在加载机器人…" : "请选择机器人")}</Select.Value><Select.Indicator /></Select.Trigger>
-              <Select.Popover><ListBox>{agents.map((agent) => <ListBox.Item key={agent.id} id={agent.id} textValue={agent.name}>{agent.name}</ListBox.Item>)}</ListBox></Select.Popover>
-            </Select>
-          </div>
           <div>
             <div className="mb-2 text-xs font-medium text-[var(--color-text-secondary)]">表单描述提示词</div>
             <TextArea fullWidth className="min-h-40 text-sm leading-6" placeholder="例如：你是采购申请助手，请结合当前表单结构帮助用户梳理申请信息、检查缺失内容并给出业务建议。" value={value.prompt} onChange={(event) => onChange({ ...value, prompt: event.currentTarget.value })} />
@@ -409,7 +402,7 @@ function AgentPanel({ analysisStale, isAnalyzing, onAnalyze, value, onChange }: 
               </div>
               <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-medium ${analysisStatusMeta.className}`}>{analysisStatusMeta.label}</span>
             </div>
-            <Button fullWidth className="mt-3" variant={analysisStatus === "ready" ? "secondary" : "primary"} isDisabled={loading || isAnalyzing || !value.agentId} onPress={onAnalyze}>
+            <Button fullWidth className="mt-3" variant={analysisStatus === "ready" ? "secondary" : "primary"} isDisabled={loading || !systemAi?.available || isAnalyzing} onPress={onAnalyze}>
               {isAnalyzing ? "正在分析 Schema…" : value.context.generated ? "重新分析 Schema" : "分析 Schema"}
             </Button>
             {value.context.error ? <p className="mt-2 text-xs leading-5 text-[var(--color-danger)]">{value.context.error}</p> : null}
@@ -438,8 +431,6 @@ function AgentPanel({ analysisStale, isAnalyzing, onAnalyze, value, onChange }: 
         </>
       ) : null}
 
-      {error ? <p className="rounded-lg bg-[var(--color-danger-soft)] p-3 text-xs text-[var(--color-danger)]">{error}</p> : null}
-      {value.enabled && !loading && agents.length === 0 ? <p className="rounded-lg bg-[var(--color-bg-subtle)] p-3 text-xs text-[var(--color-text-secondary)]">暂无已启用机器人，请先到设置页创建并启用机器人。</p> : null}
     </div>
   );
 }

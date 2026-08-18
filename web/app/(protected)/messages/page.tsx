@@ -141,7 +141,7 @@ export default function MessagesPage() {
     const connect = () => {
       const configuredUrl = process.env.NEXT_PUBLIC_BACKEND_WS_URL?.trim();
       const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-      const defaultPort = location.port === "3000" ? "8787" : location.port === "8801" ? "8802" : location.port;
+      const defaultPort = location.port === "8787" ? "8788" : location.port === "8801" ? "8802" : location.port;
       const url = configuredUrl
         ? (location.protocol === "https:" && configuredUrl.startsWith("ws://")
           ? `wss://${configuredUrl.slice("ws://".length)}`

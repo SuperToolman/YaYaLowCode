@@ -30,10 +30,7 @@ type FormSettingsItem = { id: string; name: string };
 
 const SYSTEM_PAGE_PREFIX = "system:";
 const systemPageOptions = [
-  { slug: "todo", name: "待我处理" },
-  { slug: "processed", name: "我处理的" },
-  { slug: "created", name: "我创建的" },
-  { slug: "copied", name: "抄送我的" },
+  { slug: "tasks", name: "任务" },
 ];
 
 const navigationItems: Array<{
@@ -81,7 +78,7 @@ export default function AppSettingsPage({
   const [appName, setAppName] = useState("");
   const [businessContext, setBusinessContext] = useState({ businessOverview: "", terminology: "", processDescription: "", analysisGuidance: "" });
   const [forms, setForms] = useState<FormSettingsItem[]>([]);
-  const [defaultEntryKey, setDefaultEntryKey] = useState(`${SYSTEM_PAGE_PREFIX}todo`);
+  const [defaultEntryKey, setDefaultEntryKey] = useState(`${SYSTEM_PAGE_PREFIX}tasks`);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -121,7 +118,7 @@ export default function AppSettingsPage({
         setDefaultEntryKey(
           defaultEntry?.itemType === "system"
             ? `${SYSTEM_PAGE_PREFIX}${defaultEntry.pathSlug}`
-            : defaultEntry?.targetFormUuid ?? `${SYSTEM_PAGE_PREFIX}todo`,
+            : defaultEntry?.targetFormUuid ?? `${SYSTEM_PAGE_PREFIX}tasks`,
         );
       })
       .catch(() => undefined);
@@ -362,9 +359,9 @@ function SettingsContent({
               <SettingsPanel title="默认展示" description="控制进入应用后的默认页面与导航行为。">
                 <div className="space-y-2">
                   <p className="text-sm font-medium text-[var(--color-text-primary)]">默认打开的页面</p>
-                  <p className="text-xs text-[var(--color-text-secondary)]">成员从应用入口进入时，将打开所选系统页面或表单。默认打开待我处理。</p>
-                  <Select aria-label="默认打开的页面" className="w-full max-w-md" selectedKey={defaultEntryKey} onSelectionChange={(key: Key | null) => onDefaultEntryChange(key === null ? `${SYSTEM_PAGE_PREFIX}todo` : String(key))}>
-                    <Select.Trigger><Select.Value>{systemPageOptions.find((page) => `${SYSTEM_PAGE_PREFIX}${page.slug}` === defaultEntryKey)?.name ?? forms.find((form) => form.id === defaultEntryKey)?.name ?? "待我处理"}</Select.Value><Select.Indicator /></Select.Trigger>
+                  <p className="text-xs text-[var(--color-text-secondary)]">成员从应用入口进入时，将打开所选系统页面或表单。默认打开任务。</p>
+                  <Select aria-label="默认打开的页面" className="w-full max-w-md" selectedKey={defaultEntryKey} onSelectionChange={(key: Key | null) => onDefaultEntryChange(key === null ? `${SYSTEM_PAGE_PREFIX}tasks` : String(key))}>
+                    <Select.Trigger><Select.Value>{systemPageOptions.find((page) => `${SYSTEM_PAGE_PREFIX}${page.slug}` === defaultEntryKey)?.name ?? forms.find((form) => form.id === defaultEntryKey)?.name ?? "任务"}</Select.Value><Select.Indicator /></Select.Trigger>
                     <Select.Popover><ListBox>
                       {systemPageOptions.map((page) => <ListBox.Item key={page.slug} id={`${SYSTEM_PAGE_PREFIX}${page.slug}`} textValue={page.name}>{page.name}</ListBox.Item>)}
                       {forms.map((form) => <ListBox.Item key={form.id} id={form.id} textValue={form.name}>{form.name}</ListBox.Item>)}

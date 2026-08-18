@@ -64,5 +64,5 @@ COPY deploy/supervisord.single.conf /etc/supervisor/conf.d/yaya.conf
 COPY deploy/entrypoint-single.sh /usr/local/bin/yaya-entrypoint
 RUN chmod 755 /usr/local/bin/yaya-entrypoint
 WORKDIR /var/lib/yaya
-EXPOSE 3000 8787
+EXPOSE 8787 8788
 ENTRYPOINT ["/usr/local/bin/yaya-entrypoint"]

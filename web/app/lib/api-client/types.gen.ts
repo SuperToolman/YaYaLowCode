@@ -15,49 +15,6 @@ export type ActivatePlatformLicenseRequest = {
     licenseCenterUrl: string;
 };
 
-export type AgentConfigProfile = {
-    allowCreateApps?: boolean;
-    allowCreateAutomations?: boolean;
-    allowCreateForms?: boolean;
-    approvalMode?: string;
-    chatModel: string;
-    contextCompressionPrompt?: string;
-    contextCompressionProviderId?: string | null;
-    contextDiscardTurns?: number;
-    contextKeepRecentRatio?: number;
-    contextMaxTurns?: number;
-    contextOverflowStrategy?: string;
-    embeddingModel: string;
-    id: string;
-    imageCaptionModel?: string;
-    knowledgeBaseIds?: Array<string>;
-    maxContextTokens?: number;
-    maxRetries?: number;
-    maxSteps: number;
-    name: string;
-    personaId?: string;
-    pluginIds?: Array<string>;
-    providerId: string;
-    skillIds?: Array<string>;
-    temperature: number;
-    webSearchEnabled?: boolean;
-};
-
-export type AgentDefinition = {
-    description?: string;
-    enabled: boolean;
-    id: string;
-    isDefault: boolean;
-    knowledgeBaseIds?: Array<string>;
-    name: string;
-    pluginIds?: Array<string>;
-    profileId: string;
-    scopeRefId?: string | null;
-    scopeType: string;
-    skillIds?: Array<string>;
-    systemPrompt: string;
-};
-
 export type AgentKnowledgeBaseDefinition = {
     content?: string;
     description?: string;
@@ -77,16 +34,6 @@ export type AgentPageContext = {
     route?: string | null;
 };
 
-export type AgentPersonaDefinition = {
-    description: string;
-    id: string;
-    knowledgeBaseIds?: Array<string>;
-    name: string;
-    pluginIds?: Array<string>;
-    skillIds?: Array<string>;
-    systemPrompt: string;
-};
-
 export type AgentPluginDefinition = {
     description?: string;
     enabled: boolean;
@@ -98,42 +45,29 @@ export type AgentPluginDefinition = {
     version: string;
 };
 
-export type AgentRequest = {
+export type AiEmployeeConfigurationResponse = {
+    agentId?: string | null;
+    chatModel?: string | null;
+    employeeId: string;
+    enabled: boolean;
+    providerId?: string | null;
+    title: string;
+};
+
+export type AiEmployeeMarketItem = {
+    billingCycle: string;
+    category: string;
     description: string;
-    enabled: boolean;
-    isDefault: boolean;
-    knowledgeBaseIds?: Array<string>;
-    name: string;
-    pluginIds?: Array<string>;
-    profileId: string;
-    scopeRefId?: string | null;
-    scopeType: string;
-    skillIds?: Array<string>;
-    systemPrompt: string;
-};
-
-export type AgentSkillDefinition = {
-    allowedTools?: Array<string>;
-    description?: string;
-    enabled: boolean;
+    expiresAt?: number | null;
     id: string;
-    instructions?: string;
-    isSystem?: boolean;
-    name: string;
-    packageName?: string;
-    packagePath?: string;
-    requiresConfirmation: boolean;
-    source?: string;
-    version?: string;
-};
-
-export type ApiAgentMessage = {
-    content: string;
-    createdAt: string;
-    id: string;
-    metadata: unknown;
-    role: string;
-    runId?: string | null;
+    installed: boolean;
+    installedPackageVersion?: string | null;
+    installedVersion?: string | null;
+    latestPackageVersion: string;
+    owned: boolean;
+    priceCents: number;
+    title: string;
+    version: string;
 };
 
 export type ApiAgentSession = {
@@ -349,59 +283,6 @@ export type ApiResponseAccessTokenResponse = {
     time: string;
 };
 
-export type ApiResponseAgentConfigProfile = {
-    code: number;
-    data?: {
-        allowCreateApps?: boolean;
-        allowCreateAutomations?: boolean;
-        allowCreateForms?: boolean;
-        approvalMode?: string;
-        chatModel: string;
-        contextCompressionPrompt?: string;
-        contextCompressionProviderId?: string | null;
-        contextDiscardTurns?: number;
-        contextKeepRecentRatio?: number;
-        contextMaxTurns?: number;
-        contextOverflowStrategy?: string;
-        embeddingModel: string;
-        id: string;
-        imageCaptionModel?: string;
-        knowledgeBaseIds?: Array<string>;
-        maxContextTokens?: number;
-        maxRetries?: number;
-        maxSteps: number;
-        name: string;
-        personaId?: string;
-        pluginIds?: Array<string>;
-        providerId: string;
-        skillIds?: Array<string>;
-        temperature: number;
-        webSearchEnabled?: boolean;
-    };
-    message: string;
-    time: string;
-};
-
-export type ApiResponseAgentDefinition = {
-    code: number;
-    data?: {
-        description?: string;
-        enabled: boolean;
-        id: string;
-        isDefault: boolean;
-        knowledgeBaseIds?: Array<string>;
-        name: string;
-        pluginIds?: Array<string>;
-        profileId: string;
-        scopeRefId?: string | null;
-        scopeType: string;
-        skillIds?: Array<string>;
-        systemPrompt: string;
-    };
-    message: string;
-    time: string;
-};
-
 export type ApiResponseAgentKnowledgeBaseDefinition = {
     code: number;
     data?: {
@@ -412,21 +293,6 @@ export type ApiResponseAgentKnowledgeBaseDefinition = {
         name: string;
         retrievalMode: string;
         sourceIds?: Array<string>;
-    };
-    message: string;
-    time: string;
-};
-
-export type ApiResponseAgentPersonaDefinition = {
-    code: number;
-    data?: {
-        description: string;
-        id: string;
-        knowledgeBaseIds?: Array<string>;
-        name: string;
-        pluginIds?: Array<string>;
-        skillIds?: Array<string>;
-        systemPrompt: string;
     };
     message: string;
     time: string;
@@ -448,21 +314,15 @@ export type ApiResponseAgentPluginDefinition = {
     time: string;
 };
 
-export type ApiResponseAgentSkillDefinition = {
+export type ApiResponseAiEmployeeConfigurationResponse = {
     code: number;
     data?: {
-        allowedTools?: Array<string>;
-        description?: string;
+        agentId?: string | null;
+        chatModel?: string | null;
+        employeeId: string;
         enabled: boolean;
-        id: string;
-        instructions?: string;
-        isSystem?: boolean;
-        name: string;
-        packageName?: string;
-        packagePath?: string;
-        requiresConfirmation: boolean;
-        source?: string;
-        version?: string;
+        providerId?: string | null;
+        title: string;
     };
     message: string;
     time: string;
@@ -885,6 +745,18 @@ export type ApiResponseInitializeLocalCredentialsResponse = {
     time: string;
 };
 
+export type ApiResponseMarketPurchaseReceipt = {
+    code: number;
+    data?: {
+        licenseId: string;
+        orderId: string;
+        orderNo: string;
+        status: string;
+    };
+    message: string;
+    time: string;
+};
+
 export type ApiResponseOrganizationUnitResponse = {
     code: number;
     data?: {
@@ -901,20 +773,17 @@ export type ApiResponseOrganizationUnitResponse = {
     time: string;
 };
 
-export type ApiResponsePlatformAgentAssistantSettings = {
-    code: number;
-    data?: {
-        navigationAgentId?: string | null;
-        schemaAnalysisPrompt?: string;
-    };
-    message: string;
-    time: string;
-};
-
 export type ApiResponsePlatformLicenseStatus = {
     code: number;
     data?: {
+        aiEmployeeStatuses: {
+            [key: string]: string;
+        };
+        aiEmployees: Array<PlatformAiEmployeeEntitlement>;
+        deploymentType: string;
         expiresAt?: number | null;
+        latestIssuedAt?: number | null;
+        latestLicenseId?: string | null;
         licenseCenterUrl?: string | null;
         licenseId?: string | null;
         moduleExpiresAt: {
@@ -930,6 +799,7 @@ export type ApiResponsePlatformLicenseStatus = {
         platformStatus: string;
         reason?: string | null;
         subject?: string | null;
+        updateAvailable: boolean;
         valid: boolean;
     };
     message: string;
@@ -945,6 +815,7 @@ export type ApiResponseProviderResponse = {
         defaultChatModel: string;
         enabled: boolean;
         id: string;
+        isDefault: boolean;
         kind: string;
         models: Array<string>;
         name: string;
@@ -987,13 +858,13 @@ export type ApiResponseRoleResponse = {
     time: string;
 };
 
-export type ApiResponseSkillFileResponse = {
+export type ApiResponseSystemAiStatusResponse = {
     code: number;
     data?: {
-        content: string;
-        id: string;
-        packageName: string;
-        path: string;
+        available: boolean;
+        providerId?: string | null;
+        providerName?: string | null;
+        reason?: string | null;
     };
     message: string;
     time: string;
@@ -1075,59 +946,6 @@ export type ApiResponseValue = {
     time: string;
 };
 
-export type ApiResponseVecAgentConfigProfile = {
-    code: number;
-    data?: Array<{
-        allowCreateApps?: boolean;
-        allowCreateAutomations?: boolean;
-        allowCreateForms?: boolean;
-        approvalMode?: string;
-        chatModel: string;
-        contextCompressionPrompt?: string;
-        contextCompressionProviderId?: string | null;
-        contextDiscardTurns?: number;
-        contextKeepRecentRatio?: number;
-        contextMaxTurns?: number;
-        contextOverflowStrategy?: string;
-        embeddingModel: string;
-        id: string;
-        imageCaptionModel?: string;
-        knowledgeBaseIds?: Array<string>;
-        maxContextTokens?: number;
-        maxRetries?: number;
-        maxSteps: number;
-        name: string;
-        personaId?: string;
-        pluginIds?: Array<string>;
-        providerId: string;
-        skillIds?: Array<string>;
-        temperature: number;
-        webSearchEnabled?: boolean;
-    }>;
-    message: string;
-    time: string;
-};
-
-export type ApiResponseVecAgentDefinition = {
-    code: number;
-    data?: Array<{
-        description?: string;
-        enabled: boolean;
-        id: string;
-        isDefault: boolean;
-        knowledgeBaseIds?: Array<string>;
-        name: string;
-        pluginIds?: Array<string>;
-        profileId: string;
-        scopeRefId?: string | null;
-        scopeType: string;
-        skillIds?: Array<string>;
-        systemPrompt: string;
-    }>;
-    message: string;
-    time: string;
-};
-
 export type ApiResponseVecAgentKnowledgeBaseDefinition = {
     code: number;
     data?: Array<{
@@ -1159,35 +977,36 @@ export type ApiResponseVecAgentPluginDefinition = {
     time: string;
 };
 
-export type ApiResponseVecAgentSkillDefinition = {
+export type ApiResponseVecAiEmployeeConfigurationResponse = {
     code: number;
     data?: Array<{
-        allowedTools?: Array<string>;
-        description?: string;
+        agentId?: string | null;
+        chatModel?: string | null;
+        employeeId: string;
         enabled: boolean;
-        id: string;
-        instructions?: string;
-        isSystem?: boolean;
-        name: string;
-        packageName?: string;
-        packagePath?: string;
-        requiresConfirmation: boolean;
-        source?: string;
-        version?: string;
+        providerId?: string | null;
+        title: string;
     }>;
     message: string;
     time: string;
 };
 
-export type ApiResponseVecApiAgentMessage = {
+export type ApiResponseVecAiEmployeeMarketItem = {
     code: number;
     data?: Array<{
-        content: string;
-        createdAt: string;
+        billingCycle: string;
+        category: string;
+        description: string;
+        expiresAt?: number | null;
         id: string;
-        metadata: unknown;
-        role: string;
-        runId?: string | null;
+        installed: boolean;
+        installedPackageVersion?: string | null;
+        installedVersion?: string | null;
+        latestPackageVersion: string;
+        owned: boolean;
+        priceCents: number;
+        title: string;
+        version: string;
     }>;
     message: string;
     time: string;
@@ -1399,19 +1218,6 @@ export type ApiResponseVecOrganizationUnitResponse = {
     time: string;
 };
 
-export type ApiResponseVecPlatformToolResponse = {
-    code: number;
-    data?: Array<{
-        category: string;
-        description: string;
-        id: string;
-        name: string;
-        riskLevel: string;
-    }>;
-    message: string;
-    time: string;
-};
-
 export type ApiResponseVecProviderResponse = {
     code: number;
     data?: Array<{
@@ -1421,6 +1227,7 @@ export type ApiResponseVecProviderResponse = {
         defaultChatModel: string;
         enabled: boolean;
         id: string;
+        isDefault: boolean;
         kind: string;
         models: Array<string>;
         name: string;
@@ -1610,9 +1417,7 @@ export type CommunicationUserResponse = {
 };
 
 export type CreateAgentSessionRequest = {
-    agentId?: string | null;
     context?: null | AgentPageContext;
-    source?: string | null;
 };
 
 export type CreateAppRequest = {
@@ -1826,6 +1631,13 @@ export type MarkConversationReadRequest = {
     sequence?: number | null;
 };
 
+export type MarketPurchaseReceipt = {
+    licenseId: string;
+    orderId: string;
+    orderNo: string;
+    status: string;
+};
+
 export type MoveFormNavigationRequest = {
     parent_group_id?: string | null;
 };
@@ -1849,27 +1661,46 @@ export type OrganizationUnitResponse = {
     status: string;
 };
 
-export type PersonaRequest = {
-    description?: string;
-    knowledgeBaseIds?: Array<string>;
-    name: string;
-    pluginIds?: Array<string>;
-    skillIds?: Array<string>;
+export type PlatformAiEmployeeEntitlement = {
+    expiresAt: number;
+    id: string;
+    persona?: null | PlatformAiEmployeePersona;
+    skills?: Array<PlatformAiEmployeeSkill>;
+    systemPrompt?: string;
+    templateVersion?: string;
+    title: string;
+};
+
+export type PlatformAiEmployeePersona = {
+    description: string;
+    id: string;
     systemPrompt: string;
+    title: string;
 };
 
-export type PlatformAgentAssistantSettings = {
-    navigationAgentId?: string | null;
-    schemaAnalysisPrompt?: string;
-};
-
-export type PlatformAgentAssistantSettingsRequest = {
-    navigationAgentId?: string | null;
-    schemaAnalysisPrompt?: string;
+export type PlatformAiEmployeeSkill = {
+    allowedTools?: Array<string>;
+    description: string;
+    id: string;
+    instructions: string;
+    isSystem?: boolean;
+    packageName?: string;
+    packagePath?: string;
+    requiresConfirmation?: boolean;
+    source?: string;
+    title: string;
+    version?: string;
 };
 
 export type PlatformLicenseStatus = {
+    aiEmployeeStatuses: {
+        [key: string]: string;
+    };
+    aiEmployees: Array<PlatformAiEmployeeEntitlement>;
+    deploymentType: string;
     expiresAt?: number | null;
+    latestIssuedAt?: number | null;
+    latestLicenseId?: string | null;
     licenseCenterUrl?: string | null;
     licenseId?: string | null;
     moduleExpiresAt: {
@@ -1885,15 +1716,8 @@ export type PlatformLicenseStatus = {
     platformStatus: string;
     reason?: string | null;
     subject?: string | null;
+    updateAvailable: boolean;
     valid: boolean;
-};
-
-export type PlatformToolResponse = {
-    category: string;
-    description: string;
-    id: string;
-    name: string;
-    riskLevel: string;
 };
 
 export type PluginRequest = {
@@ -1906,38 +1730,12 @@ export type PluginRequest = {
     version: string;
 };
 
-export type ProfileRequest = {
-    allowCreateApps?: boolean;
-    allowCreateAutomations?: boolean;
-    allowCreateForms?: boolean;
-    approvalMode?: string;
-    chatModel: string;
-    contextCompressionPrompt: string;
-    contextCompressionProviderId?: string | null;
-    contextDiscardTurns: number;
-    contextKeepRecentRatio: number;
-    contextMaxTurns: number;
-    contextOverflowStrategy: string;
-    embeddingModel: string;
-    imageCaptionModel: string;
-    knowledgeBaseIds?: Array<string>;
-    maxContextTokens: number;
-    maxRetries: number;
-    maxSteps: number;
-    name: string;
-    personaId: string;
-    pluginIds?: Array<string>;
-    providerId: string;
-    skillIds?: Array<string>;
-    temperature: number;
-    webSearchEnabled: boolean;
-};
-
 export type ProviderRequest = {
     apiBaseUrl: string;
     apiKey?: string | null;
     defaultChatModel?: string;
     enabled: boolean;
+    isDefault?: boolean;
     kind: string;
     models?: Array<string>;
     name: string;
@@ -1951,6 +1749,7 @@ export type ProviderResponse = {
     defaultChatModel: string;
     enabled: boolean;
     id: string;
+    isDefault: boolean;
     kind: string;
     models: Array<string>;
     name: string;
@@ -2053,24 +1852,11 @@ export type SetDefaultNavigationEntryRequest = {
     system_page_slug?: string | null;
 };
 
-export type SkillFileRequest = {
-    content: string;
-};
-
-export type SkillFileResponse = {
-    content: string;
-    id: string;
-    packageName: string;
-    path: string;
-};
-
-export type SkillRequest = {
-    allowedTools: Array<string>;
-    description: string;
-    enabled: boolean;
-    instructions?: string;
-    name: string;
-    requiresConfirmation: boolean;
+export type SystemAiStatusResponse = {
+    available: boolean;
+    providerId?: string | null;
+    providerName?: string | null;
+    reason?: string | null;
 };
 
 export type TransferGroupOwnerRequest = {
@@ -2080,6 +1866,11 @@ export type TransferGroupOwnerRequest = {
 export type UpdateAgentSessionRequest = {
     isPinned?: boolean | null;
     title?: string | null;
+};
+
+export type UpdateAiEmployeeConfigurationRequest = {
+    chatModel: string;
+    providerId: string;
 };
 
 export type UpdateAppRequest = {
@@ -2235,63 +2026,6 @@ export type WorkflowTaskActionRequest = {
     comment?: string | null;
 };
 
-export type ListConfigProfilesData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/agent/config-profiles';
-};
-
-export type ListConfigProfilesResponses = {
-    200: ApiResponseVecAgentConfigProfile;
-};
-
-export type ListConfigProfilesResponse = ListConfigProfilesResponses[keyof ListConfigProfilesResponses];
-
-export type CreateConfigProfileData = {
-    body: ProfileRequest;
-    path?: never;
-    query?: never;
-    url: '/api/agent/config-profiles';
-};
-
-export type CreateConfigProfileResponses = {
-    200: ApiResponseAgentConfigProfile;
-};
-
-export type CreateConfigProfileResponse = CreateConfigProfileResponses[keyof CreateConfigProfileResponses];
-
-export type DeleteConfigProfileData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/agent/config-profiles/{id}';
-};
-
-export type DeleteConfigProfileResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
-};
-
-export type UpdateConfigProfileData = {
-    body: ProfileRequest;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/agent/config-profiles/{id}';
-};
-
-export type UpdateConfigProfileResponses = {
-    200: ApiResponseAgentConfigProfile;
-};
-
-export type UpdateConfigProfileResponse = UpdateConfigProfileResponses[keyof UpdateConfigProfileResponses];
-
 export type ListKnowledgeBasesData = {
     body?: never;
     path?: never;
@@ -2348,77 +2082,6 @@ export type UpdateKnowledgeBaseResponses = {
 };
 
 export type UpdateKnowledgeBaseResponse = UpdateKnowledgeBaseResponses[keyof UpdateKnowledgeBaseResponses];
-
-export type ListPersonasData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/agent/personas';
-};
-
-export type ListPersonasResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
-};
-
-export type CreatePersonaData = {
-    body: PersonaRequest;
-    path?: never;
-    query?: never;
-    url: '/api/agent/personas';
-};
-
-export type CreatePersonaResponses = {
-    200: ApiResponseAgentPersonaDefinition;
-};
-
-export type CreatePersonaResponse = CreatePersonaResponses[keyof CreatePersonaResponses];
-
-export type DeletePersonaData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/agent/personas/{id}';
-};
-
-export type DeletePersonaResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
-};
-
-export type UpdatePersonaData = {
-    body: PersonaRequest;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/agent/personas/{id}';
-};
-
-export type UpdatePersonaResponses = {
-    200: ApiResponseAgentPersonaDefinition;
-};
-
-export type UpdatePersonaResponse = UpdatePersonaResponses[keyof UpdatePersonaResponses];
-
-export type ListPlatformToolsData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/agent/platform-tools';
-};
-
-export type ListPlatformToolsResponses = {
-    200: ApiResponseVecPlatformToolResponse;
-};
-
-export type ListPlatformToolsResponse = ListPlatformToolsResponses[keyof ListPlatformToolsResponses];
 
 export type ListPluginsData = {
     body?: never;
@@ -2591,180 +2254,18 @@ export type UpdateAgentSessionResponses = {
 
 export type UpdateAgentSessionResponse = UpdateAgentSessionResponses[keyof UpdateAgentSessionResponses];
 
-export type ListAgentMessagesData = {
-    body?: never;
-    path: {
-        sessionId: string;
-    };
-    query?: never;
-    url: '/api/agent/sessions/{sessionId}/messages';
-};
-
-export type ListAgentMessagesResponses = {
-    200: ApiResponseVecApiAgentMessage;
-};
-
-export type ListAgentMessagesResponse = ListAgentMessagesResponses[keyof ListAgentMessagesResponses];
-
-export type SendAgentMessageData = {
-    body?: never;
-    path: {
-        sessionId: string;
-    };
-    query?: never;
-    url: '/api/agent/sessions/{sessionId}/messages';
-};
-
-export type SendAgentMessageResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
-};
-
-export type ListSkillsData = {
+export type GetSystemAiStatusData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/api/agent/skills';
+    url: '/api/agent/system-ai/status';
 };
 
-export type ListSkillsResponses = {
-    200: ApiResponseVecAgentSkillDefinition;
+export type GetSystemAiStatusResponses = {
+    200: ApiResponseSystemAiStatusResponse;
 };
 
-export type ListSkillsResponse = ListSkillsResponses[keyof ListSkillsResponses];
-
-export type CreateSkillData = {
-    body: SkillRequest;
-    path?: never;
-    query?: never;
-    url: '/api/agent/skills';
-};
-
-export type CreateSkillResponses = {
-    200: ApiResponseAgentSkillDefinition;
-};
-
-export type CreateSkillResponse = CreateSkillResponses[keyof CreateSkillResponses];
-
-export type DeleteSkillData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/agent/skills/{id}';
-};
-
-export type DeleteSkillResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
-};
-
-export type UpdateSkillData = {
-    body: SkillRequest;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/agent/skills/{id}';
-};
-
-export type UpdateSkillResponses = {
-    200: ApiResponseAgentSkillDefinition;
-};
-
-export type UpdateSkillResponse = UpdateSkillResponses[keyof UpdateSkillResponses];
-
-export type GetSkillFileData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/agent/skills/{id}/file';
-};
-
-export type GetSkillFileResponses = {
-    200: ApiResponseSkillFileResponse;
-};
-
-export type GetSkillFileResponse = GetSkillFileResponses[keyof GetSkillFileResponses];
-
-export type UpdateSkillFileData = {
-    body: SkillFileRequest;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/agent/skills/{id}/file';
-};
-
-export type UpdateSkillFileResponses = {
-    200: ApiResponseSkillFileResponse;
-};
-
-export type UpdateSkillFileResponse = UpdateSkillFileResponses[keyof UpdateSkillFileResponses];
-
-export type ListAgentsData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/agents';
-};
-
-export type ListAgentsResponses = {
-    200: ApiResponseVecAgentDefinition;
-};
-
-export type ListAgentsResponse = ListAgentsResponses[keyof ListAgentsResponses];
-
-export type CreateAgentData = {
-    body: AgentRequest;
-    path?: never;
-    query?: never;
-    url: '/api/agents';
-};
-
-export type CreateAgentResponses = {
-    200: ApiResponseAgentDefinition;
-};
-
-export type CreateAgentResponse = CreateAgentResponses[keyof CreateAgentResponses];
-
-export type DeleteAgentData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/agents/{id}';
-};
-
-export type DeleteAgentResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
-};
-
-export type UpdateAgentData = {
-    body: AgentRequest;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/agents/{id}';
-};
-
-export type UpdateAgentResponses = {
-    200: ApiResponseAgentDefinition;
-};
-
-export type UpdateAgentResponse = UpdateAgentResponses[keyof UpdateAgentResponses];
+export type GetSystemAiStatusResponse = GetSystemAiStatusResponses[keyof GetSystemAiStatusResponses];
 
 export type ListAppsData = {
     body?: never;
@@ -4080,31 +3581,77 @@ export type RestoreRecycleBinEntryResponses = {
 
 export type RestoreRecycleBinEntryResponse = RestoreRecycleBinEntryResponses[keyof RestoreRecycleBinEntryResponses];
 
-export type GetPlatformAgentAssistantSettingsData = {
+export type GetAiEmployeeMarketData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/api/settings/agent-assistant';
+    url: '/api/settings/ai-employee-market';
 };
 
-export type GetPlatformAgentAssistantSettingsResponses = {
-    200: ApiResponsePlatformAgentAssistantSettings;
+export type GetAiEmployeeMarketResponses = {
+    200: ApiResponseVecAiEmployeeMarketItem;
 };
 
-export type GetPlatformAgentAssistantSettingsResponse = GetPlatformAgentAssistantSettingsResponses[keyof GetPlatformAgentAssistantSettingsResponses];
+export type GetAiEmployeeMarketResponse = GetAiEmployeeMarketResponses[keyof GetAiEmployeeMarketResponses];
 
-export type UpdatePlatformAgentAssistantSettingsData = {
-    body: PlatformAgentAssistantSettingsRequest;
+export type InstallAiEmployeeData = {
+    body?: never;
+    path: {
+        employee_id: string;
+    };
+    query?: never;
+    url: '/api/settings/ai-employee-market/{employee_id}/install';
+};
+
+export type InstallAiEmployeeResponses = {
+    /**
+     * Successful response
+     */
+    200: unknown;
+};
+
+export type TestPurchaseAiEmployeeData = {
+    body?: never;
+    path: {
+        employee_id: string;
+    };
+    query?: never;
+    url: '/api/settings/ai-employee-market/{employee_id}/test-purchase';
+};
+
+export type TestPurchaseAiEmployeeResponses = {
+    200: ApiResponseMarketPurchaseReceipt;
+};
+
+export type TestPurchaseAiEmployeeResponse = TestPurchaseAiEmployeeResponses[keyof TestPurchaseAiEmployeeResponses];
+
+export type ListAiEmployeeConfigurationsData = {
+    body?: never;
     path?: never;
     query?: never;
-    url: '/api/settings/agent-assistant';
+    url: '/api/settings/ai-employees/configurations';
 };
 
-export type UpdatePlatformAgentAssistantSettingsResponses = {
-    200: ApiResponsePlatformAgentAssistantSettings;
+export type ListAiEmployeeConfigurationsResponses = {
+    200: ApiResponseVecAiEmployeeConfigurationResponse;
 };
 
-export type UpdatePlatformAgentAssistantSettingsResponse = UpdatePlatformAgentAssistantSettingsResponses[keyof UpdatePlatformAgentAssistantSettingsResponses];
+export type ListAiEmployeeConfigurationsResponse = ListAiEmployeeConfigurationsResponses[keyof ListAiEmployeeConfigurationsResponses];
+
+export type UpdateAiEmployeeConfigurationData = {
+    body: UpdateAiEmployeeConfigurationRequest;
+    path: {
+        employee_id: string;
+    };
+    query?: never;
+    url: '/api/settings/ai-employees/configurations/{employee_id}';
+};
+
+export type UpdateAiEmployeeConfigurationResponses = {
+    200: ApiResponseAiEmployeeConfigurationResponse;
+};
+
+export type UpdateAiEmployeeConfigurationResponse = UpdateAiEmployeeConfigurationResponses[keyof UpdateAiEmployeeConfigurationResponses];
 
 export type GetCommunicationModuleSettingsData = {
     body?: never;
@@ -4302,6 +3849,19 @@ export type ActivatePlatformLicenseResponses = {
 
 export type ActivatePlatformLicenseResponse = ActivatePlatformLicenseResponses[keyof ActivatePlatformLicenseResponses];
 
+export type ApplyLatestPlatformLicenseData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/license/latest';
+};
+
+export type ApplyLatestPlatformLicenseResponses = {
+    200: ApiResponsePlatformLicenseStatus;
+};
+
+export type ApplyLatestPlatformLicenseResponse = ApplyLatestPlatformLicenseResponses[keyof ApplyLatestPlatformLicenseResponses];
+
 export type GetRolePermissionsData = {
     body?: never;
     path: {
@@ -4429,7 +3989,7 @@ export type ListWorkflowTasksData = {
     body?: never;
     path?: never;
     query: {
-        appId: string;
+        appId?: string;
         scope: string;
     };
     url: '/api/workflow/tasks';

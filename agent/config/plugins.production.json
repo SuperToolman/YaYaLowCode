@@ -1,0 +1,22 @@
+{
+  "plugins": {
+    "storage-json": { "enabled": false },
+    "storage-postgres": { "enabled": true },
+    "sessions": { "enabled": true },
+    "policy": { "enabled": true },
+    "platform-client": { "enabled": true },
+    "platform-tools": { "enabled": true },
+    "memory": { "enabled": true },
+    "audit": { "enabled": true },
+    "sandbox": { "enabled": true },
+    "scheduler": { "enabled": false },
+    "scheduler-pgboss": { "enabled": true },
+    "skills": { "enabled": true, "config": { "skills": [] } },
+    "ui-adapter": { "enabled": true },
+    "model-openai-compatible": { "enabled": false },
+    "workflow-engine": { "enabled": false },
+    "workflow-langgraph-client": { "enabled": true },
+    "http-gateway": { "enabled": true }
+  },
+  "extensions": []
+}

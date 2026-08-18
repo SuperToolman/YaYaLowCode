@@ -105,14 +105,14 @@ try {
     'rm -f "$archive"',
     'BUILDKIT_PROGRESS=plain CONTAINER_NAME="$container_name" docker compose -p "$compose_project" --project-directory "$install_dir/deploy" -f "$install_dir/deploy/compose.yaml" --env-file "$install_dir/deploy/.env" up -d --build --remove-orphans',
     'attempt=0',
-    'until docker exec "$container_name" curl -fsS http://127.0.0.1:8787/healthz >/dev/null && docker exec "$container_name" curl -fsS -X POST http://127.0.0.1:3000/api/auth/login -H content-type:application/json --data-binary ''{"username":"yaya","password":"yaya"}'' | grep -q "\"code\":0"; do attempt=$((attempt + 1)); [ "$attempt" -lt 30 ] || { echo "Initial data verification timed out." >&2; exit 3; }; sleep 2; done',
+    'until docker exec "$container_name" curl -fsS http://127.0.0.1:8788/healthz >/dev/null && docker exec "$container_name" curl -fsS -X POST http://127.0.0.1:8787/api/auth/login -H content-type:application/json --data-binary ''{"username":"yaya","password":"yaya"}'' | grep -q "\"code\":0"; do attempt=$((attempt + 1)); [ "$attempt" -lt 30 ] || { echo "Initial data verification timed out." >&2; exit 3; }; sleep 2; done',
     'echo "Initial data verified: yaya super administrator is available."',
     'CONTAINER_NAME="$container_name" docker compose -p "$compose_project" --project-directory "$install_dir/deploy" -f "$install_dir/deploy/compose.yaml" --env-file "$install_dir/deploy/.env" ps'
   ) -join "`n"
   $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remoteScript))
   Write-Host 'Building and starting the single-container deployment...'
   Invoke-Native 'ssh.exe' ($sshOptions + @($target, "echo $encoded | base64 -d | sh"))
-  Write-Host "Publish completed: http://${ServerIp}:8801"
+  Write-Host "Publish completed: http://${ServerIp}:8787"
 }
 finally {
   if ($passwordBstr -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordBstr) }

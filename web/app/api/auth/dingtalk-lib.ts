@@ -1,4 +1,4 @@
-const backendBaseUrl = process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8787";
+const backendBaseUrl = process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8788";
 
 type BackendEnvelope<T> = { code: number; message: string; data: T | null };
 

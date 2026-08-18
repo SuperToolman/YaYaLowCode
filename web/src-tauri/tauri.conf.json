@@ -4,8 +4,8 @@
   "version": "0.2.0-alpha.0",
   "identifier": "com.yaya.lowcode",
   "build": {
-    "beforeDevCommand": "pnpm dev",
-    "devUrl": "http://127.0.0.1:3000",
+    "beforeDevCommand": "pnpm dev --port 8787",
+    "devUrl": "http://127.0.0.1:8787",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../tauri-dist"
   },

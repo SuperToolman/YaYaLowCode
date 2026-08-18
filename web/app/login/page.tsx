@@ -251,7 +251,7 @@ function LoginScreen() {
 
                   {process.env.NODE_ENV !== "production" ? (
                     <p className="text-center text-xs text-[var(--color-text-disabled)]">
-                      开发环境默认账号：admin / admin123
+                      开发环境默认账号：yaya / yaya
                     </p>
                   ) : null}
                 </form>

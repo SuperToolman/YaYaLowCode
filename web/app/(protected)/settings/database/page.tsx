@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button, Input, Switch, toast } from "@heroui/react";
 import { Card } from "@heroui/react/card";
 import { Field } from "../_components/field";
@@ -48,6 +49,7 @@ type ValkeyFormState = {
 };
 
 export default function DatabaseSettingsPage() {
+  const router = useRouter();
   const [form, setForm] = useState<FormState>({
     host: "localhost",
     port: "5432",
@@ -127,10 +129,16 @@ export default function DatabaseSettingsPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadSettings();
+      void fetch("/api/settings/license", { cache: "no-store" }).then((response) => response.json()).then((payload) => {
+        if (payload.data?.deploymentType !== "local") {
+          router.replace("/settings/about");
+          return;
+        }
+        void loadSettings();
+      }).catch(() => router.replace("/settings/about"));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [router]);
 
   function updateField(field: keyof FormState, value: string) {
     setForm((current) => ({ ...current, [field]: value }));

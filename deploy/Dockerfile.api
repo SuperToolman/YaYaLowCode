@@ -26,5 +26,5 @@ RUN apt-get update \
     && useradd --system --create-home --uid 10001 yaya
 COPY --from=build /workspace/yaya-api /usr/local/bin/yaya-api
 WORKDIR /var/lib/yaya
-EXPOSE 8787
+EXPOSE 8788
 CMD ["sh", "-c", "mkdir -p /var/lib/yaya && chown -R yaya:yaya /var/lib/yaya && exec runuser -u yaya -- yaya-api"]

@@ -6,7 +6,7 @@ fn main() {
     let web_url = std::env::var("YAYA_WEB_URL")
         .ok()
         .or_else(|| option_env!("YAYA_WEB_URL").map(str::to_owned))
-        .unwrap_or_else(|| "http://127.0.0.1:3000".to_string());
+        .unwrap_or_else(|| "http://127.0.0.1:8787".to_string());
     let web_url = web_url
         .parse()
         .unwrap_or_else(|error| panic!("invalid YAYA_WEB_URL `{web_url}`: {error}"));

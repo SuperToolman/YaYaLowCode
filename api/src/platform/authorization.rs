@@ -4,6 +4,7 @@ use axum::http::{HeaderMap, Method};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::Deserialize;
+use serde_json::json;
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -80,6 +81,29 @@ pub(crate) async fn get_grants(
     Ok(Json(success_response(
         "current user permissions loaded",
         values,
+    )))
+}
+
+/// Stable identity contract for the external Cordis Agent runtime. The bearer
+/// token is still validated here; the Agent only receives the resolved subject
+/// and permission snapshot for request/session correlation.
+pub(crate) async fn get_runtime_identity(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
+    let user = current_user(&headers, &state).await?;
+    authenticate(&headers, &state).await?;
+    let grants = grants(&headers, &state).await?;
+    let mut grants = grants.into_iter().collect::<Vec<_>>();
+    grants.sort();
+    Ok(Json(success_response(
+        "agent runtime identity loaded",
+        json!({
+            "userId": user.id.to_string(),
+            "tenantId": user.primary_organization_unit_id.map(|id| id.to_string()),
+            "displayName": user.display_name,
+            "grants": grants,
+        }),
     )))
 }
 
@@ -179,11 +203,17 @@ async fn required_permission(
         | "/api/settings/logs" => Some("settings.database"),
         "/api/settings/recycle-bin" | "/api/recycle-bin" => Some("settings.database"),
         _ if path.starts_with("/api/recycle-bin/") => Some("settings.database"),
-        "/api/settings/agent-assistant"
+        "/api/settings/ai-employee-market"
+        | "/api/settings/ai-employees/configurations"
         | "/api/settings/notifications"
         | "/api/settings/communication" => Some("settings.agent"),
+        _ if path.starts_with("/api/settings/ai-employees/configurations/") => {
+            Some("settings.agent")
+        }
+        _ if path.starts_with("/api/settings/ai-employee-market/") => Some("settings.agent"),
         "/api/settings/license" if method == Method::GET || method == Method::HEAD => None,
         "/api/settings/license" => Some("settings.license"),
+        "/api/settings/license/latest" => Some("settings.license"),
         "/api/settings/identity-source"
         | "/api/settings/identity-source/dingtalk/access-token"
         | "/api/settings/identity-source/dingtalk/sync-departments"
@@ -200,6 +230,8 @@ async fn required_permission(
         }
         _ if path.starts_with("/api/agent/sessions") => Some("agent.window"),
         "/api/agent/available-agents" => Some("agent.window"),
+        "/api/agent/runtime-identity" => None,
+        "/api/agent/system-ai/status" => Some("agent.window"),
         // Communication is licensed at the platform level. Every active member can use it
         // when the communication module is present in the current license.
         _ if path.starts_with("/api/communication/") => None,

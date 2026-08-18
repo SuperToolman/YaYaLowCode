@@ -9,7 +9,7 @@ export type PendingAction = {
 
 export type AttachedImage = { id: string; name: string; previewUrl: string };
 export type AgentToolActivity = { id: string; name: string; resourceName?: string; status: "running" | "completed" };
-export type AgentOption = { id: string; name: string; description: string };
+export type AgentOption = { id: string; name: string; description: string; isAiEmployee: boolean };
 
 export type AgentMessage = {
   id: string;
@@ -56,6 +56,7 @@ export type AgentSseEvent =
   | { type: "message.completed"; runId?: string }
   | { type: "tool.started"; name: string; resourceName?: string }
   | { type: "tool.completed"; pendingAction?: { id: string; summary: string; actionType: string; expiresInSeconds: number } }
+  | { type: "run.paused"; action: PendingAction }
   | { type: "status" }
   | { type: "run.completed" }
   | { type: "run.failed"; message: string }

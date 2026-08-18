@@ -7,13 +7,67 @@ use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::config::{PlatformLicenseSettings, load_platform_license_settings};
+use super::config::{
+    PlatformLicenseSettings, load_platform_license_settings, save_platform_license_settings,
+};
+
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformAiEmployeePersona {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub system_prompt: String,
+}
+
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformAiEmployeeSkill {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub package_name: String,
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub package_path: String,
+    #[serde(default)]
+    pub is_system: bool,
+    pub description: String,
+    pub instructions: String,
+    #[serde(default)]
+    pub allowed_tools: Vec<String>,
+    #[serde(default)]
+    pub requires_confirmation: bool,
+}
 
 #[derive(Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PlatformAiEmployeeEntitlement {
     pub id: String,
     pub title: String,
+    pub expires_at: i64,
+    #[serde(default)]
+    pub template_version: String,
+    #[serde(default)]
+    pub persona: Option<PlatformAiEmployeePersona>,
+    #[serde(default)]
+    pub skills: Vec<PlatformAiEmployeeSkill>,
+    #[serde(default)]
+    pub system_prompt: String,
+}
+
+/// Signed operation-center plugin metadata. It never contains credentials.
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformPluginPackageEntitlement {
+    pub id: String,
+    pub version: String,
+    pub sha256: String,
+    pub module: String,
+    pub manifest: serde_json::Value,
     pub expires_at: i64,
 }
 
@@ -22,6 +76,8 @@ pub struct PlatformAiEmployeeEntitlement {
 pub struct PlatformLicenseClaims {
     pub license_id: String,
     pub subject: String,
+    #[serde(default = "default_deployment_type")]
+    pub deployment_type: String,
     pub modules: Vec<String>,
     pub exp: usize,
     #[serde(default)]
@@ -30,6 +86,8 @@ pub struct PlatformLicenseClaims {
     pub module_titles: HashMap<String, String>,
     #[serde(default)]
     pub ai_employees: Vec<PlatformAiEmployeeEntitlement>,
+    #[serde(default)]
+    pub plugin_packages: Vec<PlatformPluginPackageEntitlement>,
     pub iss: String,
     pub aud: String,
 }
@@ -42,6 +100,7 @@ pub struct PlatformLicenseStatus {
     pub license_center_url: Option<String>,
     pub license_id: Option<String>,
     pub subject: Option<String>,
+    pub deployment_type: String,
     pub modules: Vec<String>,
     pub expires_at: Option<i64>,
     pub module_expires_at: HashMap<String, i64>,
@@ -50,6 +109,19 @@ pub struct PlatformLicenseStatus {
     pub ai_employee_statuses: HashMap<String, String>,
     pub platform_status: String,
     pub module_statuses: HashMap<String, String>,
+    pub update_available: bool,
+    pub latest_license_id: Option<String>,
+    pub latest_issued_at: Option<i64>,
+}
+
+fn default_deployment_type() -> String {
+    "saas".to_string()
+}
+
+pub fn license_allows_database_configuration() -> bool {
+    load_platform_license_settings()
+        .and_then(|settings| validate_license_token(&settings.license).ok())
+        .is_some_and(|claims| claims.deployment_type == "local")
 }
 
 #[derive(Deserialize)]
@@ -58,8 +130,21 @@ struct LicenseCenterEnvelope {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct LicenseCenterStatus {
     valid: bool,
+    #[serde(default)]
+    latest_license: Option<String>,
+    #[serde(default)]
+    latest_license_id: Option<String>,
+    #[serde(default)]
+    latest_issued_at: Option<i64>,
+}
+
+pub struct RemoteLicenseUpdate {
+    pub license: String,
+    pub license_id: String,
+    pub issued_at: Option<i64>,
 }
 
 pub fn validate_license_token(token: &str) -> Result<PlatformLicenseClaims, String> {
@@ -73,7 +158,7 @@ fn decode_license_claims(
     let public_key = license_public_key()?;
     let mut validation = Validation::new(Algorithm::RS256);
     validation.validate_exp = validate_expiration;
-    validation.set_issuer(&["yaya-license-center"]);
+    validation.set_issuer(&["yaya-operation-center", "yaya-license-center"]);
     validation.set_audience(&["yaya-low-code"]);
     let claims = decode::<PlatformLicenseClaims>(
         token,
@@ -133,29 +218,7 @@ pub fn license_module_expires_at(module: &str) -> Option<i64> {
     }
 }
 
-pub fn license_has_ai_employee(employee_id: &str) -> bool {
-    let Some(settings) = load_platform_license_settings() else {
-        return false;
-    };
-    validate_license_token(&settings.license).is_ok_and(|claims| {
-        claims.ai_employees.iter().any(|entitlement| {
-            entitlement.id == employee_id
-                && entitlement.expires_at >= chrono::Utc::now().timestamp()
-        })
-    })
-}
-
-pub fn license_ai_employee_expires_at(employee_id: &str) -> Option<i64> {
-    let settings = load_platform_license_settings()?;
-    let claims = validate_license_token(&settings.license).ok()?;
-    claims
-        .ai_employees
-        .iter()
-        .find(|entitlement| entitlement.id == employee_id)
-        .map(|entitlement| entitlement.expires_at)
-}
-
-pub async fn validate_license_remotely() -> Result<(), String> {
+pub async fn validate_license_remotely() -> Result<Option<RemoteLicenseUpdate>, String> {
     let settings = load_platform_license_settings().ok_or_else(|| "尚未激活许可证".to_string())?;
     let claims = validate_license_token(&settings.license)?;
     let url = license_status_url(&settings.license_center_url, &claims.license_id)?;
@@ -175,11 +238,44 @@ pub async fn validate_license_remotely() -> Result<(), String> {
         .json::<LicenseCenterEnvelope>()
         .await
         .map_err(|_| "许可中心返回了无效响应".to_string())?;
-    if body.data.is_some_and(|status| status.valid) {
-        Ok(())
-    } else {
+    let status = body
+        .data
+        .ok_or_else(|| "许可中心返回了无效状态".to_string())?;
+    if !status.valid {
         Err("许可证已被吊销或失效".to_string())
+    } else {
+        if let Some(latest_license) = status.latest_license {
+            let latest_claims = validate_license_token(&latest_license)
+                .map_err(|_| "许可中心返回了无效的最新许可证".to_string())?;
+            if latest_claims.subject != claims.subject {
+                return Err("最新许可证主体与当前平台不一致".to_string());
+            }
+            if latest_claims.license_id != claims.license_id {
+                return Ok(Some(RemoteLicenseUpdate {
+                    license: latest_license,
+                    license_id: status.latest_license_id.unwrap_or(latest_claims.license_id),
+                    issued_at: status.latest_issued_at,
+                }));
+            }
+        }
+        Ok(None)
     }
+}
+
+pub async fn apply_latest_license_remotely() -> Result<bool, String> {
+    let Some(update) = validate_license_remotely().await? else {
+        return Ok(false);
+    };
+    let settings = load_platform_license_settings().ok_or_else(|| "尚未激活许可证".to_string())?;
+    let updated_settings = PlatformLicenseSettings {
+        license_center_url: settings.license_center_url,
+        license: update.license,
+        activated_at: chrono::Utc::now().to_rfc3339(),
+    };
+    save_platform_license_settings(&updated_settings)
+        .map_err(|_| "最新许可证保存失败".to_string())?;
+    mark_license_running_remotely().await?;
+    Ok(true)
 }
 
 /// Notifies newer license centers that this signed license is in use. Older
@@ -288,6 +384,7 @@ fn status_from_claims(
         license_center_url: Some(settings.license_center_url.clone()),
         license_id: Some(claims.license_id),
         subject: Some(claims.subject),
+        deployment_type: claims.deployment_type,
         modules: claims.modules,
         expires_at: Some(claims.exp as i64),
         module_expires_at,
@@ -300,6 +397,9 @@ fn status_from_claims(
             "expired".to_string()
         },
         module_statuses,
+        update_available: false,
+        latest_license_id: None,
+        latest_issued_at: None,
     }
 }
 
@@ -310,6 +410,7 @@ fn invalid_status(reason: &str, license_center_url: Option<String>) -> PlatformL
         license_center_url,
         license_id: None,
         subject: None,
+        deployment_type: default_deployment_type(),
         modules: Vec::new(),
         expires_at: None,
         module_expires_at: HashMap::new(),
@@ -318,6 +419,9 @@ fn invalid_status(reason: &str, license_center_url: Option<String>) -> PlatformL
         ai_employee_statuses: HashMap::new(),
         platform_status: "expired".to_string(),
         module_statuses: HashMap::new(),
+        update_available: false,
+        latest_license_id: None,
+        latest_issued_at: None,
     }
 }
 
@@ -334,5 +438,23 @@ fn default_module_title(module: &str) -> String {
         "platform" => "低代码平台".to_string(),
         "communication" => "通讯模型".to_string(),
         _ => module.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LicenseCenterEnvelope;
+
+    #[test]
+    fn deserializes_latest_license_fields_from_operation_center() {
+        let envelope: LicenseCenterEnvelope = serde_json::from_str(
+            r#"{"data":{"valid":true,"latestLicense":"signed-token","latestLicenseId":"lic_new","latestIssuedAt":123}}"#,
+        )
+        .expect("operation center response should deserialize");
+        let status = envelope.data.expect("status should be present");
+
+        assert_eq!(status.latest_license.as_deref(), Some("signed-token"));
+        assert_eq!(status.latest_license_id.as_deref(), Some("lic_new"));
+        assert_eq!(status.latest_issued_at, Some(123));
     }
 }

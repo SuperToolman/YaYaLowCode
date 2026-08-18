@@ -52,15 +52,6 @@ pub struct AgentSettings {
     pub system_prompt: String,
 }
 
-#[derive(Clone, Deserialize, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PlatformAgentAssistantSettings {
-    #[serde(default)]
-    pub navigation_agent_id: Option<String>,
-    #[serde(default)]
-    pub schema_analysis_prompt: String,
-}
-
 #[derive(Clone, Default, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplicationBusinessContext {
@@ -101,30 +92,6 @@ impl ApplicationBusinessContext {
 pub struct ApplicationBusinessContextSettings {
     #[serde(default)]
     pub applications: HashMap<String, ApplicationBusinessContext>,
-}
-
-impl Default for PlatformAgentAssistantSettings {
-    fn default() -> Self {
-        Self {
-            navigation_agent_id: None,
-            schema_analysis_prompt: default_schema_analysis_prompt(),
-        }
-    }
-}
-
-fn default_schema_analysis_prompt() -> String {
-    [
-        "分析下面的低代码表单 Schema，为运行时表单 Agent 生成简洁、可复用的业务上下文。只输出最终分析结果，不要描述分析过程。",
-        "输出规则：",
-        "- 使用紧凑 Markdown，只允许必要的小标题、表格和列表。",
-        "- 不要输出寒暄、前言、总结、主观意见、改进建议或工具调用过程。",
-        "- 不要出现“我来获取”“现在我已拥有完整上下文”“开始生成分析报告”“以下是”等过程性或口语化句子。",
-        "- 不要重复 Schema 原文，不要使用连续空行，每个段落只保留必要换行。",
-        "- 只陈述能从 Schema 和设计者提示中确认的事实；不确定内容明确标记为“需询问”。",
-        "- 字段必须同时标注 label 和 fieldId；相同类型规则尽量合并表达。",
-        "- 内容结构限定为：业务目的、字段与约束、Agent 填写策略、关联规则。没有内容的章节省略。",
-    ]
-    .join("\n")
 }
 
 fn default_approval_mode() -> String {
@@ -314,6 +281,8 @@ pub struct AgentModelProvider {
     pub name: String,
     pub kind: String,
     pub enabled: bool,
+    #[serde(default)]
+    pub is_default: bool,
     pub api_base_url: String,
     pub api_key: String,
     #[serde(default)]
@@ -522,7 +491,7 @@ impl AppConfig {
             port: std::env::var("APP_PORT")
                 .ok()
                 .and_then(|value| value.parse().ok())
-                .unwrap_or(8787),
+                .unwrap_or(8788),
             database_url: database_url_from_env()
                 .or_else(|| load_database_settings().map(|settings| settings.to_database_url()))
                 .unwrap_or_else(|| "postgres://postgres@localhost:5432/yaya_low_code".to_string()),
@@ -867,9 +836,7 @@ fn skill_package_name(value: &str) -> String {
 }
 
 fn skill_packages_root() -> PathBuf {
-    std::env::var_os("YAYA_SKILLS_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("resources/skills"))
+    PathBuf::from("resources/skills")
 }
 
 pub(crate) fn resolve_agent_runtime_from_registry(
@@ -1074,6 +1041,7 @@ mod tests {
                 name: "测试提供商".to_string(),
                 kind: "openai-compatible".to_string(),
                 enabled: true,
+                is_default: true,
                 api_base_url: "https://example.test/v1".to_string(),
                 api_key: "test-key".to_string(),
                 website_url: String::new(),
@@ -1383,6 +1351,81 @@ fn notification_settings_path() -> PathBuf {
 
 fn communication_settings_path() -> PathBuf {
     runtime_state_path("YAYA_COMMUNICATION_SETTINGS_PATH", "communication.json")
+}
+
+fn installed_ai_employees_path() -> PathBuf {
+    runtime_state_path(
+        "YAYA_INSTALLED_AI_EMPLOYEES_PATH",
+        "installed-ai-employees.json",
+    )
+}
+
+fn installed_ai_employee_packages_path() -> PathBuf {
+    runtime_state_path(
+        "YAYA_INSTALLED_AI_EMPLOYEE_PACKAGES_PATH",
+        "installed-ai-employee-packages.json",
+    )
+}
+
+pub fn load_installed_ai_employees() -> HashSet<String> {
+    fs::read_to_string(installed_ai_employees_path())
+        .ok()
+        .and_then(|content| serde_json::from_str(&content).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_installed_ai_employees(ids: &HashSet<String>) -> Result<(), std::io::Error> {
+    let path = installed_ai_employees_path();
+    let temporary_path = path.with_extension("tmp");
+    fs::write(
+        &temporary_path,
+        serde_json::to_vec_pretty(ids).expect("installed AI employees are serializable"),
+    )?;
+    if path.exists() {
+        fs::remove_file(&path)?;
+    }
+    fs::rename(temporary_path, path)
+}
+
+pub fn save_installed_ai_employee_package(
+    id: &str,
+    package: serde_json::Value,
+) -> Result<(), std::io::Error> {
+    let path = installed_ai_employee_packages_path();
+    let mut packages = load_installed_ai_employee_packages();
+    packages.insert(id.to_string(), package);
+    let temporary_path = path.with_extension("tmp");
+    fs::write(
+        &temporary_path,
+        serde_json::to_vec_pretty(&packages)
+            .expect("installed AI employee packages are serializable"),
+    )?;
+    if path.exists() {
+        fs::remove_file(&path)?;
+    }
+    fs::rename(temporary_path, path)
+}
+
+pub fn load_installed_ai_employee_packages() -> HashMap<String, serde_json::Value> {
+    fs::read_to_string(installed_ai_employee_packages_path())
+        .ok()
+        .and_then(|content| serde_json::from_str(&content).ok())
+        .unwrap_or_default()
+}
+
+pub fn remove_installed_ai_employee_package(id: &str) -> Result<(), std::io::Error> {
+    let path = installed_ai_employee_packages_path();
+    let mut packages = load_installed_ai_employee_packages();
+    packages.remove(id);
+    let temporary_path = path.with_extension("tmp");
+    fs::write(
+        &temporary_path,
+        serde_json::to_vec_pretty(&packages).expect("installed AI employees are serializable"),
+    )?;
+    if path.exists() {
+        fs::remove_file(&path)?;
+    }
+    fs::rename(temporary_path, path)
 }
 
 fn recycle_bin_settings_path() -> PathBuf {

@@ -654,25 +654,22 @@ select {
   overflow: clip;
 }
 
-.theme-panel {
+/* HeroUI's default Card has no border. Keep every non-transparent Card on the
+   same product surface; specialized floating surfaces use theme-card-glass. */
+.card:not(.card--transparent) {
   border: 1px solid var(--color-border);
-  background: var(--color-bg-panel);
-  color: var(--color-text-primary);
-  backdrop-filter: blur(18px);
+  border-radius: 0.75rem;
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-card);
 }
 
-.theme-panel-strong {
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-panel-strong);
-  color: var(--color-text-primary);
-  backdrop-filter: blur(18px);
-}
-
+.theme-panel,
+.theme-panel-strong,
 .theme-panel-soft {
   border: 1px solid var(--color-border);
-  background: var(--color-bg-panel-soft);
+  background: var(--color-bg-surface);
   color: var(--color-text-primary);
-  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-card);
 }
 
 .theme-card-glass {

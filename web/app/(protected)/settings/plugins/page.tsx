@@ -1,2 +1,5 @@
-import { AgentResourceSettingsContent } from "../_components/agent-resource-settings-content";
-export default function PluginsPage() { return <AgentResourceSettingsContent kind="plugin" />; }
+import { redirect } from "next/navigation";
+
+export default function PluginsPage() {
+  redirect("/settings/ai-employee-market");
+}

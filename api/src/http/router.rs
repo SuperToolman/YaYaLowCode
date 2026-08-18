@@ -56,6 +56,34 @@ pub(crate) fn build(state: AppState) -> Router {
             get(settings::get_platform_license_status).post(settings::activate_platform_license),
         )
         .route(
+            "/api/settings/license/latest",
+            post(settings::apply_latest_platform_license),
+        )
+        .route(
+            "/api/settings/ai-employee-market",
+            get(settings::get_ai_employee_market),
+        )
+        .route(
+            "/api/settings/ai-employee-market/{employee_id}/install",
+            post(settings::install_ai_employee),
+        )
+        .route(
+            "/api/settings/ai-employee-market/{employee_id}/uninstall",
+            post(settings::uninstall_ai_employee),
+        )
+        .route(
+            "/api/settings/ai-employee-market/{employee_id}/test-purchase",
+            post(settings::test_purchase_ai_employee),
+        )
+        .route(
+            "/api/settings/ai-employees/configurations",
+            get(agent_config::list_ai_employee_configurations),
+        )
+        .route(
+            "/api/settings/ai-employees/configurations/{employee_id}",
+            axum::routing::put(agent_config::update_ai_employee_configuration),
+        )
+        .route(
             "/api/settings/database",
             get(settings::get_database_settings).put(settings::update_database_settings),
         )
@@ -70,11 +98,6 @@ pub(crate) fn build(state: AppState) -> Router {
         .route(
             "/api/settings/valkey/test",
             post(settings::test_valkey_connection),
-        )
-        .route(
-            "/api/settings/agent-assistant",
-            get(settings::get_platform_agent_assistant_settings)
-                .put(settings::update_platform_agent_assistant_settings),
         )
         .route(
             "/api/settings/notifications",
@@ -155,65 +178,8 @@ pub(crate) fn build(state: AppState) -> Router {
             get(communication::communication_websocket),
         )
         .route(
-            "/api/agent/providers",
-            get(agent_config::list_providers).post(agent_config::create_provider),
-        )
-        .route(
-            "/api/agent/providers/{id}",
-            axum::routing::put(agent_config::update_provider).delete(agent_config::delete_provider),
-        )
-        .route(
-            "/api/agent/config-profiles",
-            get(agent_config::list_profiles).post(agent_config::create_profile),
-        )
-        .route(
-            "/api/agent/config-profiles/{id}",
-            axum::routing::put(agent_config::update_profile).delete(agent_config::delete_profile),
-        )
-        .route(
-            "/api/agent/personas",
-            get(agent_config::list_personas).post(agent_config::create_persona),
-        )
-        .route(
-            "/api/agent/personas/{id}",
-            axum::routing::put(agent_config::update_persona).delete(agent_config::delete_persona),
-        )
-        .route(
-            "/api/agent/platform-tools",
-            get(agent_config::list_platform_tools),
-        )
-        .route(
-            "/api/agent/available-agents",
-            get(agents::list_available_agents),
-        )
-        .route(
-            "/api/agents",
-            get(agent_config::list_agents).post(agent_config::create_agent),
-        )
-        .route(
-            "/api/agents/{id}",
-            axum::routing::put(agent_config::update_agent).delete(agent_config::delete_agent),
-        )
-        .route(
-            "/api/agent/plugins",
-            get(agent_config::list_plugins).post(agent_config::create_plugin),
-        )
-        .route(
-            "/api/agent/plugins/{id}",
-            axum::routing::put(agent_config::update_plugin).delete(agent_config::delete_plugin),
-        )
-        .route(
-            "/api/agent/skills",
-            get(agent_config::list_skills).post(agent_config::create_skill),
-        )
-        .route("/api/agent/skills/import", post(agent_config::import_skill))
-        .route(
-            "/api/agent/skills/{id}",
-            axum::routing::put(agent_config::update_skill).delete(agent_config::delete_skill),
-        )
-        .route(
-            "/api/agent/skills/{id}/file",
-            get(agent_config::get_skill_file).put(agent_config::update_skill_file),
+            "/api/agent/system-ai/status",
+            get(agent_config::get_system_ai_status),
         )
         .route(
             "/api/agent/knowledge-bases",
@@ -287,8 +253,8 @@ pub(crate) fn build(state: AppState) -> Router {
             get(agents::list_agent_sessions).post(agents::create_agent_session),
         )
         .route(
-            "/api/agent/sessions/{session_uuid}/messages",
-            get(agents::list_agent_messages).post(agents::send_agent_message),
+            "/api/agent/runtime-identity",
+            get(authorization::get_runtime_identity),
         )
         .route(
             "/api/agent/sessions/{session_uuid}",
@@ -299,12 +265,8 @@ pub(crate) fn build(state: AppState) -> Router {
             post(agents::confirm_pending_action),
         )
         .route(
-            "/api/agent/sessions/{session_uuid}/runs/{run_uuid}/trace",
-            get(agents::get_agent_run_trace),
-        )
-        .route(
             "/api/agent/sessions/{session_uuid}/pending-actions",
-            get(agents::list_pending_actions),
+            get(agents::list_pending_actions).post(agents::create_pending_action),
         )
         .route(
             "/api/agent/sessions/{session_uuid}/pending-actions/{action_uuid}/cancel",
@@ -637,9 +599,7 @@ fn cache_category(path: &str) -> Option<(&'static str, u64)> {
         _ if path.starts_with("/api/agent/sessions") => Some(("agent-sessions", 60)),
         _ if matches!(
             path,
-            "/api/settings/agent-assistant"
-                | "/api/settings/notifications"
-                | "/api/settings/communication"
+            "/api/settings/notifications" | "/api/settings/communication"
         ) =>
         {
             Some(("settings", 300))

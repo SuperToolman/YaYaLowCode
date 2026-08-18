@@ -13,7 +13,6 @@ import {
 import { Tree, type NodeRendererProps } from "react-arborist";
 import {
   getRolePermissions,
-  listAgents,
   listRoles,
   updateRolePermissions,
 } from "@/features/identity-access/api";
@@ -31,6 +30,8 @@ type Role = {
 };
 type App = { id: string; name: string; status: string };
 type Agent = { id: string; name: string; description?: string; enabled: boolean };
+type AiEmployeeConfiguration = { agentId?: string; title: string; enabled: boolean };
+type ApiEnvelope<T> = { code: number; message: string; data: T | null };
 type NavigationItem = {
   id: string;
   itemType: "group" | "form" | string;
@@ -40,6 +41,29 @@ type NavigationItem = {
 };
 type Tab = "apps" | "platform";
 type RoleSourceFilter = "all" | "local" | "dingtalk";
+
+async function listAiEmployeePermissionAgents(): Promise<{
+  data?: ApiEnvelope<Agent[]>;
+  error?: unknown;
+}> {
+  try {
+    const response = await fetch("/api/settings/ai-employees/configurations", { cache: "no-store" });
+    const payload = await response.json() as ApiEnvelope<AiEmployeeConfiguration[]>;
+    if (!response.ok || payload.code !== 0 || !payload.data) {
+      return { error: new Error(payload.message || "无法加载 AI 员工") };
+    }
+    return {
+      data: {
+        ...payload,
+        data: payload.data
+          .filter((item): item is AiEmployeeConfiguration & { agentId: string } => Boolean(item.agentId))
+          .map((item) => ({ id: item.agentId, name: item.title, description: "AI 员工使用权限", enabled: item.enabled })),
+      },
+    };
+  } catch (error) {
+    return { error, data: undefined };
+  }
+}
 
 const formActions = [
   "display",
@@ -128,7 +152,7 @@ const platformPermissionGroups = [
     description: "设置中心及其页面的访问入口",
     items: [
       ["settings.database", "数据库连接", "管理 PostgreSQL 连接配置"],
-      ["settings.agent", "Agent 配置", "管理模型提供商、Agent 与扩展能力"],
+      ["settings.agent", "AI 员工配置", "管理 AI 员工、模型供应商、知识库与插件"],
       ["settings.identity-source", "身份源与组织架构", "管理身份源并查看组织与部门结构"],
       ["settings.roles", "角色管理", "查看角色和成员绑定"],
       ["settings.users", "用户管理", "查看平台用户与状态"],
@@ -184,7 +208,7 @@ export default function PermissionsSettingsPage() {
       const [rolesResult, appsResult, agentsResult] = await Promise.all([
         listRoles({ responseStyle: "fields" }),
         listApps({ responseStyle: "fields" }),
-        listAgents({ responseStyle: "fields" }),
+        listAiEmployeePermissionAgents(),
       ]);
       const rolesData = rolesResult.data;
       const appsData = appsResult.data;

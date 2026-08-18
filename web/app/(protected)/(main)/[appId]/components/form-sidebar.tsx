@@ -1025,14 +1025,19 @@ function isNavigationDescendant(
 }
 
 function buildNavigationTree(routeAppId: string, items: NavigationItem[]) {
+  const legacyTaskSlugs = new Set(["todo", "processed", "created", "copied"]);
+  const visibleItems = items.filter((item) => !(item.itemType === "system" && legacyTaskSlugs.has(item.pathSlug)));
+  if (!visibleItems.some((item) => item.itemType === "system" && item.pathSlug === "tasks")) {
+    visibleItems.unshift({ id: "system-tasks", itemType: "system", title: "任务", pathSlug: "tasks", sortOrder: -1, isDefaultEntry: false, parentId: null });
+  }
   const nodeMap = new Map<string, SidebarNode>();
 
-  for (const item of items) {
+  for (const item of visibleItems) {
     const routeId = item.targetFormUuid ?? item.pathSlug;
     nodeMap.set(item.id, {
       id: item.id,
       name: item.title,
-      href: item.itemType === "group" ? undefined : `/${routeAppId}/${routeId}`,
+      href: item.itemType === "group" ? undefined : `/${routeAppId}/${routeId}${item.itemType === "system" && routeId === "tasks" ? `?appId=${encodeURIComponent(routeAppId)}` : ""}`,
       itemType: item.itemType,
       parentId: item.parentId ?? null,
       sortOrder: item.sortOrder,
@@ -1045,7 +1050,7 @@ function buildNavigationTree(routeAppId: string, items: NavigationItem[]) {
 
   const roots: SidebarNode[] = [];
 
-  for (const item of items) {
+  for (const item of visibleItems) {
     const node = nodeMap.get(item.id);
     if (!node) {
       continue;
@@ -1080,6 +1085,8 @@ function getSidebarNodeIcon(
       return isExpanded ? <FolderOpenIcon /> : <FolderIcon />;
     case "system":
       switch (pathSlug) {
+        case "tasks":
+          return <TodoIcon />;
         case "processed":
           return <ProcessedIcon />;
         case "created":

@@ -22,7 +22,7 @@ export default async function AppEntryPage({
   if (!defaultForm && isRuntimeAppId(routeAppId)) {
     try {
       const backendBaseUrl =
-        process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8787";
+        process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8788";
       const response = await fetch(
         `${backendBaseUrl}/api/apps/${routeAppId}/navigation`,
         { cache: "no-store" },
@@ -38,13 +38,13 @@ export default async function AppEntryPage({
             ? defaultEntry.targetFormUuid
             : defaultEntry?.pathSlug) ??
           payload.data.find((item) => item.itemType === "form")?.targetFormUuid ??
-          "todo";
+          "tasks";
       }
     } catch {
-      // Runtime applications always provide the built-in todo page as an entry fallback.
+      // Runtime applications always provide the built-in tasks page as an entry fallback.
     }
 
-    defaultForm ??= "todo";
+    defaultForm ??= "tasks";
   }
 
   if (defaultForm) {

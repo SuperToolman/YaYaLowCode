@@ -1449,8 +1449,7 @@ function FormHomeRecords({
                   </div>
                   {agentEnabled && drawerOpen ? (
                     <FormAgentPanel
-                      key={`${agentConfig?.agentId ?? ""}:${formUuid}`}
-                      agentId={agentConfig?.agentId ?? ""}
+                      key={formUuid}
                       appId={appId}
                       formName={formMetadataName || schema.formName || formUuid}
                       formUuid={formUuid}

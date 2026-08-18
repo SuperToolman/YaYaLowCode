@@ -1,412 +1,172 @@
 # 丫丫低代码平台
 
-一个面向表单设计、数据录入、集成自动化与智能辅助场景的低代码平台原型项目。当前仓库已经包含应用管理、表单设计器、表单运行时、自动化工作流编辑器、身份认证与 RBAC 权限中心、受控 Agent、许可证控制的即时通讯，以及基于 Rust + PostgreSQL 的后端服务。
+面向表单设计、数据录入、流程审批、集成自动化和 AI 员工的低代码平台。
 
-当前版本：**1.01a**（内部语义化版本：`0.2.0-alpha.0`）
+当前版本：**1.07a**（内部包版本：`0.2.0-alpha.0`）
 
-系统组件、请求链路、数据边界与部署关系参见 [系统架构](docs/system-architecture.md) 和 [HTML 架构图](docs/system-architecture.html)。
+平台面向客户部署；商品、订单、许可证、AI 员工和未来的插件包由独立运营端 `E:\yaya-operation-center` 管理。客户平台负责验证授权、安装已购内容并执行受控业务能力，不向客户暴露 Agent 核心插件或运营侧模型密钥。
 
-## 当前状态
+## 架构概览
 
-当前项目已经打通以下核心链路：
+```text
+Browser / Tauri
+       |
+       v
+Web (Next.js, 8787) ---- BFF ---- Rust Platform API (8788)
+                                         |
+                                         +-- PostgreSQL / Valkey / runtime files
+                                         +-- identity, RBAC, license, approval, domain writes
+       |
+       +-- Agent BFF ---- Cordis Agent Runtime (8789)
+                                   |
+                                   +-- model / tools / skills / sessions / storage
+                                   +-- policy / sandbox / scheduler / audit / UI adapter
+                                   +-- optional LangGraph Worker (8790)
 
-- 创建应用
-- 在应用下创建普通表单、流程表单与分组
-- 在表单设计器中拖拽组件、配置属性、编辑动作脚本
-- 配置富文本、级联选择和地区目录字段
-- 保存草稿、发布版本、恢复历史版本，并为已发布表单同步独立的动态数据表
-- 在运行时页面新增、编辑、删除并查看表单记录
-- 将已删除记录保留至回收站，并按保留期限恢复或永久清理
-- 在记录表格中查看关联表单字段，并打开关联记录的只读详情
-- 通过自定义视图查看表单数据，并支持分页读取、列显示、排序、固定、拖拽排序和列宽配置
-- 基于表单事件触发集成自动化
-- 查看自动化运行日志并执行失败重试
-- 提交流程表单记录，在任务中心处理待办、同意、拒绝、执行、暂停、恢复和反审
-- 查看流程轨迹、发布流程评论，并在应用头部接收站内流程通知
-- 使用本地账号密码或钉钉扫码登录，并按角色权限访问平台、应用和表单
-- 配置 OpenAI Compatible 模型，并在授权范围内使用 Agent 分析资源、创建表单草稿和保存 Schema 草稿
-- 通过独立子路由管理数据库、Agent、身份源、用户、角色和权限设置
-- 使用 RS256 平台许可证控制受保护 API；许可证失效或被吊销时仅开放许可证设置，通讯模块由许可证声明控制
-- 在已授权通讯模块中进行单聊、群聊、附件消息和 WebSocket 实时收发
-- 从侧栏进入消息工作台与回收站；许可证不可用时通过管理弹窗更新授权
-- 首屏使用固定尺寸应用壳、Skeleton、Web Vitals/Long Task RUM 和许可证状态遮罩，许可证请求不会阻塞应用渲染
-- 受保护页面采用独立路由组；Agent、Tiptap、XYFlow、Monaco 等重型依赖按路由懒加载，登录页不加载认证与许可证客户端边界
-- 表单记录通过 bootstrap 聚合接口和服务端查询接口加载，支持服务端分页、筛选、排序及 React Query 缓存；Agent 会话支持预取、SSE 增量批处理和长消息虚拟滚动
-- Excel 导入、导出与字段匹配使用 Worker；记录搜索使用延迟输入和预计算索引
-- 前端领域 API、类型和 Hook 按 `features/agent-assistant`、`features/records`、`features/form-runtime`、`features/automation-editor` 组织，统一请求超时、取消和错误分类
+Operation Center
+       |
+       +-- customers / orders / payments / AI employee catalog / licenses
+```
 
-## 技术栈
-
-### 前端
-
-- Next.js 16
-- React 19
-- Tauri 2（桌面端）
-- HeroUI
-- React Flow
-- Monaco Editor
-- `@hey-api/openapi-ts`
-- `react-markdown` / `remark-gfm`
-- `xlsx`
-- `@tanstack/react-query`
-- `@tanstack/react-virtual`
-
-### 后端
-
-- Rust
-- Axum
-- SeaORM `2.0.0-rc.41`
-- PostgreSQL
-- Reqwest
-- Rig
+详细边界见 [系统架构](docs/system-architecture.md)、[Agent 架构](agent/docs/architecture.md) 和 [部署说明](deploy/README.md)。
 
 ## 已实现能力
 
-### 1. 应用管理
+### 低代码与业务
 
-- 应用列表展示
-- 创建空白应用
-- 应用卡片访问入口
-- 应用启用 / 关闭
-- 编辑应用名称
-- 删除应用
-- 应用设置页面（当前大部分配置为前端占位）
+- 应用、导航分组、普通表单和流程表单管理。
+- 可视化表单设计、草稿/发布/版本恢复、动态 PostgreSQL 表存储和子表单。
+- 记录新增、编辑、删除、回收站、服务端分页/筛选/排序和自定义视图。
+- 自动化工作流、条件分支、HTTP/数据节点、版本、运行日志和失败重试。
+- 流程任务中心、审批、暂停、恢复、反审、评论和站内通知。
+- 本地账号、钉钉登录、组织同步、RBAC 和应用/表单权限过滤。
+- 即时通讯、附件、群聊和 WebSocket 实时事件，由许可证模块控制。
 
-### 2. 应用导航
+### Cordis Agent Runtime
 
-- 应用下内置系统页面
-- 表单导航
-- 分组导航
-- 分组递归嵌套
-- 导航拖拽排序
-- 分组创建、重命名、跨层级移动和删除；删除分组时内部项目自动上移，不删除表单数据
+- Agent 已从 Rust 推理运行时剥离，使用独立 Node/Cordis 服务运行。
+- Cordis 管理插件挂载、卸载、服务依赖与事件协作；每个插件以 manifest 声明 `id`、版本、`provides`、`requires`、能力和配置 schema。
+- 默认插件覆盖模型、工具、Skills、会话、JSON/PostgreSQL 存储、记忆、策略审批、审计、沙盒、调度、workflow 和 UI 协议适配。
+- Agent 会话通过 BFF 访问 Cordis；平台 JWT 会被验证并转换为 tenant/user/权限快照，平台仍是授权、审批与领域写入的唯一事实来源。
+- 工具写操作进入持久化 `pending_action` 状态机；确认、取消、过期和最终领域写入由 Rust API 执行。workflow 在暂停时持久化 checkpoint，并在确认后恢复同一 run。
+- 支持 OpenAI-compatible tool-calling、迭代/超时/token 预算、步骤审计和 SSE 流式事件。
+- 记忆按租户、用户、路由隔离，并具备常见 PII 脱敏、保留期、删除权和嵌入版本边界。
+- LangGraph Worker 已有独立调用协议与可替换 workflow provider 边界；默认仍使用 Node workflow provider。
 
-### 3. 表单设计器
+### 授权与商业交付
 
-- 组件箱
-- 大纲树
-- 数据源变量配置
-- 动作面板统一脚本编辑
-- 页面源码查看
-- 分组容器组件
-- 组件属性编辑
-- 字段默认值与公式编辑
-- 页面属性配置
-- 字段索引配置（发布时创建或更新 B-tree 索引）
-- 预览
-- 保存草稿
-- 发布
-- 恢复历史版本
-- 流程表单：创建时自动生成审批流程，记录支持保存、提交、同意、拒绝、暂停、恢复和反审；详情页展示轨迹和评论
-- 富文本组件：支持常用文本排版、列表、链接、图片、表格与任务列表；级联组件支持多层级数据源和中英文标签
+- 平台验证 RS256 许可证，许可证包含平台模块、模块有效期、部署类型和 AI 员工权益。
+- 客户可在 AI 员工市场查看、购买、安装、更新和移除已授权的 AI 员工包及其 Skills。
+- 客户侧已下架“模型供应商”和“插件”配置页面及其写接口；Cordis 模型插件使用受控运行环境中的密钥和路由配置。
+- 许可证契约已预留 `pluginPackages` 权益字段，包含插件包 ID、版本、哈希、入口、manifest 与到期时间，且不包含密钥。
 
-### 4. 表单运行时
+## 运行端口
 
-- 表单提交视图
-- 全部数据视图
-- 抽屉式新增记录
-- 已发布 Schema 渲染
-- 运行时动作脚本执行
-- 记录级编辑
-- 记录级删除
-- 运行时记录变更触发自动化
-- 子表单（Subform）表格视图：行增删改排序、主题切换、批量导入/导出、列冻结
-- 自定义数据视图：服务端持久化、创建、编辑、删除
-- 表单记录分页查询
-- 自定义视图列配置：显示、排序、拖拽排序、固定列与列宽
-- 记录详情辅助面板与表单 Agent 协助面板
-- 已删除记录回收站：支持恢复、永久删除、清空及保留期限设置
-- 地区目录：支持树形目录查询、导入和运行时多语言显示
-- 字段大纲：按应用查看表单、字段、Schema 版本与动态物理表
+| 服务 | 端口 | 地址 |
+| --- | --- | --- |
+| Web | 8787 | `http://127.0.0.1:8787` |
+| Rust Platform API | 8788 | `http://127.0.0.1:8788/healthz` |
+| Cordis Agent | 8789 | `http://127.0.0.1:8789/healthz` |
+| LangGraph Worker | 8790 | 内部 Worker 端口 |
 
-### 5. 集成自动化
+## 本地开发
 
-- 自动化列表页
-- 自动化编辑器
-- 暗色工作区与节点属性面板
-- 条件规则、数据节点、字段映射和节点配置采用独立交互组件
-- 工作流名称、说明、启停状态、版本管理
-- 触发器节点
-- 条件分支节点
-- 条件分支可按优先级、规则组或表达式选择连线，未命中时会明确失败
-- 获取单条数据节点
-- 获取多条数据节点
-- 新增数据节点
-- 更新数据节点
-- 删除数据节点
-- HTTP 请求节点
-- 流程节点：审批、执行、抄送、结束；流程可复用数据操作和 HTTP 请求节点
-- 自动化版本快照与恢复
-- 数据操作节点字段映射与上游字段选择
-
-### 6. 自动化运行与日志
-
-- 支持触发事件：
-  - `before_create`
-  - `after_create`
-  - `before_update`
-  - `after_update`
-  - `before_delete`
-  - `after_delete`
-- 自动化运行日志查询
-- 节点级执行日志
-- 输入 / 输出载荷查看
-- 运行耗时展示
-- 整条流程重头触发
-- 错误节点断点重试
-- 流程运行时：流程实例、审批/执行待办、任务中心、操作历史、评论、站内通知、同意、拒绝、暂停、恢复和反审
-- 多人审批支持全部同意与任一同意；任一同意时其余同节点待办会自动跳过
-
-### 7. Agent 智能助手
-
-- 多级 Agent 管理体系：模型提供商 → 配置档案 → Agent 定义
-- 模型提供商（Provider）管理，支持 OpenAI Compatible / DeepSeek 等
-- Agent 配置档案：对话模型、Embedding 模型、Temperature、最大执行步骤、上下文策略、插件/Skill/知识库绑定
-- Agent 定义：按平台/应用/业务范围分配 Agent，可指定人格（Persona）
-- Agent 人格预设：默认人格、业务分析师、低代码实施顾问
-- 全局 Agent 助手入口
-- 表单运行时 Agent 协助面板
-- Agent 会话与历史消息
-- SSE 流式响应，支持 Markdown 渲染
-- 按配置档案授权访问表单、应用和自动化工具；可受控创建表单草稿及保存 Schema 草稿
-- 已绑定 Skill、知识库和插件工具可参与 Agent 运行，并保留资源与工具调用审计
-- 会话、消息、运行和步骤审计记录
-- Agent 可在配置档案授权与当前审批模式允许的范围内创建、移动、发布或删除表单，以及创建或删除导航分组；`request_approval` 模式下写操作需界面批准，`approve_on_behalf` 模式下仅删除表单、删除分组和删除自动化保留批准，`full_access` 模式下直接执行已授权写操作
-
-### 8. 平台与应用设置
-
-- 平台数据库连接设置、状态检测与保存前连接测试
-- 平台日志浏览与清理、站内通知偏好和回收站保留期限设置
-- 许可证管理弹窗；失效状态下仅允许具备权限的用户更新授权
-- Agent 多级管理：模型供应商、配置档案、Agent 定义、人格管理
-- 插件与 Skills 定义管理
-- 知识库配置入口
-- 身份源设置：钉钉组织体系的 AccessToken 管理、部门/用户同步、同步数据清理与 OAuth 登录配置
-- 平台本地用户与角色管理：用户资料、多个邮箱地址、账号状态、角色分配，以及本地用户和角色 CRUD
-- RBAC 权限中心：按角色配置平台设置、应用和表单操作权限；应用导航会按授权结果过滤
-- 设置页面独立子路由与左侧导航，支持多级分组
-- 设置导航和内容区域独立滚动
-- 应用基础设置、表单设置、管理员、权限与数据工厂页面（当前大部分配置为前端占位）
-- 模型供应商设置提供常用服务商预设与图标；工作流通知从应用页头收敛到用户菜单
-
-### 9. 后端接口与存储
-
-- 应用增删改查
-- 表单创建与删除
-- 导航分组与排序
-- 表单 Schema 草稿保存
-- 表单发布
-- 表单版本查询与恢复
-- 表单记录保存、查询、编辑、删除（按已发布表单的独立动态表持久化）
-- 表单启动聚合接口：`GET /api/forms/{formUuid}/bootstrap`
-- 表单记录查询接口：`POST /api/forms/{formUuid}/records/query`，支持服务端分页、筛选和排序
-- 自动化增删改查
-- 自动化版本查询与恢复
-- 自动化运行日志与重试接口
-- Agent 设置接口
-- Agent 会话、消息和流式运行接口
-- 本地登录、钉钉 OAuth 登录和 JWT 鉴权
-- 用户、角色与角色权限管理接口
-- 表单视图、字段大纲和记录分页接口
-- 流程表单创建、流程实例与待办审批接口
-- 地区目录、文件上传下载和数据库连接测试接口
-- 回收站、平台日志、许可证状态与即时通讯接口
-
-### 10. 许可证与通讯
-
-- 低代码平台只保存许可证和许可中心地址，使用 `YAYA_LICENSE_PUBLIC_KEY_PEM` 校验 RS256 签名；受保护 API 会在线确认许可证未被吊销。
-- 平台许可证必须包含 `platform` 模块；包含 `communication` 时自动开启通讯模块，无需单独激活。
-- 通讯模块支持单聊、群聊、消息已读、撤回、重新编辑、表情、附件和 WebSocket 实时事件；其数据仅在许可证已授权时创建和开放。
-
-部署变量、启动方式与远程数据迁移见 [部署说明](deploy/README.md)。需要以本地完整数据库替换客户环境时，使用 `deploy/migrate-database.ps1 -ConfirmRemoteOverwrite`；该操作会先保留远端备份，再替换远端数据库和运行时文件。完整接口契约由 `api/openapi/openapi.json` 导出。生产环境应使用 HTTPS 的许可中心地址，并将许可证公钥保存到部署平台的密钥管理中。
-
-## 表单数据存储结构
-
-已发布表单会编译为独立的混合物理存储，而不是继续共用 `form_records`：
-
-- `form_storage_definitions`：保存表单物理表名、字段映射和已编译 Schema 版本。
-- `form_data_<form_uuid>`：每张已发布表单的主数据表，通用记录元数据与可映射标量字段使用实体列。
-- `form_data_<form_uuid>_<subform_field>`：子表单对应的子表，用于保存子表单行。
-- `extension_data JSONB`：仅保存附件、对象等复杂字段或暂未映射的扩展字段；查询结果会与标量列重组为统一的记录数据。
-
-## 自动化存储结构
-
-当前自动化已拆分为独立结构化存储，而不是仅保存整包图 JSON：
-
-- `automation_flows`
-- `automation_flow_versions`
-- `automation_nodes`
-- `automation_edges`
-- `automation_flow_runs`
-- `automation_flow_run_nodes`
-
-Agent MVP 使用以下结构保存会话与审计信息：
-
-- `agent_sessions`
-- `agent_messages`
-- `agent_runs`
-- `agent_run_steps`
-
-身份与表单工作区补充使用以下结构：
-
-- `iam_local_credentials`
-- `iam_user_email_addresses`
-- `form_views`
-
-流程表单运行时使用以下结构：
-
-- `workflow_instances`
-- `workflow_tasks`
-- `workflow_actions`
-- `workflow_comments`
-- `workflow_notifications`
-
-## 本地启动
-
-### 前端启动
-
-```bash
-pnpm install
-pnpm dev:web
-```
-
-执行 `pnpm dev:web` 前会自动先运行一次：
-
-```bash
-pnpm export:openapi
-pnpm codegen:api
-```
-
-`pnpm export:openapi` 由 Rust 后端导出 [`api/openapi/openapi.json`](api/openapi/openapi.json)；`pnpm codegen:api` 再用 HeyAPI 更新前端 API Client。开发时手动 `cargo run` 也会在启动前刷新这份契约。
-
-### 后端启动
-
-在仓库根目录执行：
-
-```bash
-pnpm dev:api
-```
-
-### 前后端一起启动
-
-在仓库根目录执行：
+前置条件：Node.js、pnpm、Rust、PostgreSQL；若启用生产 Agent 存储，还需要可访问的 PostgreSQL。许可证公钥默认读取 `deploy/secrets/license-public.pem`。
 
 ```powershell
+pnpm install
 .\scripts\start-dev.ps1
 ```
 
-脚本会等待后端健康检查通过，再通过 `pnpm dev:web` 导出最新 API 契约、生成 HeyAPI 客户端并启动前端。脚本不会终止已有进程；端口被占用时会直接报告。也可以使用 `pnpm dev:all`。
+一键脚本会：
 
-如果前端已经更新了自动化相关页面或代理接口，而本地运行日志接口仍然返回 `404` 或提示路由不可用，通常是后端进程还是旧版本，直接重启后端即可。
+1. 清理本项目遗留的 Web、API、Agent 进程。
+2. 启动 Rust API 并等待 `8788/healthz`。
+3. 启动 Cordis Agent 并等待 `8789/healthz`。
+4. 注入 `AGENT_RUNTIME_BASE_URL` 后启动 Next.js `8787`。
 
-### Tauri 桌面端
-
-桌面端位于 [`web/src-tauri`](web/src-tauri)，使用 Tauri 2。由于当前 Next.js 项目使用了 SSR、Server Components 和 API Route，桌面客户端采用“桌面壳连接独立 Web 服务”的结构，以完整保留现有功能。
-
-本地开发时先启动 API，再启动桌面端：
-
-```bash
-pnpm dev:api
-pnpm dev:desktop
-```
-
-`pnpm dev:desktop` 会自动启动 Next.js 开发服务器，并在 Tauri 窗口中打开 `http://127.0.0.1:3000`。
-
-构建桌面安装包前，需要先确定桌面客户端连接的 Web 地址。默认地址是 `http://127.0.0.1:3000`，也可以通过 `YAYA_WEB_URL` 指向已部署的 Web 服务：
+常用命令：
 
 ```powershell
-$env:YAYA_WEB_URL="https://your-web.example.com"
-pnpm build:desktop
+pnpm dev:web
+pnpm dev:api
+pnpm dev:agent
+pnpm dev:all
+pnpm export:openapi
+pnpm codegen:api
+pnpm lint:web
+pnpm check:api
+pnpm check:agent
 ```
 
-桌面端安装包不内嵌 Next.js 服务和 PostgreSQL；生产环境仍需单独部署 `web` 与 `api`。如果后续需要完全离线的单机版，可再将 Next.js Server 和 API 打包为 Tauri sidecar。
+Web 启动前会生成 OpenAPI 客户端。修改 Rust 路由、DTO 或 OpenAPI 定义后，应执行 `pnpm export:openapi` 与 `pnpm codegen:api`。
 
-## 数据库配置
+## 部署
 
-当前项目默认使用 PostgreSQL。推荐通过以下任一方式配置连接：
+`deploy/compose.yaml` 运行 Web、Rust API、Cordis Agent 和 LangGraph Worker；Agent 与 Worker 不对外发布端口，仅通过单容器网络命名空间与平台通信。
 
-- 在 `/settings/database` 页面填写并验证数据库连接。
-- 设置 `DATABASE_URL` 环境变量，例如：
+生产环境必须：
 
-```bash
-DATABASE_URL=postgres://postgres:your_password@localhost:5432/yaya_low_code
-```
-
-未提供本地设置文件和 `DATABASE_URL` 时，后端会尝试连接无密码的本地地址 `postgres://postgres@localhost:5432/yaya_low_code`。
-
-数据库配置保存在 `.yaya-lowcode-settings.json`，该文件可能包含密码，已被 Git 忽略，不应上传到仓库。
-
-请提前确认本地 PostgreSQL 已启动，并且已创建对应数据库。
-
-## Agent 配置
-
-在 `/settings/model-providers` 配置模型供应商，在 `/settings/agent-profiles` 配置对话模型、Embedding 模型、Temperature 等参数，在 `/settings/agents` 创建和管理 Agent 定义。Agent 可按平台/应用/业务范围分配，并指定人格（Persona）。
-
-模型供应商、配置档案、Agent 定义、人格、插件、Skill 和知识库均保存在数据库中；本地 Skill 包文件保存在 `resources/skills`（可通过 `YAYA_SKILLS_PATH` 覆盖）。Agent 启用后可通过全局侧边栏入口创建会话，并按绑定 Skill 的工具白名单及当前批准模式执行受控操作。
-
-## 身份源配置
-
-权限中心支持本地账号与钉钉组织身份。钉钉的 App ID、原企业内部应用 AgentId、Client ID、Client Secret、同步策略和首次登录自动创建用户策略可以在 `/settings/identity-source` 页面维护，保存后立即生效，无需重启服务。
-
-身份源配置保存在后端本地 `.yaya-identity-settings.json` 文件中，该文件已被 Git 忽略。
-钉钉 AccessToken 通过后端接口获取，并连同过期时间直接写回该配置文件。
-
-登录页默认提供本地账号密码登录；钉钉登录会跳转到钉钉 OAuth 授权页，回调后创建平台 JWT 会话。生产环境应设置随机且保密的 `AUTH_TOKEN_SECRET`；Web 服务与 API 服务使用不同进程部署时，还应设置相同的 `BACKEND_INTERNAL_TOKEN`，供 Web 服务读取钉钉 OAuth 配置。
+- 使用 HTTPS、强随机 `AUTH_TOKEN_SECRET` 和 `BACKEND_INTERNAL_TOKEN`。
+- 将模型 API Key、Worker token、数据库凭据和许可证公钥放入部署密钥管理，不写入 Git、许可证或插件 manifest。
+- 使用 PostgreSQL storage、持久化调度和受限数据库账号；备份 PostgreSQL 与 `api-state` 运行时卷。
+- 审查 sandbox 的容器、网络、挂载和资源限制后才启用命令执行能力。
 
 ## 目录结构
 
 ```text
-web/                    Next.js Web 前端
-web/app/                Next.js App Router
-api/openapi/            由后端生成的 OpenAPI 描述文件
-web/app/lib/api-client/ heyapi 生成的前端 API Client
-web/src-tauri/          Tauri 2 桌面端壳层
-api/                    Rust + Axum API 服务
+web/                    Next.js 前端、BFF、Tauri 壳
+api/                    Rust/Axum 平台 API、领域模块、迁移与 OpenAPI
+agent/                  独立 Cordis Agent Runtime
+agent/config/           插件组合配置
+agent/langgraph-worker/ 独立 LangGraph Worker
+deploy/                 Compose、镜像、发布与数据库迁移脚本
+docs/                   系统与架构文档
+scripts/                本地开发启动脚本
 ```
 
-## 设计说明
+## 已落地与待落地边界
 
-- 设计器预览默认读取当前草稿 Schema
-- 实际运行时页面默认读取已发布 Schema
-- 自动化编辑器当前采用画布式工作流设计
-- 右侧属性面板仅在选中节点时显示
-- 自动化条件分支当前已支持全上游节点数据作为可选来源
-- 动作脚本当前支持：
-  - `didMount(ctx)`
-  - `onFieldEvent(ctx)`
-  - `onSubmit(ctx)`
+以下能力已可测试：Web/API/Agent 一键启动、Cordis 会话和工具调用、审批暂停/确认恢复、AI 员工授权安装、客户侧配置入口下架、端口统一和 OpenAPI/BFF 协议。
 
-## 构建验证
+以下能力仍在实施，不应视为生产完成：
 
-常用命令：
+### 1. 运营端插件商品化与授权包交付
 
-```bash
+- 在 `yaya-operation-center` 建立插件包商品目录：manifest、版本、SHA-256、依赖、能力、配置 schema、部署类型、价格、状态和发布记录。
+- 订单支持 `plugin_package` 商品项；签发许可证时写入实际 `pluginPackages` 权益，而不是当前预留的空列表。
+- 运营端提供已购插件包下载接口；客户平台用当前许可证鉴权，下载后校验签名、哈希、路径和 manifest。
+- 客户平台将授权包保存为不可编辑安装快照，根据许可证过期、撤销、更新和依赖变化生成 Agent 的有效插件组合。
+
+### 2. 受控模型路由与 BYOM
+
+- SaaS：模型适配器、模型路由、限额、密钥引用完全由运营端管理，客户平台只接收可用状态和脱敏展示信息。
+- 本地部署：新增独立 `byom` 授权模块；仅持有本地部署许可证且已购买该模块的客户可配置自有模型。
+- BYOM 密钥使用部署环境密钥或 KMS 加密保存，支持密钥轮换、脱敏显示、访问审计和删除；不得进入许可证、日志、前端或插件包。
+- 模型插件只接收受控配置/密钥引用，支持按租户、AI 员工和用途进行路由、预算、速率限制和故障切换。
+
+### 3. Agent 插件加载与运维
+
+- 已授权外部插件包的隔离安装、签名校验、依赖求解、版本回滚、健康检查和审计。
+- 插件组合变更后的热重载或受控滚动重启；运行中的 run 需明确取消、完成或 checkpoint 恢复语义。
+- LangGraph Worker 的完整工具图、人工中断、持久化恢复、多节点压测和追踪。
+- 容器 sandbox 执行器、文件挂载白名单、网络出口策略、CPU/内存/PID 限额与产物归档。
+- pg-boss 持久化队列、定时任务幂等键、失败重试、死信队列、分布式调度和监控。
+
+### 4. 质量与安全
+
+- PostgreSQL 多实例并发、会话/run/审批/记忆迁移和压测。
+- Agent 工具、审批、授权包、BYOM 和租户隔离的端到端测试与安全测试。
+- 成本、token、延迟、工具错误率、checkpoint 恢复率和插件运行状态的统一可观测性。
+- 数据记录和字段级权限、自动化递归触发防护、动作脚本调试能力和更多运行时字段校验。
+
+## 验证
+
+```powershell
+pnpm check:agent
 pnpm lint:web
-pnpm build:web
-pnpm check:api
-cd web && cargo check --manifest-path src-tauri/Cargo.toml
+cargo check --manifest-path api/Cargo.toml
+git diff --check
 ```
 
-`1.01a` 发布前，应完成上述前后端核心检查，并验证动态表、索引和子表单触发器可在目标 PostgreSQL 环境正常执行。
-
-发布前还应确认本地设置文件未被 Git 跟踪，并避免在文档、日志或提交内容中写入数据库密码和模型 API Key。
-
-## 下一步建议
-
-- 子表单设计器端拖拽、字段配置与属性编辑
-- 动态表、索引和子表单触发器的 PostgreSQL 端到端集成测试
-- 自动化递归触发防护
-  - 事件来源标记
-  - 执行深度限制
-  - 循环链路风险检测
-- 自动化运行日志后端分页、筛选、统计汇总与日志保留策略
-- HTTP 请求节点补充更完整的响应状态、响应头与错误上下文
-- 条件分支规则编辑器继续向宜搭式交互收敛
-- 字段映射编辑器继续细化
-- RBAC 授权规则与应用、表单、自动化链路的端到端测试
-- 更细粒度的数据记录与字段级权限
-- 动作脚本调试增强
-- 更多字段类型与运行时校验能力
-- Agent 插件运行时加载与执行引擎
-- 知识库文档处理、Embedding 与 pgvector 检索
-- Skills 加载器、工具白名单和知识范围配置
+提交或部署前，不要提交数据库密码、模型密钥、JWT、许可证签名或运行时配置文件。

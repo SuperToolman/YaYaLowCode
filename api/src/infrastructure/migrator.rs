@@ -51,7 +51,124 @@ impl MigratorTrait for Migrator {
             Box::new(m20260731_000042_create_platform_agent_assistant_settings::Migration),
             Box::new(m20260731_000043_create_platform_logs::Migration),
             Box::new(m20260803_000044_create_recycle_bin_entries::Migration),
+            Box::new(m20260807_000045_drop_platform_agent_assistant_settings::Migration),
+            Box::new(m20260807_000046_add_default_agent_model_provider::Migration),
+            Box::new(m20260807_000047_drop_default_agent_session_id::Migration),
         ]
+    }
+}
+
+mod m20260807_000047_drop_default_agent_session_id {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260807_000047_drop_default_agent_session_id"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "ALTER TABLE agent_sessions ALTER COLUMN agent_id DROP DEFAULT;",
+                )
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "ALTER TABLE agent_sessions ALTER COLUMN agent_id SET DEFAULT 'agent-default';",
+                )
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260807_000046_add_default_agent_model_provider {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260807_000046_add_default_agent_model_provider"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                ALTER TABLE agent_model_providers
+                    ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE;
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_model_providers_single_default
+                    ON agent_model_providers (is_default) WHERE is_default = TRUE;
+            "#,
+                )
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                DROP INDEX IF EXISTS uq_agent_model_providers_single_default;
+                ALTER TABLE agent_model_providers DROP COLUMN IF EXISTS is_default;
+            "#,
+                )
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260807_000045_drop_platform_agent_assistant_settings {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260807_000045_drop_platform_agent_assistant_settings"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE IF EXISTS platform_agent_assistant_settings;")
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(r#"
+                CREATE TABLE IF NOT EXISTS platform_agent_assistant_settings (
+                    id SMALLINT PRIMARY KEY CHECK (id = 1),
+                    navigation_agent_id VARCHAR(96) REFERENCES agent_definitions(id) ON DELETE SET NULL,
+                    schema_analysis_prompt TEXT NOT NULL DEFAULT '',
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                );
+            "#).await?;
+            Ok(())
+        }
     }
 }
 

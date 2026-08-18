@@ -1,5 +1,5 @@
-import { proxyBackendJson } from "../../_lib/backend-json-proxy";
+import { proxyAgentRuntimeJson } from "../../_lib/agent-runtime-proxy";
 
 export async function GET(request: Request) {
-  return proxyBackendJson(request, `/api/agent/available-agents${new URL(request.url).search}`);
+  return proxyAgentRuntimeJson(request, `/api/agent/available-agents${new URL(request.url).search}`);
 }

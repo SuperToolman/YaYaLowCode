@@ -122,7 +122,6 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
     useState<DesignerPanelKey>("components");
   const [debugEvents, setDebugEvents] = useState<RuntimeDebugEvent[]>([]);
   const [isAnalyzingAgent, setIsAnalyzingAgent] = useState(false);
-  const [schemaAnalysisPrompt, setSchemaAnalysisPrompt] = useState("");
   const [workbenchWidth, setWorkbenchWidth] = useState(DESIGNER_WORKBENCH_MIN_WIDTH);
   const [activeDragData, setActiveDragData] = useState<DesignerDragData | null>(null);
   const sensors = useSensors(
@@ -156,17 +155,6 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
       cancelled = true;
     };
   }, [appId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetch("/api/settings/agent-assistant", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((payload: { code: number; data: { schemaAnalysisPrompt?: string } | null }) => {
-        if (!cancelled && payload.code === 0) setSchemaAnalysisPrompt(payload.data?.schemaAnalysisPrompt ?? "");
-      })
-      .catch(() => undefined);
-    return () => { cancelled = true; };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -868,11 +856,6 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
 
   async function handleAnalyzeAgentSchema() {
     if (!pageProps.agent.enabled) return;
-    if (!pageProps.agent.agentId) {
-      toast.danger("无法分析 Schema", { description: "请先在 Agent 工具中选择机器人。" });
-      return;
-    }
-
     const sourceHash = getAgentAnalysisSourceHash(currentSchema);
     setIsAnalyzingAgent(true);
     setPageProps((current) => ({
@@ -884,10 +867,8 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
     }));
     try {
       const generated = await analyzeSchemaBeforePublish({
-        agentId: pageProps.agent.agentId,
         appId,
         formUuid,
-        schemaAnalysisPrompt,
         prompt: pageProps.agent.prompt,
         schema: currentSchema,
       });
@@ -929,7 +910,6 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
 
     void (async () => {
       try {
-        if (pageProps.agent.enabled && !pageProps.agent.agentId) throw new Error("请先在 Agent 工具中选择机器人");
         const currentAnalysisHash = getAgentAnalysisSourceHash(currentSchema);
         const analysisIsFresh = pageProps.agent.context.status === "ready" && pageProps.agent.context.sourceHash === currentAnalysisHash;
         const publishPageProps: PageDesignerProps = pageProps.agent.enabled && !analysisIsFresh
@@ -1248,7 +1228,6 @@ function getAgentAnalysisSourceHash(schema: FormDesignerSchema) {
     rows: schema.rows,
     fields: schema.fields,
     capabilitiesVersion: FORM_COMPONENT_AGENT_CAPABILITIES_VERSION,
-    agentId: schema.pageProps.agent.agentId,
     prompt: schema.pageProps.agent.prompt,
   });
   let hash = 2166136261;
@@ -1259,12 +1238,12 @@ function getAgentAnalysisSourceHash(schema: FormDesignerSchema) {
   return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
-async function analyzeSchemaBeforePublish({ agentId, appId, formUuid, schemaAnalysisPrompt, prompt, schema }: { agentId: string; appId: string | null; formUuid: string; schemaAnalysisPrompt: string; prompt: string; schema: FormDesignerSchema }) {
+async function analyzeSchemaBeforePublish({ appId, formUuid, prompt, schema }: { appId: string | null; formUuid: string; prompt: string; schema: FormDesignerSchema }) {
   const context = { appId: appId ?? undefined, formUuid, route: `/designer/${formUuid}` };
   const sessionResponse = await fetch("/api/agent/sessions", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ agentId, source: "schema_analysis", context }),
+    body: JSON.stringify({ source: "schema_analysis", context }),
   });
   const sessionPayload = (await sessionResponse.json()) as { code: number; message: string; data: { id: string } | null };
   if (!sessionResponse.ok || sessionPayload.code !== 0 || !sessionPayload.data) {
@@ -1281,13 +1260,11 @@ async function analyzeSchemaBeforePublish({ agentId, appId, formUuid, schemaAnal
       ...schema.pageProps,
       agent: {
         enabled: schema.pageProps.agent.enabled,
-        agentId: schema.pageProps.agent.agentId,
         prompt: schema.pageProps.agent.prompt,
       },
     },
   };
   const analysisPrompt = [
-    schemaAnalysisPrompt.trim(),
     prompt.trim() ? `设计者提供的业务提示：${prompt.trim()}` : "",
     `Schema：${JSON.stringify(schemaForAnalysis)}`,
   ].filter(Boolean).join("\n\n");

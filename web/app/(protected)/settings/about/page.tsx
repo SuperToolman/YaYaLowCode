@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useState } from "react";
-import { Button } from "@heroui/react";
+import { Button, Chip } from "@heroui/react";
 import { useAuth } from "../../../components/auth-provider";
 import { openLicenseManagementModal } from "../../../components/license-management-modal";
 import { SettingsContentCard } from "../_components/settings-content-card";
@@ -12,6 +12,7 @@ type LicenseStatus = {
   licenseCenterUrl: string | null;
   licenseId: string | null;
   subject: string | null;
+  deploymentType: "saas" | "local";
   modules: string[];
   expiresAt: number | null;
   moduleExpiresAt?: Record<string, number>;
@@ -42,7 +43,6 @@ export default function AboutPlatformPage() {
   }, []);
 
   const statusText = loading ? "正在检查" : license?.valid ? "有效" : "无效";
-  const statusClass = license?.valid ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-danger-soft)] text-[var(--color-danger)]";
 
   return (
     <section className="h-full min-h-0">
@@ -50,13 +50,14 @@ export default function AboutPlatformPage() {
         <div className="max-w-2xl space-y-6">
           <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--color-border)] pb-5">
             <div><p className="text-base font-semibold text-[var(--color-text-primary)]">丫丫 LowCode</p><p className="mt-1 text-sm text-[var(--color-text-secondary)]">版本 0.82a</p></div>
-            <div className="flex items-center gap-2"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClass}`}>许可证{statusText}</span>{hasPermission("settings.license") ? <Button size="sm" variant="secondary" onPress={openLicenseManagementModal}>更新签名</Button> : null}</div>
+            <div className="flex items-center gap-2"><Chip color={license?.valid ? "success" : "danger"} variant="soft">许可证{statusText}</Chip>{hasPermission("settings.license") ? <Button size="sm" variant="secondary" onPress={openLicenseManagementModal}>更新签名</Button> : null}</div>
           </div>
           <dl className="grid gap-x-8 gap-y-5 text-sm sm:grid-cols-2">
             <Info label="授权主体" value={license?.subject ?? "-"} />
             <Info label="许可证编号" value={license?.licenseId ?? "-"} mono />
+            <Info label="平台类型" value={license?.deploymentType === "local" ? "本地部署" : "SaaS"} />
             <Info label="平台有效期至" value={formatExpiry(license?.expiresAt)} />
-            <Info label="许可中心" value={license?.licenseCenterUrl ?? "-"} />
+            <Info label="运营管理平台 API" value={license?.licenseCenterUrl ?? "-"} />
             <Info label="状态说明" value={license?.valid ? "签名与在线状态验证通过" : license?.reason ?? "无法读取许可证状态"} />
             <div className="sm:col-span-2">
               <dt className="text-[var(--color-text-secondary)]">已授权模块</dt>

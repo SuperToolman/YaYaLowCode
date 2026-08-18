@@ -2,6 +2,7 @@ use axum::Json;
 use axum::extract::{Multipart, Path, State};
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -20,12 +21,16 @@ use crate::infrastructure::entities::agent_provider_model_entity::{
 use crate::infrastructure::entities::agent_resource_entity::{self, Entity as AgentResourceEntity};
 use crate::platform::config::{
     AgentConfigProfile, AgentDefinition, AgentKnowledgeBaseDefinition, AgentModelProvider,
-    AgentPersonaDefinition, AgentPluginDefinition, AgentRegistry, AgentSkillDefinition,
-    ensure_skill_package, import_skill_package, write_skill_markdown,
+    AgentPersonaDefinition, AgentPluginDefinition, AgentRegistry, AgentSettings,
+    AgentSkillDefinition, ResolvedAgentRuntime, ensure_skill_package, import_skill_package,
+    load_installed_ai_employees, write_skill_markdown,
 };
+use crate::platform::license::{PlatformAiEmployeeEntitlement, PlatformAiEmployeeSkill, license_status};
 use crate::platform::prelude::{ApiResponse, AppError, AppState};
 use crate::shared::success_response;
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter,
+};
 
 fn default_approval_mode() -> String {
     "approve_on_behalf".to_string()
@@ -63,6 +68,7 @@ pub(crate) async fn resolve_database_agent_runtime(
                 name: row.name,
                 kind: row.kind,
                 enabled: row.enabled,
+                is_default: row.is_default,
                 api_base_url: row.api_base_url,
                 api_key: row.api_key,
                 website_url: row.website_url,
@@ -138,6 +144,48 @@ pub(crate) async fn resolve_database_agent_runtime(
         runtime.allowed_tools.insert("delete_form".to_string());
     }
     Ok(runtime)
+}
+
+pub(crate) async fn resolve_system_ai_runtime(
+    state: &AppState,
+    system_id: &str,
+    system_prompt: &str,
+) -> Result<ResolvedAgentRuntime, String> {
+    let provider = AgentModelProviderEntity::find()
+        .filter(agent_model_provider_entity::Column::IsDefault.eq(true))
+        .one(&state.db)
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "系统 AI 功能需要先配置默认模型供应商".to_string())?;
+    if !provider.enabled {
+        return Err("默认模型供应商已停用，系统 AI 功能不可用".to_string());
+    }
+    if provider.api_base_url.trim().is_empty() || provider.default_chat_model.trim().is_empty() {
+        return Err("默认模型供应商缺少 API 地址或默认对话模型".to_string());
+    }
+
+    Ok(ResolvedAgentRuntime {
+        agent_id: system_id.to_string(),
+        profile_id: "system-default-provider".to_string(),
+        scope_type: "platform".to_string(),
+        scope_ref_id: None,
+        settings: AgentSettings {
+            enabled: true,
+            provider: provider.kind,
+            api_base_url: provider.api_base_url,
+            api_key: provider.api_key,
+            chat_model: provider.default_chat_model,
+            embedding_model: String::new(),
+            temperature: 0.2,
+            max_steps: 8,
+            system_prompt: system_prompt.to_string(),
+        },
+        plugins: Vec::new(),
+        skills: Vec::new(),
+        knowledge_bases: Vec::new(),
+        approval_mode: "approve_on_behalf".to_string(),
+        allowed_tools: HashSet::new(),
+    })
 }
 
 fn resources_of_kind<T: serde::de::DeserializeOwned>(
@@ -276,8 +324,15 @@ async fn delete_resource(
     id: &str,
 ) -> Result<(), AppError> {
     if resource_in_use(db, kind, id).await? {
+        let resource_name = match kind {
+            "persona" => "人格",
+            "plugin" => "插件",
+            "skill" => "Skill",
+            "knowledge_base" => "知识库",
+            _ => kind,
+        };
         return Err(AppError::BadRequest(format!(
-            "{kind} is still bound to a profile or agent"
+            "{resource_name}仍绑定到配置文件或机器人，无法删除"
         )));
     }
     let result = AgentResourceEntity::delete_many()
@@ -298,6 +353,7 @@ pub(crate) struct ProviderResponse {
     name: String,
     kind: String,
     enabled: bool,
+    is_default: bool,
     api_base_url: String,
     api_key: String,
     website_url: String,
@@ -312,6 +368,8 @@ pub(crate) struct ProviderRequest {
     name: String,
     kind: String,
     enabled: bool,
+    #[serde(default)]
+    is_default: bool,
     api_base_url: String,
     api_key: Option<String>,
     #[serde(default)]
@@ -320,6 +378,33 @@ pub(crate) struct ProviderRequest {
     default_chat_model: String,
     #[serde(default)]
     models: Vec<String>,
+}
+
+#[derive(Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SystemAiStatusResponse {
+    available: bool,
+    provider_id: Option<String>,
+    provider_name: Option<String>,
+    reason: Option<String>,
+}
+
+#[derive(Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AiEmployeeConfigurationResponse {
+    employee_id: String,
+    title: String,
+    enabled: bool,
+    agent_id: Option<String>,
+    provider_id: Option<String>,
+    chat_model: Option<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UpdateAiEmployeeConfigurationRequest {
+    provider_id: String,
+    chat_model: String,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -681,16 +766,385 @@ pub(crate) async fn list_providers(
     )))
 }
 
+pub(crate) async fn get_system_ai_status(
+    State(state): State<AppState>,
+) -> Result<Json<ApiResponse<SystemAiStatusResponse>>, AppError> {
+    let provider = AgentModelProviderEntity::find()
+        .filter(agent_model_provider_entity::Column::IsDefault.eq(true))
+        .one(&state.db)
+        .await?;
+    let response = match provider {
+        None => SystemAiStatusResponse {
+            available: false,
+            provider_id: None,
+            provider_name: None,
+            reason: Some("请先配置默认模型供应商".to_string()),
+        },
+        Some(provider) => {
+            let reason = if !provider.enabled {
+                Some("默认模型供应商已停用".to_string())
+            } else if provider.api_base_url.trim().is_empty()
+                || provider.default_chat_model.trim().is_empty()
+            {
+                Some("默认模型供应商缺少 API 地址或默认对话模型".to_string())
+            } else {
+                None
+            };
+            SystemAiStatusResponse {
+                available: reason.is_none(),
+                provider_id: Some(provider.id),
+                provider_name: Some(provider.name),
+                reason,
+            }
+        }
+    };
+    Ok(Json(success_response("system AI status loaded", response)))
+}
+
+pub(crate) async fn list_ai_employee_configurations(
+    State(state): State<AppState>,
+) -> Result<Json<ApiResponse<Vec<AiEmployeeConfigurationResponse>>>, AppError> {
+    let installed = load_installed_ai_employees();
+    let installed_packages = crate::platform::config::load_installed_ai_employee_packages();
+    let status = license_status();
+    for package in installed_packages.values().filter_map(|value| {
+        serde_json::from_value::<PlatformAiEmployeeEntitlement>(value.clone()).ok()
+    }) {
+        sync_installed_ai_employee_runtime(&state, &package).await?;
+    }
+    let agent_rows = AgentDefinitionEntity::find().all(&state.db).await?;
+    let profile_rows = AgentConfigProfileEntity::find().all(&state.db).await?;
+    let mut response = Vec::new();
+    for entitlement in status
+        .ai_employees
+        .iter()
+        .filter(|item| installed.contains(&item.id))
+    {
+        let package = installed_packages.get(&entitlement.id).and_then(|value| {
+            serde_json::from_value::<PlatformAiEmployeeEntitlement>(value.clone()).ok()
+        });
+        let effective_title = package
+            .as_ref()
+            .map(|item| item.title.as_str())
+            .unwrap_or(entitlement.title.as_str());
+        let scope_ref = ai_employee_scope_ref(&entitlement.id);
+        let agent_row = agent_rows
+            .iter()
+            .find(|row| row.scope_ref_id.as_deref() == Some(scope_ref.as_str()));
+        let profile = agent_row
+            .and_then(|agent| profile_rows.iter().find(|row| row.id == agent.profile_id))
+            .and_then(|row| {
+                serde_json::from_value::<AgentConfigProfile>(row.configuration_json.clone()).ok()
+            });
+        response.push(AiEmployeeConfigurationResponse {
+            employee_id: entitlement.id.clone(),
+            title: effective_title.to_string(),
+            enabled: status.valid
+                && entitlement.expires_at >= chrono::Utc::now().timestamp()
+                && agent_row.is_some_and(|row| row.enabled),
+            agent_id: agent_row.map(|row| row.id.clone()),
+            provider_id: profile.as_ref().map(|item| item.provider_id.clone()),
+            chat_model: profile.as_ref().map(|item| item.chat_model.clone()),
+        });
+    }
+    Ok(Json(success_response(
+        "AI employee configurations loaded",
+        response,
+    )))
+}
+
+pub(crate) async fn sync_installed_ai_employee_runtime(
+    state: &AppState,
+    entitlement: &PlatformAiEmployeeEntitlement,
+) -> Result<(), AppError> {
+    let scope_ref = ai_employee_scope_ref(&entitlement.id);
+    let Some(agent_row) = AgentDefinitionEntity::find()
+        .filter(agent_definition_entity::Column::ScopeRefId.eq(&scope_ref))
+        .one(&state.db)
+        .await?
+    else {
+        return Ok(());
+    };
+    let mut agent = serde_json::from_value::<AgentDefinition>(agent_row.configuration_json.clone())
+        .map_err(|error| AppError::BadRequest(format!("AI 员工运行配置无效: {error}")))?;
+    let system_prompt = ai_employee_system_prompt(entitlement);
+    let skill_ids = entitlement
+        .skills
+        .iter()
+        .map(|skill| skill.id.clone())
+        .collect();
+    let agent_changed = agent.name != entitlement.title
+        || !agent.enabled
+        || agent.system_prompt != system_prompt
+        || agent.skill_ids != skill_ids;
+    agent.name = entitlement.title.clone();
+    agent.enabled = true;
+    agent.system_prompt = system_prompt;
+    agent.skill_ids = skill_ids;
+    let mut changed = false;
+    if agent_changed {
+        let mut active_agent: agent_definition_entity::ActiveModel = agent_row.into();
+        active_agent.name = Set(agent.name.clone());
+        active_agent.enabled = Set(true);
+        active_agent.configuration_json = Set(serde_json::to_value(&agent)
+            .map_err(|error| AppError::BadRequest(error.to_string()))?);
+        active_agent.updated_at = Set(chrono::Utc::now());
+        active_agent.update(&state.db).await?;
+        changed = true;
+    }
+    if let Some(profile_row) = AgentConfigProfileEntity::find_by_id(&agent.profile_id)
+        .one(&state.db)
+        .await?
+    {
+        let mut profile =
+            serde_json::from_value::<AgentConfigProfile>(profile_row.configuration_json.clone())
+                .map_err(|error| AppError::BadRequest(format!("AI 员工模型配置无效: {error}")))?;
+        let profile_name = format!("{} 模型配置", entitlement.title);
+        if profile.name != profile_name {
+            profile.name = profile_name;
+            let mut active_profile: agent_config_profile_entity::ActiveModel = profile_row.into();
+            active_profile.name = Set(profile.name.clone());
+            active_profile.configuration_json = Set(serde_json::to_value(&profile)
+                .map_err(|error| AppError::BadRequest(error.to_string()))?);
+            active_profile.updated_at = Set(chrono::Utc::now());
+            active_profile.update(&state.db).await?;
+            changed = true;
+        }
+    }
+    if changed {
+        state
+            .bump_cache_version("yaya:v1:agent-runtime:version")
+            .await;
+    }
+    Ok(())
+}
+
+pub(crate) async fn install_ai_employee_skill_package(
+    state: &AppState,
+    skill: &PlatformAiEmployeeSkill,
+    archive: &[u8],
+) -> Result<(), AppError> {
+    let mut item = AgentSkillDefinition {
+        id: skill.id.clone(),
+        name: skill.title.clone(),
+        package_name: market_skill_package_name(skill),
+        source: "market".to_string(),
+        version: skill.version.clone(),
+        package_path: String::new(),
+        is_system: skill.is_system,
+        description: skill.description.clone(),
+        enabled: true,
+        allowed_tools: skill.allowed_tools.clone(),
+        instructions: skill.instructions.clone(),
+        requires_confirmation: skill.requires_confirmation,
+    };
+    import_skill_package(&mut item, archive).map_err(AppError::BadRequest)?;
+    item.source = "market".to_string();
+    item.version = skill.version.clone();
+    item.is_system = skill.is_system;
+    item.name = skill.title.clone();
+    item.description = skill.description.clone();
+    item.allowed_tools = skill.allowed_tools.clone();
+    item.requires_confirmation = skill.requires_confirmation;
+
+    let now = chrono::Utc::now();
+    if let Some(existing) = AgentResourceEntity::find_by_id(&item.id).one(&state.db).await? {
+        if existing.kind != "skill" {
+            return Err(AppError::BadRequest(format!("AI 员工 Skill ID 与本地 {} 资源冲突", existing.kind)));
+        }
+        let mut active: agent_resource_entity::ActiveModel = existing.into();
+        active.name = Set(item.name.clone());
+        active.configuration_json = Set(serde_json::to_value(&item)
+            .map_err(|error| AppError::BadRequest(error.to_string()))?);
+        active.updated_at = Set(now);
+        active.update(&state.db).await?;
+    } else {
+        insert_resource(&state.db, "skill", &item.id, &item.name, &item, now).await?;
+    }
+    state.bump_cache_version("yaya:v1:agent-runtime:version").await;
+    Ok(())
+}
+
+pub(crate) async fn disable_installed_ai_employee_runtime(
+    state: &AppState,
+    employee_id: &str,
+) -> Result<(), AppError> {
+    let scope_ref = ai_employee_scope_ref(employee_id);
+    if let Some(row) = AgentDefinitionEntity::find()
+        .filter(agent_definition_entity::Column::ScopeRefId.eq(&scope_ref))
+        .one(&state.db)
+        .await?
+    {
+        let mut active: agent_definition_entity::ActiveModel = row.into();
+        active.enabled = Set(false);
+        active.updated_at = Set(chrono::Utc::now());
+        active.update(&state.db).await?;
+        state
+            .bump_cache_version("yaya:v1:agent-runtime:version")
+            .await;
+    }
+    Ok(())
+}
+
+pub(crate) async fn update_ai_employee_configuration(
+    State(state): State<AppState>,
+    Path(employee_id): Path<String>,
+    Json(payload): Json<UpdateAiEmployeeConfigurationRequest>,
+) -> Result<Json<ApiResponse<AiEmployeeConfigurationResponse>>, AppError> {
+    let entitlement = require_configurable_ai_employee(&employee_id)?;
+    let provider = AgentModelProviderEntity::find_by_id(payload.provider_id.trim())
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("模型供应商不存在".to_string()))?;
+    if !provider.enabled {
+        return Err(AppError::BadRequest("模型供应商已停用".to_string()));
+    }
+    let chat_model = payload.chat_model.trim();
+    if chat_model.is_empty() {
+        return Err(AppError::BadRequest("请选择对话模型".to_string()));
+    }
+
+    let scope_ref = ai_employee_scope_ref(&employee_id);
+    let existing_agent = AgentDefinitionEntity::find()
+        .filter(agent_definition_entity::Column::ScopeRefId.eq(&scope_ref))
+        .one(&state.db)
+        .await?;
+    let existing_profile_row = match existing_agent.as_ref() {
+        Some(agent) => {
+            AgentConfigProfileEntity::find_by_id(&agent.profile_id)
+                .one(&state.db)
+                .await?
+        }
+        None => None,
+    };
+    let mut profile = existing_profile_row
+        .as_ref()
+        .map(|row| serde_json::from_value::<AgentConfigProfile>(row.configuration_json.clone()))
+        .transpose()
+        .map_err(|error| AppError::BadRequest(format!("AI 员工模型配置无效: {error}")))?
+        .unwrap_or_else(|| default_ai_employee_profile(&entitlement));
+    profile.name = format!("{} 模型配置", entitlement.title);
+    profile.provider_id = provider.id.clone();
+    profile.chat_model = chat_model.to_string();
+    let now = chrono::Utc::now();
+    if let Some(row) = existing_profile_row {
+        let mut active: agent_config_profile_entity::ActiveModel = row.into();
+        active.name = Set(profile.name.clone());
+        active.provider_id = Set(profile.provider_id.clone());
+        active.configuration_json = Set(serde_json::to_value(&profile)
+            .map_err(|error| AppError::BadRequest(error.to_string()))?);
+        active.updated_at = Set(now);
+        active.update(&state.db).await?;
+    } else {
+        agent_config_profile_entity::ActiveModel {
+            id: Set(profile.id.clone()),
+            name: Set(profile.name.clone()),
+            provider_id: Set(profile.provider_id.clone()),
+            configuration_json: Set(serde_json::to_value(&profile)
+                .map_err(|error| AppError::BadRequest(error.to_string()))?),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&state.db)
+        .await?;
+    }
+
+    let system_prompt = ai_employee_system_prompt(&entitlement);
+    let agent = if let Some(row) = existing_agent {
+        let mut agent =
+            serde_json::from_value::<AgentDefinition>(row.configuration_json.clone())
+                .map_err(|error| AppError::BadRequest(format!("AI 员工运行配置无效: {error}")))?;
+        agent.name = entitlement.title.clone();
+        agent.enabled = true;
+        agent.profile_id = profile.id.clone();
+        agent.system_prompt = system_prompt;
+        agent.skill_ids = entitlement.skills.iter().map(|skill| skill.id.clone()).collect();
+        let mut active: agent_definition_entity::ActiveModel = row.into();
+        active.name = Set(agent.name.clone());
+        active.enabled = Set(true);
+        active.profile_id = Set(agent.profile_id.clone());
+        active.configuration_json = Set(serde_json::to_value(&agent)
+            .map_err(|error| AppError::BadRequest(error.to_string()))?);
+        active.updated_at = Set(now);
+        active.update(&state.db).await?;
+        agent
+    } else {
+        let agent = AgentDefinition {
+            id: format!("agent-{}", Uuid::new_v4().simple()),
+            name: entitlement.title.clone(),
+            description: "从 AI 员工市场安装的内置 AI 员工".to_string(),
+            enabled: true,
+            is_default: false,
+            scope_type: "platform".to_string(),
+            scope_ref_id: Some(scope_ref),
+            profile_id: profile.id.clone(),
+            system_prompt,
+            plugin_ids: Vec::new(),
+            skill_ids: entitlement.skills.iter().map(|skill| skill.id.clone()).collect(),
+            knowledge_base_ids: Vec::new(),
+        };
+        agent_definition_entity::ActiveModel {
+            id: Set(agent.id.clone()),
+            name: Set(agent.name.clone()),
+            enabled: Set(true),
+            is_default: Set(false),
+            scope_type: Set(agent.scope_type.clone()),
+            scope_ref_id: Set(agent.scope_ref_id.clone()),
+            profile_id: Set(agent.profile_id.clone()),
+            configuration_json: Set(serde_json::to_value(&agent)
+                .map_err(|error| AppError::BadRequest(error.to_string()))?),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&state.db)
+        .await?;
+        agent
+    };
+    state
+        .bump_cache_version("yaya:v1:agent-runtime:version")
+        .await;
+    Ok(Json(success_response(
+        "AI employee model configured",
+        AiEmployeeConfigurationResponse {
+            employee_id: entitlement.id,
+            title: entitlement.title,
+            enabled: true,
+            agent_id: Some(agent.id),
+            provider_id: Some(profile.provider_id),
+            chat_model: Some(profile.chat_model),
+        },
+    )))
+}
+
+fn market_skill_package_name(skill: &PlatformAiEmployeeSkill) -> String {
+    let value = if skill.package_name.trim().is_empty() { &skill.id } else { &skill.package_name };
+    let normalized = value.chars().map(|character| {
+        if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+            character.to_ascii_lowercase()
+        } else {
+            '-'
+        }
+    }).collect::<String>();
+    let normalized = normalized.trim_matches('-');
+    if normalized.is_empty() { "market-skill".to_string() } else { normalized.to_string() }
+}
+
 pub(crate) async fn create_provider(
     State(state): State<AppState>,
     Json(payload): Json<ProviderRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<ProviderResponse>>), AppError> {
     validate_provider(&payload)?;
+    let is_first_provider = AgentModelProviderEntity::find().count(&state.db).await? == 0;
+    let is_default = is_first_provider || payload.is_default;
+    if is_default {
+        clear_default_provider(&state.db, None).await?;
+    }
     let provider = agent_model_provider_entity::ActiveModel {
         id: Set(format!("provider-{}", Uuid::new_v4().simple())),
         name: Set(payload.name.trim().to_string()),
         kind: Set(payload.kind.trim().to_string()),
         enabled: Set(payload.enabled),
+        is_default: Set(is_default),
         api_base_url: Set(payload
             .api_base_url
             .trim()
@@ -741,10 +1195,14 @@ pub(crate) async fn update_provider(
         .one(&state.db)
         .await?
         .ok_or_else(|| AppError::NotFound("model provider not found".to_string()))?;
+    if payload.is_default {
+        clear_default_provider(&state.db, Some(&id)).await?;
+    }
     let mut active: agent_model_provider_entity::ActiveModel = provider.into();
     active.name = Set(payload.name.trim().to_string());
     active.kind = Set(payload.kind.trim().to_string());
     active.enabled = Set(payload.enabled);
+    active.is_default = Set(payload.is_default);
     active.api_base_url = Set(payload
         .api_base_url
         .trim()
@@ -1626,6 +2084,85 @@ fn profile_from_request(id: String, payload: ProfileRequest) -> AgentConfigProfi
     }
 }
 
+fn ai_employee_scope_ref(employee_id: &str) -> String {
+    format!("ai-employee:{employee_id}")
+}
+
+fn require_configurable_ai_employee(
+    employee_id: &str,
+) -> Result<PlatformAiEmployeeEntitlement, AppError> {
+    if !load_installed_ai_employees().contains(employee_id) {
+        return Err(AppError::Forbidden("AI 员工尚未安装".to_string()));
+    }
+    let status = license_status();
+    if !status.valid {
+        return Err(AppError::Forbidden(
+            status
+                .reason
+                .unwrap_or_else(|| "平台许可证无效".to_string()),
+        ));
+    }
+    let entitlement = status
+        .ai_employees
+        .into_iter()
+        .find(|item| item.id == employee_id && item.expires_at >= chrono::Utc::now().timestamp())
+        .ok_or_else(|| AppError::Forbidden("当前许可证未包含有效的 AI 员工授权".to_string()))?;
+    Ok(
+        crate::platform::config::load_installed_ai_employee_packages()
+            .get(employee_id)
+            .and_then(|value| {
+                serde_json::from_value::<PlatformAiEmployeeEntitlement>(value.clone()).ok()
+            })
+            .unwrap_or(entitlement),
+    )
+}
+
+fn ai_employee_system_prompt(entitlement: &PlatformAiEmployeeEntitlement) -> String {
+    if !entitlement.system_prompt.trim().is_empty() {
+        entitlement.system_prompt.clone()
+    } else {
+        entitlement
+            .persona
+            .as_ref()
+            .map(|persona| persona.system_prompt.clone())
+            .unwrap_or_default()
+    }
+}
+
+fn default_ai_employee_profile(entitlement: &PlatformAiEmployeeEntitlement) -> AgentConfigProfile {
+    AgentConfigProfile {
+        id: format!("profile-{}", Uuid::new_v4().simple()),
+        name: format!("{} 模型配置", entitlement.title),
+        provider_id: String::new(),
+        chat_model: String::new(),
+        embedding_model: String::new(),
+        temperature: 0.2,
+        max_steps: 8,
+        max_retries: 3,
+        image_caption_model: String::new(),
+        persona_id: entitlement
+            .persona
+            .as_ref()
+            .map(|persona| persona.id.clone())
+            .unwrap_or_else(|| "persona-default".to_string()),
+        web_search_enabled: false,
+        allow_create_apps: false,
+        allow_create_forms: false,
+        allow_create_automations: false,
+        approval_mode: "approve_on_behalf".to_string(),
+        context_max_turns: 50,
+        context_discard_turns: 10,
+        context_overflow_strategy: "llm_compress".to_string(),
+        context_compression_prompt: String::new(),
+        context_keep_recent_ratio: 0.15,
+        context_compression_provider_id: None,
+        max_context_tokens: 128_000,
+        plugin_ids: Vec::new(),
+        skill_ids: Vec::new(),
+        knowledge_base_ids: Vec::new(),
+    }
+}
+
 fn agent_from_request(id: String, payload: AgentRequest) -> AgentDefinition {
     AgentDefinition {
         id,
@@ -1654,6 +2191,7 @@ fn provider_response(
         name: value.name.clone(),
         kind: value.kind.clone(),
         enabled: value.enabled,
+        is_default: value.is_default,
         api_base_url: value.api_base_url.clone(),
         api_key: value.api_key.clone(),
         website_url: value.website_url.clone(),
@@ -1665,6 +2203,23 @@ fn provider_response(
             .collect(),
         api_key_configured: !value.api_key.is_empty(),
     }
+}
+
+async fn clear_default_provider(
+    db: &sea_orm::DatabaseConnection,
+    except_id: Option<&str>,
+) -> Result<(), AppError> {
+    let mut update = AgentModelProviderEntity::update_many()
+        .col_expr(
+            agent_model_provider_entity::Column::IsDefault,
+            sea_orm::sea_query::Expr::value(false),
+        )
+        .filter(agent_model_provider_entity::Column::IsDefault.eq(true));
+    if let Some(id) = except_id {
+        update = update.filter(agent_model_provider_entity::Column::Id.ne(id));
+    }
+    update.exec(db).await?;
+    Ok(())
 }
 
 async fn insert_provider_model(

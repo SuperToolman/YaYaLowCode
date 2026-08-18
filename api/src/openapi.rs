@@ -4,12 +4,11 @@ use std::path::Path;
 use utoipa::OpenApi;
 
 use crate::modules::agent_config::{
-    AgentRequest, KnowledgeBaseRequest, PersonaRequest, PlatformToolResponse, PluginRequest,
-    ProfileRequest, ProviderRequest, ProviderResponse, SkillFileRequest, SkillFileResponse,
-    SkillRequest,
+    AiEmployeeConfigurationResponse, KnowledgeBaseRequest, PluginRequest, ProviderRequest,
+    ProviderResponse, SystemAiStatusResponse, UpdateAiEmployeeConfigurationRequest,
 };
 use crate::modules::agents::{
-    ApiAgentMessage, ApiAgentSession, CreateAgentSessionRequest, UpdateAgentSessionRequest,
+    ApiAgentSession, CreateAgentSessionRequest, UpdateAgentSessionRequest,
 };
 use crate::modules::apps::{ApiApp, CreateAppRequest, UpdateAppRequest};
 use crate::modules::automations::{
@@ -47,9 +46,9 @@ use crate::modules::navigation::{
 };
 use crate::modules::recycle_bin::{RecycleBinEntry, UpdateRecycleBinSettingsRequest};
 use crate::modules::settings::{
-    ActivatePlatformLicenseRequest, CommunicationCleanupResponse,
+    ActivatePlatformLicenseRequest, AiEmployeeMarketItem, CommunicationCleanupResponse,
     CommunicationStorageStatsResponse, DatabaseConnectionTestResponse, DatabaseSettingsResponse,
-    PlatformAgentAssistantSettingsRequest, RolePermissionsResponse, UpdateDatabaseSettingsRequest,
+    MarketPurchaseReceipt, RolePermissionsResponse, UpdateDatabaseSettingsRequest,
     UpdateIdentitySourceSettingsRequest, UpdateRolePermissionsRequest, UpdateValkeySettingsRequest,
     ValkeySettingsResponse,
 };
@@ -57,12 +56,11 @@ use crate::modules::workflows::{
     WorkflowCommentRequest, WorkflowPauseRequest, WorkflowTaskActionRequest,
 };
 use crate::platform::api::ApiResponse;
-use crate::platform::config::AgentPersonaDefinition;
+use crate::platform::config::IdentitySourceSettings;
 use crate::platform::config::{
-    AgentConfigProfile, AgentDefinition, AgentKnowledgeBaseDefinition, AgentPluginDefinition,
-    AgentSkillDefinition, CommunicationModuleSettings, RecycleBinSettings,
+    AgentKnowledgeBaseDefinition, AgentPluginDefinition, CommunicationModuleSettings,
+    RecycleBinSettings,
 };
-use crate::platform::config::{IdentitySourceSettings, PlatformAgentAssistantSettings};
 use crate::platform::license::PlatformLicenseStatus;
 
 macro_rules! endpoint {
@@ -203,23 +201,6 @@ typed_endpoint!(
     ApiResponse<DatabaseConnectionTestResponse>
 );
 typed_endpoint!(
-    get_platform_agent_assistant_settings,
-    get,
-    "/api/settings/agent-assistant",
-    "getPlatformAgentAssistantSettings",
-    (),
-    ApiResponse<PlatformAgentAssistantSettings>
-);
-typed_endpoint!(
-    update_platform_agent_assistant_settings,
-    put,
-    "/api/settings/agent-assistant",
-    "updatePlatformAgentAssistantSettings",
-    (),
-    PlatformAgentAssistantSettingsRequest,
-    ApiResponse<PlatformAgentAssistantSettings>
-);
-typed_endpoint!(
     get_communication_module_settings,
     get,
     "/api/settings/communication",
@@ -257,6 +238,54 @@ typed_endpoint!(
     get,
     "/api/settings/license",
     "getPlatformLicenseStatus",
+    (),
+    ApiResponse<PlatformLicenseStatus>
+);
+typed_endpoint!(
+    get_ai_employee_market,
+    get,
+    "/api/settings/ai-employee-market",
+    "getAiEmployeeMarket",
+    (),
+    ApiResponse<Vec<AiEmployeeMarketItem>>
+);
+typed_endpoint!(
+    test_purchase_ai_employee,
+    post,
+    "/api/settings/ai-employee-market/{employee_id}/test-purchase",
+    "testPurchaseAiEmployee",
+    (("employee_id" = String, Path)),
+    ApiResponse<MarketPurchaseReceipt>
+);
+endpoint!(
+    install_ai_employee,
+    post,
+    "/api/settings/ai-employee-market/{employee_id}/install",
+    "installAiEmployee",
+    ("employee_id" = String, Path)
+);
+typed_endpoint!(
+    list_ai_employee_configurations,
+    get,
+    "/api/settings/ai-employees/configurations",
+    "listAiEmployeeConfigurations",
+    (),
+    ApiResponse<Vec<AiEmployeeConfigurationResponse>>
+);
+typed_endpoint!(
+    update_ai_employee_configuration,
+    put,
+    "/api/settings/ai-employees/configurations/{employee_id}",
+    "updateAiEmployeeConfiguration",
+    (("employee_id" = String, Path)),
+    UpdateAiEmployeeConfigurationRequest,
+    ApiResponse<AiEmployeeConfigurationResponse>
+);
+typed_endpoint!(
+    apply_latest_platform_license,
+    post,
+    "/api/settings/license/latest",
+    "applyLatestPlatformLicense",
     (),
     ApiResponse<PlatformLicenseStatus>
 );
@@ -417,6 +446,14 @@ typed_endpoint!(
     ApiResponse<Vec<ProviderResponse>>
 );
 typed_endpoint!(
+    get_system_ai_status,
+    get,
+    "/api/agent/system-ai/status",
+    "getSystemAiStatus",
+    (),
+    ApiResponse<SystemAiStatusResponse>
+);
+typed_endpoint!(
     create_provider,
     post,
     "/api/agent/providers",
@@ -439,98 +476,6 @@ endpoint!(
     delete,
     "/api/agent/providers/{id}",
     "deleteProvider",
-    ("id" = String, Path)
-);
-typed_endpoint!(
-    list_profiles,
-    get,
-    "/api/agent/config-profiles",
-    "listConfigProfiles",
-    (),
-    ApiResponse<Vec<AgentConfigProfile>>
-);
-typed_endpoint!(
-    create_profile,
-    post,
-    "/api/agent/config-profiles",
-    "createConfigProfile",
-    (),
-    ProfileRequest,
-    ApiResponse<AgentConfigProfile>
-);
-typed_endpoint!(
-    update_profile,
-    put,
-    "/api/agent/config-profiles/{id}",
-    "updateConfigProfile",
-    (("id" = String, Path)),
-    ProfileRequest,
-    ApiResponse<AgentConfigProfile>
-);
-endpoint!(
-    delete_profile,
-    delete,
-    "/api/agent/config-profiles/{id}",
-    "deleteConfigProfile",
-    ("id" = String, Path)
-);
-endpoint!(list_personas, get, "/api/agent/personas", "listPersonas");
-typed_endpoint!(
-    create_persona,
-    post,
-    "/api/agent/personas",
-    "createPersona",
-    (),
-    PersonaRequest,
-    ApiResponse<AgentPersonaDefinition>
-);
-typed_endpoint!(
-    update_persona,
-    put,
-    "/api/agent/personas/{id}",
-    "updatePersona",
-    (("id" = String, Path)),
-    PersonaRequest,
-    ApiResponse<AgentPersonaDefinition>
-);
-endpoint!(
-    delete_persona,
-    delete,
-    "/api/agent/personas/{id}",
-    "deletePersona",
-    ("id" = String, Path)
-);
-typed_endpoint!(
-    list_agents,
-    get,
-    "/api/agents",
-    "listAgents",
-    (),
-    ApiResponse<Vec<AgentDefinition>>
-);
-typed_endpoint!(
-    create_agent,
-    post,
-    "/api/agents",
-    "createAgent",
-    (),
-    AgentRequest,
-    ApiResponse<AgentDefinition>
-);
-typed_endpoint!(
-    update_agent,
-    put,
-    "/api/agents/{id}",
-    "updateAgent",
-    (("id" = String, Path)),
-    AgentRequest,
-    ApiResponse<AgentDefinition>
-);
-endpoint!(
-    delete_agent,
-    delete,
-    "/api/agents/{id}",
-    "deleteAgent",
     ("id" = String, Path)
 );
 typed_endpoint!(
@@ -565,64 +510,6 @@ endpoint!(
     "/api/agent/plugins/{id}",
     "deletePlugin",
     ("id" = String, Path)
-);
-typed_endpoint!(
-    list_skills,
-    get,
-    "/api/agent/skills",
-    "listSkills",
-    (),
-    ApiResponse<Vec<AgentSkillDefinition>>
-);
-typed_endpoint!(
-    create_skill,
-    post,
-    "/api/agent/skills",
-    "createSkill",
-    (),
-    SkillRequest,
-    ApiResponse<AgentSkillDefinition>
-);
-typed_endpoint!(
-    update_skill,
-    put,
-    "/api/agent/skills/{id}",
-    "updateSkill",
-    (("id" = String, Path)),
-    SkillRequest,
-    ApiResponse<AgentSkillDefinition>
-);
-endpoint!(
-    delete_skill,
-    delete,
-    "/api/agent/skills/{id}",
-    "deleteSkill",
-    ("id" = String, Path)
-);
-typed_endpoint!(
-    get_skill_file,
-    get,
-    "/api/agent/skills/{id}/file",
-    "getSkillFile",
-    (("id" = String, Path)),
-    ApiResponse<SkillFileResponse>
-);
-typed_endpoint!(
-    update_skill_file,
-    put,
-    "/api/agent/skills/{id}/file",
-    "updateSkillFile",
-    (("id" = String, Path)),
-    SkillFileRequest,
-    ApiResponse<SkillFileResponse>
-);
-typed_endpoint!(
-    list_platform_tools,
-    get,
-    "/api/agent/platform-tools",
-    "listPlatformTools",
-    (),
-    ApiResponse<Vec<PlatformToolResponse>>
 );
 typed_endpoint!(
     list_knowledge_bases,
@@ -875,22 +762,6 @@ endpoint!(
     ("sessionId" = String, Path)
 );
 typed_endpoint!(
-    list_agent_messages,
-    get,
-    "/api/agent/sessions/{sessionId}/messages",
-    "listAgentMessages",
-    (("sessionId" = String, Path)),
-    ApiResponse<Vec<ApiAgentMessage>>
-);
-endpoint!(
-    send_agent_message,
-    post,
-    "/api/agent/sessions/{sessionId}/messages",
-    "sendAgentMessage",
-    ("sessionId" = String, Path)
-);
-
-typed_endpoint!(
     list_apps,
     get,
     "/api/apps",
@@ -1039,7 +910,7 @@ typed_endpoint!(
     get,
     "/api/workflow/tasks",
     "listWorkflowTasks",
-    (("appId" = String, Query), ("scope" = String, Query)),
+    (("appId" = Option<String>, Query), ("scope" = String, Query)),
     ApiResponse<Value>
 );
 typed_endpoint!(
@@ -1360,10 +1231,14 @@ endpoint!(
         get_valkey_settings,
         update_valkey_settings,
         test_valkey_connection,
-        get_platform_agent_assistant_settings,
-        update_platform_agent_assistant_settings,
         get_platform_license_status,
+        get_ai_employee_market,
+        test_purchase_ai_employee,
+        install_ai_employee,
+        list_ai_employee_configurations,
+        update_ai_employee_configuration,
         activate_platform_license,
+        apply_latest_platform_license,
         get_communication_module_settings,
         update_communication_module_settings,
         get_communication_storage_stats,
@@ -1385,32 +1260,14 @@ endpoint!(
         list_locations,
         import_locations,
         list_providers,
+        get_system_ai_status,
         create_provider,
         update_provider,
         delete_provider,
-        list_profiles,
-        create_profile,
-        update_profile,
-        delete_profile,
-        list_personas,
-        create_persona,
-        update_persona,
-        delete_persona,
-        list_agents,
-        create_agent,
-        update_agent,
-        delete_agent,
         list_plugins,
         create_plugin,
         update_plugin,
         delete_plugin,
-        list_skills,
-        create_skill,
-        update_skill,
-        delete_skill,
-        get_skill_file,
-        update_skill_file,
-        list_platform_tools,
         list_knowledge_bases,
         create_knowledge_base,
         update_knowledge_base,
@@ -1441,8 +1298,6 @@ endpoint!(
         create_agent_session,
         update_agent_session,
         delete_agent_session,
-        list_agent_messages,
-        send_agent_message,
         list_apps,
         create_app,
         update_app,

@@ -161,7 +161,7 @@ export default function HomeSideBar() {
   return (
     <aside className="sticky top-2 z-50 hidden h-[calc(100dvh-16px)] w-[54px] shrink-0 lg:flex lg:flex-col">
       <div className="flex h-full flex-col">
-        <div className="mb-4"><UserMenu user={user} onLogout={() => void handleLogout()} /></div>
+        <div className="mb-4"><UserMenu user={user} onLogout={() => void handleLogout()} onTasks={() => router.push("/tasks")} /></div>
 
         <div className="flex flex-1 flex-col justify-between">
           <div className="flex flex-col gap-2">
@@ -185,9 +185,11 @@ export default function HomeSideBar() {
 
 function UserMenu({
   onLogout,
+  onTasks,
   user,
 }: {
   onLogout: () => void;
+  onTasks: () => void;
   user: { displayName: string; username: string } | null;
 }) {
   const displayName = user?.displayName ?? "当前用户";
@@ -209,6 +211,7 @@ function UserMenu({
             aria-label="账户菜单"
             className="min-w-[208px] rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-menu)] p-1.5 text-[var(--color-text-primary)] shadow-[var(--shadow-floating)] backdrop-blur-2xl"
             onAction={(key) => {
+              if (key === "tasks") onTasks();
               if (key === "logout") onLogout();
             }}
           >
@@ -224,6 +227,9 @@ function UserMenu({
               </span>
             </Dropdown.Item>
             <WorkflowNotificationItems />
+            <Dropdown.Item id="tasks" textValue="我的任务" className="rounded-lg text-[var(--color-text-primary)]">
+              <span className="flex items-center gap-3"><SquareListUl className="h-4 w-4" /><span>我的任务</span></span>
+            </Dropdown.Item>
             <Dropdown.Item id="logout" textValue="退出登录" className="rounded-lg text-[var(--color-danger)] data-[hover=true]:bg-[var(--color-danger-soft)]">
               <span className="flex items-center gap-3"><LogoutIcon /><span>退出登录</span></span>
             </Dropdown.Item>

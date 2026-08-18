@@ -20,7 +20,7 @@ export function Card({
   return (
     <article
       className={[
-        "rounded-3xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4 text-[var(--color-text-primary)] shadow-[var(--shadow-card)] transition-shadow hover:shadow-[var(--shadow-card-hover)]",
+        "rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4 text-[var(--color-text-primary)] shadow-[var(--shadow-card)] transition-shadow hover:shadow-[var(--shadow-card-hover)]",
         className,
       ].join(" ")}
     >

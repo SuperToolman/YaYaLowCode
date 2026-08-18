@@ -294,6 +294,7 @@ pub(crate) async fn ensure_agent_tables(db: &DatabaseConnection) -> Result<(), A
             ON agent_sessions (app_route_app_id, updated_at DESC);
         ALTER TABLE agent_sessions
             ADD COLUMN IF NOT EXISTS agent_id VARCHAR(80) NOT NULL DEFAULT 'agent-default';
+        ALTER TABLE agent_sessions ALTER COLUMN agent_id DROP DEFAULT;
         ALTER TABLE agent_sessions
             ADD COLUMN IF NOT EXISTS source VARCHAR(40) NOT NULL DEFAULT 'general';
         ALTER TABLE agent_sessions

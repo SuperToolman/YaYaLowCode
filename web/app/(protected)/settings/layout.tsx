@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Card } from "@heroui/react/card";
 import { useAuth } from "../../components/auth-provider";
 
@@ -14,12 +15,7 @@ const settingsGroups = [
         permission: "settings.database",
         label: "数据库连接",
         description: "PostgreSQL 连接与凭据",
-      },
-      {
-        href: "/settings/agent-assistant",
-        permission: "settings.agent",
-        label: "Agent 协助设置",
-        description: "导航助手与 Schema 分析",
+        localOnly: true,
       },
       {
         href: "/settings/notifications",
@@ -32,12 +28,6 @@ const settingsGroups = [
         permission: "settings.database",
         label: "平台日志",
         description: "查看平台运行与异常事件",
-      },
-      {
-        href: "/settings/recycle-bin",
-        permission: "settings.database",
-        label: "回收站设置",
-        description: "已删除数据的保留期限",
       },
       {
         href: "/settings/about",
@@ -80,63 +70,16 @@ const settingsGroups = [
     label: "AI员工",
     items: [
       {
-        href: "/settings/ai-employees",
-        permission: "settings.agent",
-        label: "AI员工列表",
-        description: "已安装的 AI 员工",
-      },
-      {
         href: "/settings/ai-employee-market",
         permission: "settings.agent",
         label: "AI员工市场",
         description: "浏览与安装 AI 员工",
       },
-    ],
-  },
-  {
-    label: "Agent",
-    items: [
-      {
-        href: "/settings/agents",
-        permission: "settings.agent",
-        label: "机器人",
-        description: "多 Agent 与专属能力",
-      },
-      {
-        href: "/settings/model-providers",
-        permission: "settings.agent",
-        label: "模型提供商",
-        description: "API、网关与密钥",
-      },
-      {
-        href: "/settings/agent-profiles",
-        permission: "settings.agent",
-        label: "配置文件",
-        description: "模型与执行参数组合",
-      },
-      {
-        href: "/settings/personas",
-        permission: "settings.agent",
-        label: "人格",
-        description: "身份、语气与系统提示词",
-      },
       {
         href: "/settings/knowledge",
         permission: "settings.agent",
         label: "知识库",
-        description: "文档与向量检索",
-      },
-      {
-        href: "/settings/plugins",
-        permission: "settings.agent",
-        label: "插件",
-        description: "扩展入口与确认策略",
-      },
-      {
-        href: "/settings/skills",
-        permission: "settings.agent",
-        label: "Skills",
-        description: "能力与工具权限",
+        description: "配置 AI 员工使用的知识内容",
       },
     ],
   },
@@ -156,6 +99,12 @@ const settingsGroups = [
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { permissions, permissionsReady } = useAuth();
+  const [deploymentType, setDeploymentType] = useState<"saas" | "local">("saas");
+  useEffect(() => {
+    void fetch("/api/settings/license", { cache: "no-store" }).then((response) => response.json()).then((payload) => {
+      setDeploymentType(payload.data?.deploymentType === "local" ? "local" : "saas");
+    }).catch(() => setDeploymentType("saas"));
+  }, []);
   const canView = (permission: string) => permissions.includes("*")
     || permissions.includes(permission)
     || (permission === "settings.identity-source" && permissions.includes("settings.organization"));
@@ -170,7 +119,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
               </div>
               <nav aria-label="设置导航" className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-1.5 py-4">
               {settingsGroups.map((group) => {
-                const visibleItems = permissionsReady ? group.items.filter((item) => canView(item.permission)) : [];
+                const visibleItems = permissionsReady ? group.items.filter((item) => canView(item.permission) && (!("localOnly" in item) || !item.localOnly || deploymentType === "local")) : [];
                 if (!visibleItems.length) return null;
                 return (
                 <section key={group.label} className="overflow-clip rounded-lg border border-[var(--color-border)]">

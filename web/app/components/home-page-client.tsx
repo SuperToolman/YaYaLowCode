@@ -1,15 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, CircleCheck, Clock, File, FilePlus } from "@gravity-ui/icons";
+import { ArrowRight, CircleCheck } from "@gravity-ui/icons";
 import type { AppItem } from "../lib/apps";
 
-const workItems = [
-  { slug: "todo", label: "待我处理", description: "等待你处理的任务", icon: <CircleCheck />, tone: "blue" },
-  { slug: "processed", label: "我处理的", description: "已完成或已处理事项", icon: <Clock />, tone: "green" },
-  { slug: "created", label: "我创建的", description: "由你发起的事项", icon: <FilePlus />, tone: "amber" },
-  { slug: "copied", label: "抄送我的", description: "需要知悉的通知与记录", icon: <File />, tone: "violet" },
-] as const;
+const workItems = [{ slug: "tasks", label: "任务", description: "待我处理、我处理的、我创建的和抄送我的事项", icon: <CircleCheck />, tone: "blue" }] as const;
 
 export function HomeQuickAccess({ apps }: { apps: AppItem[] }) {
   const taskApp = apps.find((app) => app.status === "enabled") ?? apps[0];
