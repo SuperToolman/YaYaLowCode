@@ -1,4 +1,3 @@
-export type AppStatus = "enabled" | "draft" | "paused";
 export type AppColorTone = "primary" | "secondary" | "accent" | "success" | "warning";
 
 export type AppItem = {
@@ -9,11 +8,13 @@ export type AppItem = {
   badge?: string;
   color: AppColorTone;
   active?: boolean;
-  status: AppStatus;
   createdAt: string;
   owner: string;
   ownerAvatarUrl?: string | null;
   records: number;
+  deploymentType?: "local" | "online";
+  onlineVersion?: string | null;
+  onlineReleaseId?: string | null;
 };
 
 export type AppForm = {
@@ -49,19 +50,9 @@ export const quickActions = [
   { label: "依赖修复", variant: "primary" as const, icon: "tool" },
 ];
 
+
 export const apps: AppItem[] = [];
 
-export const appStatusLabel: Record<AppStatus, string> = {
-  enabled: "已启用",
-  draft: "草稿中",
-  paused: "已停用",
-};
-
-export const appStatusTone: Record<AppStatus, string> = {
-  enabled: "bg-[var(--color-success-soft)] text-[var(--color-success)]",
-  draft: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
-  paused: "bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]",
-};
 
 export const appColorToneClass: Record<AppColorTone, string> = {
   primary: "bg-[var(--color-primary-soft)] text-[var(--color-primary)]",
@@ -69,6 +60,14 @@ export const appColorToneClass: Record<AppColorTone, string> = {
   accent: "bg-[var(--color-accent-soft)] text-[var(--color-accent)]",
   success: "bg-[var(--color-success-soft)] text-[var(--color-success)]",
   warning: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
+};
+
+export const appColorBorderClass: Record<AppColorTone, string> = {
+  primary: "border-l-[var(--color-primary)]",
+  secondary: "border-l-[var(--color-secondary)]",
+  accent: "border-l-[var(--color-accent)]",
+  success: "border-l-[var(--color-success)]",
+  warning: "border-l-[var(--color-warning)]",
 };
 
 export function normalizeAppColorTone(value: string | null | undefined): AppColorTone {
@@ -359,7 +358,6 @@ function createRuntimeApp(appId: string): AppItem {
     desc: "运行时应用",
     icon: "general",
     color: "primary",
-    status: "enabled",
     createdAt: "2026-06-09",
     owner: "系统",
     records: 0,

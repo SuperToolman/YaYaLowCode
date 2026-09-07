@@ -1,12 +1,13 @@
 ﻿"use client";
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Button, Checkbox, Dropdown, Link as HeroLink, ListBox, Select, Table, TextArea, toast, type Selection, type SortDescriptor } from "@heroui/react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Button, Dropdown, Link as HeroLink, ListBox, Select, TextArea, toast, type SortDescriptor } from "@heroui/react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { AlertDialog } from "@heroui/react/alert-dialog";
 import { Drawer } from "@heroui/react/drawer";
 import { Modal } from "@heroui/react/modal";
 import { Pagination } from "@heroui/react/pagination";
-import { ArrowChevronLeft, ArrowChevronRight, ArrowUpArrowDown, ArrowsExpand, Copy, Ellipsis, Eye, TrashBin, Xmark } from "@gravity-ui/icons";
+import { ArrowChevronLeft, ArrowChevronRight, ArrowsExpand, Copy, Ellipsis, Eye, TrashBin, Xmark } from "@gravity-ui/icons";
 import { RuntimeFormRenderer, RuntimeFormSurface, type RuntimeFormSchema, type RuntimeSchemaField } from "@/features/form-runtime/components";
 import { DetailAuxiliaryPanel } from "./record-detail-auxiliary-panel";
 import { DetailBuiltIn, getPaginationPageNumbers } from "./records-table-primitives";
@@ -15,10 +16,15 @@ import type { ViewConfig, ViewSortRule } from "./use-form-views";
 import type { FormRecord } from "@/features/records/types";
 import type { AssociationFormData } from "@/features/records/types";
 import { useAssociationFormsQuery } from "@/features/records/queries";
+import { MySurface } from "../../../../components/my-surface";
+import { MyTable, MyTableCheckbox, type MyTableColumnMeta } from "../../../../components/my-table";
 
 type SchemaField = RuntimeSchemaField;
 type FormSchema = RuntimeFormSchema;
 type RecordTableRow = FormRecord & { rowNumber: number; displayValues: { fields: Record<string, string>; builtIns: Record<string, string> } };
+type BuiltInTableColumn = { kind: "builtin"; field: { id: string; label: string }; index: number };
+type CombinedInstanceTableColumn = { kind: "combinedInstance"; field: { id: "instanceId"; label: "实例标题" }; index: number };
+type RecordTableColumn = { kind: "field"; field: SchemaField; index: number } | BuiltInTableColumn | CombinedInstanceTableColumn;
 type TableAssociationFormData = AssociationFormData<FormSchema>;
 type AssociationDetail = { field: SchemaField; record: FormRecord; schema: FormSchema };
 
@@ -37,12 +43,6 @@ async function copyText(value: string) {
   const copied = document.execCommand("copy");
   textarea.remove();
   if (!copied) throw new Error("当前浏览器不支持复制");
-}
-
-function normalizeColumnWidth(width: number | string) {
-  if (typeof width === "number") return Number.isFinite(width) ? width : null;
-  const matched = width.trim().match(/^(\d+(?:\.\d+)?)(?:px)?$/);
-  return matched ? Number(matched[1]) : null;
 }
 
 function getDynamicColumnWidth(label: string, values: string[], sortable: boolean, maxWidth: number) {
@@ -181,7 +181,6 @@ export function RecordsTable({
   schema,
   records,
   selectedRecordIds,
-  loading,
   submitting,
   onDeleteRecord,
   onUpdateRecord,
@@ -207,7 +206,6 @@ export function RecordsTable({
   schema: FormSchema;
   records: FormRecord[];
   selectedRecordIds: Set<string>;
-  loading: boolean;
   submitting: boolean;
   onDeleteRecord: (recordId: string) => Promise<boolean>;
   onUpdateRecord: (recordId: string, values: Record<string, unknown>) => Promise<boolean>;
@@ -231,7 +229,7 @@ export function RecordsTable({
   const tableColumns = useMemo(() => {
     const businessColumns = new Map(columns.map((field, index) => [field.id, { kind: "field" as const, field, index }]));
     const builtInColumns = new Map(builtinFields.map((field, index) => [field.id, { kind: "builtin" as const, field, index }]));
-    const ordered: Array<{ kind: "field"; field: SchemaField; index: number } | { kind: "builtin"; field: { id: string; label: string }; index: number }> = [];
+    const ordered: RecordTableColumn[] = [];
 
     columnOrder.forEach((id) => {
       const column = businessColumns.get(id) ?? builtInColumns.get(id);
@@ -241,7 +239,15 @@ export function RecordsTable({
       builtInColumns.delete(id);
     });
 
-    return [...ordered, ...businessColumns.values(), ...builtInColumns.values()];
+    const allColumns = [...ordered, ...businessColumns.values(), ...builtInColumns.values()];
+    const instanceTitleIndex = allColumns.findIndex((column) => column.kind === "builtin" && column.field.id === "instanceTitle");
+    const instanceIdIndex = allColumns.findIndex((column) => column.kind === "builtin" && column.field.id === "instanceId");
+    if (instanceTitleIndex < 0 || instanceIdIndex < 0) return allColumns;
+
+    const firstIndex = Math.min(instanceTitleIndex, instanceIdIndex);
+    return allColumns
+      .filter((column) => !(column.kind === "builtin" && (column.field.id === "instanceTitle" || column.field.id === "instanceId")))
+      .toSpliced(firstIndex, 0, { kind: "combinedInstance", field: { id: "instanceId", label: "实例标题" }, index: instanceTitleIndex });
   }, [builtinFields, columnOrder, columns]);
   const [detailRecord, setDetailRecord] = useState<FormRecord | null>(null);
   const autoOpenedRecordIdRef = useRef<string | null>(null);
@@ -253,7 +259,6 @@ export function RecordsTable({
   const [deleteRecordTarget, setDeleteRecordTarget] = useState<FormRecord | null>(null);
   const [localPage, setLocalPage] = useState(1);
   const [localPageSize, setLocalPageSize] = useState(20);
-  const resizingColumnIdRef = useRef<string | null>(null);
   const [isDetailContentReady, setIsDetailContentReady] = useState(false);
   const [associationDetail, setAssociationDetail] = useState<AssociationDetail | null>(null);
   const associationFormIds = useMemo(
@@ -304,34 +309,6 @@ export function RecordsTable({
     )),
     [builtInColumnMaxWidths, builtinFields, recordDisplayValues, records, sortableFieldIds],
   );
-  const sequenceColumnWidth = useMemo(() => (
-    estimateTableColumnWidth(
-      records.map((_, index) => String(index + 1)),
-      24,
-      160,
-    )
-  ), [records]);
-  const frozenColumnOffsets = useMemo(() => {
-    const offsets = new Map<string, number>();
-    const frozenIds = new Set(frozenFieldIds);
-    let offset = sequenceColumnWidth;
-
-    tableColumns.forEach((column) => {
-      if (!frozenIds.has(column.field.id)) return;
-      offsets.set(column.field.id, offset);
-      offset += savedColumnWidths[column.field.id] ?? (column.kind === "field"
-        ? businessColumnWidths[column.index]
-        : builtInColumnWidths[column.index]);
-    });
-    return offsets;
-  }, [builtInColumnWidths, businessColumnWidths, frozenFieldIds, savedColumnWidths, sequenceColumnWidth, tableColumns]);
-  const tableMinimumWidth = useMemo(() => (
-    Math.max(44, sequenceColumnWidth)
-    + 180
-    + tableColumns.reduce((total, column) => total + (savedColumnWidths[column.field.id] ?? (
-      column.kind === "field" ? businessColumnWidths[column.index] : builtInColumnWidths[column.index]
-    )), 0)
-  ), [builtInColumnWidths, businessColumnWidths, savedColumnWidths, sequenceColumnWidth, tableColumns]);
   const pageSize = pagination?.pageSize ?? localPageSize;
   const totalRecords = pagination?.total ?? records.length;
   const pageCount = Math.max(1, Math.ceil(totalRecords / pageSize));
@@ -353,6 +330,10 @@ export function RecordsTable({
     direction: activeSort.direction === "asc" ? "ascending" : "descending",
   } : undefined, [activeSort]);
   const handleSortChange = useCallback((descriptor: SortDescriptor) => {
+    if (!descriptor) {
+      onViewConfigChange({ sorts: [] });
+      return;
+    }
     const columnId = String(descriptor.column);
     onViewConfigChange({
       sorts: [
@@ -361,22 +342,6 @@ export function RecordsTable({
       ],
     });
   }, [onViewConfigChange, sorts]);
-  const handleColumnResizeEnd = useCallback((widths: Map<string | number, number | string>) => {
-    const columnId = resizingColumnIdRef.current;
-    resizingColumnIdRef.current = null;
-    if (!columnId) return;
-    const width = widths.get(columnId);
-    if (width === undefined) return;
-    const normalizedWidth = normalizeColumnWidth(width);
-    if (normalizedWidth === null) return;
-    onViewConfigChange({ columnWidths: { ...savedColumnWidths, [columnId]: normalizedWidth } });
-  }, [onViewConfigChange, savedColumnWidths]);
-  const handleSelectionChange = useCallback((keys: Selection) => {
-    const nextSelectedIds = keys === "all"
-      ? new Set(pageRecords.map((record) => record.id))
-      : new Set([...keys].map(String));
-    pageRecords.forEach((record) => onRecordSelectionChange(record.id, nextSelectedIds.has(record.id)));
-  }, [onRecordSelectionChange, pageRecords]);
   const toggleCurrentPageSelection = useCallback((selected: boolean) => {
     pageRecords.forEach((record) => onRecordSelectionChange(record.id, selected));
   }, [onRecordSelectionChange, pageRecords]);
@@ -395,6 +360,65 @@ export function RecordsTable({
   const detailBuiltIns = detailRecord
     ? getBuiltinRecordValues(detailRecord, formName, formType === "workflow")
     : null;
+
+  const myTableColumns = useMemo<ColumnDef<RecordTableRow, unknown>[]>(() => {
+    const selectionColumn: ColumnDef<RecordTableRow, unknown> = {
+      id: "selection",
+      size: 44,
+      minSize: 44,
+      maxSize: 44,
+      meta: { pin: "left", fixedWidth: 44, headerClassName: "text-center", cellClassName: "text-center" } satisfies MyTableColumnMeta,
+      header: () => <div className="flex items-center justify-center"><MyTableCheckbox ariaLabel="全选当前页" isSelected={allCurrentPageSelected} onChange={toggleCurrentPageSelection} /></div>,
+      cell: ({ row }) => <>
+        <span className={`!text-[12px] ${selectedRecordIds.has(row.original.id) ? "opacity-0" : "transition-opacity group-hover:opacity-0"}`}>{row.original.rowNumber}</span>
+        <span className={`absolute inset-0 flex items-center justify-center transition-opacity ${selectedRecordIds.has(row.original.id) ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+          <MyTableCheckbox ariaLabel={`选择第 ${row.original.rowNumber} 行`} isSelected={selectedRecordIds.has(row.original.id)} onChange={(selected) => onRecordSelectionChange(row.original.id, selected)} />
+        </span>
+      </>,
+    };
+    const dataColumns = tableColumns.map((column): ColumnDef<RecordTableRow, unknown> => {
+      const { field, index } = column;
+      const id = column.kind === "combinedInstance" ? "instanceId" : field.id;
+      const defaultWidth = savedColumnWidths[id] ?? (column.kind === "field" ? businessColumnWidths[index] : builtInColumnWidths[index]);
+      const meta: MyTableColumnMeta = { pin: frozenFieldIds.includes(id) ? "left" : undefined };
+      return {
+        id,
+        accessorFn: (record) => column.kind === "combinedInstance"
+          ? record.displayValues.builtIns.instanceTitle ?? ""
+          : record.displayValues.fields[id] ?? record.displayValues.builtIns[id] ?? "",
+        header: field.label,
+        size: defaultWidth,
+        minSize: 80,
+        enableSorting: sortableFieldIds.includes(id),
+        meta,
+        cell: ({ row }) => {
+          const record = row.original;
+          if (column.kind === "combinedInstance") return <div className="min-w-0 leading-tight" title={`${record.displayValues.builtIns.instanceTitle} (${record.displayValues.builtIns.instanceId})`}><span className="block truncate !text-[8px]">{record.displayValues.builtIns.instanceTitle}</span><span className="mt-0.5 block truncate !text-[6px] text-[var(--color-text-secondary)]">{record.displayValues.builtIns.instanceId}</span></div>;
+          if (column.kind === "builtin") return <span className="block truncate" title={record.displayValues.builtIns[id]}>{record.displayValues.builtIns[id]}</span>;
+          const schemaField = field as SchemaField;
+          const relatedRecordId = getAssociationRecordId(schemaField, record.data[schemaField.id]);
+          const association = schemaField.props?.associationFormId ? associationForms.get(schemaField.props.associationFormId) : undefined;
+          const relatedRecord = relatedRecordId ? association?.records.get(relatedRecordId) : undefined;
+          const displayValue = record.displayValues.fields[schemaField.id];
+          return schemaField.type === "associationFormField" && relatedRecord && association
+            ? <HeroLink onPress={() => setAssociationDetail({ field: schemaField, record: relatedRecord, schema: association.schema })} className="block cursor-pointer truncate text-[var(--color-primary)] hover:underline">{displayValue}</HeroLink>
+            : <span className="block truncate" title={displayValue}>{displayValue}</span>;
+        },
+      };
+    });
+    const actionColumn: ColumnDef<RecordTableRow, unknown> = {
+      id: "actions",
+      header: "操作",
+      size: 180,
+      minSize: 180,
+      meta: { pin: "right", fixedWidth: 180 },
+      cell: ({ row }) => {
+        const record = row.original;
+        return <RecordRowActions record={record} formType={formType} submitting={submitting} canDeleteRecord={canDeleteRecord} deletingRecordId={deletingRecordId} onOpenDetail={() => openDetail(record)} onWorkflowAction={(action) => void onWorkflowAction(record, action)} onPause={() => { setPauseTarget(record); setPauseReason(""); }} onDelete={() => setDeleteRecordTarget(record)} onCopy={() => void copyText(JSON.stringify(record.data, null, 2)).then(() => toast.success("记录数据已复制")).catch(() => toast.danger("当前浏览器不支持复制，请手动选择文本"))} />;
+      },
+    };
+    return [selectionColumn, ...dataColumns, actionColumn];
+  }, [allCurrentPageSelected, associationForms, builtInColumnMaxWidths, builtInColumnWidths, businessColumnWidths, canDeleteRecord, deletingRecordId, formType, frozenFieldIds, onWorkflowAction, savedColumnWidths, selectedRecordIds, sortableFieldIds, submitting, tableColumns, toggleCurrentPageSelection]);
 
   function openDetail(record: FormRecord, editing = false) {
     setDetailRecord(record);
@@ -443,122 +467,18 @@ export function RecordsTable({
     }
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-[480px] flex-1 overflow-hidden rounded-xl border border-[var(--color-border)]" aria-busy="true" aria-label="正在加载表单数据">
-        <div className="h-12 animate-pulse border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]" />
-        <div className="m-3 h-[420px] animate-pulse rounded-md bg-[var(--color-bg-subtle)]" />
-      </div>
-    );
-  }
-
   return (
     <>
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <Table className="flex min-h-0 flex-1 flex-col">
-        <Table.ScrollContainer className="data-table-horizontal-scroll min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto">
-          <Table.ResizableContainer onResizeEnd={handleColumnResizeEnd} className="min-w-full overflow-visible">
-          <Table.Content
-            aria-label="表单提交数据"
-            selectionMode="multiple"
-            selectedKeys={selectedRecordIds}
-            onSelectionChange={handleSelectionChange}
-            sortDescriptor={sortDescriptor}
-            onSortChange={handleSortChange}
-            className="data-table-content min-w-full text-left"
-            style={{ "--data-table-minimum-width": `${tableMinimumWidth}px` } as CSSProperties}
-          >
-            <Table.Header>
-              <Table.Column id="selection" defaultWidth={sequenceColumnWidth} minWidth={44} maxWidth={80} className="sticky left-0 z-30 !p-0 !text-sm bg-surface-secondary">
-                <Checkbox slot="selection" aria-label="全选当前页" isSelected={allCurrentPageSelected} onChange={toggleCurrentPageSelection} className="flex w-full justify-center">
-                  <Checkbox.Content className="flex w-full justify-center"><Checkbox.Control><Checkbox.Indicator /></Checkbox.Control></Checkbox.Content>
-                </Checkbox>
-              </Table.Column>
-              {tableColumns.map((column, tableIndex) => {
-                const { field, index } = column;
-                const minWidth = 24;
-                const maxWidth = column.kind === "field" ? 320 : builtInColumnMaxWidths[index];
-                const defaultWidth = savedColumnWidths[field.id] ?? (column.kind === "field" ? businessColumnWidths[index] : builtInColumnWidths[index]);
-                return (
-                  <Table.Column key={field.id} id={field.id} isRowHeader={tableIndex === 0} allowsSorting={sortableFieldIds.includes(field.id)} defaultWidth={defaultWidth} minWidth={minWidth} maxWidth={maxWidth} style={frozenColumnOffsets.has(field.id) ? { left: frozenColumnOffsets.get(field.id) } : undefined} className={frozenColumnOffsets.has(field.id) ? "relative sticky z-20 !text-sm bg-surface-secondary shadow-[4px_0_8px_-8px_var(--color-text-secondary)]" : "relative !text-sm"}>
-                    <div className="flex min-w-0 items-center gap-1"><span className="truncate">{field.label}</span>{sortableFieldIds.includes(field.id) ? <ArrowUpArrowDown aria-hidden className="h-3.5 w-3.5 shrink-0 text-[var(--color-text-disabled)]" /> : null}</div>
-                    <Table.ColumnResizer aria-label={`调整${field.label}列宽`} onPointerDown={() => { resizingColumnIdRef.current = field.id; }} className="absolute inset-y-2 right-0 z-10 w-2 cursor-col-resize before:absolute before:inset-y-0 before:left-1/2 before:w-px before:bg-[var(--color-border)] hover:before:bg-[var(--color-primary)] data-[resizing]:before:bg-[var(--color-primary)]" />
-                  </Table.Column>
-                );
-              })}
-              <Table.Column id="actions" isRowHeader={tableColumns.length === 0} defaultWidth={180} minWidth={180} className="sticky right-0 z-30 !text-sm bg-surface-secondary shadow-[-4px_0_8px_-8px_var(--color-text-secondary)]">操作</Table.Column>
-            </Table.Header>
-            <Table.Body renderEmptyState={() => <div className="flex min-h-64 flex-col items-center justify-center px-4 py-12 text-center"><div className="text-base font-medium text-[var(--color-text-primary)]">暂无数据</div><div className="mt-2 text-sm text-[var(--color-text-secondary)]">当前表单还没有提交记录，可以先通过“新增”填写一条数据。</div></div>}>
-              <Table.Collection items={tableRows}>
-                {(record) => (
-                  <Table.Row key={record.id} id={record.id} className="group">
-                    <Table.Cell className="sticky left-0 z-20 bg-surface text-center">
-                      <span className={selectedRecordIds.has(record.id) ? "opacity-0" : "transition-opacity group-hover:opacity-0"}>{record.rowNumber}</span>
-                      <Checkbox
-                        slot="selection"
-                        aria-label={`选择第 ${record.rowNumber} 行`}
-                        className={[
-                          "absolute inset-0 flex items-center justify-center transition-opacity",
-                          selectedRecordIds.has(record.id) ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-                        ].join(" ")}
-                      >
-                        <Checkbox.Content className="flex h-full w-full items-center justify-center"><Checkbox.Control><Checkbox.Indicator /></Checkbox.Control></Checkbox.Content>
-                      </Checkbox>
-                    </Table.Cell>
-                    {tableColumns.map((column) => {
-                      const { field } = column;
-                      if (column.kind === "builtin") {
-                        return <Table.Cell key={field.id} style={frozenColumnOffsets.has(field.id) ? { left: frozenColumnOffsets.get(field.id) } : undefined} className={frozenColumnOffsets.has(field.id) ? "sticky z-10 bg-surface shadow-[4px_0_8px_-8px_var(--color-text-secondary)]" : undefined}><span className="block truncate" title={record.displayValues.builtIns[field.id]}>{record.displayValues.builtIns[field.id]}</span></Table.Cell>;
-                      }
-                      const schemaField = field as SchemaField;
-                      const relatedRecordId = getAssociationRecordId(schemaField, record.data[schemaField.id]);
-                      const association = schemaField.props?.associationFormId
-                        ? associationForms.get(schemaField.props.associationFormId)
-                        : undefined;
-                      const relatedRecord = relatedRecordId ? association?.records.get(relatedRecordId) : undefined;
-                      const displayValue = record.displayValues.fields[schemaField.id];
-
-                      return (
-                        <Table.Cell key={schemaField.id} style={frozenColumnOffsets.has(schemaField.id) ? { left: frozenColumnOffsets.get(schemaField.id) } : undefined} className={frozenColumnOffsets.has(schemaField.id) ? "sticky z-10 bg-surface shadow-[4px_0_8px_-8px_var(--color-text-secondary)]" : undefined}>
-                          {schemaField.type === "associationFormField" && relatedRecord && association ? (
-                            <HeroLink
-                              onPress={() => setAssociationDetail({ field: schemaField, record: relatedRecord, schema: association.schema })}
-                              className="block cursor-pointer truncate text-[var(--color-primary)] hover:underline"
-                            >
-                              {displayValue}
-                            </HeroLink>
-                          ) : (
-                            <span className="block truncate" title={displayValue}>{displayValue}</span>
-                          )}
-                        </Table.Cell>
-                      );
-                    })}
-                    <Table.Cell className="sticky right-0 z-20 bg-surface shadow-[-4px_0_8px_-8px_var(--color-text-secondary)]">
-                      <RecordRowActions
-                        record={record}
-                        formType={formType}
-                        submitting={submitting}
-                        canDeleteRecord={canDeleteRecord}
-                        deletingRecordId={deletingRecordId}
-                        onOpenDetail={() => openDetail(record)}
-                        onWorkflowAction={(action) => void onWorkflowAction(record, action)}
-                        onPause={() => { setPauseTarget(record); setPauseReason(""); }}
-                        onDelete={() => setDeleteRecordTarget(record)}
-                        onCopy={() => void copyText(JSON.stringify(record.data, null, 2)).then(() => toast.success("记录数据已复制")).catch(() => toast.danger("当前浏览器不支持复制，请手动选择文本"))}
-                      />
-                    </Table.Cell>
-                  </Table.Row>
-                )}
-              </Table.Collection>
-            </Table.Body>
-          </Table.Content>
-          </Table.ResizableContainer>
-        </Table.ScrollContainer>
-        <Table.Footer className="flex shrink-0 flex-nowrap items-center justify-between gap-4 overflow-x-auto">
+    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+      <MySurface className="min-h-0 min-w-0 flex-1 overflow-hidden p-0">
+          <MyTable ariaLabel="表单提交数据" data={tableRows} columns={myTableColumns} getRowId={(record) => record.id} className="flex-1" sortDescriptor={sortDescriptor} onSortChange={handleSortChange} selectedRowIds={selectedRecordIds} onSelectedRowIdsChange={onRecordSelectionChange} columnSizing={savedColumnWidths} onColumnSizingChange={(sizing) => onViewConfigChange({ columnWidths: sizing })} emptyState={<div><div className="text-base font-medium">暂无数据</div><div className="mt-2 text-sm text-[var(--color-text-secondary)]">当前表单还没有提交记录，可以先通过“新增”填写一条数据。</div></div>} />
+      </MySurface>
+      <MySurface className="shrink-0 min-w-0 overflow-hidden p-0">
+        <div className="flex min-h-14 min-w-0 flex-nowrap items-center justify-between gap-4 overflow-hidden px-4 py-2">
           <Pagination.Summary className="shrink-0 whitespace-nowrap text-xs text-[var(--color-text-secondary)]">
             共 {totalRecords} 条数据，当前显示 {totalRecords ? pageStart + 1 : 0}-{Math.min(pageStart + pageRecords.length, totalRecords)} 条
           </Pagination.Summary>
-          <div className="ml-auto flex shrink-0 items-center gap-4">
+          <div className="ml-auto flex min-w-0 shrink-0 flex-nowrap items-center justify-end gap-4">
             <Select
               aria-label="每页显示条数"
               className="w-28 shrink-0"
@@ -575,7 +495,7 @@ export function RecordsTable({
                 </ListBox>
               </Select.Popover>
             </Select>
-            <Pagination size="sm" aria-label="数据分页" className="shrink-0">
+            <Pagination size="sm" aria-label="数据分页" className="w-auto shrink-0 overflow-hidden">
               <Pagination.Content>
                 <Pagination.Item><Pagination.Previous isDisabled={activePage === 1} onPress={() => setPage(Math.max(1, activePage - 1))}>上一页</Pagination.Previous></Pagination.Item>
                 {paginationPages.map((pageNumber, index) => pageNumber === "ellipsis" ? <Pagination.Item key={`ellipsis-${index}`}><Pagination.Ellipsis /></Pagination.Item> : <Pagination.Item key={pageNumber}><Pagination.Link isActive={activePage === pageNumber} onPress={() => setPage(pageNumber)} className={activePage === pageNumber ? "border border-[var(--color-primary)] bg-[var(--color-primary)] font-semibold !text-[var(--color-text-on-primary)] shadow-sm hover:bg-[var(--color-primary)]" : "border border-transparent text-[var(--color-text-secondary)] hover:border-[var(--color-border)] hover:bg-[var(--color-bg-subtle)]"}>{pageNumber}</Pagination.Link></Pagination.Item>)}
@@ -583,8 +503,8 @@ export function RecordsTable({
               </Pagination.Content>
             </Pagination>
           </div>
-        </Table.Footer>
-      </Table>
+        </div>
+      </MySurface>
     </div>
     <Drawer
       isOpen={detailRecord !== null}

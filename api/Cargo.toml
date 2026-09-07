@@ -35,6 +35,9 @@ tokio-util = { version = "0.7", features = ["io"] }
 jsonwebtoken = "9"
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
+aes-gcm = "0.10"
+base64 = "0.22"
+sha2 = "0.10"
 
 [patch.crates-io]
 mime_guess = { path = "vendor/mime_guess" }

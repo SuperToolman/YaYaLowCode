@@ -1,6 +1,6 @@
 //! Storage-neutral form-record persistence used by forms and automation nodes.
 //!
-//! Every published form owns a physical table. Business modules only exchange the canonical
+//! Every form owns a physical table. Business modules only exchange the canonical
 //! `StoredFormRecord` shape and never construct table names or SQL themselves.
 
 use chrono::{DateTime, Utc};
@@ -290,7 +290,7 @@ where
         let schema = forms::load_schema_version_for_connection(
             self.db,
             &definition.form_uuid,
-            definition.published_schema_version,
+            definition.current_schema_version,
         )
         .await?;
         let plan = self.storage_plan(&definition.form_uuid).await?;

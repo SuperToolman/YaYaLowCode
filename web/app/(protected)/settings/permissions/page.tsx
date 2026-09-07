@@ -28,9 +28,9 @@ type Role = {
   status: string;
   memberCount: number;
 };
-type App = { id: string; name: string; status: string };
+type App = { id: string; name: string };
 type Agent = { id: string; name: string; description?: string; enabled: boolean };
-type AiEmployeeConfiguration = { agentId?: string; title: string; enabled: boolean };
+type AiEmployeeMarketItem = { id: string; title: string; installed: boolean; expiresAt: number | null };
 type ApiEnvelope<T> = { code: number; message: string; data: T | null };
 type NavigationItem = {
   id: string;
@@ -47,8 +47,8 @@ async function listAiEmployeePermissionAgents(): Promise<{
   error?: unknown;
 }> {
   try {
-    const response = await fetch("/api/settings/ai-employees/configurations", { cache: "no-store" });
-    const payload = await response.json() as ApiEnvelope<AiEmployeeConfiguration[]>;
+    const response = await fetch("/api/settings/ai-employee-market", { cache: "no-store" });
+    const payload = await response.json() as ApiEnvelope<AiEmployeeMarketItem[]>;
     if (!response.ok || payload.code !== 0 || !payload.data) {
       return { error: new Error(payload.message || "无法加载 AI 员工") };
     }
@@ -56,8 +56,8 @@ async function listAiEmployeePermissionAgents(): Promise<{
       data: {
         ...payload,
         data: payload.data
-          .filter((item): item is AiEmployeeConfiguration & { agentId: string } => Boolean(item.agentId))
-          .map((item) => ({ id: item.agentId, name: item.title, description: "AI 员工使用权限", enabled: item.enabled })),
+          .filter((item) => item.installed)
+          .map((item) => ({ id: item.id, name: item.title, description: "AI 员工使用权限", enabled: !item.expiresAt || item.expiresAt >= Math.floor(Date.now() / 1000) })),
       },
     };
   } catch (error) {
@@ -141,18 +141,12 @@ const platformPermissionGroups = [
     items: [["agent.window", "访问服务窗口", "查看 Agent 会话并发送消息"]],
   },
   {
-    key: "designer",
-    label: "大纲",
-    description: "查看应用的表单与字段大纲",
-    items: [["designer.access", "访问大纲", "查看应用下的表单和字段结构"]],
-  },
-  {
     key: "settings",
     label: "设置",
     description: "设置中心及其页面的访问入口",
     items: [
       ["settings.database", "数据库连接", "管理 PostgreSQL 连接配置"],
-      ["settings.agent", "AI 员工配置", "管理 AI 员工、模型供应商、知识库与插件"],
+      ["settings.agent", "AI 员工配置", "管理 AI 员工、自有模型和知识库"],
       ["settings.identity-source", "身份源与组织架构", "管理身份源并查看组织与部门结构"],
       ["settings.roles", "角色管理", "查看角色和成员绑定"],
       ["settings.users", "用户管理", "查看平台用户与状态"],
@@ -528,7 +522,7 @@ export default function PermissionsSettingsPage() {
               <div className="min-h-0 overflow-y-auto overscroll-contain"><ResourcePermissions resource={selectedResource} grants={grantSet} state={resourceState} onToggle={toggle} onSetScope={setScope} onSetVisibleViews={setVisibleViews} /></div>
             </div>
           ) : (
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"><PlatformPermissions agents={agents} grants={grantSet} onToggle={toggle} onSetGroup={setPlatformGroup} /></div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain"><PlatformPermissions agents={agents} grants={grantSet} onToggle={toggle} onSetGroup={setPlatformGroup} /></div>
           )}
         </div>
       </div>

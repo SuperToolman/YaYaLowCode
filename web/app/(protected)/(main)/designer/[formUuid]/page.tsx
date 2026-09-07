@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent } from "react";
@@ -45,7 +45,7 @@ import {
   planFieldInsertion,
   resizeField,
 } from "./designer-layout";
-import { buildSchema } from "./designer-schema";
+import { buildSchema, normalizeDesignerFields } from "./designer-schema";
 import type { FormDesignerSchema } from "./designer-schema";
 import { getDefaultPageDesignerProps, normalizePageDesignerProps } from "./designer-schema";
 import { validateDesignerSchema } from "./designer-validation";
@@ -74,7 +74,6 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
   const appId = searchParams.get("appId");
   const { hasPermission } = useAuth();
   const canEditForm = Boolean(appId && hasPermission(`app:${appId}:edit_form`));
-  const canPublish = canEditForm && Boolean(appId && hasPermission(`app:${appId}:publish`));
   const [appName, setAppName] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const resizeStateRef = useRef<ResizeState | null>(null);
@@ -110,18 +109,13 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
     () => fields.find((field) => field.id === selectedFieldId) ?? null,
     [fields, selectedFieldId],
   );
-  const agentAnalysisSourceHash = useMemo(
-    () => getAgentAnalysisSourceHash(currentSchema),
-    [currentSchema],
-  );
   const [saveMessage, setSaveMessage] = useState("");
   const [latestVersion, setLatestVersion] = useState(1);
-  const [publishedVersion, setPublishedVersion] = useState(1);
+  const [currentVersion, setCurrentVersion] = useState(1);
   const [versions, setVersions] = useState<FormVersionSummary[]>([]);
   const [activeDesignerPanel, setActiveDesignerPanel] =
     useState<DesignerPanelKey>("components");
   const [debugEvents, setDebugEvents] = useState<RuntimeDebugEvent[]>([]);
-  const [isAnalyzingAgent, setIsAnalyzingAgent] = useState(false);
   const [workbenchWidth, setWorkbenchWidth] = useState(DESIGNER_WORKBENCH_MIN_WIDTH);
   const [activeDragData, setActiveDragData] = useState<DesignerDragData | null>(null);
   const sensors = useSensors(
@@ -206,7 +200,7 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
 
     async function loadSchema() {
       try {
-        const response = await fetch(`/api/forms/${formUuid}/schema?scope=draft`, {
+        const response = await fetch(`/api/forms/${formUuid}/schema`, {
           cache: "no-store",
         });
         const payload = (await response.json()) as {
@@ -215,7 +209,6 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
             schema: FormDesignerSchema;
             version: number;
             latestVersion: number;
-            publishedVersion: number;
           } | null;
           message: string;
         };
@@ -225,10 +218,7 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
         }
 
         const nextSchema = payload.data.schema;
-        const nextFields = normalizeRichTextLayouts((nextSchema.fields as PlacedField[]).map((field) => ({
-            ...field,
-            parentGroupId: field.parentGroupId ?? null,
-          })));
+        const nextFields = normalizeDesignerFields(nextSchema.fields as PlacedField[]);
         const nextPageProps = normalizePageDesignerProps(nextSchema.pageProps);
         const nextFormName = nextSchema.formName || "New Page";
         resetDesignerHistory(nextFormName, nextFields, nextPageProps);
@@ -236,7 +226,7 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
         setFields(nextFields);
         setPageProps(nextPageProps);
         setLatestVersion(payload.data.latestVersion);
-        setPublishedVersion(payload.data.publishedVersion);
+        setCurrentVersion(payload.data.version);
       } catch {
         // Keep the blank local state when backend schema is unavailable.
       }
@@ -790,14 +780,15 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
 
     void (async () => {
       try {
-        const response = await fetch(`/api/forms/${formUuid}/schema/draft`, {
+        const response = await fetch(`/api/forms/${formUuid}/schema`, {
           method: "POST",
           headers: {
             "content-type": "application/json",
           },
           body: JSON.stringify({
             schema: currentSchema,
-            change_log: `draft saved at ${new Date().toISOString()}`,
+            change_log: `saved at ${new Date().toISOString()}`,
+            base_version: currentVersion,
           }),
         });
         const payload = (await response.json()) as {
@@ -806,13 +797,12 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
           data: {
             version: number;
             latestVersion: number;
-            publishedVersion: number;
           } | null;
         };
 
         if (payload.code === 0 && payload.data) {
           setLatestVersion(payload.data.latestVersion);
-          setPublishedVersion(payload.data.publishedVersion);
+          setCurrentVersion(payload.data.version);
           const versionsResponse = await fetch(`/api/forms/${formUuid}/versions`, {
             cache: "no-store",
           });
@@ -834,7 +824,7 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
         );
         if (payload.code === 0) {
           if (hasEffectiveSchemaChange) {
-            toast.success("草稿已保存", {
+            toast.success("已保存", {
               description: `当前版本 v${payload.data?.latestVersion ?? latestVersion}`,
             });
           } else {
@@ -849,134 +839,6 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
         setSaveMessage("保存失败");
         toast.danger("保存失败", {
           description: "请稍后重试。",
-        });
-      }
-    })();
-  }
-
-  async function handleAnalyzeAgentSchema() {
-    if (!pageProps.agent.enabled) return;
-    const sourceHash = getAgentAnalysisSourceHash(currentSchema);
-    setIsAnalyzingAgent(true);
-    setPageProps((current) => ({
-      ...current,
-      agent: {
-        ...current.agent,
-        context: { ...current.agent.context, status: "analyzing", error: "" },
-      },
-    }));
-    try {
-      const generated = await analyzeSchemaBeforePublish({
-        appId,
-        formUuid,
-        prompt: pageProps.agent.prompt,
-        schema: currentSchema,
-      });
-      setPageProps((current) => ({
-        ...current,
-        agent: {
-          ...current.agent,
-          context: {
-            ...current.agent.context,
-            generated,
-            overrides: "",
-            generatedAt: new Date().toISOString(),
-            sourceHash,
-            status: "ready",
-            error: "",
-          },
-        },
-      }));
-      toast.success("Schema 分析完成", { description: "分析结果已写入当前设计草稿，请保存后发布。" });
-    } catch (reason) {
-      const message = reason instanceof Error ? reason.message : "Schema 分析失败";
-      setPageProps((current) => ({
-        ...current,
-        agent: {
-          ...current.agent,
-          context: { ...current.agent.context, status: "failed", error: message },
-        },
-      }));
-      toast.danger("Schema 分析失败", { description: message });
-    } finally {
-      setIsAnalyzingAgent(false);
-    }
-  }
-
-  function handlePublish() {
-    if (!validateBeforePersist()) return;
-
-    setSaveMessage("发布中...");
-
-    void (async () => {
-      try {
-        const currentAnalysisHash = getAgentAnalysisSourceHash(currentSchema);
-        const analysisIsFresh = pageProps.agent.context.status === "ready" && pageProps.agent.context.sourceHash === currentAnalysisHash;
-        const publishPageProps: PageDesignerProps = pageProps.agent.enabled && !analysisIsFresh
-          ? { ...pageProps, agent: { ...pageProps.agent, context: { ...pageProps.agent.context, status: "stale" } } }
-          : pageProps;
-        if (publishPageProps !== pageProps) setPageProps(publishPageProps);
-        const schemaToPublish = buildSchema(formUuid, formName, fields, publishPageProps);
-
-        setSaveMessage("正在保存发布版本...");
-        const draftResponse = await fetch(`/api/forms/${formUuid}/schema/draft`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            schema: schemaToPublish,
-            change_log: `publish draft prepared at ${new Date().toISOString()}`,
-          }),
-        });
-        const draftPayload = (await draftResponse.json()) as {
-          code: number;
-          message: string;
-          data: { latestVersion: number; publishedVersion: number } | null;
-        };
-        if (!draftResponse.ok || draftPayload.code !== 0 || !draftPayload.data) {
-          throw new Error(draftPayload.message || "保存发布版本失败");
-        }
-
-        const response = await fetch(`/api/forms/${formUuid}/publish`, {
-          method: "POST",
-        });
-        const payload = (await response.json()) as {
-          code: number;
-          message: string;
-          data: {
-            latestVersion: number;
-            publishedVersion: number;
-          } | null;
-        };
-
-        if (payload.code === 0 && payload.data) {
-          setLatestVersion(payload.data.latestVersion);
-          setPublishedVersion(payload.data.publishedVersion);
-          const versionsResponse = await fetch(`/api/forms/${formUuid}/versions`, {
-            cache: "no-store",
-          });
-          const versionsPayload = (await versionsResponse.json()) as {
-            code: number;
-            data: FormVersionSummary[] | null;
-          };
-          if (versionsPayload.code === 0 && versionsPayload.data) {
-            setVersions(versionsPayload.data.slice(0, 20));
-          }
-        }
-
-        setSaveMessage(payload.code === 0 ? "已发布" : payload.message);
-        if (payload.code === 0) {
-          toast.success("发布成功", {
-            description: `已发布版本 v${payload.data?.publishedVersion ?? publishedVersion}`,
-          });
-        } else {
-          toast.danger("发布失败", {
-            description: payload.message,
-          });
-        }
-      } catch (reason) {
-        setSaveMessage("发布失败");
-        toast.danger("发布失败", {
-          description: reason instanceof Error ? reason.message : "请稍后重试。",
         });
       }
     })();
@@ -999,21 +861,15 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
           data: {
             schema: FormDesignerSchema;
             latestVersion: number;
-            publishedVersion: number;
           } | null;
         };
 
         if (payload.code === 0 && payload.data) {
           setFormName(payload.data.schema.formName || "New Page");
-          setFields(
-            normalizeRichTextLayouts((payload.data.schema.fields as PlacedField[]).map((field) => ({
-              ...field,
-              parentGroupId: field.parentGroupId ?? null,
-            }))),
-          );
+          setFields(normalizeDesignerFields(payload.data.schema.fields as PlacedField[]));
           setPageProps(normalizePageDesignerProps(payload.data.schema.pageProps));
           setLatestVersion(payload.data.latestVersion);
-          setPublishedVersion(payload.data.publishedVersion);
+          setCurrentVersion(version);
         }
 
         setSaveMessage(payload.code === 0 ? `已读取 v${version}（未保存）` : payload.message);
@@ -1113,15 +969,12 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
       >
         <DesignerWorkbenchSidebar
           activePanel={activeDesignerPanel}
-          agentAnalysisStale={pageProps.agent.enabled && pageProps.agent.context.sourceHash !== agentAnalysisSourceHash}
           debugEvents={debugEvents}
           fields={fields}
           formType={formType}
           pageProps={pageProps}
           schema={currentSchema}
           onActivePanelChange={setActiveDesignerPanel}
-          isAnalyzingAgent={isAnalyzingAgent}
-          onAnalyzeAgentSchema={() => void handleAnalyzeAgentSchema()}
           onBeforeDesignerActionRegister={(handler) => {
             beforeDesignerActionRef.current = handler;
           }}
@@ -1134,33 +987,25 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
             aria-label="调整设计器侧栏宽度"
             className="group flex h-full w-4 cursor-col-resize items-center justify-center bg-transparent"
             onPointerDown={handleWorkbenchResizeStart}
-          >
-            <span className="h-full w-px rounded-full bg-[var(--color-border)] transition group-hover:w-[3px] group-hover:bg-[var(--color-primary)]" />
-          </button>
+          />
         </div>
 
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden">
           <FormDesignerHeader
             appName={appName}
-            fieldsCount={fields.length}
             formName={formName}
             formType={formType}
             formUuid={formUuid}
             isEditingFormName={isEditingFormName}
-            latestVersion={latestVersion}
-            publishedVersion={publishedVersion}
-            rowCount={rowCount}
             versions={versions}
             onBackToApp={handleBackToApp}
             onEditingFormNameChange={setIsEditingFormName}
             onFormNameChange={setFormName}
             onPreview={handlePreview}
-            onPublish={handlePublish}
             onRestoreVersionSelect={handleRestore}
             onSave={handleSave}
             onWorkflowDesign={formType === "workflow" ? () => void handleWorkflowDesign() : undefined}
             canEditForm={canEditForm}
-            canPublish={canPublish}
             saveMessage={saveMessage}
           />
 
@@ -1178,7 +1023,7 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
               onResizePointerMove={handleResizePointerMove}
               onResizePointerUp={endResizing}
             />
-            <Card className="h-full w-[300px] shrink-0 overflow-hidden rounded-lg border border-[var(--designer-border)] bg-[var(--designer-surface-solid)] p-0 shadow-none">
+            <Card className="h-full w-[300px] shrink-0 overflow-hidden p-0">
               {selectedField ? (
                 <FieldPropertyPanel
                   fields={fields}
@@ -1221,110 +1066,29 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
   );
 }
 
-function getAgentAnalysisSourceHash(schema: FormDesignerSchema) {
-  const source = JSON.stringify({
-    formName: schema.formName,
-    columns: schema.columns,
-    rows: schema.rows,
-    fields: schema.fields,
-    capabilitiesVersion: FORM_COMPONENT_AGENT_CAPABILITIES_VERSION,
-    prompt: schema.pageProps.agent.prompt,
-  });
-  let hash = 2166136261;
-  for (let index = 0; index < source.length; index += 1) {
-    hash ^= source.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
-}
-
-async function analyzeSchemaBeforePublish({ appId, formUuid, prompt, schema }: { appId: string | null; formUuid: string; prompt: string; schema: FormDesignerSchema }) {
-  const context = { appId: appId ?? undefined, formUuid, route: `/designer/${formUuid}` };
-  const sessionResponse = await fetch("/api/agent/sessions", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ source: "schema_analysis", context }),
-  });
-  const sessionPayload = (await sessionResponse.json()) as { code: number; message: string; data: { id: string } | null };
-  if (!sessionResponse.ok || sessionPayload.code !== 0 || !sessionPayload.data) {
-    throw new Error(sessionPayload.message || "无法创建 Schema 分析会话");
-  }
-
-  const schemaForAnalysis = {
-    ...schema,
-    fields: schema.fields.map((field) => ({
-      ...field,
-      agentCapability: getFormComponentAgentCapability(field.type),
-    })),
-    pageProps: {
-      ...schema.pageProps,
-      agent: {
-        enabled: schema.pageProps.agent.enabled,
-        prompt: schema.pageProps.agent.prompt,
-      },
-    },
-  };
-  const analysisPrompt = [
-    prompt.trim() ? `设计者提供的业务提示：${prompt.trim()}` : "",
-    `Schema：${JSON.stringify(schemaForAnalysis)}`,
-  ].filter(Boolean).join("\n\n");
-  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(sessionPayload.data.id)}/messages`, {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "text/event-stream" },
-    body: JSON.stringify({ content: analysisPrompt, context }),
-  });
-  if (!response.ok || !response.body) {
-    const payload = (await response.json()) as { message?: string };
-    throw new Error(payload.message || "Schema 分析失败");
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let result = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-    const frames = buffer.split("\n\n");
-    buffer = frames.pop() ?? "";
-    for (const frame of frames) result += readAgentAnalysisDelta(frame);
-    if (done) {
-      if (buffer.trim()) result += readAgentAnalysisDelta(buffer);
-      break;
-    }
-  }
-  const normalizedResult = normalizeAgentSchemaAnalysis(result);
-  if (!normalizedResult) throw new Error("机器人未生成有效的 Schema 分析结果");
-  return normalizedResult;
-}
-
-function normalizeAgentSchemaAnalysis(content: string) {
-  const narrationPatterns = [
-    /^(好的|当然|没问题)[，。！!]?/,
-    /^(我来|接下来我将|现在我已|现在开始|开始生成|以下是|下面是)/,
-    /(获取该应用下的其他表单|拥有完整的上下文|为分析提供更完整的上下文)/,
-  ];
-  return content
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
-    .split(/\r?\n/)
-    .map((line) => line.trimEnd())
-    .filter((line) => !narrationPatterns.some((pattern) => pattern.test(line.trim())))
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
 function readAgentAnalysisDelta(frame: string) {
   let eventName = "message";
   const dataLines: string[] = [];
-  for (const line of frame.split(/\r?\n/)) {
+  for (const line of frame.split(/\r?/)) {
     if (line.startsWith("event:")) eventName = line.slice(6).trim();
     if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
   }
   if (dataLines.length === 0) return "";
   let payload: Record<string, unknown>;
-  try { payload = JSON.parse(dataLines.join("\n")) as Record<string, unknown>; } catch { return ""; }
+  try { payload = JSON.parse(dataLines.join("")) as Record<string, unknown>; } catch { return ""; }
   if (eventName === "message.delta" && typeof payload.delta === "string") return payload.delta;
+  // The current Agent Runtime forwards the canonical DSH envelope instead of
+  // synthesizing legacy message.delta events. Extract text chunks from that
+  // envelope for the schema-analysis consumer.
+  if (eventName === "dsh.session.event" && payload.type === "assistant/chunk") {
+    const chunk = payload.data && typeof payload.data === "object"
+      ? (payload.data as Record<string, unknown>).chunk
+      : undefined;
+    if (chunk && typeof chunk === "object") {
+      const value = chunk as Record<string, unknown>;
+      return value.type === "text-delta" && typeof value.text === "string" ? value.text : "";
+    }
+  }
   if (eventName === "run.failed") throw new Error(typeof payload.message === "string" ? payload.message : "Schema 分析失败");
   return "";
 }

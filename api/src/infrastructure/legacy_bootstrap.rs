@@ -17,25 +17,15 @@ pub(crate) async fn ensure_form_tables(db: &DatabaseConnection) -> Result<(), Ap
           name varchar(120) NOT NULL,
           slug varchar(80) NOT NULL,
           form_type varchar(24) NOT NULL DEFAULT 'normal',
-          status varchar(24) NOT NULL,
-          draft_schema_version integer NOT NULL DEFAULT 1,
-          published_schema_version integer NOT NULL DEFAULT 1,
+          current_schema_version integer NOT NULL DEFAULT 1,
           latest_schema_version integer NOT NULL DEFAULT 1,
           created_at timestamptz NOT NULL,
           updated_at timestamptz NOT NULL
         );
         ALTER TABLE form_definitions
-          ADD COLUMN IF NOT EXISTS draft_schema_version integer NOT NULL DEFAULT 1;
-        ALTER TABLE form_definitions
-          ADD COLUMN IF NOT EXISTS published_schema_version integer NOT NULL DEFAULT 1;
+          ADD COLUMN IF NOT EXISTS current_schema_version integer NOT NULL DEFAULT 1;
         ALTER TABLE form_definitions
           ADD COLUMN IF NOT EXISTS form_type varchar(24) NOT NULL DEFAULT 'normal';
-        UPDATE form_definitions
-          SET draft_schema_version = latest_schema_version
-          WHERE draft_schema_version IS NULL;
-        UPDATE form_definitions
-          SET published_schema_version = latest_schema_version
-          WHERE published_schema_version IS NULL;
         CREATE INDEX IF NOT EXISTS idx_form_definitions_app_route_app_id
           ON form_definitions (app_route_app_id);
         "#,
@@ -86,12 +76,18 @@ pub(crate) async fn ensure_form_tables(db: &DatabaseConnection) -> Result<(), Ap
           version integer NOT NULL,
           schema_json jsonb NOT NULL,
           change_log varchar(255),
-          published boolean NOT NULL DEFAULT false,
           created_at timestamptz NOT NULL,
           updated_at timestamptz NOT NULL
         );
         ALTER TABLE form_schemas
           ADD COLUMN IF NOT EXISTS change_log varchar(255);
+
+        UPDATE form_definitions
+        SET current_schema_version = GREATEST(COALESCE(current_schema_version, 1), 1);
+        ALTER TABLE form_definitions
+          ALTER COLUMN current_schema_version SET DEFAULT 1,
+          ALTER COLUMN current_schema_version SET NOT NULL;
+        ALTER TABLE form_definitions DROP COLUMN IF EXISTS status;
         CREATE UNIQUE INDEX IF NOT EXISTS idx_form_schemas_form_uuid_version
           ON form_schemas (form_uuid, version);
         "#,
@@ -301,6 +297,20 @@ pub(crate) async fn ensure_agent_tables(db: &DatabaseConnection) -> Result<(), A
             ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE agent_sessions
             ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES iam_users(id) ON DELETE CASCADE;
+        ALTER TABLE agent_sessions
+            ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+        CREATE TABLE IF NOT EXISTS agent_files (
+            id UUID PRIMARY KEY, session_id UUID NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+            owner_user_id UUID NOT NULL REFERENCES iam_users(id) ON DELETE CASCADE, agent_id VARCHAR(80) NOT NULL,
+            original_name TEXT NOT NULL, storage_key TEXT NOT NULL UNIQUE, mime_type VARCHAR(255) NOT NULL,
+            byte_size BIGINT NOT NULL, checksum VARCHAR(128) NOT NULL, kind VARCHAR(16) NOT NULL DEFAULT 'input',
+            created_at TIMESTAMPTZ NOT NULL, expires_at TIMESTAMPTZ
+        );
+        CREATE TABLE IF NOT EXISTS agent_file_links (
+            id UUID PRIMARY KEY, file_id UUID NOT NULL REFERENCES agent_files(id) ON DELETE CASCADE,
+            session_id UUID NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+            message_seq BIGINT, run_id VARCHAR(128), role VARCHAR(32) NOT NULL, created_at TIMESTAMPTZ NOT NULL
+        );
         CREATE INDEX IF NOT EXISTS idx_agent_sessions_agent_id
             ON agent_sessions (agent_id, updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_agent_sessions_owner_updated_at
@@ -349,24 +359,6 @@ pub(crate) async fn ensure_agent_tables(db: &DatabaseConnection) -> Result<(), A
         CREATE INDEX IF NOT EXISTS idx_agent_run_steps_run_index
             ON agent_run_steps (run_id, step_index ASC);
 
-        -- Compatibility path for databases whose old in-file migrations all
-        -- shared the same recorded migration name.
-        CREATE TABLE IF NOT EXISTS agent_pending_actions (
-            id UUID PRIMARY KEY,
-            action_uuid VARCHAR(64) NOT NULL UNIQUE,
-            session_id UUID NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
-            action_type VARCHAR(64) NOT NULL,
-            payload_json JSONB NOT NULL,
-            summary TEXT NOT NULL,
-            status VARCHAR(24) NOT NULL,
-            expires_at TIMESTAMPTZ NOT NULL,
-            confirmed_at TIMESTAMPTZ,
-            error_message TEXT,
-            created_at TIMESTAMPTZ NOT NULL,
-            completed_at TIMESTAMPTZ
-        );
-        CREATE INDEX IF NOT EXISTS idx_agent_pending_actions_session_status
-            ON agent_pending_actions (session_id, status, created_at DESC);
         "#,
     )
     .await?;
@@ -479,6 +471,15 @@ pub(crate) async fn ensure_identity_tables(db: &DatabaseConnection) -> Result<()
     .await?;
     db.execute_unprepared(
         r#"
+        INSERT INTO organization_units (
+            id, source_type, external_id, name, sort_order, status, raw_json, created_at, updated_at
+        ) VALUES (
+            '00000000-0000-4000-8000-000000000010',
+            'local', 'local:default-tenant', 'YaYa 默认租户', 0, 'active',
+            '{"protected": true, "source": "local"}'::jsonb, NOW(), NOW()
+        ) ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name, status = 'active', updated_at = NOW();
+
         INSERT INTO iam_users (
             id, display_name, status, is_admin, is_boss, real_authed, extension_json, created_at, updated_at
         ) VALUES (
@@ -499,6 +500,19 @@ pub(crate) async fn ensure_identity_tables(db: &DatabaseConnection) -> Result<()
             real_authed = TRUE,
             extension_json = iam_users.extension_json || '{"protected": true, "source": "local"}'::jsonb,
             updated_at = NOW();
+
+        UPDATE iam_users
+        SET primary_organization_unit_id = '00000000-0000-4000-8000-000000000010'
+        WHERE id = '00000000-0000-4000-8000-000000000001'
+          AND primary_organization_unit_id IS NULL;
+
+        INSERT INTO iam_organization_memberships (
+            id, user_id, organization_unit_id, is_primary, created_at
+        ) VALUES (
+            '00000000-0000-4000-8000-000000000011',
+            '00000000-0000-4000-8000-000000000001',
+            '00000000-0000-4000-8000-000000000010', TRUE, NOW()
+        ) ON CONFLICT (user_id, organization_unit_id) DO UPDATE SET is_primary = TRUE;
         "#,
     )
     .await?;

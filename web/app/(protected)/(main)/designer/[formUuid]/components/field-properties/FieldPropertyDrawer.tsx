@@ -288,16 +288,21 @@ export function FieldPropertyPanel({
           {field.type !== "groupContainer" && field.type !== "description" && field.type !== "button" && field.type !== "link" ? (
             <PropertyFold title="Agent 数据访问">
               <PropertyRow label="读取策略">
-                <select
+                <Select
                   aria-label="Agent 数据读取策略"
-                  value={field.props.agentDataAccess ?? "allow"}
-                  onChange={(event) => onPropsChange(field.id, { agentDataAccess: event.currentTarget.value as "allow" | "mask" | "deny" })}
-                  className="h-8 min-w-0 flex-1 rounded-md border border-[var(--designer-border)] bg-[var(--designer-surface-solid)] px-2 text-xs text-[var(--color-text-primary)]"
+                  className="min-w-0 flex-1"
+                  selectedKey={field.props.agentDataAccess ?? "allow"}
+                  onSelectionChange={(key) => onPropsChange(field.id, { agentDataAccess: String(key ?? "allow") as "allow" | "mask" | "deny" })}
                 >
-                  <option value="allow">允许读取</option>
-                  <option value="mask">脱敏显示</option>
-                  <option value="deny">禁止读取</option>
-                </select>
+                  <Select.Trigger><Select.Value /><Select.Indicator /></Select.Trigger>
+                  <Select.Popover>
+                    <ListBox>
+                      <ListBox.Item id="allow">允许读取</ListBox.Item>
+                      <ListBox.Item id="mask">脱敏显示</ListBox.Item>
+                      <ListBox.Item id="deny">禁止读取</ListBox.Item>
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
               </PropertyRow>
             </PropertyFold>
           ) : null}

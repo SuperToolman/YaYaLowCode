@@ -19,6 +19,7 @@ pub(crate) struct AgentPageContext {
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CreateAgentSessionRequest {
+    pub(crate) agent_id: Option<String>,
     pub(crate) context: Option<AgentPageContext>,
 }
 
@@ -29,9 +30,15 @@ pub(crate) struct UpdateAgentSessionRequest {
     pub(crate) is_pinned: Option<bool>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RuntimeSessionAccessQuery {
+    pub(crate) agent_id: Option<String>,
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CreatePendingAgentActionRequest {
+pub(crate) struct CreateAgentTransactionRequest {
     pub(crate) action_type: String,
     pub(crate) payload: Value,
     pub(crate) summary: String,
@@ -56,7 +63,7 @@ pub(crate) struct ApiAgentSession {
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ApiPendingAgentAction {
+pub(crate) struct ApiAgentTransaction {
     pub(crate) id: String,
     pub(crate) action_type: String,
     pub(crate) summary: String,

@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 use crate::infrastructure::entities::form_definition_entity;
 use crate::modules::navigation::ApiNavigationItem;
 use crate::platform::records::StoredFormRecord;
-use crate::shared::{FormStatus, FormType, format_date};
+use crate::shared::{FormType, format_date};
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -18,7 +18,6 @@ pub(crate) struct ApiFormSummary {
     pub(crate) form_type: String,
     pub(crate) category: String,
     pub(crate) count: Option<i32>,
-    #[schema(value_type = FormStatus)]
     pub(crate) status: String,
     pub(crate) latest_schema_version: i32,
     pub(crate) created_at: String,
@@ -30,19 +29,13 @@ pub(crate) struct ApiSchemaPayload {
     pub(crate) form_uuid: String,
     pub(crate) schema: Value,
     pub(crate) version: i32,
-    pub(crate) draft_version: i32,
-    pub(crate) published_version: i32,
     pub(crate) latest_version: i32,
-    pub(crate) published: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiFormVersionSummary {
     pub(crate) version: i32,
-    pub(crate) published: bool,
-    pub(crate) is_current_draft: bool,
-    pub(crate) is_current_published: bool,
     pub(crate) change_log: Option<String>,
     pub(crate) created_at: String,
 }
@@ -105,7 +98,6 @@ pub(crate) struct ApiFieldOutlineForm {
     pub(crate) name: String,
     #[schema(value_type = FormType)]
     pub(crate) form_type: String,
-    #[schema(value_type = FormStatus)]
     pub(crate) status: String,
     pub(crate) schema_version: i32,
     pub(crate) physical_table: Option<String>,
@@ -213,6 +205,7 @@ pub(crate) struct QueryFormRecordsRequest {
 pub(crate) struct SaveSchemaRequest {
     pub(crate) schema: Value,
     pub(crate) change_log: Option<String>,
+    pub(crate) base_version: Option<i32>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -232,7 +225,6 @@ pub(crate) struct UpdateFormRecordRequest {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct GetSchemaQuery {
-    pub(crate) scope: Option<String>,
     pub(crate) version: Option<i32>,
 }
 
@@ -244,7 +236,7 @@ impl From<form_definition_entity::Model> for ApiFormSummary {
             form_type: value.form_type,
             category: "group".to_string(),
             count: None,
-            status: value.status,
+            status: "active".to_string(),
             latest_schema_version: value.latest_schema_version,
             created_at: format_date(value.created_at),
         }

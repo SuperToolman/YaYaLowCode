@@ -10,7 +10,6 @@ import {
   Comment,
   Gear,
   House,
-  Person,
   SquareListUl,
   TrashBin,
 } from "@gravity-ui/icons";
@@ -18,6 +17,7 @@ import { AgentAssistantTrigger } from "./agent-assistant-trigger";
 import { useAuth } from "./auth-provider";
 import { WorkflowNotificationItems } from "./workflow-notification-items";
 import { AppIcon } from "./app-icons";
+import { MyAvatar } from "./my-avatar";
 import {
   listApps,
   type App,
@@ -48,12 +48,6 @@ const primaryNavItems: NavItem[] = [
     label: "消息",
     icon: Comment,
     match: (pathname) => pathname.startsWith("/messages"),
-  },
-  {
-    href: "/designer",
-    label: "大纲",
-    icon: SquareListUl,
-    match: (pathname) => pathname.startsWith("/designer"),
   },
   {
     href: "/recycle-bin",
@@ -104,6 +98,16 @@ export default function HomeSideBar() {
     return () => { cancelled = true; };
   }, [permissionsReady]);
   useEffect(() => {
+    if (!permissionsReady) return;
+    const reload = () => {
+      void listApps({ responseStyle: "fields" }).then(({ data, error }) => {
+        if (!error && data?.code === 0 && data.data) setApps(data.data);
+      }).catch(() => undefined);
+    };
+    window.addEventListener("yaya-apps-updated", reload);
+    return () => window.removeEventListener("yaya-apps-updated", reload);
+  }, [permissionsReady]);
+  useEffect(() => {
     if (!permissionsReady) {
       return;
     }
@@ -141,7 +145,6 @@ export default function HomeSideBar() {
   const visiblePrimaryNavItems = !permissionsReady
     ? []
     : primaryNavItems.filter((item) => {
-        if (item.href === "/designer") return hasPermission("designer.access");
         if (item.href === "/messages") return communicationEnabled;
         if (item.href === "/recycle-bin") return hasPermission("settings.database");
         return true;
@@ -193,8 +196,6 @@ function UserMenu({
   user: { displayName: string; username: string } | null;
 }) {
   const displayName = user?.displayName ?? "当前用户";
-  const initial = displayName.trim().slice(0, 1).toUpperCase() || "U";
-
   return (
     <div className="flex h-14 items-center justify-center">
       <Dropdown>
@@ -202,9 +203,7 @@ function UserMenu({
           aria-label={`打开 ${displayName} 的账户菜单`}
           className="group flex h-11 w-11 items-center justify-center rounded-2xl border border-transparent bg-[var(--sidebar-active-bg)] text-[var(--color-text-primary)] shadow-[var(--shadow-sm)] backdrop-blur-xl transition-colors hover:border-[var(--sidebar-soft-border)] hover:bg-[var(--sidebar-soft-bg)]"
         >
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-sm font-semibold text-[var(--color-primary)]">
-            {initial}
-          </span>
+          <MyAvatar name={displayName} size="md" />
         </Dropdown.Trigger>
         <Dropdown.Popover className="border border-[var(--color-border)] bg-transparent shadow-none">
           <Dropdown.Menu
@@ -217,9 +216,7 @@ function UserMenu({
           >
             <Dropdown.Item id="account" textValue={displayName} className="rounded-lg text-[var(--color-text-primary)]">
               <span className="flex items-center gap-3 py-1">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
-                  <Person className="h-4 w-4" />
-                </span>
+                <MyAvatar name={displayName} size="sm" />
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-semibold">{displayName}</span>
                   <span className="mt-0.5 block truncate text-xs text-[var(--color-text-secondary)]">{user?.username ?? "已登录"}</span>

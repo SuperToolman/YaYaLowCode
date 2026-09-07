@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 
 import { use, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, ReactNode } from "react";
+import type { ChangeEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -14,6 +14,7 @@ import {
   ProgressBar,
   SearchField,
   Select,
+  Tabs,
   toast,
 } from "@heroui/react";
 import { AlertDialog } from "@heroui/react/alert-dialog";
@@ -23,22 +24,17 @@ import { Drawer } from "@heroui/react/drawer";
 import {
   DndContext,
   PointerSensor,
-  useDraggable,
-  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
 import {
   ArrowDownToLine,
-  ArrowChevronDown,
   ArrowUpArrowDown,
   ArrowUpFromLine,
   Ellipsis,
   Funnel,
   Pencil,
-  Pin,
-  PinSlash,
   Plus,
   Sliders,
   TrashBin,
@@ -65,6 +61,8 @@ import { getRecordsPage } from "@/features/records/api";
 import type { FormRecord } from "@/features/records/types";
 import { useAuth } from "../../../../components/auth-provider";
 import { notifyAppNavigationChanged } from "../components/app-navigation-events";
+import { DetailDisplayFieldSelect, IconToolbarButton, ReorderableViewFieldRow } from "./components/view-config-components";
+import { FormTableSetting } from "./components/form-table-setting";
 import {
   useFormViews,
   type FormView,
@@ -95,103 +93,6 @@ function normalizeDetailFormSchema(schema: FormSchema, isDetailForm: boolean): F
     rows: Math.max(fields.length, 1),
     fields,
   };
-}
-
-type DetailDisplayFieldOption = { id: string; label: string };
-type ViewFieldOption = { id: string; label: string; type: string; typeLabel: string };
-
-function getFieldTypeTagClass(type: string) {
-  if (["singleLineText", "multiLineText", "richText", "description", "html", "tsx"].includes(type)) return "field-type-tag--text";
-  if (["number", "serialNumber", "formula"].includes(type)) return "field-type-tag--number";
-  if (["radio", "checkbox", "select", "multiSelect", "cascader", "countryCity"].includes(type)) return "field-type-tag--choice";
-  if (["date", "dateRange"].includes(type)) return "field-type-tag--date";
-  if (["member", "department"].includes(type)) return "field-type-tag--person";
-  if (["subform", "associationFormField"].includes(type)) return "field-type-tag--relation";
-  if (["attachment", "imageUpload"].includes(type)) return "field-type-tag--media";
-  return "field-type-tag--builtin";
-}
-
-function ReorderableViewFieldRow({
-  field,
-  config,
-  onConfigChange,
-}: {
-  field: ViewFieldOption;
-  config: ViewConfig;
-  onConfigChange: (next: ViewConfig) => void;
-}) {
-  const id = `view-field-${field.id}`;
-  const { attributes, listeners, setNodeRef: setDragRef, transform, isDragging } = useDraggable({ id });
-  const { setNodeRef: setDropRef, isOver } = useDroppable({ id });
-  const setNodeRef = useCallback((node: HTMLDivElement | null) => {
-    setDragRef(node);
-    setDropRef(node);
-  }, [setDragRef, setDropRef]);
-  const allFieldIds = config.columnOrder ?? [];
-  const sortableFieldIds = config.sortableFieldIds ?? allFieldIds;
-  const frozenFieldIds = config.frozenFieldIds ?? [];
-  const configuredWidth = config.columnWidths?.[field.id];
-  const isFrozen = frozenFieldIds.includes(field.id);
-  const isVisible = config.visibleFieldIds.includes(field.id);
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined}
-      className={[
-        "view-column-config-grid__row items-center border-b border-[var(--color-border)] px-3 py-2 last:border-b-0 hover:bg-[var(--color-bg-subtle)]",
-        isDragging ? "relative z-10 bg-[var(--color-bg-panel)] opacity-60 shadow-[var(--shadow-floating)]" : "",
-        isOver && !isDragging ? "border-t-2 border-t-[var(--color-primary)]" : "",
-      ].join(" ")}
-    >
-      <div className="min-w-0 pr-3">
-        <span className="block truncate text-sm text-[var(--color-text-primary)]">{field.label}</span>
-        <span className="mt-0.5 block truncate font-mono text-xs text-[var(--color-text-secondary)]">{field.id}</span>
-      </div>
-      <span className={`field-type-tag ${getFieldTypeTagClass(field.type)}`}>{field.typeLabel}</span>
-      <Checkbox aria-label={`显示列：${field.label}`} isSelected={config.visibleFieldIds.includes(field.id)} onChange={(selected) => onConfigChange({
-        ...config,
-        visibleFieldIds: selected ? [...new Set([...config.visibleFieldIds, field.id])] : config.visibleFieldIds.filter((id) => id !== field.id),
-        sortableFieldIds: selected ? sortableFieldIds : sortableFieldIds.filter((id) => id !== field.id),
-        frozenFieldIds: selected ? frozenFieldIds : frozenFieldIds.filter((id) => id !== field.id),
-      })} className="justify-center"><Checkbox.Content className="justify-center"><Checkbox.Control><Checkbox.Indicator /></Checkbox.Control></Checkbox.Content></Checkbox>
-      <Checkbox aria-label={`显示排序按钮：${field.label}`} isSelected={config.visibleFieldIds.includes(field.id) && sortableFieldIds.includes(field.id)} isDisabled={!config.visibleFieldIds.includes(field.id)} onChange={(selected) => onConfigChange({
-        ...config,
-        sortableFieldIds: selected ? [...new Set([...sortableFieldIds, field.id])] : sortableFieldIds.filter((id) => id !== field.id),
-      })} className="justify-center"><Checkbox.Content className="justify-center"><Checkbox.Control><Checkbox.Indicator /></Checkbox.Control></Checkbox.Content></Checkbox>
-      <Input aria-label={`${field.label}列宽`} type="number" inputMode="numeric" min={24} max={480} value={configuredWidth === undefined ? "" : String(configuredWidth)} placeholder="动态" onChange={(event) => {
-        const raw = event.target.value.trim();
-        const columnWidths = { ...(config.columnWidths ?? {}) };
-        if (!raw) {
-          delete columnWidths[field.id];
-        } else {
-          const width = Number(raw);
-          if (!Number.isFinite(width)) return;
-          columnWidths[field.id] = Math.round(width);
-        }
-        onConfigChange({ ...config, columnWidths });
-      }} className="w-[72px]" />
-      <div className="flex items-center justify-center gap-1">
-        <Button isIconOnly variant="ghost" aria-label={`${isFrozen ? "取消冻结" : "冻结"}${field.label}列`} isDisabled={!isVisible} className={isFrozen ? "h-7 w-7 text-[var(--color-primary)]" : "h-7 w-7 text-[var(--color-text-secondary)]"} onPress={() => onConfigChange({ ...config, frozenFieldIds: isFrozen ? frozenFieldIds.filter((id) => id !== field.id) : [...frozenFieldIds, field.id] })}>{isFrozen ? <PinSlash className="h-4 w-4" /> : <Pin className="h-4 w-4" />}</Button>
-        <Button isIconOnly variant="ghost" aria-label={`拖拽调整${field.label}列顺序`} className="h-7 w-7 cursor-grab text-[var(--color-text-secondary)] active:cursor-grabbing" {...attributes} {...listeners}><ArrowUpArrowDown className="h-4 w-4" /></Button>
-      </div>
-    </div>
-  );
-}
-
-function DetailDisplayFieldSelect({ ariaLabel, options, selectedKey, onSelectionChange }: { ariaLabel: string; options: DetailDisplayFieldOption[]; selectedKey: string; onSelectionChange: (key: string) => void }) {
-  const [query, setQuery] = useState("");
-  const filteredOptions = useMemo(() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase();
-    return normalizedQuery ? options.filter((option) => option.label.toLocaleLowerCase().includes(normalizedQuery)) : options;
-  }, [options, query]);
-  return <Select aria-label={ariaLabel} selectedKey={selectedKey} onSelectionChange={(key) => onSelectionChange(String(key ?? selectedKey))}>
-    <Select.Trigger><Select.Value>{options.find((field) => field.id === selectedKey)?.label ?? selectedKey}</Select.Value></Select.Trigger>
-    <Select.Popover className="w-64">
-      <div className="border-b border-[var(--color-border)] p-2"><SearchField aria-label={`搜索${ariaLabel}`} value={query} onChange={setQuery}><SearchField.Group><SearchField.SearchIcon /><SearchField.Input placeholder="搜索字段" /><SearchField.ClearButton aria-label="清除搜索" /></SearchField.Group></SearchField></div>
-      <ListBox className="max-h-56 overflow-y-auto" aria-label={ariaLabel}>{filteredOptions.map((field) => <ListBox.Item key={field.id} id={field.id}>{field.label}</ListBox.Item>)}{filteredOptions.length === 0 ? <ListBox.Item id="empty" isDisabled>没有匹配字段</ListBox.Item> : null}</ListBox>
-    </Select.Popover>
-  </Select>;
 }
 
 type ViewKey = "records" | "submit";
@@ -383,7 +284,7 @@ function DefinedPageHome({ appId, formUuid }: { appId: string; formUuid: string 
     let cancelled = false;
     void Promise.all([
       getForm({ path: { formUuid }, responseStyle: "fields" }),
-      getFormSchema({ path: { formUuid }, query: { scope: "published" }, responseStyle: "fields" }),
+      getFormSchema({ path: { formUuid }, responseStyle: "fields" }),
     ]).then(([metadataResult, schemaResult]) => {
       if (cancelled) return;
       if (!metadataResult.error && metadataResult.data?.code === 0 && metadataResult.data.data) {
@@ -487,8 +388,6 @@ function FormHomeRecords({
   );
   const [agentDraftValues, setAgentDraftValues] = useState<Record<string, unknown>>({});
   const [agentValuePatch, setAgentValuePatch] = useState<{ id: number; values: Record<string, unknown> }>();
-  const [openViewMenuId, setOpenViewMenuId] = useState<string | null>(null);
-  const viewMenuCloseTimerRef = useRef<number | null>(null);
   const viewUrlTransitionRef = useRef<{ viewUuid: string | null } | null>(null);
 
   const bootstrapQuery = useFormBootstrapQuery(appId, formUuid, !isSystemPageSlug(formUuid));
@@ -513,7 +412,7 @@ function FormHomeRecords({
   const activeView: ViewKey = searchParams.get("view") === "submit" ? "submit" : "records";
   const submitButtonText = schema?.pageProps?.submitButtonText?.trim() || "提交";
   const agentConfig = schema?.pageProps?.agent;
-  const agentEnabled = Boolean(agentConfig?.enabled);
+  const agentEnabled = Boolean(agentConfig?.enabled && agentConfig.agentId);
   const visibleFields = useMemo(
     () => getVisibleDataFields(schema?.fields ?? []),
     [schema?.fields],
@@ -569,7 +468,7 @@ function FormHomeRecords({
     columnWidths: {},
     frozenFieldIds: [],
   }), [allViewFields, queryableViewFields]);
-  const formViews = useFormViews({ formUuid, defaultViewConfig, enabled: visibleFields.length > 0 });
+  const formViews = useFormViews({ formUuid, defaultViewConfig, enabled: Boolean(schema) });
   const {
     activeViewId,
     applyViewConfigDraft,
@@ -583,6 +482,7 @@ function FormHomeRecords({
     setActiveViewId,
     setPendingViewConfig,
     setViewConfigDraft,
+    setViewConfigMode,
     setViewDeleteTarget,
     viewConfigDirty,
     viewConfigDraft,
@@ -590,6 +490,7 @@ function FormHomeRecords({
     viewDeleteTarget,
     views,
     duplicateView,
+    isReady: isViewConfigReady,
   } = formViews;
   const viewFieldOrderSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -682,7 +583,6 @@ function FormHomeRecords({
       ? bootstrap?.records
       : undefined,
   });
-  const loadingRecords = recordsQuery.isFetching;
   const displayedRecords = useMemo(
     () => (recordsQuery.data?.items ?? []) as FormRecord[],
     [recordsQuery.data?.items],
@@ -733,19 +633,6 @@ function FormHomeRecords({
     if (view) activateTableView(view);
   }
 
-  function openViewMenu(viewId: string) {
-    if (viewMenuCloseTimerRef.current !== null) window.clearTimeout(viewMenuCloseTimerRef.current);
-    viewMenuCloseTimerRef.current = null;
-    setOpenViewMenuId(viewId);
-  }
-
-  function scheduleViewMenuClose() {
-    if (viewMenuCloseTimerRef.current !== null) window.clearTimeout(viewMenuCloseTimerRef.current);
-    viewMenuCloseTimerRef.current = window.setTimeout(() => {
-      setOpenViewMenuId(null);
-      viewMenuCloseTimerRef.current = null;
-    }, 160);
-  }
   const handleAgentDraftValuesChange = useCallback((values: Record<string, unknown>) => {
     setAgentDraftValues(values);
     setDrawerValues(values);
@@ -1116,23 +1003,8 @@ function FormHomeRecords({
     return <SystemPageView appId={appId} pageSlug={formUuid} pageTitle={systemPageTitle} />;
   }
 
-  if (!schema) {
-    return (
-      <div className="h-full min-h-0 overflow-hidden">
-        <div className="theme-card-glass flex h-full min-h-0 flex-col overflow-hidden">
-          <div className="flex shrink-0 items-center justify-between gap-4 border-b border-[var(--color-border)] px-5 py-4">
-            <div className="h-7 w-44 animate-pulse rounded bg-[var(--color-bg-panel-soft)]" />
-            <div className="h-9 w-28 animate-pulse rounded-lg bg-[var(--color-bg-panel-soft)]" />
-          </div>
-          <div className="grid shrink-0 gap-3 border-b border-[var(--color-border)] px-5 py-4 md:grid-cols-4">
-            {Array.from({ length: 4 }, (_, index) => <div key={index} className="h-14 animate-pulse rounded-lg bg-[var(--color-bg-panel-soft)]" />)}
-          </div>
-          <div className="min-h-0 flex-1 space-y-3 p-5">
-            {Array.from({ length: 8 }, (_, index) => <div key={index} className="h-10 animate-pulse rounded-lg bg-[var(--color-bg-panel-soft)]" />)}
-          </div>
-        </div>
-      </div>
-    );
+  if (!schema || recordsQuery.isPending) {
+    return <div className="flex h-full min-h-0 flex-1 items-center justify-center text-sm text-[var(--color-text-secondary)]">正在加载页面...</div>;
   }
 
   function handleViewChange(view: ViewKey) {
@@ -1150,16 +1022,16 @@ function FormHomeRecords({
 
   return (
     <div className="h-full min-h-0 overflow-hidden">
-      <Card className="theme-card-glass mx-auto flex h-full min-h-0 flex-col overflow-hidden">
-        <div className="flex shrink-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="flex shrink-0 flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 mb-2">
             <h1 className="mr-1 min-w-0 truncate text-xl font-semibold text-[var(--color-text-primary)]">
               {formMetadataName || schema?.formName || "表单详情"}
             </h1>
               {canCreateRecord ? <Button
                 isIconOnly
                 aria-label="新增"
-                className="h-9 w-9 rounded-lg bg-[var(--color-primary)] p-0 text-[var(--color-text-on-primary)]"
+                className="h-9 w-9 p-0"
                 onClick={() => { setDrawerValues({}); setAgentDraftValues({}); setAgentValuePatch(undefined); setDrawerResetKey((current) => current + 1); setDrawerOpen(true); }}
               >
                 <Plus className="h-4 w-4" />
@@ -1167,34 +1039,34 @@ function FormHomeRecords({
               {canDeleteForm ? <Button
                 isIconOnly
                 aria-label="删除"
-                variant="ghost"
+                variant="danger"
                 onClick={() => setDeleteOpen(true)}
-                className="h-9 w-9 rounded-lg border border-[var(--color-danger)]/30 bg-[var(--color-bg-panel)] p-0 text-[var(--color-danger)]"
+                className="h-9 w-9 p-0"
               >
                 <TrashBin className="h-4 w-4" />
               </Button> : null}
               {canImportRecords ? <Button
                 isIconOnly
                 aria-label="导入"
-                variant="ghost"
+                variant="secondary"
                 onPress={openImportModal}
-                className="h-9 w-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-0 text-[var(--color-text-primary)]"
+                className="h-9 w-9 p-0"
               >
                 <ArrowUpFromLine className="h-4 w-4" />
               </Button> : null}
               {canExportRecords ? <Button
                 isIconOnly
                 aria-label="导出"
-                variant="ghost"
+                variant="secondary"
                 onPress={() => void exportSelectedRecords()}
-                className="h-9 w-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-0 text-[var(--color-text-primary)]"
+                className="h-9 w-9 p-0"
               >
                 <ArrowDownToLine className="h-4 w-4" />
               </Button> : null}
             {canUseViewDevelopment ? <Dropdown>
                 <Dropdown.Trigger
                   aria-label="更多"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] text-[var(--color-text-primary)]"
+                  className="h-9 w-9"
                 >
                   <Ellipsis className="h-4 w-4" />
                 </Dropdown.Trigger>
@@ -1228,37 +1100,14 @@ function FormHomeRecords({
               </SearchField.Group>
             </SearchField>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <ViewTab
-              isActive={activeView === "records" && activeViewId === "default"}
-              label="全部数据"
-              onClick={() => {
-                const defaultView = views.find((view) => view.isDefault);
-                if (defaultView) activateTableView(defaultView);
-              }}
-            />
-            {views.filter((view) => !view.isDefault).map((view) => (
-              <div key={view.id} className={["inline-flex h-9 items-stretch overflow-hidden rounded-lg", activeView === "records" && activeViewId === view.id ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-panel-soft)]"].join(" ")}>
-                <Button variant="ghost" className="h-9 min-w-0 rounded-none bg-transparent px-3 !text-[12px]" onPress={() => activateTableView(view)}><span className="!text-[12px]">{view.name}</span></Button>
-                {canUseViewDevelopment ? <Dropdown isOpen={openViewMenuId === view.id} onOpenChange={(open) => setOpenViewMenuId(open ? view.id : null)}>
-                  <Dropdown.Trigger onMouseEnter={() => openViewMenu(view.id)} onMouseLeave={scheduleViewMenuClose} aria-label={`${view.name}视图菜单`} className="inline-flex h-9 w-7 items-center justify-center bg-transparent">
-                    <ArrowChevronDown className="h-3.5 w-3.5" />
-                  </Dropdown.Trigger>
-                  <Dropdown.Popover onMouseEnter={() => openViewMenu(view.id)} onMouseLeave={scheduleViewMenuClose}><Dropdown.Menu aria-label={`${view.name}操作`}>
-                    <Dropdown.Item id="settings" isDisabled>表格设置（开发中）</Dropdown.Item>
-                    <Dropdown.Item id="hide" isDisabled>隐藏（开发中）</Dropdown.Item>
-                    <Dropdown.Item id="copy" onAction={() => handleDuplicateView(view.id)}>复制</Dropdown.Item>
-                    <Dropdown.Item id="delete" onAction={() => deleteView(view.id)}>删除</Dropdown.Item>
-                  </Dropdown.Menu></Dropdown.Popover>
-                </Dropdown> : null}
-              </div>
-            ))}
-            <ViewTab
-              isActive={activeView === "submit"}
-              label="表单提交"
-              onClick={() => { setPendingViewConfig(null); setViewConfigDraft(null); handleViewChange("submit"); }}
-            />
-            {canUseViewDevelopment ? <><IconToolbarButton label="筛选" onPress={() => openViewConfig("filters")}><Funnel className="h-4 w-4" /></IconToolbarButton><IconToolbarButton label="显示列" onPress={() => openViewConfig("fields")}><Sliders className="h-4 w-4" /></IconToolbarButton><IconToolbarButton label="排序" onPress={() => openViewConfig("sorts")}><ArrowUpArrowDown className="h-4 w-4" /></IconToolbarButton></> : null}
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+            <Tabs selectedKey={activeView === "submit" ? "submit" : `view:${activeViewId}`} onSelectionChange={(key) => { const value = String(key); if (value === "submit") { setPendingViewConfig(null); setViewConfigDraft(null); handleViewChange("submit"); return; } const viewId = value.replace("view:", ""); const view = views.find((item) => item.id === viewId); if (view) activateTableView(view); }}>
+              <Tabs.List aria-label="数据视图">
+                {views.map((view) => <Tabs.Tab key={view.id} id={`view:${view.id}`}>{view.isDefault ? "全部数据" : view.name}<Tabs.Indicator /></Tabs.Tab>)}
+                <Tabs.Tab id="submit">表单提交<Tabs.Indicator /></Tabs.Tab>
+              </Tabs.List>
+            </Tabs>
+            {canUseViewDevelopment ? <IconToolbarButton label="表格设置" onPress={() => openViewConfig("filters")}><Sliders className="h-4 w-4" /></IconToolbarButton> : null}
             {canEditForm && !isDetailForm ? <IconToolbarButton label="表单编辑" onPress={() => router.push(`/designer/${formUuid}?appId=${appId}`)}><Pencil className="h-4 w-4" /></IconToolbarButton> : null}
             {canEditForm && !isDetailForm && subformFields.length > 0 ? <IconToolbarButton label="创建明细表单" onPress={() => { setDetailSubformId(availableDetailSubformFields[0]?.id ?? ""); setNewDetailPrimaryDisplayFieldId("instanceId"); setNewDetailSecondaryDisplayFieldId("submitter"); setDetailFormOpen(true); }}><Plus className="h-4 w-4" /></IconToolbarButton> : null}
           </div>
@@ -1268,7 +1117,7 @@ function FormHomeRecords({
           {activeView === "records" ? (
             <>
             {canUseViewDevelopment && viewConfigDirty ? <div className="flex shrink-0 items-center justify-between gap-3 rounded-lg border border-[var(--color-primary)]/30 bg-[var(--color-primary-soft)] px-4 py-2 text-sm text-[var(--color-primary)]"><span>你调整了显示配置，是否需要保存配置？</span><Button size="sm" onPress={saveViewConfig}>保存配置</Button></div> : null}
-            <RecordsTable
+            {isViewConfigReady ? <RecordsTable
               key={`${activeViewId}:${JSON.stringify(effectiveViewConfig.columnWidths ?? {})}`}
               fields={configuredFields}
               builtinFields={configuredBuiltinFields}
@@ -1291,7 +1140,6 @@ function FormHomeRecords({
                   setRecordPage(1);
                 },
               }}
-              loading={loadingRecords}
               submitting={submitting}
               deletingRecordId={deletingRecordId}
               selectedRecordIds={selectedRecordIds}
@@ -1310,7 +1158,7 @@ function FormHomeRecords({
                 }));
               }}
               initialRecordId={searchParams.get("record") ?? undefined}
-            />
+            /> : <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-[var(--color-text-secondary)]">正在加载视图配置...</div>}
             </>
           ) : (
             <div className="min-h-0 flex-1 overflow-y-auto">
@@ -1343,7 +1191,7 @@ function FormHomeRecords({
             </div>
           )}
         </div>
-      </Card>
+      </div>
 
       <Modal isOpen={detailFormOpen} onOpenChange={setDetailFormOpen}>
         <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
@@ -1399,7 +1247,7 @@ function FormHomeRecords({
                     isIconOnly
                     variant="ghost"
                     onClick={() => setDrawerOpen(false)}
-                    className="h-10 w-10 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-panel)] text-[var(--color-text-secondary)]"
+                    className="h-10 w-10 border border-[var(--color-border)] bg-[var(--color-bg-panel)] text-[var(--color-text-secondary)]"
                   >
                     ×
                   </Button>
@@ -1453,11 +1301,11 @@ function FormHomeRecords({
                       appId={appId}
                       formName={formMetadataName || schema.formName || formUuid}
                       formUuid={formUuid}
+                      agentId={agentConfig?.agentId ?? ""}
                       prompt={agentConfig?.prompt ?? ""}
                       fields={schema.fields}
                       currentValues={agentDraftValues}
-                      analysis={agentConfig?.context?.status === "ready" ? (agentConfig.context.overrides?.trim() || agentConfig.context.generated?.trim() || "") : ""}
-                      onApplyValues={(values) => setAgentValuePatch({ id: Date.now(), values })}
+                                        onApplyValues={(values) => setAgentValuePatch({ id: Date.now(), values })}
                     />
                   ) : null}
                 </div>
@@ -1502,10 +1350,10 @@ function FormHomeRecords({
         </Modal.Backdrop>
       </Modal>
 
-      <Drawer isOpen={viewConfigMode !== null} onOpenChange={(open) => { if (!open) closeViewConfig(); }}>
+      {false ? <Drawer isOpen={viewConfigMode !== null} onOpenChange={(open) => { if (!open) closeViewConfig(); }}>
         <Drawer.Backdrop className="theme-modal-backdrop" isDismissable>
           <Drawer.Content placement="right">
-            <Drawer.Dialog className="theme-menu-surface flex h-[100dvh] w-[min(620px,100vw)] max-w-[100vw] flex-col overflow-hidden shadow-[var(--shadow-dialog)]">
+            <Drawer.Dialog className="theme-menu-surface flex h-[100dvh] w-[min(760px,100vw)] max-w-[100vw] flex-col overflow-hidden shadow-[var(--shadow-dialog)]">
               <Drawer.Header className="border-b border-[var(--color-border)] px-5 py-4">
                 <Drawer.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
                   {viewConfigMode === "filters" ? "筛选" : viewConfigMode === "fields" ? "显示列" : "排序"}
@@ -1515,7 +1363,7 @@ function FormHomeRecords({
               <Drawer.Body className="min-h-0 flex-1 overflow-y-auto">
                 {viewConfigDraft && viewConfigMode === "filters" ? (
                   <div className="space-y-3">
-                    {viewConfigDraft.filters.map((rule) => (
+                    {viewConfigDraft!.filters.map((rule) => (
                       <div key={rule.id} className="grid grid-cols-[minmax(0,1fr)_130px_minmax(0,1fr)_36px] items-center gap-2">
                         <Select selectedKey={rule.fieldId} aria-label="筛选字段" onSelectionChange={(key) => setViewConfigDraft((current) => current ? { ...current, filters: current.filters.map((item) => item.id === rule.id ? { ...item, fieldId: String(key ?? "") } : item) } : current)}>
                           <Select.Trigger><Select.Value /></Select.Trigger><Select.Popover><ListBox>{queryableViewFields.map((field) => <ListBox.Item key={field.id} id={field.id}>{field.label}</ListBox.Item>)}</ListBox></Select.Popover>
@@ -1544,7 +1392,7 @@ function FormHomeRecords({
                           <span className="text-center">操作</span>
                         </div>
                         <DndContext sensors={viewFieldOrderSensors} onDragEnd={handleViewFieldOrderDragEnd}>
-                          {orderedDraftViewFields.map((field) => <ReorderableViewFieldRow key={field.id} field={field} config={viewConfigDraft} onConfigChange={setViewConfigDraft} />)}
+                          {orderedDraftViewFields.map((field) => <ReorderableViewFieldRow key={field.id} field={field} config={viewConfigDraft!} onConfigChange={setViewConfigDraft as (next: ViewConfig) => void} />)}
                         </DndContext>
                       </div>
                     </Card>
@@ -1552,7 +1400,7 @@ function FormHomeRecords({
                 ) : null}
                 {viewConfigDraft && viewConfigMode === "sorts" ? (
                   <div className="space-y-3">
-                    {viewConfigDraft.sorts.map((rule) => <div key={rule.id} className="grid grid-cols-[minmax(0,1fr)_130px_36px] items-center gap-2"><Select selectedKey={rule.fieldId} aria-label="排序字段" onSelectionChange={(key) => setViewConfigDraft((current) => current ? { ...current, sorts: current.sorts.map((item) => item.id === rule.id ? { ...item, fieldId: String(key ?? "") } : item) } : current)}><Select.Trigger><Select.Value /></Select.Trigger><Select.Popover><ListBox>{queryableViewFields.map((field) => <ListBox.Item key={field.id} id={field.id}>{field.label}</ListBox.Item>)}</ListBox></Select.Popover></Select><Select selectedKey={rule.direction} aria-label="排序方向" onSelectionChange={(key) => setViewConfigDraft((current) => current ? { ...current, sorts: current.sorts.map((item) => item.id === rule.id ? { ...item, direction: String(key) as "asc" | "desc" } : item) } : current)}><Select.Trigger><Select.Value /></Select.Trigger><Select.Popover><ListBox><ListBox.Item id="asc">升序</ListBox.Item><ListBox.Item id="desc">降序</ListBox.Item></ListBox></Select.Popover></Select><Button isIconOnly variant="ghost" aria-label="删除排序规则" onPress={() => setViewConfigDraft((current) => current ? { ...current, sorts: current.sorts.filter((item) => item.id !== rule.id) } : current)}><TrashBin className="h-4 w-4" /></Button></div>)}
+                    {viewConfigDraft!.sorts.map((rule) => <div key={rule.id} className="grid grid-cols-[minmax(0,1fr)_130px_36px] items-center gap-2"><Select selectedKey={rule.fieldId} aria-label="排序字段" onSelectionChange={(key) => setViewConfigDraft((current) => current ? { ...current, sorts: current.sorts.map((item) => item.id === rule.id ? { ...item, fieldId: String(key ?? "") } : item) } : current)}><Select.Trigger><Select.Value /></Select.Trigger><Select.Popover><ListBox>{queryableViewFields.map((field) => <ListBox.Item key={field.id} id={field.id}>{field.label}</ListBox.Item>)}</ListBox></Select.Popover></Select><Select selectedKey={rule.direction} aria-label="排序方向" onSelectionChange={(key) => setViewConfigDraft((current) => current ? { ...current, sorts: current.sorts.map((item) => item.id === rule.id ? { ...item, direction: String(key) as "asc" | "desc" } : item) } : current)}><Select.Trigger><Select.Value /></Select.Trigger><Select.Popover><ListBox><ListBox.Item id="asc">升序</ListBox.Item><ListBox.Item id="desc">降序</ListBox.Item></ListBox></Select.Popover></Select><Button isIconOnly variant="ghost" aria-label="删除排序规则" onPress={() => setViewConfigDraft((current) => current ? { ...current, sorts: current.sorts.filter((item) => item.id !== rule.id) } : current)}><TrashBin className="h-4 w-4" /></Button></div>)}
                     <Button variant="ghost" className="text-[var(--color-primary)]" onPress={() => setViewConfigDraft((current) => current ? { ...current, sorts: [...current.sorts, { id: `sort-${Date.now()}`, fieldId: allViewFields[0]?.id ?? "", direction: "asc" }] } : current)}>+ 添加排序规则</Button>
                   </div>
                 ) : null}
@@ -1561,7 +1409,21 @@ function FormHomeRecords({
             </Drawer.Dialog>
           </Drawer.Content>
         </Drawer.Backdrop>
-      </Drawer>
+      </Drawer> : <FormTableSetting
+        isOpen={viewConfigMode !== null}
+        mode={viewConfigMode}
+        draft={viewConfigDraft}
+        setDraft={setViewConfigDraft}
+        onOpenChange={(open) => { if (!open) closeViewConfig(); }}
+        onSectionChange={setViewConfigMode}
+        onClose={closeViewConfig}
+        onApply={applyViewConfigDraft}
+        allFields={allViewFields.map((field) => ({ id: field.id, label: field.label, type: field.type, typeLabel: getViewFieldTypeLabel(field.type) }))}
+        queryableFields={queryableViewFields.map((field) => ({ id: field.id, label: field.label, type: field.type, typeLabel: getViewFieldTypeLabel(field.type) }))}
+        orderedFields={orderedDraftViewFields}
+        sensors={viewFieldOrderSensors}
+        onDragEnd={handleViewFieldOrderDragEnd}
+      />}
 
       <Drawer
         isOpen={isImportOpen}
@@ -1677,39 +1539,6 @@ function FormHomeRecords({
         </AlertDialog.Backdrop>
       </AlertDialog>
     </div>
-  );
-}
-
-function ViewTab({
-  isActive,
-  label,
-  onClick,
-}: {
-  isActive: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <Button
-      variant="ghost"
-      onClick={onClick}
-      className={[
-        "h-9 rounded-lg px-3 !text-[12px]",
-        isActive
-          ? "bg-[var(--color-primary-soft)] font-medium text-[var(--color-primary)]"
-          : "border border-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-panel-soft)]",
-      ].join(" ")}
-    >
-      <span className="!text-[12px]">{label}</span>
-    </Button>
-  );
-}
-
-function IconToolbarButton({ label, onPress, children }: { label: string; onPress: () => void; children: ReactNode }) {
-  return (
-    <Button isIconOnly variant="ghost" aria-label={label} onPress={onPress} className="h-9 w-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] p-0 text-[var(--color-text-primary)]">
-      {children}
-    </Button>
   );
 }
 

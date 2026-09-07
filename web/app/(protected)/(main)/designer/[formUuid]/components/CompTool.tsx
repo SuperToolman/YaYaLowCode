@@ -5,7 +5,6 @@ import type { Key } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import {
   Button,
-  Card,
   Checkbox,
   CheckboxGroup,
   DateRangePicker,
@@ -19,6 +18,7 @@ import {
   RangeCalendar,
   Select,
 } from "@heroui/react";
+import { MySurface } from "../../../../../components/my-surface";
 import { DateInputGroup } from "@heroui/react/date-input-group";
 import { Description } from "@heroui/react/description";
 import { parseDate } from "@internationalized/date";
@@ -675,7 +675,7 @@ export function CompTool({ embedded = false, allowCustomComponents = false }: Co
         onChange={(event) => setSearchKeyword(event.currentTarget.value)}
       />
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
         {groupedComponents.map((group) => (
           <section key={group.key}>
             <div className="mb-2 flex items-center justify-between">
@@ -712,9 +712,9 @@ export function CompTool({ embedded = false, allowCustomComponents = false }: Co
   }
 
   return (
-    <aside className="flex h-full min-h-0 flex-col rounded-[28px] border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-3 shadow-[var(--shadow-panel)] backdrop-blur">
+    <MySurface className="flex h-full min-h-0 flex-col p-3">
       {content}
-    </aside>
+    </MySurface>
   );
 }
 
@@ -732,24 +732,22 @@ function DraggableComponentCard({
   });
 
   return (
-    <div
-      ref={setNodeRef}
-      {...attributes}
-      {...listeners}
-      className={isDragging ? "opacity-40" : ""}
-      style={{ touchAction: "none" }}
-    >
-      <Card className="cursor-grab rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-2 shadow-none transition hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:bg-[var(--color-bg-subtle)] hover:shadow-[var(--shadow-card-hover)] active:cursor-grabbing">
-        <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-soft)] text-xs font-normal text-[var(--color-primary)]">
-            <ComponentPaletteIcon type={component.type} fallback={component.icon} />
-          </span>
-          <span className="truncate text-xs font-normal text-[var(--color-text-primary)]">
-            {component.label}
-          </span>
-        </div>
-      </Card>
-    </div>
+      <Button
+        ref={setNodeRef}
+        {...attributes}
+        {...listeners}
+        fullWidth
+        variant="secondary"
+        className={`h-auto min-h-10 cursor-grab justify-start gap-1.5 px-1.5 text-[11px] font-normal active:cursor-grabbing ${isDragging ? "opacity-40" : ""}`}
+        style={{ touchAction: "none" }}
+      >
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-soft)] text-[11px] text-[var(--color-primary)]">
+          <ComponentPaletteIcon type={component.type} fallback={component.icon} />
+        </span>
+        <span className="truncate text-[11px] text-[var(--color-text-primary)]">
+          {component.label}
+        </span>
+      </Button>
   );
 }
 

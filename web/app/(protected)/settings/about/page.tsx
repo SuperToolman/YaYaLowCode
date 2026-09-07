@@ -1,10 +1,11 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
-import { Button, Chip } from "@heroui/react";
+import { Button, Chip, Surface } from "@heroui/react";
 import { useAuth } from "../../../components/auth-provider";
 import { openLicenseManagementModal } from "../../../components/license-management-modal";
 import { SettingsContentCard } from "../_components/settings-content-card";
+import styles from "./about.module.css";
 
 type LicenseStatus = {
   valid: boolean;
@@ -45,32 +46,29 @@ export default function AboutPlatformPage() {
   const statusText = loading ? "正在检查" : license?.valid ? "有效" : "无效";
 
   return (
-    <section className="h-full min-h-0">
+    <section className={styles.page}>
       <SettingsContentCard title="关于平台" subtitle="平台版本与当前授权状态。许可证正文和验证公钥不会在页面中展示。">
-        <div className="max-w-2xl space-y-6">
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--color-border)] pb-5">
-            <div><p className="text-base font-semibold text-[var(--color-text-primary)]">丫丫 LowCode</p><p className="mt-1 text-sm text-[var(--color-text-secondary)]">版本 0.82a</p></div>
-            <div className="flex items-center gap-2"><Chip color={license?.valid ? "success" : "danger"} variant="soft">许可证{statusText}</Chip>{hasPermission("settings.license") ? <Button size="sm" variant="secondary" onPress={openLicenseManagementModal}>更新签名</Button> : null}</div>
-          </div>
-          <dl className="grid gap-x-8 gap-y-5 text-sm sm:grid-cols-2">
-            <Info label="授权主体" value={license?.subject ?? "-"} />
-            <Info label="许可证编号" value={license?.licenseId ?? "-"} mono />
-            <Info label="平台类型" value={license?.deploymentType === "local" ? "本地部署" : "SaaS"} />
-            <Info label="平台有效期至" value={formatExpiry(license?.expiresAt)} />
-            <Info label="运营管理平台 API" value={license?.licenseCenterUrl ?? "-"} />
-            <Info label="状态说明" value={license?.valid ? "签名与在线状态验证通过" : license?.reason ?? "无法读取许可证状态"} />
-            <div className="sm:col-span-2">
-              <dt className="text-[var(--color-text-secondary)]">已授权模块</dt>
-              <dd className="mt-2 divide-y divide-[var(--color-border)] border-y border-[var(--color-border)]">
-                {license?.modules.length ? license.modules.map((module) => (
-                  <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 py-3" key={module}>
-                    <span className="font-medium text-[var(--color-text-primary)]">{license.moduleTitles?.[module] ?? defaultModuleTitle(module)}</span>
-                    <span className="text-[var(--color-text-secondary)]">有效期至 {formatExpiry(license.moduleExpiresAt?.[module] ?? license.expiresAt)}</span>
-                  </div>
-                )) : <div className="py-3 text-[var(--color-text-primary)]">-</div>}
-              </dd>
+        <div className={styles.content}>
+          <Surface className={`${styles.statusPanel} ${license?.valid ? styles.statusValid : styles.statusInvalid}`}>
+            <div className={styles.statusCopy}>
+              <div className={styles.brandMark}>丫</div>
+              <div><p className={styles.product}>丫丫 LowCode</p><p className={styles.version}>版本 0.82a · 平台授权中心</p></div>
             </div>
-          </dl>
+            <div className={styles.actions}><Chip color={license?.valid ? "success" : "danger"}>{loading ? "正在检查" : license?.valid ? "许可证有效" : "许可证无效"}</Chip>{hasPermission("settings.license") ? <Button onPress={openLicenseManagementModal}>更新签名</Button> : null}</div>
+          </Surface>
+
+          <div className={styles.metrics}>
+            <Metric label="授权模块" value={license?.modules.length ?? 0} suffix="项" />
+            <Metric label="平台类型" value={license?.deploymentType === "local" ? "本地部署" : "SaaS"} />
+            <Metric label="有效期至" value={formatExpiry(license?.expiresAt)} compact />
+          </div>
+
+          <div className={styles.columns}>
+            <Surface className={styles.infoCard}><div className={styles.cardHeader}><h3>授权信息</h3><Chip>{license?.licenseId ? "已登记" : "未读取"}</Chip></div><dl className={styles.infoList}><Info label="授权主体" value={license?.subject ?? "-"} /><Info label="许可证编号" value={license?.licenseId ?? "-"} mono /><Info label="状态说明" value={license?.valid ? "签名与在线状态验证通过" : license?.reason ?? "无法读取许可证状态"} /></dl></Surface>
+            <Surface className={styles.infoCard}><div className={styles.cardHeader}><h3>平台信息</h3><Chip>{license?.licenseCenterUrl ? "已连接" : "未配置"}</Chip></div><dl className={styles.infoList}><Info label="部署方式" value={license?.deploymentType === "local" ? "本地部署" : "SaaS"} /><Info label="运营管理平台 API" value={license?.licenseCenterUrl ?? "-"} mono /><Info label="平台有效期至" value={formatExpiry(license?.expiresAt)} /></dl></Surface>
+          </div>
+
+          <Surface className={styles.modulesCard}><div className={styles.cardHeader}><div><h3>已授权模块</h3><p>模块权限与独立有效期</p></div><Chip>{license?.modules.length ?? 0} 项</Chip></div><div className={styles.moduleList}>{license?.modules.length ? license.modules.map((module) => <div className={styles.module} key={module}><div><span className={styles.moduleName}>{license.moduleTitles?.[module] ?? defaultModuleTitle(module)}</span><span className={styles.moduleKey}>{module}</span></div><span className={styles.moduleExpiry}>有效期至 {formatExpiry(license.moduleExpiresAt?.[module] ?? license.expiresAt)}</span></div>) : <div className={styles.empty}>暂未授予任何模块</div>}</div></Surface>
         </div>
       </SettingsContentCard>
     </section>
@@ -88,5 +86,10 @@ function defaultModuleTitle(module: string) {
 }
 
 function Info({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return <div><dt className="text-[var(--color-text-secondary)]">{label}</dt><dd className={`mt-1 break-all text-[var(--color-text-primary)] ${mono ? "font-mono text-xs" : ""}`}>{value}</dd></div>;
+  return <div><dt className={styles.label}>{label}</dt><dd className={`${styles.value} ${mono ? styles.mono : ""}`}>{value}</dd></div>;
 }
+
+function Metric({ label, value, suffix, compact = false }: { label: string; value: string | number; suffix?: string; compact?: boolean }) {
+  return <Surface className={styles.metric}><span className={styles.metricLabel}>{label}</span><strong className={compact ? styles.metricValueCompact : styles.metricValue}>{value}</strong>{suffix ? <span className={styles.metricSuffix}>{suffix}</span> : null}</Surface>;
+}
+

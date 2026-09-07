@@ -52,7 +52,7 @@ $remotePublicKey = "/tmp/yaya-$stamp-$PID-license-public.pem"
 $target = "$SshUser@$ServerIp"
 $sshOptions = @('-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=15', '-p', "$SshPort")
 $scpOptions = @('-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=15', '-P', "$SshPort")
-$excludes = @('--exclude=.git', '--exclude=.codex-openapi-target', '--exclude=node_modules', '--exclude=.next', '--exclude=api/target*', '--exclude=api/.yaya-*', '--exclude=web/.next', '--exclude=web/node_modules', '--exclude=web/.cache', '--exclude=web/src-tauri', '--exclude=web/tauri-dist', '--exclude=deploy/.env', '--exclude=deploy/secrets', '--exclude=*.log', '--exclude=.yaya-*')
+$excludes = @('--exclude=.git', '--exclude=.codex-openapi-target', '--exclude=node_modules', '--exclude=.next', '--exclude=api/target*', '--exclude=api/.yaya-*', '--exclude=web/.next', '--exclude=web/node_modules', '--exclude=web/.cache', '--exclude=web/src-tauri', '--exclude=web/tauri-dist', '--exclude=agent/deepseek-harness/.dsh', '--exclude=agent/deepseek-harness/node_modules', '--exclude=deploy/.env', '--exclude=deploy/secrets', '--exclude=*.log', '--exclude=.yaya-*')
 $passwordBstr = [IntPtr]::Zero
 
 try {
@@ -99,14 +99,19 @@ try {
     'fi',
     'test -f "$install_dir/deploy/.env" || { echo "Missing deploy/.env. Run with -Initialize for a new installation." >&2; exit 2; }',
     'test -f "$install_dir/deploy/secrets/license-public.pem" || { echo "Missing license public key. Run with -Initialize for a new installation." >&2; exit 2; }',
+    '# The platform uses fixed public ports. Do not retain legacy per-instance mappings.',
+    'if grep -q ''^WEB_PORT='' "$install_dir/deploy/.env"; then sed -i ''s/^WEB_PORT=.*/WEB_PORT=8787/'' "$install_dir/deploy/.env"; else printf ''\nWEB_PORT=8787\n'' >> "$install_dir/deploy/.env"; fi',
+    'if grep -q ''^API_PORT='' "$install_dir/deploy/.env"; then sed -i ''s/^API_PORT=.*/API_PORT=8788/'' "$install_dir/deploy/.env"; else printf ''API_PORT=8788\n'' >> "$install_dir/deploy/.env"; fi',
+    'if ! grep -q ''^AGENT_RUNTIME_SHARED_SECRET='' "$install_dir/deploy/.env"; then printf ''\nAGENT_RUNTIME_SHARED_SECRET=%s\n'' "$(openssl rand -hex 32)" >> "$install_dir/deploy/.env"; fi',
+    'if ! grep -q ''^YAYA_BYOM_ENCRYPTION_KEY='' "$install_dir/deploy/.env"; then printf ''YAYA_BYOM_ENCRYPTION_KEY=%s\n'' "$(openssl rand -base64 32 | tr -d ''\n'')" >> "$install_dir/deploy/.env"; fi',
     'find "$install_dir" -mindepth 1 -maxdepth 1 ! -name deploy -exec rm -rf {} +',
     'find "$install_dir/deploy" -mindepth 1 -maxdepth 1 ! -name .env ! -name secrets -exec rm -rf {} +',
     'tar -xzf "$archive" -C "$install_dir"',
     'rm -f "$archive"',
     'BUILDKIT_PROGRESS=plain CONTAINER_NAME="$container_name" docker compose -p "$compose_project" --project-directory "$install_dir/deploy" -f "$install_dir/deploy/compose.yaml" --env-file "$install_dir/deploy/.env" up -d --build --remove-orphans',
     'attempt=0',
-    'until docker exec "$container_name" curl -fsS http://127.0.0.1:8788/healthz >/dev/null && docker exec "$container_name" curl -fsS -X POST http://127.0.0.1:8787/api/auth/login -H content-type:application/json --data-binary ''{"username":"yaya","password":"yaya"}'' | grep -q "\"code\":0"; do attempt=$((attempt + 1)); [ "$attempt" -lt 30 ] || { echo "Initial data verification timed out." >&2; exit 3; }; sleep 2; done',
-    'echo "Initial data verified: yaya super administrator is available."',
+    'until docker exec "$container_name" curl -fsS http://127.0.0.1:8788/healthz >/dev/null && docker exec "$container_name" curl -fsS http://127.0.0.1:8789/healthz >/dev/null && docker exec "$container_name" curl -fsS -X POST http://127.0.0.1:8787/api/auth/login -H content-type:application/json --data-binary ''{"username":"yaya","password":"yaya"}'' | grep -q "\"code\":0"; do attempt=$((attempt + 1)); [ "$attempt" -lt 60 ] || { echo "Initial API/Web/Agent verification timed out." >&2; docker logs --tail 100 "$container_name" >&2 || true; exit 3; }; sleep 2; done',
+    'echo "Initial data verified: API, Web, Agent, and yaya super administrator are available."',
     'CONTAINER_NAME="$container_name" docker compose -p "$compose_project" --project-directory "$install_dir/deploy" -f "$install_dir/deploy/compose.yaml" --env-file "$install_dir/deploy/.env" ps'
   ) -join "`n"
   $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remoteScript))

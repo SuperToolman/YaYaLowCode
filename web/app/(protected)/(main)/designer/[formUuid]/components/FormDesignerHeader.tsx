@@ -1,23 +1,16 @@
 ﻿"use client";
 
 import type { ChangeEvent, KeyboardEvent } from "react";
-import { Button, Dropdown, Input } from "@heroui/react";
-import { Card } from "@heroui/react/card";
+import { Button, Card, Dropdown, Input, Tabs } from "@heroui/react";
 import {
   ArrowLeftIcon,
   PreviewIcon,
-  PublishIcon,
   RestoreIcon,
   SaveIcon,
 } from "../../../../../components/app-icons";
-import { COLUMN_COUNT } from "../designer-constants";
-import { CompactThemeSwitcher } from "../../../../../components/theme-switcher-menu";
 
 export type FormVersionSummary = {
   version: number;
-  published: boolean;
-  isCurrentDraft: boolean;
-  isCurrentPublished: boolean;
   changeLog?: string | null;
   createdAt: string;
 };
@@ -25,87 +18,103 @@ export type FormVersionSummary = {
 const normalDesignerViews = [
   "表单设计",
   "页面设置",
-  "页面发布",
   "数据管理",
 ] as const;
 
 type FormDesignerHeaderProps = {
   appName?: string | null;
-  fieldsCount: number;
   formName: string;
   formType: "normal" | "workflow" | "defined";
   formUuid: string;
   isEditingFormName: boolean;
-  latestVersion: number;
-  publishedVersion: number;
-  rowCount: number;
   versions: FormVersionSummary[];
   onBackToApp: () => void;
   onEditingFormNameChange: (isEditing: boolean) => void;
   onFormNameChange: (formName: string) => void;
   onPreview: () => void;
-  onPublish: () => void;
   onRestoreVersionSelect: (version: number) => void;
   onSave: () => void;
   onWorkflowDesign?: () => void;
   canEditForm: boolean;
-  canPublish: boolean;
   saveMessage?: string;
 };
 
 export function FormDesignerHeader({
   appName,
-  fieldsCount,
   formName,
   formType,
   formUuid,
   isEditingFormName,
-  latestVersion,
-  publishedVersion,
-  rowCount,
   versions,
   onBackToApp,
   onEditingFormNameChange,
   onFormNameChange,
   onPreview,
-  onPublish,
   onRestoreVersionSelect,
   onSave,
   onWorkflowDesign,
   canEditForm,
-  canPublish,
   saveMessage,
 }: FormDesignerHeaderProps) {
   const displayedVersions = versions.slice(0, 20);
   const designerViews = formType === "workflow"
     ? ["表单设计", "流程设计", ...normalDesignerViews.slice(1)]
     : formType === "defined"
-      ? ["页面设计", "页面设置", "页面发布"]
+      ? ["页面设计", "页面设置"]
     : normalDesignerViews;
 
   return (
-    <Card className="mb-2 shrink-0 border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-5 shadow-[var(--shadow-designer)] backdrop-blur">
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
+    <Card className="mb-2 shrink-0 overflow-hidden p-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
               <Button
                 variant="ghost"
-                className="h-9 rounded-xl bg-transparent px-3 text-[var(--color-text-secondary)]"
+                className="h-9 shrink-0 px-2 text-[var(--color-text-secondary)]"
                 onPress={onBackToApp}
               >
                 <ArrowLeftIcon />
                 {appName ? `返回应用 ${appName}` : "返回应用"}
               </Button>
-              <span className="rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-medium text-[var(--color-primary)]">
-                草稿 v{latestVersion} / 发布 v{publishedVersion}
-              </span>
-              <span className="rounded-full bg-[var(--color-bg-subtle)] px-3 py-1 text-xs font-medium text-[var(--color-text-secondary)]">
-                {rowCount} x {COLUMN_COUNT} 网格 / 控件数：{fieldsCount}
-              </span>
           </div>
-
+          <div className="min-w-0 flex-1">
+            {isEditingFormName ? (
+              <Input
+                aria-label="表单名称"
+                autoFocus
+                className="max-w-xl"
+                value={formName}
+                onBlur={() => onEditingFormNameChange(false)}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => onFormNameChange(event.currentTarget.value)}
+                onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => handleFormNameKeyDown(event, onEditingFormNameChange)}
+              />
+            ) : (
+              <h1
+                className="min-w-0 cursor-text truncate text-xl font-semibold text-[var(--color-text-primary)]"
+                title="双击编辑表单名称"
+                onDoubleClick={() => onEditingFormNameChange(true)}
+              >
+                {formName.trim() || "New Page"}
+              </h1>
+            )}
+            <p className="mt-1 break-all font-mono text-xs text-[var(--color-text-secondary)]" title={formUuid}>{formUuid}</p>
+          </div>
+          <Tabs
+            className="ml-auto shrink-0"
+            aria-label="表单设计器视图"
+            selectedKey="designer"
+            onSelectionChange={(key) => {
+              if (String(key) === "workflow") onWorkflowDesign?.();
+            }}
+          >
+            <Tabs.List>
+              {designerViews.map((view, index) => {
+                const isWorkflow = view === "流程设计";
+                const id = isWorkflow ? "workflow" : index === 0 ? "designer" : `view-${index}`;
+                return <Tabs.Tab key={id} id={id} isDisabled={index !== 0 && !isWorkflow}>{view}<Tabs.Indicator /></Tabs.Tab>;
+              })}
+            </Tabs.List>
+          </Tabs>
           <div className="flex shrink-0 items-center justify-end gap-2 whitespace-nowrap">
-            <CompactThemeSwitcher />
             {saveMessage ? (
               <span className="mr-1 text-sm text-[var(--color-text-secondary)]">{saveMessage}</span>
             ) : null}
@@ -135,9 +144,7 @@ export function FormDesignerHeader({
                         id={String(item.version)}
                         textValue={`v${item.version}`}
                       >
-                        {`v${item.version}${
-                          item.isCurrentDraft ? " · 草稿" : ""
-                        }${item.isCurrentPublished ? " · 已发布" : ""}`}
+                        {`v${item.version}`}
                       </Dropdown.Item>
                     ))
                   ) : (
@@ -153,68 +160,11 @@ export function FormDesignerHeader({
               <PreviewIcon />
               预览
             </Button>
-            {canPublish ? <Button
-              className="bg-[var(--color-success-soft)] text-[var(--color-success)]"
-              onPress={onPublish}
-            >
-              <PublishIcon />
-              发布
-            </Button> : null}
             {canEditForm ? <Button className="bg-[var(--color-primary)] text-[var(--color-text-on-primary)]" onPress={onSave}>
               <SaveIcon />
               保存
             </Button> : null}
           </div>
-        </div>
-
-        <div className="flex min-w-0 flex-wrap items-center gap-3 border-t border-[var(--color-border)] pt-3">
-          {isEditingFormName ? (
-            <Input
-              aria-label="表单名称"
-              autoFocus
-              className="max-w-[360px]"
-              value={formName}
-              onBlur={() => onEditingFormNameChange(false)}
-              onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                onFormNameChange(event.currentTarget.value)
-              }
-              onKeyDown={(event: KeyboardEvent<HTMLInputElement>) =>
-                handleFormNameKeyDown(event, onEditingFormNameChange)
-              }
-            />
-          ) : (
-            <h1
-              className="max-w-[300px] truncate cursor-text text-2xl font-semibold text-[var(--color-text-primary)]"
-              title="双击编辑表单名称"
-              onDoubleClick={() => onEditingFormNameChange(true)}
-            >
-              {formName.trim() || "New Page"}
-            </h1>
-          )}
-          <span className="shrink-0 rounded-full bg-[var(--color-bg-subtle)] px-3 py-1 text-xs font-medium text-[var(--color-text-secondary)]">
-            FORM {formUuid}
-          </span>
-          <nav
-            className="ml-auto flex shrink-0 items-center gap-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-panel-soft)] p-1"
-            aria-label="表单设计器视图"
-          >
-            {designerViews.map((view, index) => (
-              <button
-                key={view}
-                type="button"
-                onClick={view === "流程设计" ? onWorkflowDesign : undefined}
-                className={[
-                  "h-8 rounded-lg px-3 text-xs transition-colors",
-                  index === 0
-                    ? "bg-[var(--color-primary)] font-medium text-[var(--color-text-on-primary)]"
-                    : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-text-primary)]",
-                ].join(" ")}
-              >
-                {view}
-              </button>
-            ))}
-          </nav>
-        </div>
       </div>
     </Card>
   );

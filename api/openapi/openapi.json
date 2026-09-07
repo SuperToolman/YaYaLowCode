@@ -1705,6 +1705,24 @@
         }
       }
     },
+    "/api/form-schema-contract": {
+      "get": {
+        "tags": [],
+        "operationId": "getFormSchemaContract",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/forms/{formUuid}": {
       "get": {
         "tags": [],
@@ -1901,34 +1919,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_ApiDetailForm"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/forms/{formUuid}/publish": {
-      "post": {
-        "tags": [],
-        "operationId": "publishFormSchema",
-        "parameters": [
-          {
-            "name": "formUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ApiSchemaPayload"
                 }
               }
             }
@@ -2422,14 +2412,6 @@
             }
           },
           {
-            "name": "scope",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "name": "version",
             "in": "query",
             "required": false,
@@ -2451,12 +2433,10 @@
             }
           }
         }
-      }
-    },
-    "/api/forms/{formUuid}/schema/draft": {
+      },
       "post": {
         "tags": [],
-        "operationId": "saveFormSchemaDraft",
+        "operationId": "saveFormSchema",
         "parameters": [
           {
             "name": "formUuid",
@@ -3347,62 +3327,6 @@
         }
       }
     },
-    "/api/settings/ai-employees/configurations": {
-      "get": {
-        "tags": [],
-        "operationId": "listAiEmployeeConfigurations",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_AiEmployeeConfigurationResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/settings/ai-employees/configurations/{employee_id}": {
-      "put": {
-        "tags": [],
-        "operationId": "updateAiEmployeeConfiguration",
-        "parameters": [
-          {
-            "name": "employee_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateAiEmployeeConfigurationRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AiEmployeeConfigurationResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/settings/communication": {
       "get": {
         "tags": [],
@@ -4226,43 +4150,6 @@
           }
         }
       },
-      "AiEmployeeConfigurationResponse": {
-        "type": "object",
-        "required": [
-          "employeeId",
-          "title",
-          "enabled"
-        ],
-        "properties": {
-          "agentId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "chatModel": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "employeeId": {
-            "type": "string"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "providerId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "title": {
-            "type": "string"
-          }
-        }
-      },
       "AiEmployeeMarketItem": {
         "type": "object",
         "required": [
@@ -4278,6 +4165,12 @@
           "installed"
         ],
         "properties": {
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "billingCycle": {
             "type": "string"
           },
@@ -4391,10 +4284,10 @@
           "desc",
           "icon",
           "color",
-          "status",
           "createdAt",
           "owner",
-          "records"
+          "records",
+          "deploymentType"
         ],
         "properties": {
           "badge": {
@@ -4409,6 +4302,9 @@
           "createdAt": {
             "type": "string"
           },
+          "deploymentType": {
+            "type": "string"
+          },
           "desc": {
             "type": "string"
           },
@@ -4420,6 +4316,18 @@
           },
           "name": {
             "type": "string"
+          },
+          "onlineReleaseId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "onlineVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "owner": {
             "type": "string"
@@ -4433,9 +4341,6 @@
           "records": {
             "type": "integer",
             "format": "int64"
-          },
-          "status": {
-            "$ref": "#/components/schemas/AppStatus"
           }
         }
       },
@@ -4926,7 +4831,7 @@
             "format": "int32"
           },
           "status": {
-            "$ref": "#/components/schemas/FormStatus"
+            "type": "string"
           }
         }
       },
@@ -5056,7 +4961,7 @@
             "type": "string"
           },
           "status": {
-            "$ref": "#/components/schemas/FormStatus"
+            "type": "string"
           }
         }
       },
@@ -5064,9 +4969,6 @@
         "type": "object",
         "required": [
           "version",
-          "published",
-          "isCurrentDraft",
-          "isCurrentPublished",
           "createdAt"
         ],
         "properties": {
@@ -5078,15 +4980,6 @@
           },
           "createdAt": {
             "type": "string"
-          },
-          "isCurrentDraft": {
-            "type": "boolean"
-          },
-          "isCurrentPublished": {
-            "type": "boolean"
-          },
-          "published": {
-            "type": "boolean"
           },
           "version": {
             "type": "integer",
@@ -5296,63 +5189,6 @@
           }
         }
       },
-      "ApiResponse_AiEmployeeConfigurationResponse": {
-        "type": "object",
-        "required": [
-          "code",
-          "message",
-          "time"
-        ],
-        "properties": {
-          "code": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "data": {
-            "type": "object",
-            "required": [
-              "employeeId",
-              "title",
-              "enabled"
-            ],
-            "properties": {
-              "agentId": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "chatModel": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "employeeId": {
-                "type": "string"
-              },
-              "enabled": {
-                "type": "boolean"
-              },
-              "providerId": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "title": {
-                "type": "string"
-              }
-            }
-          },
-          "message": {
-            "type": "string"
-          },
-          "time": {
-            "type": "string"
-          }
-        }
-      },
       "ApiResponse_ApiAgentSession": {
         "type": "object",
         "required": [
@@ -5446,10 +5282,10 @@
               "desc",
               "icon",
               "color",
-              "status",
               "createdAt",
               "owner",
-              "records"
+              "records",
+              "deploymentType"
             ],
             "properties": {
               "badge": {
@@ -5464,6 +5300,9 @@
               "createdAt": {
                 "type": "string"
               },
+              "deploymentType": {
+                "type": "string"
+              },
               "desc": {
                 "type": "string"
               },
@@ -5475,6 +5314,18 @@
               },
               "name": {
                 "type": "string"
+              },
+              "onlineReleaseId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "onlineVersion": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "owner": {
                 "type": "string"
@@ -5488,9 +5339,6 @@
               "records": {
                 "type": "integer",
                 "format": "int64"
-              },
-              "status": {
-                "$ref": "#/components/schemas/AppStatus"
               }
             }
           },
@@ -6037,7 +5885,7 @@
                 "type": "string"
               },
               "status": {
-                "$ref": "#/components/schemas/FormStatus"
+                "type": "string"
               }
             }
           },
@@ -6137,27 +5985,13 @@
               "formUuid",
               "schema",
               "version",
-              "draftVersion",
-              "publishedVersion",
-              "latestVersion",
-              "published"
+              "latestVersion"
             ],
             "properties": {
-              "draftVersion": {
-                "type": "integer",
-                "format": "int32"
-              },
               "formUuid": {
                 "type": "string"
               },
               "latestVersion": {
-                "type": "integer",
-                "format": "int32"
-              },
-              "published": {
-                "type": "boolean"
-              },
-              "publishedVersion": {
                 "type": "integer",
                 "format": "int32"
               },
@@ -7941,66 +7775,6 @@
           }
         }
       },
-      "ApiResponse_Vec_AiEmployeeConfigurationResponse": {
-        "type": "object",
-        "required": [
-          "code",
-          "message",
-          "time"
-        ],
-        "properties": {
-          "code": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "data": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "employeeId",
-                "title",
-                "enabled"
-              ],
-              "properties": {
-                "agentId": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "chatModel": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "employeeId": {
-                  "type": "string"
-                },
-                "enabled": {
-                  "type": "boolean"
-                },
-                "providerId": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "title": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "message": {
-            "type": "string"
-          },
-          "time": {
-            "type": "string"
-          }
-        }
-      },
       "ApiResponse_Vec_AiEmployeeMarketItem": {
         "type": "object",
         "required": [
@@ -8030,6 +7804,12 @@
                 "installed"
               ],
               "properties": {
+                "avatarUrl": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "billingCycle": {
                   "type": "string"
                 },
@@ -8189,10 +7969,10 @@
                 "desc",
                 "icon",
                 "color",
-                "status",
                 "createdAt",
                 "owner",
-                "records"
+                "records",
+                "deploymentType"
               ],
               "properties": {
                 "badge": {
@@ -8207,6 +7987,9 @@
                 "createdAt": {
                   "type": "string"
                 },
+                "deploymentType": {
+                  "type": "string"
+                },
                 "desc": {
                   "type": "string"
                 },
@@ -8218,6 +8001,18 @@
                 },
                 "name": {
                   "type": "string"
+                },
+                "onlineReleaseId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "onlineVersion": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "owner": {
                   "type": "string"
@@ -8231,9 +8026,6 @@
                 "records": {
                   "type": "integer",
                   "format": "int64"
-                },
-                "status": {
-                  "$ref": "#/components/schemas/AppStatus"
                 }
               }
             }
@@ -8511,7 +8303,7 @@
                   "type": "string"
                 },
                 "status": {
-                  "$ref": "#/components/schemas/FormStatus"
+                  "type": "string"
                 }
               }
             }
@@ -8542,9 +8334,6 @@
               "type": "object",
               "required": [
                 "version",
-                "published",
-                "isCurrentDraft",
-                "isCurrentPublished",
                 "createdAt"
               ],
               "properties": {
@@ -8556,15 +8345,6 @@
                 },
                 "createdAt": {
                   "type": "string"
-                },
-                "isCurrentDraft": {
-                  "type": "boolean"
-                },
-                "isCurrentPublished": {
-                  "type": "boolean"
-                },
-                "published": {
-                  "type": "boolean"
                 },
                 "version": {
                   "type": "integer",
@@ -9355,27 +9135,13 @@
           "formUuid",
           "schema",
           "version",
-          "draftVersion",
-          "publishedVersion",
-          "latestVersion",
-          "published"
+          "latestVersion"
         ],
         "properties": {
-          "draftVersion": {
-            "type": "integer",
-            "format": "int32"
-          },
           "formUuid": {
             "type": "string"
           },
           "latestVersion": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "published": {
-            "type": "boolean"
-          },
-          "publishedVersion": {
             "type": "integer",
             "format": "int32"
           },
@@ -9385,14 +9151,6 @@
             "format": "int32"
           }
         }
-      },
-      "AppStatus": {
-        "type": "string",
-        "enum": [
-          "enabled",
-          "paused",
-          "draft"
-        ]
       },
       "AutomationFlowType": {
         "type": "string",
@@ -9767,6 +9525,12 @@
       "CreateAgentSessionRequest": {
         "type": "object",
         "properties": {
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "context": {
             "oneOf": [
               {
@@ -9782,6 +9546,18 @@
       "CreateAppRequest": {
         "type": "object",
         "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "name": {
             "type": [
               "string",
@@ -10271,13 +10047,6 @@
           }
         }
       },
-      "FormStatus": {
-        "type": "string",
-        "enum": [
-          "draft",
-          "published"
-        ]
-      },
       "FormType": {
         "type": "string",
         "enum": [
@@ -10654,22 +10423,25 @@
           "expiresAt"
         ],
         "properties": {
+          "allowedTools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Final platform policy assigned to this AI employee by the operation center."
+          },
+          "applicationIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "expiresAt": {
             "type": "integer",
             "format": "int64"
           },
           "id": {
             "type": "string"
-          },
-          "persona": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/PlatformAiEmployeePersona"
-              }
-            ]
           },
           "skills": {
             "type": "array",
@@ -10688,29 +10460,6 @@
           }
         }
       },
-      "PlatformAiEmployeePersona": {
-        "type": "object",
-        "required": [
-          "id",
-          "title",
-          "description",
-          "systemPrompt"
-        ],
-        "properties": {
-          "description": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "systemPrompt": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          }
-        }
-      },
       "PlatformAiEmployeeSkill": {
         "type": "object",
         "required": [
@@ -10720,12 +10469,6 @@
           "instructions"
         ],
         "properties": {
-          "allowedTools": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
           "description": {
             "type": "string"
           },
@@ -10743,6 +10486,10 @@
           },
           "packagePath": {
             "type": "string"
+          },
+          "pluginManifestJson": {
+            "type": "string",
+            "description": "Canonical DSH Plugin manifest emitted by the operation center/package\ninstaller. Kept on the signed entitlement so Host can build its\nemployee-scoped plugin registry without reading the database directly."
           },
           "requiresConfirmation": {
             "type": "boolean"
@@ -11293,6 +11040,13 @@
           "schema"
         ],
         "properties": {
+          "base_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
           "change_log": {
             "type": [
               "string",
@@ -11408,38 +11162,25 @@
           }
         }
       },
-      "UpdateAiEmployeeConfigurationRequest": {
-        "type": "object",
-        "required": [
-          "providerId",
-          "chatModel"
-        ],
-        "properties": {
-          "chatModel": {
-            "type": "string"
-          },
-          "providerId": {
-            "type": "string"
-          }
-        }
-      },
       "UpdateAppRequest": {
         "type": "object",
         "properties": {
-          "name": {
+          "description": {
             "type": [
               "string",
               "null"
             ]
           },
-          "status": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/AppStatus"
-              }
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
             ]
           }
         }

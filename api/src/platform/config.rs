@@ -94,10 +94,6 @@ pub struct ApplicationBusinessContextSettings {
     pub applications: HashMap<String, ApplicationBusinessContext>,
 }
 
-fn default_approval_mode() -> String {
-    "approve_on_behalf".to_string()
-}
-
 /// The concrete configuration selected for one Agent run.
 ///
 /// A Robot selects a profile. The profile owns its model provider and the
@@ -113,8 +109,8 @@ pub struct ResolvedAgentRuntime {
     pub plugins: Vec<AgentPluginDefinition>,
     pub skills: Vec<AgentSkillDefinition>,
     pub knowledge_bases: Vec<AgentKnowledgeBaseDefinition>,
-    pub approval_mode: String,
     pub allowed_tools: HashSet<String>,
+    pub application_ids: HashSet<String>,
 }
 
 impl ResolvedAgentRuntime {
@@ -149,23 +145,6 @@ pub struct AgentRegistry {
     pub skills: Vec<AgentSkillDefinition>,
     #[serde(default)]
     pub knowledge_bases: Vec<AgentKnowledgeBaseDefinition>,
-    #[serde(default)]
-    pub personas: Vec<AgentPersonaDefinition>,
-}
-
-#[derive(Clone, Deserialize, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentPersonaDefinition {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub system_prompt: String,
-    #[serde(default)]
-    pub plugin_ids: Vec<String>,
-    #[serde(default)]
-    pub skill_ids: Vec<String>,
-    #[serde(default)]
-    pub knowledge_base_ids: Vec<String>,
 }
 
 #[derive(Clone, Deserialize, Serialize, ToSchema)]
@@ -245,10 +224,10 @@ pub struct AgentSkillDefinition {
     pub description: String,
     pub enabled: bool,
     #[serde(default)]
-    pub allowed_tools: Vec<String>,
-    #[serde(default)]
     pub instructions: String,
     pub requires_confirmation: bool,
+    #[serde(default)]
+    pub plugin_manifest_json: String,
 }
 
 fn default_skill_source() -> String {
@@ -305,8 +284,6 @@ pub struct AgentConfigProfile {
     pub max_retries: usize,
     #[serde(default)]
     pub image_caption_model: String,
-    #[serde(default = "default_persona_id")]
-    pub persona_id: String,
     #[serde(default)]
     pub web_search_enabled: bool,
     #[serde(default)]
@@ -315,8 +292,11 @@ pub struct AgentConfigProfile {
     pub allow_create_forms: bool,
     #[serde(default)]
     pub allow_create_automations: bool,
-    #[serde(default = "default_approval_mode")]
-    pub approval_mode: String,
+    /// Final platform authorization owned by the AI employee profile.
+    #[serde(default)]
+    pub allowed_tools: Vec<String>,
+    #[serde(default)]
+    pub application_ids: Vec<String>,
     #[serde(default = "default_context_max_turns")]
     pub context_max_turns: i32,
     #[serde(default = "default_context_discard_turns")]
@@ -889,60 +869,31 @@ pub(crate) fn resolve_agent_runtime_from_registry(
         .iter()
         .find(|provider| provider.id == profile.provider_id)
         .ok_or_else(|| "agent model provider not found".to_string())?;
-    let persona = registry
-        .personas
-        .iter()
-        .find(|persona| persona.id == profile.persona_id);
-    let persona_prompt = persona
-        .map(|persona| persona.system_prompt.as_str())
-        .unwrap_or("");
-
-    // Persona owns reusable capability bindings. Profile bindings are a legacy fallback.
-    let persona_plugin_ids = persona
-        .map(|value| value.plugin_ids.as_slice())
-        .unwrap_or_default();
-    let persona_skill_ids = persona
-        .map(|value| value.skill_ids.as_slice())
-        .unwrap_or_default();
-    let persona_knowledge_ids = persona
-        .map(|value| value.knowledge_base_ids.as_slice())
-        .unwrap_or_default();
     let plugins = resolve_bound_resources(
         "plugin",
-        if persona_plugin_ids.is_empty() {
-            &profile.plugin_ids
-        } else {
-            persona_plugin_ids
-        },
+        &profile.plugin_ids,
         &registry.plugins,
         |resource| &resource.id,
         |resource| resource.enabled,
     )?;
     let skills = resolve_bound_resources(
         "skill",
-        if persona_skill_ids.is_empty() {
-            &profile.skill_ids
-        } else {
-            persona_skill_ids
-        },
+        &profile.skill_ids,
         &registry.skills,
         |resource| &resource.id,
         |resource| resource.enabled,
     )?;
     let knowledge_bases = resolve_bound_resources(
         "knowledge base",
-        if persona_knowledge_ids.is_empty() {
-            &profile.knowledge_base_ids
-        } else {
-            persona_knowledge_ids
-        },
+        &profile.knowledge_base_ids,
         &registry.knowledge_bases,
         |resource| &resource.id,
         |resource| resource.enabled,
     )?;
-    let allowed_tools = skills
+    let allowed_tools = profile
+        .allowed_tools
         .iter()
-        .flat_map(|skill| skill.allowed_tools.iter().cloned())
+        .cloned()
         .collect::<HashSet<_>>();
 
     Ok(ResolvedAgentRuntime {
@@ -963,17 +914,13 @@ pub(crate) fn resolve_agent_runtime_from_registry(
             embedding_model: profile.embedding_model.clone(),
             temperature: profile.temperature,
             max_steps: profile.max_steps,
-            system_prompt: if agent.system_prompt.trim().is_empty() {
-                persona_prompt.to_string()
-            } else {
-                agent.system_prompt.clone()
-            },
+            system_prompt: agent.system_prompt.clone(),
         },
         plugins,
         skills,
         knowledge_bases,
-        approval_mode: profile.approval_mode.clone(),
         allowed_tools,
+        application_ids: profile.application_ids.iter().cloned().collect(),
     })
 }
 
@@ -1015,12 +962,12 @@ mod tests {
             max_steps: 8,
             max_retries: 3,
             image_caption_model: String::new(),
-            persona_id: "persona-one".to_string(),
             web_search_enabled: false,
             allow_create_apps: false,
             allow_create_forms: false,
             allow_create_automations: false,
-            approval_mode: default_approval_mode(),
+            allowed_tools: vec!["get_form_schema".to_string()],
+            application_ids: vec!["APP_TEST".to_string()],
             context_max_turns: 50,
             context_discard_turns: 10,
             context_overflow_strategy: "truncate".to_string(),
@@ -1057,7 +1004,7 @@ mod tests {
                 scope_type: "platform".to_string(),
                 scope_ref_id: None,
                 profile_id: "profile-form-builder".to_string(),
-                system_prompt: String::new(),
+                system_prompt: "你是表单设计助手。".to_string(),
                 // Robot settings do not own capabilities in the current UI.
                 plugin_ids: vec!["plugin-not-used".to_string()],
                 skill_ids: Vec::new(),
@@ -1083,8 +1030,8 @@ mod tests {
                 is_system: false,
                 description: String::new(),
                 enabled: true,
-                allowed_tools: vec!["get_form_schema".to_string()],
                 instructions: String::new(),
+                plugin_manifest_json: String::new(),
                 requires_confirmation: false,
             }],
             knowledge_bases: vec![AgentKnowledgeBaseDefinition {
@@ -1095,15 +1042,6 @@ mod tests {
                 retrieval_mode: "semantic".to_string(),
                 content: String::new(),
                 source_ids: vec!["source-one".to_string()],
-            }],
-            personas: vec![AgentPersonaDefinition {
-                id: "persona-one".to_string(),
-                name: "实施顾问".to_string(),
-                description: String::new(),
-                system_prompt: "你是表单设计助手。".to_string(),
-                plugin_ids: Vec::new(),
-                skill_ids: Vec::new(),
-                knowledge_base_ids: Vec::new(),
             }],
         }
     }
@@ -1126,7 +1064,7 @@ mod tests {
         assert_eq!(runtime.knowledge_bases[0].id, "knowledge-one");
         assert!(runtime.allowed_tools.contains("get_form_schema"));
         assert!(!runtime.allowed_tools.contains("list_forms"));
-        assert!(!runtime.allowed_tools.contains("create_form_draft"));
+        assert!(!runtime.allowed_tools.contains("create_form"));
     }
 
     #[test]
@@ -1159,9 +1097,6 @@ mod tests {
 
 fn default_max_retries() -> usize {
     3
-}
-fn default_persona_id() -> String {
-    "persona-default".to_string()
 }
 fn default_context_max_turns() -> i32 {
     50
@@ -1278,6 +1213,40 @@ impl AgentSettings {
         }
         Ok(())
     }
+}
+
+/// Per-platform Agent workspace limits. The platform instance owns this root;
+/// user, AI employee, and session are the isolation segments below it.
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentWorkspaceSettings {
+    pub root: String,
+    pub max_bytes: u64,
+    pub max_files: u64,
+    pub retention_days: u32,
+}
+
+pub fn agent_workspace_settings() -> AgentWorkspaceSettings {
+    AgentWorkspaceSettings {
+        // Local API runs from api/, while the DSH host resolves its fallback
+        // two levels above agent/deepseek-harness; both therefore land in the
+        // repository-level runtime directory. Production sets an absolute
+        // path through YAYA_AGENT_WORKSPACE_ROOT.
+        root: std::env::var("YAYA_AGENT_WORKSPACE_ROOT")
+            .unwrap_or_else(|_| "../runtime/agent-workspaces".to_string()),
+        max_bytes: env_u64("YAYA_AGENT_WORKSPACE_MAX_BYTES", 1_073_741_824),
+        max_files: env_u64("YAYA_AGENT_WORKSPACE_MAX_FILES", 10_000),
+        retention_days: env_u64("YAYA_AGENT_WORKSPACE_RETENTION_DAYS", 30).min(u32::MAX as u64)
+            as u32,
+    }
+}
+
+fn env_u64(name: &str, fallback: u64) -> u64 {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|value: &u64| *value > 0)
+        .unwrap_or(fallback)
 }
 
 impl IdentitySourceSettings {

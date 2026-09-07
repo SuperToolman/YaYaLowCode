@@ -13,7 +13,7 @@ const CONTAINER_NAMES: Partial<Record<PlacedField["type"], string>> = {
 
 /**
  * Validates structural rules that must hold before a designer schema can be
- * persisted. Keep container-specific rules here so save and publish use the
+ * persisted. Keep container-specific rules here so every Schema save uses the
  * same validation behavior.
  */
 export function validateDesignerSchema(

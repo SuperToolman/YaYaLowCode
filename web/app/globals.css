@@ -1,6 +1,32 @@
 @import "tailwindcss";
 @import "@heroui/styles"; 
 
+/* Agent workspace tokens. Components consume these through the scoped
+   .agent-theme bridge so the conversation surface can evolve independently
+   from the rest of the application theme. */
+.agent-theme {
+  --agent-canvas: var(--color-bg-canvas);
+  --agent-surface: var(--color-bg-surface);
+  --agent-surface-secondary: var(--color-bg-subtle);
+  --agent-surface-tertiary: var(--color-bg-canvas);
+  --agent-border: var(--color-border);
+  --agent-text: var(--color-text-primary);
+  --agent-muted: var(--color-text-secondary);
+  --agent-accent: var(--color-primary);
+  --agent-code-background: var(--color-code-bg);
+  --surface: var(--agent-surface);
+  --surface-foreground: var(--agent-text);
+  --surface-secondary: var(--agent-surface-secondary);
+  --surface-secondary-foreground: var(--agent-text);
+  --surface-tertiary: var(--agent-surface-tertiary);
+  --surface-tertiary-foreground: var(--agent-text);
+  --muted: var(--agent-muted);
+  --accent: var(--agent-accent);
+  --border: var(--agent-border);
+  color: var(--agent-text);
+  background: var(--agent-canvas);
+}
+
 .chat-mention-token {
   display: inline-block;
   margin: 0 2px;
@@ -47,7 +73,7 @@ html[data-resolved-theme="dark"] .field-type-tag--builtin { background: #303842;
 
 .view-column-config-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content max-content max-content 72px max-content;
+  grid-template-columns: minmax(0, 1fr) max-content max-content max-content 112px max-content;
   column-gap: 12px;
 }
 
@@ -58,6 +84,10 @@ html[data-resolved-theme="dark"] .field-type-tag--builtin { background: #303842;
   grid-template-columns: subgrid;
 }
 
+/*
+ * Legacy semantic palette is intentionally disabled. ThemeProvider owns these
+ * values now and maps HeroUI tokens to the compatibility names at runtime.
+ */
 :root,
 html[data-resolved-theme="light"] {
   color-scheme: light;
@@ -179,6 +209,7 @@ html[data-resolved-theme="light"] {
   --form-type-detail-icon-color: color-mix(in srgb, var(--nav-form-icon) 64%, var(--color-bg-surface));
 
   /* HeroUI v3 theme bridge */
+  /* The runtime ThemeProvider owns HeroUI tokens. Kept as documented fallback only.
   --surface-foreground: var(--color-text-primary);
   --surface-secondary: var(--color-bg-subtle);
   --surface-secondary-foreground: var(--color-text-primary);
@@ -211,8 +242,10 @@ html[data-resolved-theme="light"] {
   --surface-shadow: var(--shadow-card);
   --overlay-shadow: var(--shadow-dialog);
   --field-shadow: var(--shadow-xs);
+  */
 }
 
+/* Legacy dark semantic palette disabled; see the note above. */
 html[data-resolved-theme="dark"] {
   color-scheme: dark;
 
@@ -330,6 +363,7 @@ html[data-resolved-theme="dark"] {
   --form-type-detail-icon-color: color-mix(in srgb, var(--nav-form-icon) 70%, var(--color-bg-surface));
 
   /* HeroUI v3 theme bridge */
+  /* The runtime ThemeProvider owns HeroUI tokens. Kept as documented fallback only.
   --surface-foreground: var(--color-text-primary);
   --surface-secondary: var(--color-bg-subtle);
   --surface-secondary-foreground: var(--color-text-primary);
@@ -362,6 +396,7 @@ html[data-resolved-theme="dark"] {
   --surface-shadow: var(--shadow-card);
   --overlay-shadow: var(--shadow-dialog);
   --field-shadow: var(--shadow-xs);
+  */
 }
 
 @theme inline {
@@ -382,23 +417,6 @@ html,
 body,
 * {
   box-sizing: border-box;
-  -ms-overflow-style: none !important;
-  scrollbar-width: none !important;
-}
-
-html::-webkit-scrollbar,
-body::-webkit-scrollbar,
-*::-webkit-scrollbar {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-  background: transparent !important;
-}
-
-html::-webkit-scrollbar-thumb,
-body::-webkit-scrollbar-thumb,
-*::-webkit-scrollbar-thumb {
-  background: transparent !important;
 }
 
 /* Subforms intentionally expose horizontal scrolling for large column sets. */
@@ -447,9 +465,8 @@ body::-webkit-scrollbar-thumb,
 
 /* Record tables expose their horizontal overflow so wide, content-sized columns stay discoverable. */
 .data-table-horizontal-scroll {
-  -ms-overflow-style: auto !important;
-  scrollbar-color: var(--color-border) var(--color-bg-subtle) !important;
-  scrollbar-width: thin !important;
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
 }
 
 /* React Aria sets resizable tables to min-content; retain the calculated column width instead. */
@@ -466,23 +483,29 @@ body::-webkit-scrollbar-thumb,
   font-size: 14px !important;
 }
 
+/* MyTable owns layout calculations; HeroUI tokens still provide the surface colors. */
+.my-table-content th,
+.my-table-content td {
+  background-clip: padding-box;
+}
+
+.my-table-content th.sticky,
+.my-table-content td.sticky {
+  isolation: isolate;
+}
+
 .data-table-horizontal-scroll::-webkit-scrollbar {
-  display: block !important;
-  width: 8px !important;
-  height: 8px !important;
-  background: var(--color-bg-subtle) !important;
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 .data-table-horizontal-scroll::-webkit-scrollbar-thumb {
-  display: block !important;
-  min-width: 32px;
-  border: 2px solid var(--color-bg-subtle);
-  border-radius: 999px;
-  background: var(--color-border) !important;
+  display: none !important;
 }
 
 .data-table-horizontal-scroll::-webkit-scrollbar-corner {
-  background: var(--color-bg-subtle) !important;
+  display: none !important;
 }
 
 /* The recycle-bin table owns the space below its page header and action bar. */
@@ -654,15 +677,6 @@ select {
   overflow: clip;
 }
 
-/* HeroUI's default Card has no border. Keep every non-transparent Card on the
-   same product surface; specialized floating surfaces use theme-card-glass. */
-.card:not(.card--transparent) {
-  border: 1px solid var(--color-border);
-  border-radius: 0.75rem;
-  background: var(--color-bg-surface);
-  box-shadow: var(--shadow-card);
-}
-
 .theme-panel,
 .theme-panel-strong,
 .theme-panel-soft {
@@ -687,6 +701,52 @@ select {
   color: var(--color-text-primary);
 }
 
+/* Home page hierarchy stays independent from HeroUI's large heading defaults. */
+.page-content-layout__title,
+.page-section-title,
+.page-card-title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.page-content-layout__title { font-size: 1.5rem; }
+.page-content-layout__subtitle,
+.page-section-meta,
+.page-card-description {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+.page-content-layout__subtitle { font-size: .8125rem; line-height: 1.4; }
+.page-section-title { font-size: 1.125rem; }
+.page-section-meta { font-size: .75rem; }
+.page-card-title { font-size: .9375rem; }
+.page-card-description { font-size: .75rem; line-height: 1.4; }
+.page-surface { min-height: 0; }
+.surface,
+.card { border-radius: var(--radius, 0.5rem) !important; }
+
+/* Keep HeroUI buttons aligned with the platform component-radius token.
+   HeroUI's default button scale is radius * 3, while platform navigation
+   surfaces use the base radius. The platform token should be the source of
+   truth for both. */
+.button,
+button[data-slot="button"],
+button.button--icon-only,
+button.button--icon-only.button--sm,
+button.button--icon-only.button--lg {
+  border-radius: var(--radius, 0.5rem) !important;
+}
+.surface--transparent { border: 1px solid var(--border) !important; background: transparent !important; }
+html[data-surface-variant="secondary"] .surface--default { background: var(--surface-secondary) !important; color: var(--surface-secondary-foreground) !important; }
+html[data-surface-variant="tertiary"] .surface--default { background: var(--surface-tertiary) !important; color: var(--surface-tertiary-foreground) !important; }
+html[data-surface-variant="transparent"] .surface--default { border: 1px solid var(--border) !important; background: transparent !important; }
+.page-quick-item,
+.page-app-item { color: var(--color-text-primary); }
+.page-quick-item { display: block; padding: .75rem 0; }
+.page-app-item { padding: .25rem 0 .75rem; }
+
 /* Runtime forms render in preview, drawers, and record detail views. Keep field
    backgrounds opaque so their appearance does not depend on the surrounding overlay. */
 .runtime-form-surface {
@@ -702,17 +762,13 @@ select {
 }
 
 .theme-modal-backdrop {
-  background: rgba(26, 29, 43, 0.24);
+  background: var(--backdrop);
   backdrop-filter: blur(4px);
 }
 
 .record-detail-backdrop {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
-}
-
-html[data-resolved-theme="dark"] .theme-modal-backdrop {
-  background: rgba(11, 7, 16, 0.72);
 }
 
 .designer-properties-drawer {
@@ -739,12 +795,12 @@ html[data-resolved-theme="dark"] .theme-modal-backdrop {
 }
 
 .designer-modal-backdrop {
-  background: rgba(20, 33, 61, 0.28);
+  background: color-mix(in srgb, var(--backdrop) 88%, transparent);
   backdrop-filter: blur(4px);
 }
 
 html[data-resolved-theme="dark"] .designer-modal-backdrop {
-  background: rgba(3, 1, 10, 0.7);
+  background: var(--backdrop);
 }
 
 html[data-resolved-theme="light"] {

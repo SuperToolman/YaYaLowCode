@@ -13,15 +13,6 @@ use super::config::{
 
 #[derive(Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct PlatformAiEmployeePersona {
-    pub id: String,
-    pub title: String,
-    pub description: String,
-    pub system_prompt: String,
-}
-
-#[derive(Clone, Deserialize, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct PlatformAiEmployeeSkill {
     pub id: String,
     pub title: String,
@@ -38,9 +29,12 @@ pub struct PlatformAiEmployeeSkill {
     pub description: String,
     pub instructions: String,
     #[serde(default)]
-    pub allowed_tools: Vec<String>,
-    #[serde(default)]
     pub requires_confirmation: bool,
+    /// Canonical DSH Plugin manifest emitted by the operation center/package
+    /// installer. Kept on the signed entitlement so Host can build its
+    /// employee-scoped plugin registry without reading the database directly.
+    #[serde(default)]
+    pub plugin_manifest_json: String,
 }
 
 #[derive(Clone, Deserialize, Serialize, ToSchema)]
@@ -52,11 +46,14 @@ pub struct PlatformAiEmployeeEntitlement {
     #[serde(default)]
     pub template_version: String,
     #[serde(default)]
-    pub persona: Option<PlatformAiEmployeePersona>,
-    #[serde(default)]
     pub skills: Vec<PlatformAiEmployeeSkill>,
     #[serde(default)]
     pub system_prompt: String,
+    /// Final platform policy assigned to this AI employee by the operation center.
+    #[serde(default)]
+    pub allowed_tools: Vec<String>,
+    #[serde(default)]
+    pub application_ids: Vec<String>,
 }
 
 /// Signed operation-center plugin metadata. It never contains credentials.

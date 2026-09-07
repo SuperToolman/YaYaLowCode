@@ -80,6 +80,19 @@ function LoginScreen() {
     return () => { cancelled = true; };
   }, [completeLogin]);
 
+  // WebView password managers can restore input values without dispatching
+  // input/change events. Keep React state in sync so the submit button does
+  // not remain disabled while the fields visibly contain credentials.
+  useEffect(() => {
+    if (!isReady || isAuthenticated) return;
+    const remembered = readRememberedCredentials();
+    if (!remembered) return;
+    setUsername((current) => current || remembered.username);
+    setPassword((current) => current || remembered.password);
+    setRememberPassword(true);
+    setAutoLogin(remembered.autoLogin);
+  }, [isAuthenticated, isReady]);
+
   useEffect(() => {
     if (isAuthenticated || searchParams.get("dingtalkComplete") !== "1") return;
     void fetch("/api/auth/session", { cache: "no-store" })

@@ -1,4 +1,4 @@
-import type { AgentSseEvent } from "./types";
+import type { AgentSseEvent, DshSessionEvent } from "./types";
 
 export function parseAgentSseFrame(frame: string): AgentSseEvent | null {
   let eventName = "message";
@@ -13,8 +13,14 @@ export function parseAgentSseFrame(frame: string): AgentSseEvent | null {
   try { payload = JSON.parse(dataLines.join("\n")); } catch { return null; }
   const record = isRecord(payload) ? payload : {};
   switch (eventName) {
+    case "artifact.created": return { type: "artifact.created", id: String(record.id ?? ""), name: String(record.name ?? "产物"), mimeType: typeof record.mimeType === "string" ? record.mimeType : undefined, size: typeof record.size === "number" ? record.size : undefined, sessionId: String(record.sessionId ?? "") };
+    case "dsh.session.event":
+      if (typeof record.type !== "string" || typeof record.seq !== "number" || !isRecord(record.data)) return null;
+      return { type: "dsh.session.event", event: record as unknown as DshSessionEvent };
     case "message.delta":
       return typeof record.delta === "string" ? { type: "message.delta", delta: record.delta } : null;
+    case "reasoning.delta":
+      return typeof record.delta === "string" ? { type: "reasoning.delta", delta: record.delta } : null;
     case "message.completed": {
       const message = isRecord(record.message) ? record.message : {};
       return { type: "message.completed", runId: typeof message.runId === "string" ? message.runId : undefined };
@@ -24,37 +30,22 @@ export function parseAgentSseFrame(frame: string): AgentSseEvent | null {
         type: "tool.started",
         name: typeof record.name === "string" ? record.name : "工具",
         resourceName: typeof record.resourceName === "string" ? record.resourceName : undefined,
+        callId: typeof record.callId === "string" ? record.callId : undefined,
+        arguments: record.arguments,
+        command: typeof record.command === "string" ? record.command : undefined,
       };
     case "tool.completed": {
-      const result = isRecord(record.result) ? record.result : {};
-      const action = isRecord(result.pendingAction) ? result.pendingAction : null;
       return {
         type: "tool.completed",
-        pendingAction: action && typeof action.id === "string" ? {
-          id: action.id,
-          summary: typeof action.summary === "string" ? action.summary : "Agent 提议执行写操作",
-          actionType: typeof action.type === "string" ? action.type : "",
-          expiresInSeconds: typeof action.expiresInSeconds === "number" ? action.expiresInSeconds : 86_400,
-        } : undefined,
+        callId: typeof record.callId === "string" ? record.callId : undefined,
+        result: record.result,
+        error: record.error,
       };
     }
     case "status": return { type: "status" };
     case "run.completed": return { type: "run.completed" };
-    case "run.paused": {
-      const action = isRecord(record.action) ? record.action : null;
-      if (!action || typeof action.id !== "string" || typeof action.actionType !== "string") return null;
-      return {
-        type: "run.paused",
-        action: {
-          id: action.id,
-          actionType: action.actionType,
-          summary: typeof action.summary === "string" ? action.summary : "Agent 请求审批",
-          status: "pending",
-          createdAt: typeof action.createdAt === "string" ? action.createdAt : new Date().toISOString(),
-          expiresAt: typeof action.expiresAt === "string" ? action.expiresAt : new Date(Date.now() + 86_400_000).toISOString(),
-        },
-      };
-    }
+    case "step.started": return { type: "step.started", turn: Number(record.turn ?? 0), step: Number(record.step ?? 0) };
+    case "step.completed": return { type: "step.completed", turn: Number(record.turn ?? 0), step: Number(record.step ?? 0) };
     case "run.failed": return { type: "run.failed", message: typeof record.message === "string" ? record.message : "Agent 运行失败" };
     case "message.failed": return { type: "message.failed", message: typeof record.message === "string" ? record.message : "Agent 消息生成失败" };
     default: return { type: "unknown", eventName, payload };

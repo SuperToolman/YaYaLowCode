@@ -4,12 +4,21 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Card } from "@heroui/react/card";
+import { ScrollShadow } from "@heroui/react";
 import { useAuth } from "../../components/auth-provider";
+import { PageContentLayout } from "../../components/page-content-layout";
+import { Typography } from "@heroui/react";
 
 const settingsGroups = [
   {
     label: "平台设置",
     items: [
+      {
+        href: "/settings/theme",
+        permission: "settings.license",
+        label: "偏好设置",
+        description: "主题模式与界面外观",
+      },
       {
         href: "/settings/database",
         permission: "settings.database",
@@ -76,6 +85,12 @@ const settingsGroups = [
         description: "浏览与安装 AI 员工",
       },
       {
+        href: "/settings/model-providers",
+        permission: "settings.agent",
+        label: "模型",
+        description: "配置 Agent 使用的模型供应商与默认路由",
+      },
+      {
         href: "/settings/knowledge",
         permission: "settings.agent",
         label: "知识库",
@@ -110,61 +125,56 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     || (permission === "settings.identity-source" && permissions.includes("settings.organization"));
 
   return (
-    <div className="theme-page-shell settings-page-shell h-full min-h-0 overflow-clip">
-      <main className="mx-auto grid h-full min-h-0 w-full grid-cols-[232px_minmax(0,1fr)] gap-4">
-          <Card className="theme-panel min-h-0 overflow-clip p-2.5 shadow-[var(--shadow-card)]">
-            <div className="flex h-full min-h-0 flex-col">
-              <div className="shrink-0 border-b border-[var(--color-border)] px-3 py-3 text-xs font-semibold text-[var(--color-text-secondary)]">
-                设置
-              </div>
-              <nav aria-label="设置导航" className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-1.5 py-4">
-              {settingsGroups.map((group) => {
-                const visibleItems = permissionsReady ? group.items.filter((item) => canView(item.permission) && (!("localOnly" in item) || !item.localOnly || deploymentType === "local")) : [];
-                if (!visibleItems.length) return null;
-                return (
-                <section key={group.label} className="overflow-clip rounded-lg border border-[var(--color-border)]">
-                  <div className="border-b border-[var(--color-border)] bg-[var(--color-control-soft)] px-3 py-2">
-                    <h2 className="text-xs font-semibold text-[var(--color-text-secondary)]">
-                      {group.label}
-                    </h2>
-                  </div>
-                  <div className="p-1">
-                    {visibleItems.map((item) => {
-                      const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-                      return (
-                        <Link
-                          key={item.href}
-                          href={item.href}
-                          title={item.description}
-                          aria-current={active ? "page" : undefined}
-                          className={[
-                            "flex min-h-11 flex-col justify-center rounded-md px-2.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]",
-                            active
-                              ? "bg-[var(--color-primary)] text-[var(--color-text-on-primary)] shadow-[var(--shadow-xs)]"
-                              : "text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]",
-                          ].join(" ")}
-                        >
-                          <span className="truncate text-sm font-medium">{item.label}</span>
-                          <span className={active ? "mt-0.5 truncate text-[11px] text-[var(--color-text-on-primary)]/75" : "mt-0.5 truncate text-[11px] text-[var(--color-text-secondary)]"}>
-                            {item.description}
-                          </span>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </section>
-                );
-              })}
-              </nav>
-            </div>
-          </Card>
+    <PageContentLayout title="设置" subtitle="平台配置与管理" className="min-h-0">
+    <div className="h-full min-h-0 overflow-hidden">
+      <main className="mx-auto grid h-full min-h-0 w-full grid-cols-[232px_minmax(0,1fr)] gap-4 overflow-hidden">
+        <ScrollShadow className="h-full min-h-0 overflow-y-auto">
+        <section className="flex min-h-full flex-col gap-4 overflow-hidden">
+          {settingsGroups.map((group) => {
+            const visibleItems = permissionsReady ? group.items.filter((item) => canView(item.permission) && (!("localOnly" in item) || !item.localOnly || deploymentType === "local")) : [];
+            if (!visibleItems.length) return null;
+            return (
+              <Card key={group.label} className="overflow-clip">
+                <Card.Header>
+                  <Typography>{group.label}</Typography>
+                </Card.Header>
+                <Card.Content>
+                  {visibleItems.map((item) => {
+                    const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        title={item.description}
+                        aria-current={active ? "page" : undefined}
+                        className={[
+                          "flex flex-col justify-center px-2.5 rounded-xl",
+                          active
+                            ? "bg-[var(--color-primary)] text-[var(--color-text-on-primary)]"
+                            : "text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]",
+                        ].join(" ")}
+                      >
+                        <span className="truncate text-sm font-medium">{item.label}</span>
+                        <span className={active ? "mt-0.5 truncate text-[11px] text-[var(--color-text-on-primary)]/75" : "mt-0.5 truncate text-[11px] text-[var(--color-text-secondary)]"}>
+                          {item.description}
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </Card.Content>
+              </Card>
+            );
+          })}
+        </section>
+        </ScrollShadow>
 
-          <div className="flex min-h-0 min-w-0 flex-col gap-4 overflow-clip">
-            <div className="min-h-0 flex-1 overflow-clip">
-              {children}
-            </div>
+        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-hidden">
+            {children}
           </div>
+        </section>
       </main>
     </div>
+    </PageContentLayout>
   );
 }

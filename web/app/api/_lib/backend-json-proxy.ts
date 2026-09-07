@@ -29,7 +29,21 @@ export async function proxyBackendJson(
       body: hasJsonBody ? body : undefined,
       cache: "no-store",
     });
-    return NextResponse.json(await response.json(), { status: response.status });
+    // Some backend commands legitimately return 204 with an empty body. Do not
+    // invoke response.json() for those responses: undici throws on empty JSON
+    // and the resulting noisy rejection obscures the original request.
+    const responseText = await response.text();
+    if (!responseText.trim()) return new NextResponse(null, { status: response.status });
+    let payload: unknown;
+    try {
+      payload = JSON.parse(responseText);
+    } catch {
+      return NextResponse.json(
+        { code: 502, data: null, message: "backend returned invalid JSON", time: new Date().toISOString() },
+        { status: 502 },
+      );
+    }
+    return NextResponse.json(payload, { status: response.status });
   } catch {
     return NextResponse.json(
       { code: 503, data: null, message: "backend unavailable", time: new Date().toISOString() },

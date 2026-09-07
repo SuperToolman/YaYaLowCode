@@ -268,7 +268,6 @@ function AutomationEditorSurface({
 
     const result = await getFormSchema({
       path: { formUuid },
-      query: { scope: "published" },
       responseStyle: "fields",
     });
 

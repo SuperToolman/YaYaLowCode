@@ -9,6 +9,7 @@ import type {
 } from "react";
 import { createContext, memo, useContext, useLayoutEffect, useMemo, useRef } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
+import { Card } from "@heroui/react";
 import { TrashIcon } from "../../../../../components/app-icons";
 import { RichTextEditor } from "../../../../../components/rich-text-editor";
 import {
@@ -183,9 +184,9 @@ export const DesignerCanvas = memo(function DesignerCanvas({
 
   return (
     <InsertionIndicatorContext.Provider value={insertionIndicator}>
-    <div
+    <Card
       onClick={onCanvasClick}
-      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto rounded-[28px] border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4 shadow-[var(--shadow-designer)] backdrop-blur"
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto p-4"
     >
       {fields.length === 0 && !showMatrix ? (
         <div className="flex min-h-0 flex-1 items-center justify-center rounded-[24px] border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-sm text-[var(--color-text-secondary)]">
@@ -258,7 +259,7 @@ export const DesignerCanvas = memo(function DesignerCanvas({
           })}
         </div>
       )}
-    </div>
+    </Card>
     </InsertionIndicatorContext.Provider>
   );
 });

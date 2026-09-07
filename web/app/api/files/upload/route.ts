@@ -11,7 +11,13 @@ export async function POST(request: Request) {
       body: await request.formData(),
       cache: "no-store",
     });
-    return NextResponse.json(await response.json(), { status: response.status });
+    const responseText = await response.text();
+    if (!responseText.trim()) return new NextResponse(null, { status: response.status });
+    try {
+      return NextResponse.json(JSON.parse(responseText), { status: response.status });
+    } catch {
+      return NextResponse.json({ code: 502, data: null, message: "backend returned invalid JSON" }, { status: 502 });
+    }
   } catch {
     return NextResponse.json({ code: 503, data: null, message: "backend unavailable" }, { status: 503 });
   }

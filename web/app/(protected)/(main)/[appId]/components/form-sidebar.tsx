@@ -310,20 +310,20 @@ export function FormSidebar({ routeAppId }: FormSidebarProps) {
       try {
         const request = groupAction === "delete"
           ? deleteNavigationGroup({
-              path: { appId: routeAppId, groupId: selectedGroup.id },
-              responseStyle: "fields",
-            })
+            path: { appId: routeAppId, groupId: selectedGroup.id },
+            responseStyle: "fields",
+          })
           : updateNavigationGroup({
-              path: { appId: routeAppId, groupId: selectedGroup.id },
-              body: {
-                title,
-                parent_id:
-                  groupAction === "move"
-                    ? groupActionValue === ROOT_PARENT_VALUE ? null : groupActionValue
-                    : selectedGroup.parentId ?? null,
-              },
-              responseStyle: "fields",
-            });
+            path: { appId: routeAppId, groupId: selectedGroup.id },
+            body: {
+              title,
+              parent_id:
+                groupAction === "move"
+                  ? groupActionValue === ROOT_PARENT_VALUE ? null : groupActionValue
+                  : selectedGroup.parentId ?? null,
+            },
+            responseStyle: "fields",
+          });
         const { data, error } = await request;
         if (error || !data || data.code !== 0) {
           setErrorMessage(data?.message || `${groupAction === "delete" ? "删除" : "更新"}分组失败。`);
@@ -368,15 +368,15 @@ export function FormSidebar({ routeAppId }: FormSidebarProps) {
           ? deleteForm({ path: { formUuid: selectedForm.targetFormUuid! }, responseStyle: "fields" })
           : formAction === "move"
             ? moveFormNavigation({
-                path: { appId: routeAppId, formUuid: selectedForm.targetFormUuid! },
-                body: { parent_group_id: formActionValue === ROOT_PARENT_VALUE ? null : formActionValue },
-                responseStyle: "fields",
-              })
+              path: { appId: routeAppId, formUuid: selectedForm.targetFormUuid! },
+              body: { parent_group_id: formActionValue === ROOT_PARENT_VALUE ? null : formActionValue },
+              responseStyle: "fields",
+            })
             : updateFormName({
-                path: { formUuid: selectedForm.targetFormUuid! },
-                body: { name },
-                responseStyle: "fields",
-              });
+              path: { formUuid: selectedForm.targetFormUuid! },
+              body: { name },
+              responseStyle: "fields",
+            });
         const result = await request;
         const response = result.data as { code?: number; message?: string } | undefined;
         if (result.error || !response || response.code !== 0) {
@@ -482,248 +482,242 @@ export function FormSidebar({ routeAppId }: FormSidebarProps) {
       onDragOver={handleDragOver}
       onDragStart={handleDragStart}
     >
-      <Card className="theme-card-glass flex h-full w-full flex-col items-stretch justify-start self-start overflow-hidden rounded-2xl p-3 text-left">
-      <div className="mb-3 flex shrink-0 items-center gap-2">
-        <SearchField aria-label="搜索表单" name="search" className="min-w-0 flex-1">
-          <SearchField.Group>
-            <SearchField.SearchIcon />
-            <SearchField.Input placeholder="搜索表单..." />
-            <SearchField.ClearButton />
-          </SearchField.Group>
-        </SearchField>
-        {canCreateForm || canCreateGroup ? <Dropdown>
-          <Dropdown.Trigger
-            aria-label="新增导航项"
-            className={[
-              "inline-flex h-10 w-10 min-w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-panel)] text-[var(--color-primary)] transition-colors",
-              isPending ? "opacity-60" : "hover:bg-[var(--color-bg-subtle)]",
-            ].join(" ")}
-          >
-            <AddIcon />
-          </Dropdown.Trigger>
-          <Dropdown.Popover>
-            <Dropdown.Menu
+      <Card className="flex h-full w-full min-h-0 flex-col overflow-hidden text-left">
+        <div className="flex min-w-0 shrink-0 items-center gap-2">
+          <SearchField aria-label="搜索表单" name="search" className="min-w-0 flex-1">
+            <SearchField.Group>
+              <SearchField.SearchIcon />
+              <SearchField.Input placeholder="搜索表单..." />
+              <SearchField.ClearButton />
+            </SearchField.Group>
+          </SearchField>
+          {canCreateForm || canCreateGroup ? <Dropdown>
+            <Dropdown.Trigger
               aria-label="新增导航项"
-              onAction={(key) => {
-                if (key === "form") {
-                  handleCreateForm("normal");
-                }
-                if (key === "workflow-form") {
-                  handleCreateForm("workflow");
-                }
-                if (key === "defined-form") {
-                  handleCreateForm("defined");
-                }
-                if (key === "group") {
-                  setCreateGroupOpen(true);
-                }
-              }}
+              className="inline-flex h-10 w-10 min-w-10 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-control-soft)] text-[var(--color-primary)] hover:bg-[var(--color-control-soft-hover)]"
             >
-              {canCreateForm ? (
-                <Dropdown.Item id="form" textValue="创建普通表单">
-                  <span className="flex items-center gap-2">
-                    <FormIcon />
-                    创建普通表单
-                  </span>
-                </Dropdown.Item>
-              ) : null}
-              {canCreateForm ? (
-                <Dropdown.Item id="defined-form" textValue="创建自定义页面">
-                  <span className="flex items-center gap-2">
-                    <DefinedPageIcon />
-                    创建自定义页面
-                  </span>
-                </Dropdown.Item>
-              ) : null}
-              {canCreateForm ? (
-                <Dropdown.Item id="workflow-form" textValue="新增流程表单">
-                  <span className="flex items-center gap-2">
-                    <WorkflowFormIcon />
-                    新增流程表单
-                  </span>
-                </Dropdown.Item>
-              ) : null}
-              {canCreateGroup ? <Dropdown.Item id="group">创建分组</Dropdown.Item> : null}
-            </Dropdown.Menu>
-          </Dropdown.Popover>
-        </Dropdown> : null}
-      </div>
+              <AddIcon />
+            </Dropdown.Trigger>
+            <Dropdown.Popover>
+              <Dropdown.Menu
+                aria-label="新增导航项"
+                onAction={(key) => {
+                  if (key === "form") {
+                    handleCreateForm("normal");
+                  }
+                  if (key === "workflow-form") {
+                    handleCreateForm("workflow");
+                  }
+                  if (key === "defined-form") {
+                    handleCreateForm("defined");
+                  }
+                  if (key === "group") {
+                    setCreateGroupOpen(true);
+                  }
+                }}
+              >
+                {canCreateForm ? (
+                  <Dropdown.Item id="form" textValue="创建普通表单">
+                    <span className="flex items-center gap-2">
+                      <FormIcon />
+                      创建普通表单
+                    </span>
+                  </Dropdown.Item>
+                ) : null}
+                {canCreateForm ? (
+                  <Dropdown.Item id="defined-form" textValue="创建自定义页面">
+                    <span className="flex items-center gap-2">
+                      <DefinedPageIcon />
+                      创建自定义页面
+                    </span>
+                  </Dropdown.Item>
+                ) : null}
+                {canCreateForm ? (
+                  <Dropdown.Item id="workflow-form" textValue="新增流程表单">
+                    <span className="flex items-center gap-2">
+                      <WorkflowFormIcon />
+                      新增流程表单
+                    </span>
+                  </Dropdown.Item>
+                ) : null}
+                {canCreateGroup ? <Dropdown.Item id="group">创建分组</Dropdown.Item> : null}
+              </Dropdown.Menu>
+            </Dropdown.Popover>
+          </Dropdown> : null}
+        </div>
 
-      {errorMessage ? (
-        <Alert className="mb-3" status="danger">
-          <Alert.Content>
-            <Alert.Description>{errorMessage}</Alert.Description>
-          </Alert.Content>
-        </Alert>
-      ) : null}
+        {errorMessage ? (
+          <Alert className="mb-3" status="danger">
+            <Alert.Content>
+              <Alert.Description>{errorMessage}</Alert.Description>
+            </Alert.Content>
+          </Alert>
+        ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-        {tree.map((node) => (
-          <SidebarTreeItem
-            key={node.id}
-            dragState={dragState}
-            isExpanded={expandedGroups[node.id] ?? false}
-            level={0}
-            node={node}
-            pathname={pathname}
-            onToggleGroup={toggleGroup}
-            onGroupAction={openGroupAction}
-            onFormAction={openFormAction}
-            resolveExpanded={(groupId) => expandedGroups[groupId] ?? false}
-          />
-        ))}
-      </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {tree.map((node) => (
+            <SidebarTreeItem
+              key={node.id}
+              dragState={dragState}
+              isExpanded={expandedGroups[node.id] ?? false}
+              level={0}
+              node={node}
+              pathname={pathname}
+              onToggleGroup={toggleGroup}
+              onGroupAction={openGroupAction}
+              onFormAction={openFormAction}
+              resolveExpanded={(groupId) => expandedGroups[groupId] ?? false}
+            />
+          ))}
+        </div>
 
-      <Modal
-        isOpen={createGroupOpen}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) {
-            setCreateGroupOpen(false);
-          }
-        }}
-      >
-        <Modal.Trigger aria-hidden="true" tabIndex={-1} className="hidden" />
-        <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
-          <Modal.Container placement="center" size="md">
-            <Modal.Dialog className="theme-menu-surface rounded-2xl shadow-[var(--shadow-dialog)]">
-              <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
-                <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
-                  创建分组
-                </Modal.Heading>
-              </Modal.Header>
-              <Modal.Body className="space-y-4 px-5 py-4">
-                <Input
-                  aria-label="分组名称"
-                  placeholder="请输入分组名称"
-                  value={groupName}
-                  onChange={(event) => setGroupName(event.currentTarget.value)}
-                />
-                <Select
-                  aria-label="上级分组"
-                  selectedKey={groupParentId}
-                  onSelectionChange={(key) => setGroupParentId(String(key ?? ROOT_PARENT_VALUE))}
-                >
-                  <Select.Trigger>
-                    <Select.Value>
-                      {groupParentId === ROOT_PARENT_VALUE
-                        ? "顶级分组"
-                        : groupOptions.find((item) => item.id === groupParentId)?.label ??
+        <Modal
+          isOpen={createGroupOpen}
+          onOpenChange={(isOpen) => {
+            if (!isOpen) {
+              setCreateGroupOpen(false);
+            }
+          }}
+        >
+          <Modal.Trigger aria-hidden="true" tabIndex={-1} className="hidden" />
+          <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
+            <Modal.Container placement="center" size="md">
+              <Modal.Dialog className="theme-menu-surface rounded-2xl shadow-[var(--shadow-dialog)]">
+                <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
+                  <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
+                    创建分组
+                  </Modal.Heading>
+                </Modal.Header>
+                <Modal.Body className="space-y-4 px-5 py-4">
+                  <Input
+                    aria-label="分组名称"
+                    placeholder="请输入分组名称"
+                    value={groupName}
+                    onChange={(event) => setGroupName(event.currentTarget.value)}
+                  />
+                  <Select
+                    aria-label="上级分组"
+                    selectedKey={groupParentId}
+                    onSelectionChange={(key) => setGroupParentId(String(key ?? ROOT_PARENT_VALUE))}
+                  >
+                    <Select.Trigger>
+                      <Select.Value>
+                        {groupParentId === ROOT_PARENT_VALUE
+                          ? "顶级分组"
+                          : groupOptions.find((item) => item.id === groupParentId)?.label ??
                           "顶级分组"}
-                    </Select.Value>
-                    <Select.Indicator />
-                  </Select.Trigger>
-                  <Select.Popover>
-                    <ListBox>
-                      <ListBox.Item id={ROOT_PARENT_VALUE} textValue="顶级分组">
-                        顶级分组
-                      </ListBox.Item>
-                      {groupOptions.map((item) => (
-                        <ListBox.Item key={item.id} id={item.id} textValue={item.label}>
-                          {item.label}
+                      </Select.Value>
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        <ListBox.Item id={ROOT_PARENT_VALUE} textValue="顶级分组">
+                          顶级分组
                         </ListBox.Item>
-                      ))}
-                    </ListBox>
-                  </Select.Popover>
-                </Select>
-              </Modal.Body>
-              <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
-                <Button
-                  variant="ghost"
-                  onClick={() => setCreateGroupOpen(false)}
-                  className="h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-4 text-[var(--color-text-primary)]"
-                >
-                  取消
-                </Button>
-                <Button
-                  onClick={handleCreateGroup}
-                  isDisabled={isPending || !groupName.trim()}
-                  className="h-10 rounded-lg bg-[var(--color-primary)] px-4 text-[var(--color-text-on-primary)]"
-                >
-                  创建
-                </Button>
-              </Modal.Footer>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
-      <Modal isOpen={Boolean(selectedGroup && groupAction)} onOpenChange={(open) => !open && closeGroupAction()}>
-        <Modal.Trigger aria-hidden="true" tabIndex={-1} className="hidden" />
-        <Modal.Backdrop className="theme-modal-backdrop" isDismissable={!groupActionPending}>
-          <Modal.Container placement="center" size="md">
-            <Modal.Dialog className="theme-menu-surface rounded-2xl shadow-[var(--shadow-dialog)]">
-              <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
-                <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
-                  {groupAction === "rename" ? "修改分组名称" : groupAction === "move" ? "移动分组" : "删除分组"}
-                </Modal.Heading>
-              </Modal.Header>
-              <Modal.Body className="space-y-4 px-5 py-4">
-                {groupAction === "rename" ? (
-                  <Input aria-label="分组名称" value={groupActionValue} onChange={(event) => setGroupActionValue(event.currentTarget.value)} />
-                ) : null}
-                {groupAction === "move" ? (
-                  <Select aria-label="移动到" selectedKey={groupActionValue} onSelectionChange={(key) => setGroupActionValue(String(key ?? ROOT_PARENT_VALUE))}>
-                    <Select.Trigger><Select.Value>{groupActionValue === ROOT_PARENT_VALUE ? "顶级" : moveGroupOptions.find((item) => item.id === groupActionValue)?.label ?? "顶级"}</Select.Value><Select.Indicator /></Select.Trigger>
-                    <Select.Popover><ListBox>
-                      <ListBox.Item id={ROOT_PARENT_VALUE} textValue="顶级">顶级</ListBox.Item>
-                      {moveGroupOptions.map((item) => <ListBox.Item key={item.id} id={item.id} textValue={item.label}>{item.label}</ListBox.Item>)}
-                    </ListBox></Select.Popover>
+                        {groupOptions.map((item) => (
+                          <ListBox.Item key={item.id} id={item.id} textValue={item.label}>
+                            {item.label}
+                          </ListBox.Item>
+                        ))}
+                      </ListBox>
+                    </Select.Popover>
                   </Select>
-                ) : null}
-                {groupAction === "delete" ? (
-                  <p className="text-sm leading-6 text-[var(--color-text-secondary)]">
-                    确定删除分组“{selectedGroup?.title}”吗？分组内的表单和子分组不会被删除，它们会自动上移到当前分组的父级。
-                  </p>
-                ) : null}
-              </Modal.Body>
-              <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
-                <Button variant="ghost" onClick={closeGroupAction} isDisabled={groupActionPending}>取消</Button>
-                <Button onClick={handleGroupAction} isDisabled={groupActionPending || (groupAction === "rename" && !groupActionValue.trim())} className={groupAction === "delete" ? "bg-[var(--color-danger)] text-white" : "bg-[var(--color-primary)] text-[var(--color-text-on-primary)]"}>
-                  {groupAction === "delete" ? "删除" : "确定"}
-                </Button>
-              </Modal.Footer>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
-      <Modal isOpen={Boolean(selectedForm && formAction)} onOpenChange={(open) => !open && closeFormAction()}>
-        <Modal.Trigger aria-hidden="true" tabIndex={-1} className="hidden" />
-        <Modal.Backdrop className="theme-modal-backdrop" isDismissable={!formActionPending}>
-          <Modal.Container placement="center" size="md">
-            <Modal.Dialog className="theme-menu-surface rounded-2xl shadow-[var(--shadow-dialog)]">
-              <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
-                <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
-                  {formAction === "rename" ? "修改表单名称" : formAction === "move" ? "移动表单" : "删除表单"}
-                </Modal.Heading>
-              </Modal.Header>
-              <Modal.Body className="space-y-4 px-5 py-4">
-                {formAction === "rename" ? (
-                  <Input aria-label="表单名称" value={formActionValue} onChange={(event) => setFormActionValue(event.currentTarget.value)} />
-                ) : null}
-                {formAction === "move" ? (
-                  <Select aria-label="移动到" selectedKey={formActionValue} onSelectionChange={(key) => setFormActionValue(String(key ?? ROOT_PARENT_VALUE))}>
-                    <Select.Trigger><Select.Value>{formActionValue === ROOT_PARENT_VALUE ? "顶级" : groupOptions.find((item) => item.id === formActionValue)?.label ?? "顶级"}</Select.Value><Select.Indicator /></Select.Trigger>
-                    <Select.Popover><ListBox>
-                      <ListBox.Item id={ROOT_PARENT_VALUE} textValue="顶级">顶级</ListBox.Item>
-                      {groupOptions.map((item) => <ListBox.Item key={item.id} id={item.id} textValue={item.label}>{item.label}</ListBox.Item>)}
-                    </ListBox></Select.Popover>
-                  </Select>
-                ) : null}
-                {formAction === "delete" ? (
-                  <p className="text-sm leading-6 text-[var(--color-text-secondary)]">
-                    确定永久删除表单“{selectedForm?.title}”吗？表单 Schema、记录、导航、视图及关联流程数据将一并删除，此操作不可恢复。
-                  </p>
-                ) : null}
-              </Modal.Body>
-              <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
-                <Button variant="ghost" onClick={closeFormAction} isDisabled={formActionPending}>取消</Button>
-                <Button onClick={handleFormAction} isDisabled={formActionPending || (formAction === "rename" && !formActionValue.trim())} className={formAction === "delete" ? "bg-[var(--color-danger)] text-white" : "bg-[var(--color-primary)] text-[var(--color-text-on-primary)]"}>
-                  {formAction === "delete" ? "删除" : "确定"}
-                </Button>
-              </Modal.Footer>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
+                </Modal.Body>
+                <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
+                  <Button
+                    onClick={() => setCreateGroupOpen(false)}
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    onClick={handleCreateGroup}
+                    isDisabled={isPending || !groupName.trim()}
+                  >
+                    创建
+                  </Button>
+                </Modal.Footer>
+              </Modal.Dialog>
+            </Modal.Container>
+          </Modal.Backdrop>
+        </Modal>
+        <Modal isOpen={Boolean(selectedGroup && groupAction)} onOpenChange={(open) => !open && closeGroupAction()}>
+          <Modal.Trigger aria-hidden="true" tabIndex={-1} className="hidden" />
+          <Modal.Backdrop className="theme-modal-backdrop" isDismissable={!groupActionPending}>
+            <Modal.Container placement="center" size="md">
+              <Modal.Dialog className="theme-menu-surface rounded-2xl shadow-[var(--shadow-dialog)]">
+                <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
+                  <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
+                    {groupAction === "rename" ? "修改分组名称" : groupAction === "move" ? "移动分组" : "删除分组"}
+                  </Modal.Heading>
+                </Modal.Header>
+                <Modal.Body className="space-y-4 px-5 py-4">
+                  {groupAction === "rename" ? (
+                    <Input aria-label="分组名称" value={groupActionValue} onChange={(event) => setGroupActionValue(event.currentTarget.value)} />
+                  ) : null}
+                  {groupAction === "move" ? (
+                    <Select aria-label="移动到" selectedKey={groupActionValue} onSelectionChange={(key) => setGroupActionValue(String(key ?? ROOT_PARENT_VALUE))}>
+                      <Select.Trigger><Select.Value>{groupActionValue === ROOT_PARENT_VALUE ? "顶级" : moveGroupOptions.find((item) => item.id === groupActionValue)?.label ?? "顶级"}</Select.Value><Select.Indicator /></Select.Trigger>
+                      <Select.Popover><ListBox>
+                        <ListBox.Item id={ROOT_PARENT_VALUE} textValue="顶级">顶级</ListBox.Item>
+                        {moveGroupOptions.map((item) => <ListBox.Item key={item.id} id={item.id} textValue={item.label}>{item.label}</ListBox.Item>)}
+                      </ListBox></Select.Popover>
+                    </Select>
+                  ) : null}
+                  {groupAction === "delete" ? (
+                    <p className="text-sm leading-6 text-[var(--color-text-secondary)]">
+                      确定删除分组“{selectedGroup?.title}”吗？分组内的表单和子分组不会被删除，它们会自动上移到当前分组的父级。
+                    </p>
+                  ) : null}
+                </Modal.Body>
+                <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
+                  <Button onClick={closeGroupAction} isDisabled={groupActionPending}>取消</Button>
+                  <Button onClick={handleGroupAction} isDisabled={groupActionPending || (groupAction === "rename" && !groupActionValue.trim())} className={groupAction === "delete" ? "bg-[var(--color-danger)] text-white" : "bg-[var(--color-primary)] text-[var(--color-text-on-primary)]"}>
+                    {groupAction === "delete" ? "删除" : "确定"}
+                  </Button>
+                </Modal.Footer>
+              </Modal.Dialog>
+            </Modal.Container>
+          </Modal.Backdrop>
+        </Modal>
+        <Modal isOpen={Boolean(selectedForm && formAction)} onOpenChange={(open) => !open && closeFormAction()}>
+          <Modal.Trigger aria-hidden="true" tabIndex={-1} className="hidden" />
+          <Modal.Backdrop className="theme-modal-backdrop" isDismissable={!formActionPending}>
+            <Modal.Container placement="center" size="md">
+              <Modal.Dialog className="theme-menu-surface rounded-2xl shadow-[var(--shadow-dialog)]">
+                <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
+                  <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
+                    {formAction === "rename" ? "修改表单名称" : formAction === "move" ? "移动表单" : "删除表单"}
+                  </Modal.Heading>
+                </Modal.Header>
+                <Modal.Body className="space-y-4 px-5 py-4">
+                  {formAction === "rename" ? (
+                    <Input aria-label="表单名称" value={formActionValue} onChange={(event) => setFormActionValue(event.currentTarget.value)} />
+                  ) : null}
+                  {formAction === "move" ? (
+                    <Select aria-label="移动到" selectedKey={formActionValue} onSelectionChange={(key) => setFormActionValue(String(key ?? ROOT_PARENT_VALUE))}>
+                      <Select.Trigger><Select.Value>{formActionValue === ROOT_PARENT_VALUE ? "顶级" : groupOptions.find((item) => item.id === formActionValue)?.label ?? "顶级"}</Select.Value><Select.Indicator /></Select.Trigger>
+                      <Select.Popover><ListBox>
+                        <ListBox.Item id={ROOT_PARENT_VALUE} textValue="顶级">顶级</ListBox.Item>
+                        {groupOptions.map((item) => <ListBox.Item key={item.id} id={item.id} textValue={item.label}>{item.label}</ListBox.Item>)}
+                      </ListBox></Select.Popover>
+                    </Select>
+                  ) : null}
+                  {formAction === "delete" ? (
+                    <p className="text-sm leading-6 text-[var(--color-text-secondary)]">
+                      确定永久删除表单“{selectedForm?.title}”吗？表单 Schema、记录、导航、视图及关联流程数据将一并删除，此操作不可恢复。
+                    </p>
+                  ) : null}
+                </Modal.Body>
+                <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
+                  <Button onClick={closeFormAction} isDisabled={formActionPending}>取消</Button>
+                  <Button onClick={handleFormAction} isDisabled={formActionPending || (formAction === "rename" && !formActionValue.trim())} className={formAction === "delete" ? "bg-[var(--color-danger)] text-white" : "bg-[var(--color-primary)] text-[var(--color-text-on-primary)]"}>
+                    {formAction === "delete" ? "删除" : "确定"}
+                  </Button>
+                </Modal.Footer>
+              </Modal.Dialog>
+            </Modal.Container>
+          </Modal.Backdrop>
+        </Modal>
       </Card>
       <DragOverlay dropAnimation={null}>
         {dragState ? (
@@ -780,13 +774,13 @@ function SidebarTreeItem({
       <div
         ref={setNodeRef}
         className={[
-          "relative mb-0.5 rounded-lg border transition-colors",
+          "relative rounded-[var(--radius)] border-0 text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-control-soft-hover)] hover:text-[var(--color-text-primary)]",
           isDragging ? "opacity-35" : "",
           isActive
-            ? "border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[var(--color-text-primary)]"
-            : "border-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-panel-soft)]",
+            ? "bg-[var(--color-control-selected)] text-[var(--color-text-primary)]"
+            : "",
           isDropTarget && dragState?.placement === "inside"
-            ? "border-dashed border-[var(--color-primary)]"
+            ? ""
             : "",
           isDropTarget && dragState?.placement === "before"
             ? "shadow-[inset_0_3px_0_0_var(--color-primary)]"
@@ -803,29 +797,29 @@ function SidebarTreeItem({
           <button
             type="button"
             onClick={() => onToggleGroup(node.id)}
-            className="flex w-[calc(100%-60px)] items-center gap-2.5 px-2.5 py-2 text-left"
+            className="flex w-full items-center gap-2.5 py-2 pr-16 text-left"
             style={{ paddingLeft }}
           >
             <span className={`inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center ${nodeIconColor}`}>
               {nodeIcon}
             </span>
-            <span className="truncate text-xs font-medium">{node.name}</span>
+            <span className="min-w-0 truncate text-xs font-medium">{node.name}</span>
           </button>
         ) : (
           <Link
             href={node.href ?? "#"}
-            className={`flex items-center gap-2.5 px-2.5 py-2 pr-1 text-left ${node.itemType === "form" && isDraggable ? "w-[calc(100%-60px)]" : "w-[calc(100%-30px)]"}`}
+            className={`flex items-center gap-2.5 py-2 text-left ${node.itemType === "form" && isDraggable ? "w-[calc(100%-60px)]" : "w-[calc(100%-30px)]"}`}
             style={{ paddingLeft }}
           >
             <span className={`inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center ${nodeIconColor}`}>
               {nodeIcon}
             </span>
-            <span className="truncate text-xs font-medium">{node.name}</span>
+            <span className="min-w-0 truncate text-xs font-medium">{node.name}</span>
           </Link>
         )}
         {node.itemType === "group" ? (
           <Dropdown>
-            <Dropdown.Trigger aria-label={`${node.name} 更多操作`} className="absolute right-8 top-1/2 z-30 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-[var(--color-text-disabled)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-text-secondary)]">
+            <Dropdown.Trigger aria-label={`${node.name} 更多操作`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="absolute right-8 top-1/2 z-30 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-[var(--radius)] text-[var(--color-text-disabled)] hover:bg-[var(--color-control-soft-hover)] hover:text-[var(--color-text-primary)]">
               <Ellipsis className="h-4 w-4" />
             </Dropdown.Trigger>
             <Dropdown.Popover>
@@ -839,7 +833,7 @@ function SidebarTreeItem({
         ) : null}
         {node.itemType === "form" ? (
           <Dropdown>
-            <Dropdown.Trigger aria-label={`${node.name} 更多操作`} className={`absolute top-1/2 z-30 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-[var(--color-text-disabled)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-text-secondary)] ${isDraggable ? "right-8" : "right-1"}`}>
+            <Dropdown.Trigger aria-label={`${node.name} 更多操作`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className={`absolute top-1/2 z-30 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-[var(--radius)] text-[var(--color-text-disabled)] hover:bg-[var(--color-control-soft-hover)] hover:text-[var(--color-text-primary)] ${isDraggable ? "right-8" : "right-1"}`}>
               <Ellipsis className="h-4 w-4" />
             </Dropdown.Trigger>
             <Dropdown.Popover>
@@ -855,9 +849,10 @@ function SidebarTreeItem({
           <button
             type="button"
             aria-label={`拖拽 ${node.name}`}
+            onClick={(event) => event.stopPropagation()}
             {...attributes}
             {...listeners}
-            className="absolute right-1 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 cursor-grab items-center justify-center rounded-md text-[10px] tracking-[-2px] text-[var(--color-text-disabled)] hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-text-secondary)] active:cursor-grabbing"
+            className="absolute right-1 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 cursor-grab items-center justify-center rounded-[var(--radius)] text-[10px] tracking-[-2px] text-[var(--color-text-disabled)] hover:bg-[var(--color-control-soft-hover)] hover:text-[var(--color-text-primary)] active:cursor-grabbing"
             style={{ touchAction: "none" }}
           >
             ⋮⋮
@@ -895,19 +890,19 @@ function SidebarTreeItem({
       ) : null}
       {node.itemType !== "group" && node.children.length > 0 && showChildren
         ? node.children.map((child) => (
-            <SidebarTreeItem
-              key={child.id}
-              dragState={dragState}
-              isExpanded={resolveExpanded(child.id)}
-              level={level + 1}
-              node={child}
-              pathname={pathname}
-              onToggleGroup={onToggleGroup}
-              onGroupAction={onGroupAction}
-              onFormAction={onFormAction}
-              resolveExpanded={resolveExpanded}
-            />
-          ))
+          <SidebarTreeItem
+            key={child.id}
+            dragState={dragState}
+            isExpanded={resolveExpanded(child.id)}
+            level={level + 1}
+            node={child}
+            pathname={pathname}
+            onToggleGroup={onToggleGroup}
+            onGroupAction={onGroupAction}
+            onFormAction={onFormAction}
+            resolveExpanded={resolveExpanded}
+          />
+        ))
         : null}
     </div>
   );
@@ -959,9 +954,7 @@ function NavigationDropZone({
   return (
     <div
       ref={setNodeRef}
-      className={`absolute inset-x-0 z-20 ${className} ${
-        isOver ? "bg-[var(--color-primary)]/10" : ""
-      }`}
+      className={`absolute inset-x-0 z-20 ${className} ${isOver ? "bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)]" : ""}`}
     />
   );
 }
@@ -979,11 +972,7 @@ function EmptyGroupDropZone({ groupId }: { groupId: string }) {
   return (
     <div
       ref={setNodeRef}
-      className={`mb-2 ml-12 mr-1 flex h-8 items-center rounded-lg border border-dashed px-3 text-xs ${
-        isOver
-          ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]"
-          : "border-[var(--color-border)] text-[var(--color-text-secondary)]"
-      }`}
+      className={`mb-2 ml-12 mr-1 flex h-8 items-center rounded-[var(--radius)] px-3 text-xs text-[var(--color-text-secondary)] ${isOver ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]" : ""}`}
     >
       拖拽到这里放入分组
     </div>
@@ -998,9 +987,9 @@ function canDropNavigationItem(
   const target = items.find((item) => item.id === targetId);
   return Boolean(
     target &&
-      target.itemType !== "system" &&
-      itemId !== targetId &&
-      !isNavigationDescendant(items, targetId, itemId),
+    target.itemType !== "system" &&
+    itemId !== targetId &&
+    !isNavigationDescendant(items, targetId, itemId),
   );
 }
 
@@ -1101,8 +1090,8 @@ function getSidebarNodeIcon(
       return <LinkIcon />;
     case "form":
       if (formType === "workflow") return <WorkflowFormIcon />;
-       if (formType === "defined") return <DefinedPageIcon />;
-       if (formType === "detail") return <DetailFormIcon />;
+      if (formType === "defined") return <DefinedPageIcon />;
+      if (formType === "detail") return <DetailFormIcon />;
       return <FormIcon />;
     default:
       return <FormIcon />;

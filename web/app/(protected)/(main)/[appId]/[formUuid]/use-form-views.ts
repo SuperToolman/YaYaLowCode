@@ -38,6 +38,7 @@ export function useFormViews({
   enabled: boolean;
 }) {
   const [views, setViews] = useState<FormView[]>([]);
+  const [isReady, setIsReady] = useState(false);
   const [activeViewId, setActiveViewId] = useState("default");
   const [viewConfigMode, setViewConfigMode] = useState<ViewConfigMode | null>(null);
   const [viewConfigDraft, setViewConfigDraft] = useState<ViewConfig | null>(null);
@@ -74,7 +75,11 @@ export function useFormViews({
         ];
         setViews(stored);
         setActiveViewId((current) => stored.some((view) => view.id === current) ? current : "default");
-      }).catch((reason: unknown) => toast.danger(reason instanceof Error ? reason.message : "无法加载表单视图"));
+        setIsReady(true);
+      }).catch((reason: unknown) => {
+        setIsReady(true);
+        toast.danger(reason instanceof Error ? reason.message : "无法加载表单视图");
+      });
     }, 0);
     return () => window.clearTimeout(timer);
   }, [defaultViewConfig, enabled, formUuid]);
@@ -168,6 +173,7 @@ export function useFormViews({
   return {
     activeFormView,
     activeViewId,
+    isReady,
     applyViewConfigDraft,
     closeViewConfig,
     confirmDeleteView,

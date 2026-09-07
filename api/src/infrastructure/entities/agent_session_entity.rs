@@ -15,6 +15,7 @@ pub struct Model {
     pub app_route_app_id: Option<String>,
     pub context_json: Json,
     pub status: String,
+    pub archived_at: Option<DateTimeUtc>,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }

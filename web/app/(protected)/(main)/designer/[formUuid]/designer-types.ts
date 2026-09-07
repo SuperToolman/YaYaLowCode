@@ -110,14 +110,6 @@ export type DesignerAgentConfig = {
   enabled: boolean;
   agentId: string;
   prompt: string;
-  context: {
-    generated: string;
-    overrides: string;
-    generatedAt: string;
-    sourceHash: string;
-    status: "idle" | "analyzing" | "ready" | "stale" | "failed";
-    error: string;
-  };
 };
 
 export type PageDesignerProps = {

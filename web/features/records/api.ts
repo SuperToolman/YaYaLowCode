@@ -91,7 +91,7 @@ export async function getRecordsPage(input: {
 
 export async function getAssociationFormData(formUuid: string) {
   const [schemaResult, recordsResult] = await Promise.all([
-    getFormSchema({ path: { formUuid }, query: { scope: "published" }, responseStyle: "fields" }),
+    getFormSchema({ path: { formUuid }, responseStyle: "fields" }),
     listFormRecords({ path: { formUuid }, query: { page: 1, pageSize: 100 }, responseStyle: "fields" }),
   ]);
   const schema = schemaResult.data?.code === 0 ? schemaResult.data.data?.schema : null;

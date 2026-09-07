@@ -1,0 +1,19 @@
+.page { height: 100%; min-height: 0; overflow: hidden; }
+.layout { display: flex; width: 100%; height: 100%; min-height: 0; flex-direction: column; gap: 1rem; padding-block: 1.5rem; }
+.header { display: grid; grid-template-columns: minmax(0, 1fr) minmax(14rem, 24rem) minmax(0, 1fr); align-items: end; gap: 1rem; flex-shrink: 0; }
+.heading { min-width: 0; }
+.title { color: var(--color-text-primary); font-size: 1.25rem; font-weight: 600; }
+.subtitle { margin-top: .25rem; color: var(--color-text-secondary); font-size: .875rem; }
+.search { width: 100%; }
+.tabs { justify-self: end; max-width: 100%; overflow-x: auto; }
+.tableArea { display: flex; min-height: 0; flex: 1; overflow: hidden; }
+.table { min-width: 38.75rem; height: 100%; min-height: 0; flex: 1; }
+.scroll { height: 100%; overflow: auto; }
+.empty { min-height: 100%; display: flex; align-items: center; justify-content: center; color: var(--color-text-secondary); }
+.taskButton { height: auto; justify-content: flex-start; padding: 0; text-align: left; }
+.taskName { display: block; overflow: hidden; max-width: 22rem; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-primary); font-weight: 500; }
+.taskMeta { display: block; overflow: hidden; max-width: 22rem; margin-top: .25rem; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-secondary); font-size: .75rem; }
+.appId, .muted { color: var(--color-text-secondary); font-size: .75rem; }
+.rowActions { display: flex; gap: .25rem; }
+@media (max-width: 900px) { .header { grid-template-columns: minmax(0, 1fr) auto; } .search { grid-column: 1 / -1; grid-row: 2; width: 100%; } .tabs { grid-column: 2; grid-row: 1; } }
+@media (min-width: 640px) { .search { width: 100%; } }

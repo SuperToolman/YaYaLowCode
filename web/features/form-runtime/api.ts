@@ -2,10 +2,9 @@ import { getFormSchema, listFormRecords, listRoles, listUsers } from "@/app/lib/
 import { ApiRequestError } from "@/app/lib/api-request";
 import type { AssociationRecord, RuntimeFormSchema, RuntimeIdentityCatalog } from "./types";
 
-export async function fetchPublishedFormSchema(formUuid: string): Promise<RuntimeFormSchema> {
+export async function fetchCurrentFormSchema(formUuid: string): Promise<RuntimeFormSchema> {
   const { data, error } = await getFormSchema({
     path: { formUuid },
-    query: { scope: "published" },
     responseStyle: "fields",
   });
   if (error || data?.code !== 0 || !data.data?.schema) {

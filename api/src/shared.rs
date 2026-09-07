@@ -6,21 +6,6 @@ use utoipa::ToSchema;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum AppStatus {
-    Enabled,
-    Paused,
-    Draft,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum FormStatus {
-    Draft,
-    Published,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
 pub(crate) enum FormType {
     Normal,
     Workflow,

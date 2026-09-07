@@ -12,8 +12,8 @@ use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::Level;
 
 use crate::modules::{
-    agent_config, agents, apps, automations, communication, dingtalk, files, forms, identity,
-    locations, navigation, recycle_bin, settings, workflows,
+    agent_config, agent_files, agents, app_market, apps, automations, byom, communication,
+    dingtalk, files, forms, identity, locations, navigation, recycle_bin, settings, workflows,
 };
 use crate::openapi;
 use crate::platform::{authorization, error::AppError, runtime::AppState};
@@ -64,6 +64,10 @@ pub(crate) fn build(state: AppState) -> Router {
             get(settings::get_ai_employee_market),
         )
         .route(
+            "/api/settings/ai-employee-market/{employee_id}/avatar",
+            get(settings::get_ai_employee_avatar),
+        )
+        .route(
             "/api/settings/ai-employee-market/{employee_id}/install",
             post(settings::install_ai_employee),
         )
@@ -74,14 +78,6 @@ pub(crate) fn build(state: AppState) -> Router {
         .route(
             "/api/settings/ai-employee-market/{employee_id}/test-purchase",
             post(settings::test_purchase_ai_employee),
-        )
-        .route(
-            "/api/settings/ai-employees/configurations",
-            get(agent_config::list_ai_employee_configurations),
-        )
-        .route(
-            "/api/settings/ai-employees/configurations/{employee_id}",
-            axum::routing::put(agent_config::update_ai_employee_configuration),
         )
         .route(
             "/api/settings/database",
@@ -182,6 +178,18 @@ pub(crate) fn build(state: AppState) -> Router {
             get(agent_config::get_system_ai_status),
         )
         .route(
+            "/api/agent/runtime-model-route",
+            get(byom::runtime_model_route),
+        )
+        .route(
+            "/api/settings/model-routes",
+            get(byom::list_model_routes).post(byom::create_model_route),
+        )
+        .route(
+            "/api/settings/model-routes/{id}",
+            axum::routing::put(byom::update_model_route).delete(byom::delete_model_route),
+        )
+        .route(
             "/api/agent/knowledge-bases",
             get(agent_config::list_knowledge_bases).post(agent_config::create_knowledge_base),
         )
@@ -257,20 +265,40 @@ pub(crate) fn build(state: AppState) -> Router {
             get(authorization::get_runtime_identity),
         )
         .route(
+            "/api/agent/runtime-employees",
+            get(settings::list_runtime_ai_employees),
+        )
+        .route(
             "/api/agent/sessions/{session_uuid}",
             axum::routing::patch(agents::update_agent_session).delete(agents::delete_agent_session),
         )
         .route(
-            "/api/agent/sessions/{session_uuid}/pending-actions/{action_uuid}/confirm",
-            post(agents::confirm_pending_action),
+            "/api/agent/sessions/{session_uuid}/files",
+            post(agent_files::upload).get(agent_files::list),
         )
         .route(
-            "/api/agent/sessions/{session_uuid}/pending-actions",
-            get(agents::list_pending_actions).post(agents::create_pending_action),
+            "/api/agent/sessions/{session_uuid}/files/{file_id}",
+            get(agent_files::download).delete(agent_files::delete),
         )
         .route(
-            "/api/agent/sessions/{session_uuid}/pending-actions/{action_uuid}/cancel",
-            post(agents::cancel_pending_action),
+            "/api/agent/sessions/{session_uuid}/artifacts",
+            get(agent_files::list),
+        )
+        .route(
+            "/api/agent/sessions/{session_uuid}/artifacts/{file_id}/download",
+            get(agent_files::download),
+        )
+        .route(
+            "/api/agent/sessions/{session_uuid}/outputs",
+            post(agent_files::register_output),
+        )
+        .route(
+            "/api/agent/sessions/{session_uuid}/file-links",
+            post(agent_files::link),
+        )
+        .route(
+            "/api/agent/sessions/{session_uuid}/access",
+            get(agents::runtime_session_access),
         )
         .route("/api/apps", get(apps::list_apps).post(apps::create_app))
         .route(
@@ -283,6 +311,15 @@ pub(crate) fn build(state: AppState) -> Router {
             "/api/apps/{app_id}/business-context",
             get(apps::get_application_business_context)
                 .patch(apps::update_application_business_context),
+        )
+        .route(
+            "/api/apps/{app_id}/market-submission",
+            get(app_market::get).post(app_market::submit),
+        )
+        .route("/api/market/applications", get(app_market::list_market))
+        .route(
+            "/api/market/applications/sync",
+            post(app_market::sync_approved),
         )
         .route(
             "/api/apps/{app_id}/navigation",
@@ -311,6 +348,10 @@ pub(crate) fn build(state: AppState) -> Router {
         .route(
             "/api/apps/{app_id}/field-outline",
             get(forms::get_app_field_outline),
+        )
+        .route(
+            "/api/form-schema-contract",
+            get(forms::get_form_schema_contract),
         )
         .route(
             "/api/apps/{app_id}/automations",
@@ -429,15 +470,11 @@ pub(crate) fn build(state: AppState) -> Router {
             get(forms::get_form_version),
         )
         .route(
-            "/api/forms/{form_uuid}/publish",
-            post(forms::publish_form_schema),
-        )
-        .route(
             "/api/forms/{form_uuid}/versions/{version}/restore",
             post(forms::restore_form_version),
         )
         .route(
-            "/api/forms/{form_uuid}/schema/draft",
+            "/api/forms/{form_uuid}/schema",
             post(forms::save_form_schema),
         )
         .route(

@@ -2,7 +2,7 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::{HeaderMap, Method};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashSet;
@@ -37,6 +37,27 @@ pub(crate) async fn current_user(
         .one(&state.db)
         .await?
         .ok_or_else(|| AppError::Forbidden("authentication required".into()))
+}
+
+/// Resolve the user's effective tenant. New accounts normally have the
+/// denormalized primary organization field; older/local accounts may only
+/// have an organization membership row.
+pub(crate) async fn resolved_tenant_id(
+    state: &AppState,
+    user: &iam_user_entity::Model,
+) -> Result<Uuid, AppError> {
+    if let Some(id) = user.primary_organization_unit_id {
+        return Ok(id);
+    }
+    let membership = crate::infrastructure::entities::iam_organization_membership_entity::Entity::find()
+        .filter(crate::infrastructure::entities::iam_organization_membership_entity::Column::UserId.eq(user.id))
+        .order_by_desc(crate::infrastructure::entities::iam_organization_membership_entity::Column::IsPrimary)
+        .order_by_asc(crate::infrastructure::entities::iam_organization_membership_entity::Column::CreatedAt)
+        .one(&state.db)
+        .await?;
+    membership
+        .map(|item| item.organization_unit_id)
+        .ok_or_else(|| AppError::Forbidden("tenant scope is required".to_string()))
 }
 
 pub(crate) async fn grants(
@@ -100,7 +121,7 @@ pub(crate) async fn get_runtime_identity(
         "agent runtime identity loaded",
         json!({
             "userId": user.id.to_string(),
-            "tenantId": user.primary_organization_unit_id.map(|id| id.to_string()),
+            "tenantId": resolved_tenant_id(&state, &user).await?.to_string(),
             "displayName": user.display_name,
             "grants": grants,
         }),
@@ -204,13 +225,11 @@ async fn required_permission(
         "/api/settings/recycle-bin" | "/api/recycle-bin" => Some("settings.database"),
         _ if path.starts_with("/api/recycle-bin/") => Some("settings.database"),
         "/api/settings/ai-employee-market"
-        | "/api/settings/ai-employees/configurations"
+        | "/api/settings/model-routes"
         | "/api/settings/notifications"
         | "/api/settings/communication" => Some("settings.agent"),
-        _ if path.starts_with("/api/settings/ai-employees/configurations/") => {
-            Some("settings.agent")
-        }
         _ if path.starts_with("/api/settings/ai-employee-market/") => Some("settings.agent"),
+        _ if path.starts_with("/api/settings/model-routes/") => Some("settings.agent"),
         "/api/settings/license" if method == Method::GET || method == Method::HEAD => None,
         "/api/settings/license" => Some("settings.license"),
         "/api/settings/license/latest" => Some("settings.license"),
@@ -230,7 +249,9 @@ async fn required_permission(
         }
         _ if path.starts_with("/api/agent/sessions") => Some("agent.window"),
         "/api/agent/available-agents" => Some("agent.window"),
-        "/api/agent/runtime-identity" => None,
+        "/api/agent/runtime-identity"
+        | "/api/agent/runtime-employees"
+        | "/api/agent/runtime-model-route" => None,
         "/api/agent/system-ai/status" => Some("agent.window"),
         // Communication is licensed at the platform level. Every active member can use it
         // when the communication module is present in the current license.
@@ -249,13 +270,15 @@ async fn required_permission(
 
     let segments = path.trim_matches('/').split('/').collect::<Vec<_>>();
     match segments.as_slice() {
-        ["api", "apps"] if method == Method::GET || method == Method::HEAD => {
-            Ok(Some("apps.access".to_string()))
-        }
+        // Application listing and detail visibility are filtered in the apps
+        // module so that creators can still find their paused apps while
+        // ordinary users only receive enabled apps with display permission.
+        ["api", "apps"] if method == Method::GET || method == Method::HEAD => Ok(None),
         ["api", "apps"] if method == Method::POST => Ok(Some("apps.manage".to_string())),
-        ["api", "apps", app_id] if method == Method::DELETE => Ok(Some("apps.manage".to_string())),
-        ["api", "apps", app_id] if method == Method::PATCH => {
-            Ok(Some(format!("app:{app_id}:edit_info")))
+        ["api", "apps", _app_id] if method == Method::DELETE || method == Method::PATCH => {
+            // Ownership and system-administrator exceptions are enforced by
+            // the apps module after loading the application record.
+            Ok(None)
         }
         ["api", "apps", app_id, "business-context"]
             if method == Method::GET || method == Method::HEAD =>
@@ -265,6 +288,7 @@ async fn required_permission(
         ["api", "apps", app_id, "business-context"] if method == Method::PATCH => {
             Ok(Some(format!("app:{app_id}:edit_info")))
         }
+        ["api", "apps", _app_id] if method == Method::GET || method == Method::HEAD => Ok(None),
         ["api", "apps", app_id] => Ok(Some(app_permission(app_id, method))),
         ["api", "apps", _app_id, "field-outline"] => Ok(Some("designer.access".to_string())),
         ["api", "apps", app_id, "forms"] if method == Method::POST => {
@@ -286,9 +310,6 @@ async fn required_permission(
         ["api", "forms", form_uuid, ..] => {
             if method == Method::DELETE && segments.len() == 3 {
                 return form_development_permission(state, form_uuid, "delete_form").await;
-            }
-            if method == Method::POST && segments.get(3) == Some(&"publish") {
-                return form_development_permission(state, form_uuid, "publish").await;
             }
             if method == Method::POST && segments.get(3) == Some(&"schema") {
                 return form_development_permission(state, form_uuid, "edit_form").await;

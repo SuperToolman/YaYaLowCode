@@ -1,10 +1,10 @@
-﻿"use client";
+"use client";
 
 import { memo, useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { Monaco } from "@monaco-editor/react";
 import dynamic from "next/dynamic";
-import { Button, Card, Checkbox, CheckboxGroup, Input, ListBox, Modal, Select, Switch, TextArea, toast } from "@heroui/react";
+import { Button, Card, Checkbox, CheckboxGroup, Input, ListBox, Modal, Select, Switch, TextArea, Tooltip, toast } from "@heroui/react";
 import {
   AddIcon,
   CodeIcon,
@@ -14,6 +14,7 @@ import {
   ListIcon,
   MessageIcon,
   SwapIcon,
+  TrashIcon,
   ToolIcon,
 } from "../../../../../components/app-icons";
 import { CompTool } from "./CompTool";
@@ -26,6 +27,9 @@ import type {
 } from "../designer-types";
 import type { RuntimeDebugEvent } from "../../../../../components/runtime-form-renderer";
 import { AgentMarkdown } from "../../../../../components/agent-markdown";
+import { AgentPanel } from "./AgentPanel";
+import { fetchAvailableAgents } from "../../../../../../features/agent-assistant/api";
+import type { AgentOption } from "../../../../../../features/agent-assistant/types";
 import {
   getDefaultActionPanelCode,
   validateActionPanelCode,
@@ -47,20 +51,16 @@ export type DesignerPanelKey =
   | "indexes"
   | "agent"
   | "actions"
-  | "fieldOutline"
   | "schema";
 
 type DesignerWorkbenchSidebarProps = {
   activePanel: DesignerPanelKey;
-  agentAnalysisStale: boolean;
   fields: PlacedField[];
   formType: "normal" | "workflow" | "defined";
-  isAnalyzingAgent: boolean;
   pageProps: PageDesignerProps;
   schema: FormDesignerSchema;
   debugEvents: RuntimeDebugEvent[];
   onActivePanelChange: (panel: DesignerPanelKey) => void;
-  onAnalyzeAgentSchema: () => void;
   onBeforeDesignerActionRegister?: (handler: (() => boolean) | null) => void;
   onPagePropsChange: (props: PageDesignerProps) => void;
 };
@@ -70,27 +70,23 @@ const DESIGNER_PANELS: Array<{
   label: string;
   icon: ReactNode;
 }> = [
-  { key: "outline", label: "大纲树", icon: <ListIcon /> },
-  { key: "components", label: "组件", icon: <GridIcon /> },
-  { key: "dataSources", label: "数据源", icon: <SwapIcon /> },
-  { key: "indexes", label: "索引", icon: <ListIcon /> },
-  { key: "agent", label: "Agent", icon: <MessageIcon /> },
-  { key: "actions", label: "动作面板", icon: <ToolIcon /> },
-  { key: "fieldOutline", label: "字段大纲", icon: <MessageIcon /> },
-  { key: "schema", label: "页面源码", icon: <GearMiniIcon /> },
-];
+    { key: "outline", label: "大纲树", icon: <ListIcon /> },
+    { key: "components", label: "组件", icon: <GridIcon /> },
+    { key: "dataSources", label: "数据源", icon: <SwapIcon /> },
+    { key: "indexes", label: "索引", icon: <ListIcon /> },
+    { key: "agent", label: "Agent", icon: <MessageIcon /> },
+    { key: "actions", label: "动作面板", icon: <ToolIcon /> },
+    { key: "schema", label: "页面源码", icon: <GearMiniIcon /> },
+  ];
 
 export const DesignerWorkbenchSidebar = memo(function DesignerWorkbenchSidebar({
   activePanel,
-  agentAnalysisStale,
   fields,
   formType,
-  isAnalyzingAgent,
   pageProps,
   schema,
   debugEvents,
   onActivePanelChange,
-  onAnalyzeAgentSchema,
   onBeforeDesignerActionRegister,
   onPagePropsChange,
 }: DesignerWorkbenchSidebarProps) {
@@ -98,12 +94,9 @@ export const DesignerWorkbenchSidebar = memo(function DesignerWorkbenchSidebar({
     DESIGNER_PANELS.find((item) => item.key === activePanel) ?? DESIGNER_PANELS[0];
   const panelContent = renderDesignerPanelContent({
     activePanel,
-    agentAnalysisStale,
     debugEvents,
     fields,
     formType,
-    isAnalyzingAgent,
-    onAnalyzeAgentSchema,
     onBeforeDesignerActionRegister,
     onPagePropsChange,
     pageProps,
@@ -111,35 +104,33 @@ export const DesignerWorkbenchSidebar = memo(function DesignerWorkbenchSidebar({
   });
 
   return (
-    <div className="p-1 flex h-full min-h-0 min-w-0 flex-row items-stretch overflow-hidden rounded-[22px] border border-[var(--color-border)] bg-[var(--color-bg-surface)] shadow-[var(--shadow-panel)] backdrop-blur">
-      <div className="flex h-full min-h-0 shrink-0 flex-col gap-1 border-r border-[var(--color-border)] pr-1">
-        <div className="flex min-h-0 flex-1 flex-col gap-1">
-          {DESIGNER_PANELS.map((panel) => {
-            const isActive = panel.key === activePanel;
-            return (
-              <Button
-                key={panel.key}
-                isIconOnly
-                aria-label={panel.label}
-                variant="ghost"
-                className={[
-                  "h-9 w-9 min-w-9 justify-center rounded-lg px-0 text-[var(--color-text-secondary)]",
-                  isActive
-                    ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]"
-                    : "hover:bg-[var(--color-bg-subtle)]",
-                ].join(" ")}
-                onPress={() => onActivePanelChange(panel.key)}
-              >
-                <span className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-                  {panel.icon}
-                </span>
-              </Button>
-            );
-          })}
-        </div>
+    <Card className="flex h-full min-h-0 min-w-0 flex-row gap-0 overflow-hidden p-0">
+      <div className="flex h-full min-h-0 shrink-0 flex-col gap-1 pl-1">
+        {DESIGNER_PANELS.map((panel) => {
+          const isActive = panel.key === activePanel;
+          return (
+            <Button
+              key={panel.key}
+              isIconOnly
+              aria-label={panel.label}
+              variant="ghost"
+              className={[
+                "h-9 w-9 min-w-9 justify-center rounded-lg px-0 text-[var(--color-text-secondary)]",
+                isActive
+                  ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]"
+                  : "hover:bg-[var(--color-bg-subtle)]",
+              ].join(" ")}
+              onPress={() => onActivePanelChange(panel.key)}
+            >
+              <span className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+                {panel.icon}
+              </span>
+            </Button>
+          );
+        })}
       </div>
 
-      <div className="pl-1 flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col p-1">
         <div className="mb-3 shrink-0">
           <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">
             {activePanelMeta.label}
@@ -152,7 +143,7 @@ export const DesignerWorkbenchSidebar = memo(function DesignerWorkbenchSidebar({
           </div>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }, areDesignerWorkbenchPropsEqual);
 
@@ -168,14 +159,11 @@ function areDesignerWorkbenchPropsEqual(
   if (next.activePanel === "components") return true;
 
   return (
-    previous.agentAnalysisStale === next.agentAnalysisStale &&
     previous.debugEvents === next.debugEvents &&
     previous.fields === next.fields &&
-    previous.isAnalyzingAgent === next.isAnalyzingAgent &&
     previous.pageProps === next.pageProps &&
     previous.schema === next.schema &&
     previous.onActivePanelChange === next.onActivePanelChange &&
-    previous.onAnalyzeAgentSchema === next.onAnalyzeAgentSchema &&
     previous.onBeforeDesignerActionRegister === next.onBeforeDesignerActionRegister &&
     previous.onPagePropsChange === next.onPagePropsChange
   );
@@ -183,24 +171,18 @@ function areDesignerWorkbenchPropsEqual(
 
 function renderDesignerPanelContent({
   activePanel,
-  agentAnalysisStale,
   debugEvents,
   fields,
   formType,
-  isAnalyzingAgent,
-  onAnalyzeAgentSchema,
   onBeforeDesignerActionRegister,
   onPagePropsChange,
   pageProps,
   schema,
 }: {
   activePanel: DesignerPanelKey;
-  agentAnalysisStale: boolean;
   debugEvents: RuntimeDebugEvent[];
   fields: PlacedField[];
   formType: "normal" | "workflow" | "defined";
-  isAnalyzingAgent: boolean;
-  onAnalyzeAgentSchema: () => void;
   onBeforeDesignerActionRegister?: (handler: (() => boolean) | null) => void;
   onPagePropsChange: (props: PageDesignerProps) => void;
   pageProps: PageDesignerProps;
@@ -236,9 +218,6 @@ function renderDesignerPanelContent({
   if (activePanel === "agent") {
     return (
       <AgentPanel
-        analysisStale={agentAnalysisStale}
-        isAnalyzing={isAnalyzingAgent}
-        onAnalyze={onAnalyzeAgentSchema}
         value={pageProps.agent}
         onChange={(agent) => onPagePropsChange({ ...pageProps, agent })}
       />
@@ -255,10 +234,6 @@ function renderDesignerPanelContent({
         onChange={(actionPanel) => onPagePropsChange({ ...pageProps, actionPanel })}
       />
     );
-  }
-
-  if (activePanel === "fieldOutline") {
-    return <FieldOutlinePanel fields={fields} />;
   }
 
   return <SchemaPanel schema={schema} />;
@@ -295,11 +270,16 @@ function IndexPanel({
 
   return (
     <div className="space-y-4 p-1">
-      <div className="border-b border-[var(--color-border)] pb-3">
+      <div className="flex items-center gap-2 border-b border-[var(--color-border)] pb-3">
         <div className="text-sm font-medium text-[var(--color-text-primary)]">字段索引</div>
-        <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">
-          发布表单时为选中字段创建普通 B-tree 索引；取消选择并重新发布后会移除对应索引。
-        </p>
+        <Tooltip delay={0} closeDelay={100}>
+          <Tooltip.Trigger>
+            <Button isIconOnly size="sm" variant="ghost" aria-label="索引说明"><InfoIcon /></Button>
+          </Tooltip.Trigger>
+          <Tooltip.Content>
+            保存表单时为选中字段创建普通 B-tree 索引；取消选择并再次保存后会移除对应索引。仅支持单行文本、数值、单选、下拉、日期、成员和部门字段。
+          </Tooltip.Content>
+        </Tooltip>
       </div>
 
       <CheckboxGroup
@@ -309,20 +289,15 @@ function IndexPanel({
         onChange={(nextValue) => onChange(nextValue.map(String))}
       >
         {indexableFields.map((field) => {
-          const parent = field.parentGroupId
-            ? fields.find((candidate) => candidate.id === field.parentGroupId)
-            : null;
           return (
-            <Checkbox key={field.id} value={field.id} className="rounded-lg px-2 py-2 hover:bg-[var(--color-bg-subtle)]">
+            <Checkbox key={field.id} value={field.id} className="rounded-lg px-2 py-1.5 hover:bg-[var(--color-bg-subtle)]">
               <Checkbox.Content>
                 <Checkbox.Control>
                   <Checkbox.Indicator />
                 </Checkbox.Control>
-                <span className="block text-xs font-medium text-[var(--color-text-primary)]">
-                  {field.label}
-                </span>
-                <span className="mt-0.5 block text-[10px] text-[var(--color-text-secondary)]">
-                  {parent ? `${parent.label} / ` : ""}{field.type} · {field.id}
+                <span className="min-w-0">
+                  <span className="block truncate text-[11px] font-medium text-[var(--color-text-primary)]">{field.label}</span>
+                  <span className="mt-0.5 block truncate font-mono text-[10px] text-[var(--color-text-secondary)]" title={field.id}>{field.id}</span>
                 </span>
               </Checkbox.Content>
             </Checkbox>
@@ -344,140 +319,13 @@ type SystemAiStatus = {
   reason?: string;
 };
 
-function AgentPanel({ analysisStale, isAnalyzing, onAnalyze, value, onChange }: { analysisStale: boolean; isAnalyzing: boolean; onAnalyze: () => void; value: PageDesignerProps["agent"]; onChange: (value: PageDesignerProps["agent"]) => void }) {
-  const [systemAi, setSystemAi] = useState<SystemAiStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const response = await fetch("/api/agent/system-ai/status", { cache: "no-store" });
-        const payload = (await response.json()) as { code: number; message: string; data: SystemAiStatus | null };
-        if (!response.ok || !payload.data) throw new Error(payload.message || "无法加载系统 AI 状态");
-        if (!cancelled) setSystemAi(payload.data);
-      } catch (reason) {
-        if (!cancelled) setSystemAi({ available: false, reason: reason instanceof Error ? reason.message : "无法加载系统 AI 状态" });
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  const analysisStatus = isAnalyzing ? "analyzing" : analysisStale && value.context.generated ? "stale" : value.context.status;
-  const analysisStatusMeta = {
-    idle: { label: "未分析", className: "bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]" },
-    analyzing: { label: "分析中", className: "bg-[var(--color-info-soft)] text-[var(--color-info)]" },
-    ready: { label: "已就绪", className: "bg-[var(--color-success-soft)] text-[var(--color-success)]" },
-    stale: { label: "已过期", className: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]" },
-    failed: { label: "分析失败", className: "bg-[var(--color-danger-soft)] text-[var(--color-danger)]" },
-  }[analysisStatus];
-  const analysisContent = value.context.overrides || value.context.generated;
-
-  return (
-    <div className="space-y-4 p-1">
-      <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-3">
-        <Switch isSelected={value.enabled} isDisabled={loading || !systemAi?.available} onChange={(enabled) => onChange({ ...value, enabled })}>
-          <Switch.Content className="w-full items-center justify-between">
-            <span><span className="block text-sm font-medium text-[var(--color-text-primary)]">开启系统 AI 填表</span><span className="mt-1 block text-xs leading-5 text-[var(--color-text-secondary)]">发布后，新增数据抽屉将使用默认模型供应商提供 AI 填表。</span></span>
-            <Switch.Control><Switch.Thumb /></Switch.Control>
-          </Switch.Content>
-        </Switch>
-      </div>
-      {!loading ? <p className="text-xs leading-5 text-[var(--color-text-secondary)]">{systemAi?.available ? `当前默认供应商：${systemAi.providerName ?? "已配置"}` : (systemAi?.reason ?? "系统 AI 暂不可用")}</p> : null}
-
-      {value.enabled ? (
-        <>
-          <div>
-            <div className="mb-2 text-xs font-medium text-[var(--color-text-secondary)]">表单描述提示词</div>
-            <TextArea fullWidth className="min-h-40 text-sm leading-6" placeholder="例如：你是采购申请助手，请结合当前表单结构帮助用户梳理申请信息、检查缺失内容并给出业务建议。" value={value.prompt} onChange={(event) => onChange({ ...value, prompt: event.currentTarget.value })} />
-            <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">该提示词会作为此表单 Agent 对话的业务背景。</p>
-          </div>
-          <section className="space-y-3 border-y border-[var(--color-border)] py-3">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-medium text-[var(--color-text-primary)]">Schema 预分析</div>
-                <div className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">分析当前 Schema 并缓存业务理解；下方只读结果会随重新分析更新。</div>
-              </div>
-              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-medium ${analysisStatusMeta.className}`}>{analysisStatusMeta.label}</span>
-            </div>
-            <Button fullWidth className="mt-3" variant={analysisStatus === "ready" ? "secondary" : "primary"} isDisabled={loading || !systemAi?.available || isAnalyzing} onPress={onAnalyze}>
-              {isAnalyzing ? "正在分析 Schema…" : value.context.generated ? "重新分析 Schema" : "分析 Schema"}
-            </Button>
-            {value.context.error ? <p className="mt-2 text-xs leading-5 text-[var(--color-danger)]">{value.context.error}</p> : null}
-
-            <div className="border-t border-[var(--color-border)] pt-3">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <div>
-                  <div className="text-xs font-medium text-[var(--color-text-primary)]">分析结果</div>
-                  <div className="mt-0.5 text-[10px] text-[var(--color-text-secondary)]">保存和发布时随 Schema 一并写入</div>
-                </div>
-              </div>
-              {analysisContent ? (
-                <div className="max-h-[460px] overflow-y-auto border-l-2 border-[var(--color-primary)] pl-3 text-xs leading-5 text-[var(--color-text-primary)]">
-                  <AgentMarkdown compact content={analysisContent} />
-                </div>
-              ) : (
-                <div className="py-5 text-center text-xs text-[var(--color-text-secondary)]">
-                  点击上方“分析 Schema”生成只读分析结果
-                </div>
-              )}
-              <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">
-                {value.context.generatedAt ? `自动分析生成于 ${new Date(value.context.generatedAt).toLocaleString("zh-CN")}。Schema 变化后需要重新分析。` : "尚未生成分析结果。完成表单设计后点击上方按钮开始分析。"}
-              </p>
-            </div>
-          </section>
-        </>
-      ) : null}
-
-    </div>
-  );
-}
-
-function FieldOutlinePanel({ fields }: { fields: PlacedField[] }) {
-  const orderedFields = [...fields].sort(
-    (left, right) => left.row - right.row || left.column - right.column,
-  );
-
-  if (orderedFields.length === 0) {
-    return <PlaceholderPanel title="暂无字段，先从组件面板拖入一个组件" />;
-  }
-
-  return (
-    <div className="space-y-2 pr-1">
-      {orderedFields.map((field) => (
-        <div
-          key={field.id}
-          className="rounded-xl border border-[var(--designer-border)] bg-[var(--designer-surface-muted)] px-3 py-2.5"
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="min-w-0 truncate text-sm font-semibold text-[var(--color-text-primary)]">
-              {field.label}
-            </span>
-            <span className="shrink-0 rounded-md bg-[var(--color-primary-soft)] px-2 py-0.5 font-mono text-[10px] text-[var(--color-primary)]">
-              {field.type}
-            </span>
-          </div>
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--color-text-secondary)]">
-            <span>字段 ID：{field.id}</span>
-            <span>位置：R{field.row + 1} / C{field.column + 1}</span>
-            <span>尺寸：{field.rowSpan} × {field.colSpan}</span>
-            {field.parentGroupId ? <span>分组：{field.parentGroupId}</span> : null}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function OutlinePanel({ fields }: { fields: PlacedField[] }) {
   const rootFields = fields
     .filter((field) => !field.parentGroupId)
     .sort((left, right) => left.row - right.row || left.column - right.column);
 
   return (
-    <div className="h-full overflow-y-auto pr-1">
+    <div className="h-full overflow-y-auto">
       <div className="space-y-1">
         {rootFields.map((field) => (
           <OutlineNode key={field.id} field={field} fields={fields} level={0} />
@@ -513,8 +361,8 @@ function OutlineNode({
       </div>
       {children.length > 0
         ? children.map((child) => (
-            <OutlineNode key={child.id} field={child} fields={fields} level={level + 1} />
-          ))
+          <OutlineNode key={child.id} field={child} fields={fields} level={level + 1} />
+        ))
         : null}
     </div>
   );
@@ -529,13 +377,14 @@ function DataSourcesPanel({
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="mb-3 flex items-center justify-between">
-        <div className="text-xs text-[var(--color-text-secondary)]">
+      <div className="mb-3 flex flex-col items-stretch gap-2">
+        <div className="min-w-0 text-xs leading-5 text-[var(--color-text-secondary)]">
           变量会注入到 <code>this.state.dataSources</code>
         </div>
         <Button
           size="sm"
-          className="bg-[var(--color-primary)] text-[var(--color-text-on-primary)]"
+          variant="primary"
+          className="self-end"
           onPress={() =>
             onChange([
               ...dataSources,
@@ -553,13 +402,13 @@ function DataSourcesPanel({
           新建变量
         </Button>
       </div>
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
         {dataSources.map((source) => (
-          <div
+          <Card
             key={source.id}
-            className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2.5"
+            className="p-2 shadow-none"
           >
-            <div className="grid grid-cols-[minmax(0,1fr)_96px_64px] gap-2">
+            <div className="flex min-w-0 items-center gap-1.5">
               <CompactInput
                 ariaLabel="变量名称"
                 placeholder="变量名"
@@ -589,18 +438,20 @@ function DataSourcesPanel({
                   )
                 }
               />
-              <div className="flex items-center justify-end">
+              <div className="flex shrink-0 items-center justify-end">
                 <Button
+                  isIconOnly
                   size="sm"
                   variant="ghost"
-                  className="min-w-0 px-2 text-[var(--color-danger)]"
+                  aria-label={`删除变量 ${source.name}`}
+                  className="text-[var(--color-danger)]"
                   onPress={() => onChange(dataSources.filter((item) => item.id !== source.id))}
                 >
-                  删除
+                  <TrashIcon />
                 </Button>
               </div>
             </div>
-            <div className="mt-2 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
+            <div className="mt-1.5 grid grid-cols-1 gap-1.5">
               <CompactInput
                 ariaLabel="初始值"
                 placeholder="初始值"
@@ -626,7 +477,7 @@ function DataSourcesPanel({
                 }
               />
             </div>
-          </div>
+          </Card>
         ))}
       </div>
     </div>
@@ -713,7 +564,7 @@ function ActionPanel({
   }, [isFullscreen]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+    <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto">
       <Card
         className={[
           "border border-[var(--color-border)] bg-[var(--color-bg-surface)] shadow-none",
@@ -867,7 +718,7 @@ function ContextRow({
 
 function ActionDebugPanel({ debugEvents }: { debugEvents: RuntimeDebugEvent[] }) {
   return (
-    <Card className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-3 shadow-none">
+    <Card>
       <div className="mb-2 flex items-center justify-between">
         <div className="text-sm font-semibold text-[var(--color-text-primary)]">调试日志</div>
         <div className="text-xs text-[var(--color-text-secondary)]">最近 {debugEvents.length} 条</div>
@@ -935,7 +786,7 @@ function CompactInput({
       placeholder={placeholder}
       value={value}
       onChange={(event) => onChange(event.currentTarget.value)}
-      className="min-w-0 text-sm"
+      className="h-8 min-w-0 flex-1 text-xs"
     />
   );
 }
@@ -956,7 +807,7 @@ function CompactSelect({
       aria-label={ariaLabel}
       selectedKey={selectedKey}
       onSelectionChange={(key) => onSelectionChange(String(key ?? ""))}
-      className="text-sm"
+      className="h-8 min-w-[5rem] shrink-0 text-xs"
     >
       <Select.Trigger>
         <Select.Value>
@@ -1004,18 +855,18 @@ function createActionTemplate(fields: PlacedField[]): DesignerActionPanelState {
   const sampleButton = fields.find((field) => field.type === "button");
   const fieldExample = sampleField
     ? [
-        `  if (ctx.fieldId === "${sampleField.id}" && ctx.eventName === "${getFieldEventOptions(sampleField.type)[0]?.id ?? "onChange"}") {`,
-        "    ctx.helpers.setDataSource('lastChangedField', ctx.fieldId);",
-        "  }",
-      ].join("\n")
+      `  if (ctx.fieldId === "${sampleField.id}" && ctx.eventName === "${getFieldEventOptions(sampleField.type)[0]?.id ?? "onChange"}") {`,
+      "    ctx.helpers.setDataSource('lastChangedField', ctx.fieldId);",
+      "  }",
+    ].join("\n")
     : "  // if (ctx.fieldId === 'singleLineText-1' && ctx.eventName === 'onChange') {}";
   const buttonExample = sampleButton
     ? [
-        `  if (ctx.fieldId === "${sampleButton.id}" && ctx.eventName === "onClick") {`,
-        "    const count = Number(ctx.helpers.getDataSource('clickCount') ?? 0);",
-        "    ctx.helpers.setDataSource('clickCount', count + 1);",
-        "  }",
-      ].join("\n")
+      `  if (ctx.fieldId === "${sampleButton.id}" && ctx.eventName === "onClick") {`,
+      "    const count = Number(ctx.helpers.getDataSource('clickCount') ?? 0);",
+      "    ctx.helpers.setDataSource('clickCount', count + 1);",
+      "  }",
+    ].join("\n")
     : "";
 
   return {

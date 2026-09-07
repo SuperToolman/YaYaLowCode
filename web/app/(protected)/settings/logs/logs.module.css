@@ -1,0 +1,26 @@
+.page { display: flex; height: 100%; min-height: 0; flex-direction: column; }
+.body { margin-top: 1.25rem; }
+.content { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: .75rem; }
+.headerActions { display: flex; align-items: center; gap: .25rem; }
+.toolbar { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.summary { margin-inline-start: auto; color: var(--color-text-secondary); font-size: .75rem; }
+.alert { flex-shrink: 0; }
+.table { min-width: 38.75rem; height: 100%; min-height: 0; flex: 1; }
+.scrollContainer { height: 100%; overflow: auto; }
+.time, .target { color: var(--color-text-secondary); font-size: .75rem; }
+.time { white-space: nowrap; }
+.target { display: block; max-width: 20rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.actions { display: flex; justify-content: flex-end; }
+.actionsColumn { width: 5rem; text-align: right; }
+.loadMore { display: flex; flex-shrink: 0; justify-content: flex-end; }
+.empty { min-height: 10rem; padding-block: 2rem; color: var(--color-text-secondary); font-size: .875rem; }
+.modalText { color: var(--color-text-secondary); font-size: .875rem; line-height: 1.5rem; }
+.dangerButton { background: var(--color-danger); color: white; }
+.detailBody { display: flex; flex-direction: column; gap: 1.25rem; }
+.detailGrid { display: grid; gap: 1rem; }
+.detailLabel { margin: 0; color: var(--color-text-secondary); font-size: .75rem; }
+.detailValue { margin: .375rem 0 0; color: var(--color-text-primary); font-size: .875rem; }
+.detailMono { overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .75rem; }
+.message { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .875rem; line-height: 1.5rem; }
+.pre { max-height: 20rem; overflow: auto; border-radius: var(--radius-md, .375rem); background: var(--color-bg-subtle); padding: .75rem; color: var(--color-text-secondary); font-size: .75rem; line-height: 1.25rem; }
+@media (min-width: 640px) { .detailGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

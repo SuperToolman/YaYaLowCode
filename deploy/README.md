@@ -1,6 +1,6 @@
 # Per-customer deployment
 
-Each customer runs one platform container plus internal Cordis Agent and LangGraph Worker containers. The platform container contains the Next.js Web BFF, Rust API, PostgreSQL, and internal Valkey; the Agent and Worker share its network namespace and are not host-published. Only the Web and API host ports are published. Put TLS termination in a customer-specific reverse proxy in front of the Web port.
+Each customer receives one isolated platform container. The container runs the Next.js Web BFF, Rust API, PostgreSQL, internal Valkey, and the DSH Agent runtime. Only Web and API host ports are published.
 
 ## HTTP/HTTPS and WebSocket
 
@@ -14,7 +14,7 @@ The chat WebSocket follows the page protocol automatically: `ws://` for HTTP and
 
 1. Copy `.env.example` to `.env` and replace every secret with a unique value. Generate the Valkey password as URL-safe hexadecimal text, for example `openssl rand -hex 32`.
 2. Create `secrets/license-public.pem` from the public key issued by the central license service. Do not place private keys in this directory.
-3. Set the Agent model, embedding and internal worker secrets in `.env`. From `deploy`, build and start the instance with `docker compose up --build -d`.
+3. Configure the platform secrets in `.env`. The initialization script generates missing Agent runtime and model-key encryption secrets, then builds and starts the complete single container.
 4. Reach `http://host:WEB_PORT/settings/license` and activate that customer's license. Production license centers must use HTTPS.
 
 ## Publish From Windows
@@ -31,15 +31,21 @@ On an empty database, startup creates the `yaya` super administrator, its local 
 
 ## Agent Runtime
 
-The production compose profile starts `yaya-agent` and `yaya-langgraph-worker` as internal services. They share the platform network namespace, so the Agent can reach the platform API, PostgreSQL and Worker only through loopback addresses; no Agent or Worker port is published. The Web BFF reaches Cordis through `AGENT_RUNTIME_BASE_URL=http://127.0.0.1:8789`.
-
-Before a production rollout, verify `http://127.0.0.1:8789/healthz` from the `yaya` container, create a read-only Agent run, execute one approval-gated write through confirmation, cancel an approval, restart the Worker during a paused run, and test PostgreSQL restore with the Agent runtime tables included.
+The old Agent and LangGraph Worker have been removed. DSH Harness under `agent/deepseek-harness` is built into the single platform image and supervised on internal port `8789`. Customers configure model providers after first login at `/settings/model-providers`.
 
 For a new server, initialize its `.env` and public key from this workstation once:
 
 ```powershell
 .\deploy\publish.ps1 -ContainerName yaya-customer-a -Initialize
 ```
+
+For frontend-only changes, use the fast publish script. It builds only the Next.js frontend, uploads the `.next` output into the existing container, and restarts the Web process without rebuilding Rust, the Agent runtime, or persistent services:
+
+```powershell
+.\deploy\publish-web.ps1 -ServerIp 203.0.113.10 -SshUser root -ContainerName yaya-customer-a
+```
+
+Use `publish.ps1` when API, Agent runtime, dependencies, Docker configuration, or native packages have changed.
 
 For each additional instance on the same server, use a different container name and set unique `WEB_PORT` and `API_PORT` values in its initial `.env`. Use `-SshPort` or `-RemoteDir` when the server uses a non-default SSH port or deployment directory.
 

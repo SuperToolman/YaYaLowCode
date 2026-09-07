@@ -7,7 +7,7 @@ mod shared;
 
 use std::net::SocketAddr;
 
-use modules::{locations, navigation};
+use modules::{agents, locations, navigation};
 use platform::config::{
     AppConfig, communication_module_enabled, migrate_legacy_runtime_layout,
     validate_production_environment,
@@ -69,6 +69,12 @@ async fn main() -> Result<(), AppError> {
         infrastructure::legacy_bootstrap::ensure_communication_tables(&db).await?;
     }
     infrastructure::migrator::Migrator::up(&db, None).await?;
+    if let Err(error) = agents::cleanup_expired_agent_workspaces(&db).await {
+        warn!(
+            ?error,
+            "agent workspace retention cleanup failed; continuing startup"
+        );
+    }
     platform::logging::start_persistence();
     locations::ensure_location_catalog_schema(&db).await?;
     if let Some(path) = import_location_catalog_path() {

@@ -9,7 +9,7 @@ set -eu
 export POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD VALKEY_PASSWORD
 
 postgres_data=/var/lib/postgresql/data
-mkdir -p "$postgres_data" /var/run/postgresql /var/lib/yaya/config /var/lib/yaya/skills /var/lib/yaya/uploads
+mkdir -p "$postgres_data" /var/run/postgresql /var/lib/yaya/config /var/lib/yaya/skills /var/lib/yaya/uploads /var/lib/yaya/agent /var/lib/yaya/agent-workspaces
 chown -R postgres:postgres /var/lib/postgresql /var/run/postgresql
 chown -R yaya:yaya /var/lib/yaya
 

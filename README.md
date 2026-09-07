@@ -2,7 +2,7 @@
 
 面向表单设计、数据录入、流程审批、集成自动化和 AI 员工的低代码平台。
 
-当前版本：**1.07a**（内部包版本：`0.2.0-alpha.0`）
+当前版本：**1.08a**（内部包版本：`0.2.0-alpha.0`）
 
 平台面向客户部署；商品、订单、许可证、AI 员工和未来的插件包由独立运营端 `E:\yaya-operation-center` 管理。客户平台负责验证授权、安装已购内容并执行受控业务能力，不向客户暴露 Agent 核心插件或运营侧模型密钥。
 
@@ -17,47 +17,45 @@ Web (Next.js, 8787) ---- BFF ---- Rust Platform API (8788)
                                          +-- PostgreSQL / Valkey / runtime files
                                          +-- identity, RBAC, license, approval, domain writes
        |
-       +-- Agent BFF ---- Cordis Agent Runtime (8789)
+       +-- Agent BFF ---- DSH Harness + YaYa plugin (8789)
                                    |
                                    +-- model / tools / skills / sessions / storage
                                    +-- policy / sandbox / scheduler / audit / UI adapter
-                                   +-- optional LangGraph Worker (8790)
 
 Operation Center
        |
        +-- customers / orders / payments / AI employee catalog / licenses
 ```
 
-详细边界见 [系统架构](docs/system-architecture.md)、[Agent 架构](agent/docs/architecture.md) 和 [部署说明](deploy/README.md)。
+详细边界见 [系统架构](docs/system-architecture.md)、[DSH 集成说明](docs/yaya-dsh-integration.md) 和 [部署说明](deploy/README.md)。
 
 ## 已实现能力
 
 ### 低代码与业务
 
 - 应用、导航分组、普通表单和流程表单管理。
-- 可视化表单设计、草稿/发布/版本恢复、动态 PostgreSQL 表存储和子表单。
+- 可视化表单设计、保存即生效、历史版本恢复、动态 PostgreSQL 表存储和子表单。
 - 记录新增、编辑、删除、回收站、服务端分页/筛选/排序和自定义视图。
 - 自动化工作流、条件分支、HTTP/数据节点、版本、运行日志和失败重试。
 - 流程任务中心、审批、暂停、恢复、反审、评论和站内通知。
 - 本地账号、钉钉登录、组织同步、RBAC 和应用/表单权限过滤。
 - 即时通讯、附件、群聊和 WebSocket 实时事件，由许可证模块控制。
 
-### Cordis Agent Runtime
+### DSH Agent Runtime
 
-- Agent 已从 Rust 推理运行时剥离，使用独立 Node/Cordis 服务运行。
-- Cordis 管理插件挂载、卸载、服务依赖与事件协作；每个插件以 manifest 声明 `id`、版本、`provides`、`requires`、能力和配置 schema。
+- Agent 已从 Rust 推理运行时剥离，使用独立 DSH Harness 运行。
+- YaYa 平台能力通过 `agent/deepseek-harness/packages/extensions/yaya-platform` 插件注入。
 - 默认插件覆盖模型、工具、Skills、会话、JSON/PostgreSQL 存储、记忆、策略审批、审计、沙盒、调度、workflow 和 UI 协议适配。
 - Agent 会话通过 BFF 访问 Cordis；平台 JWT 会被验证并转换为 tenant/user/权限快照，平台仍是授权、审批与领域写入的唯一事实来源。
-- 工具写操作进入持久化 `pending_action` 状态机；确认、取消、过期和最终领域写入由 Rust API 执行。workflow 在暂停时持久化 checkpoint，并在确认后恢复同一 run。
+- 工具写操作进入持久化 `transaction` 状态机；执行、取消、过期和最终领域写入由 Rust API 记录与执行。workflow 在暂停时持久化 checkpoint，并在执行后恢复同一 run。
 - 支持 OpenAI-compatible tool-calling、迭代/超时/token 预算、步骤审计和 SSE 流式事件。
 - 记忆按租户、用户、路由隔离，并具备常见 PII 脱敏、保留期、删除权和嵌入版本边界。
-- LangGraph Worker 已有独立调用协议与可替换 workflow provider 边界；默认仍使用 Node workflow provider。
 
 ### 授权与商业交付
 
 - 平台验证 RS256 许可证，许可证包含平台模块、模块有效期、部署类型和 AI 员工权益。
-- 客户可在 AI 员工市场查看、购买、安装、更新和移除已授权的 AI 员工包及其 Skills。
-- 客户侧已下架“模型供应商”和“插件”配置页面及其写接口；Cordis 模型插件使用受控运行环境中的密钥和路由配置。
+- 客户可在 AI 员工市场查看、购买、安装、更新和移除已授权的 AI 员工。安装结果是受许可证约束的员工授权快照；Cordis 在创建会话和执行时读取其 Persona、Skills 与工具边界。
+- 客户侧已下架通用插件配置；客户可在“自有模型”中维护实例级模型供应商。Cordis 模型插件通过受控内部接口按请求读取该路由，运营端不接触客户密钥。
 - 许可证契约已预留 `pluginPackages` 权益字段，包含插件包 ID、版本、哈希、入口、manifest 与到期时间，且不包含密钥。
 
 ## 运行端口
@@ -66,12 +64,13 @@ Operation Center
 | --- | --- | --- |
 | Web | 8787 | `http://127.0.0.1:8787` |
 | Rust Platform API | 8788 | `http://127.0.0.1:8788/healthz` |
-| Cordis Agent | 8789 | `http://127.0.0.1:8789/healthz` |
-| LangGraph Worker | 8790 | 内部 Worker 端口 |
+| DSH Harness | 8789 | `http://127.0.0.1:8789` |
 
 ## 本地开发
 
 前置条件：Node.js、pnpm、Rust、PostgreSQL；若启用生产 Agent 存储，还需要可访问的 PostgreSQL。许可证公钥默认读取 `deploy/secrets/license-public.pem`。
+
+首次启用自有模型前，为 Rust API 设置 Base64 编码的 32 字节 `YAYA_BYOM_ENCRYPTION_KEY`。`AGENT_RUNTIME_SHARED_SECRET` 仅在 YaYa Host 适配层启用后配置。
 
 ```powershell
 pnpm install
@@ -82,7 +81,7 @@ pnpm install
 
 1. 清理本项目遗留的 Web、API、Agent 进程。
 2. 启动 Rust API 并等待 `8788/healthz`。
-3. 启动 Cordis Agent 并等待 `8789/healthz`。
+3. 启动 DSH profile 并等待 `8789`。
 4. 注入 `AGENT_RUNTIME_BASE_URL` 后启动 Next.js `8787`。
 
 常用命令：
@@ -103,7 +102,7 @@ Web 启动前会生成 OpenAPI 客户端。修改 Rust 路由、DTO 或 OpenAPI 
 
 ## 部署
 
-`deploy/compose.yaml` 运行 Web、Rust API、Cordis Agent 和 LangGraph Worker；Agent 与 Worker 不对外发布端口，仅通过单容器网络命名空间与平台通信。
+`deploy/compose.yaml` 当前只运行 Web/Rust API；DSH Harness 需要单独部署，YaYa `/api/agent` Host 适配层尚未完成。
 
 生产环境必须：
 
@@ -117,9 +116,7 @@ Web 启动前会生成 OpenAPI 客户端。修改 Rust 路由、DTO 或 OpenAPI 
 ```text
 web/                    Next.js 前端、BFF、Tauri 壳
 api/                    Rust/Axum 平台 API、领域模块、迁移与 OpenAPI
-agent/                  独立 Cordis Agent Runtime
-agent/config/           插件组合配置
-agent/langgraph-worker/ 独立 LangGraph Worker
+agent/deepseek-harness/ DSH Harness 与 YaYa plugin
 deploy/                 Compose、镜像、发布与数据库迁移脚本
 docs/                   系统与架构文档
 scripts/                本地开发启动脚本
@@ -138,12 +135,11 @@ scripts/                本地开发启动脚本
 - 运营端提供已购插件包下载接口；客户平台用当前许可证鉴权，下载后校验签名、哈希、路径和 manifest。
 - 客户平台将授权包保存为不可编辑安装快照，根据许可证过期、撤销、更新和依赖变化生成 Agent 的有效插件组合。
 
-### 2. 受控模型路由与 BYOM
+### 2. 客户自有模型路由
 
-- SaaS：模型适配器、模型路由、限额、密钥引用完全由运营端管理，客户平台只接收可用状态和脱敏展示信息。
-- 本地部署：新增独立 `byom` 授权模块；仅持有本地部署许可证且已购买该模块的客户可配置自有模型。
-- BYOM 密钥使用部署环境密钥或 KMS 加密保存，支持密钥轮换、脱敏显示、访问审计和删除；不得进入许可证、日志、前端或插件包。
-- 模型插件只接收受控配置/密钥引用，支持按租户、AI 员工和用途进行路由、预算、速率限制和故障切换。
+- 每个客户独立部署的平台实例都可在设置中配置自有模型供应商；这不是许可证商品，也不影响 AI 员工的运营端定义。一个客户实例只维护一组模型路由。
+- 模型密钥使用部署环境密钥或 KMS 加密保存，支持密钥轮换、脱敏显示、访问审计和删除；不得进入许可证、日志、前端或插件包。
+- Cordis 模型插件通过内部 workload 边界按请求读取实例默认模型路由；后续支持按 AI 员工和用途细分路由、预算、速率限制和故障切换。
 
 ### 3. Agent 插件加载与运维
 

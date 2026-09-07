@@ -322,7 +322,7 @@ export default function UsersSettingsPage() {
       ) : null}
 
       <div className="relative min-h-0 flex-1">
-        <div className="settings-scroll-area absolute inset-0 overflow-y-auto overscroll-contain pr-1">
+        <div className="settings-scroll-area absolute inset-0 overflow-y-auto overscroll-contain">
           <div className="mb-5 flex flex-wrap items-center gap-2">
             <FilterChip label="全部用户" count={users.length} active={sourceFilter === "all"} onPress={() => setSourceFilter("all")} />
             <FilterChip label="平台账号" count={users.filter((user) => user.sourceType === "local").length} active={sourceFilter === "local"} onPress={() => setSourceFilter("local")} />

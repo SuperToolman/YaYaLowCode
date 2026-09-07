@@ -4,11 +4,11 @@ use std::path::Path;
 use utoipa::OpenApi;
 
 use crate::modules::agent_config::{
-    AiEmployeeConfigurationResponse, KnowledgeBaseRequest, PluginRequest, ProviderRequest,
-    ProviderResponse, SystemAiStatusResponse, UpdateAiEmployeeConfigurationRequest,
+    KnowledgeBaseRequest, PluginRequest, ProviderRequest, ProviderResponse, SystemAiStatusResponse,
 };
 use crate::modules::agents::{
-    ApiAgentSession, CreateAgentSessionRequest, UpdateAgentSessionRequest,
+    ApiAgentSession, CreateAgentSessionRequest,
+    UpdateAgentSessionRequest,
 };
 use crate::modules::apps::{ApiApp, CreateAppRequest, UpdateAppRequest};
 use crate::modules::automations::{
@@ -263,23 +263,6 @@ endpoint!(
     "/api/settings/ai-employee-market/{employee_id}/install",
     "installAiEmployee",
     ("employee_id" = String, Path)
-);
-typed_endpoint!(
-    list_ai_employee_configurations,
-    get,
-    "/api/settings/ai-employees/configurations",
-    "listAiEmployeeConfigurations",
-    (),
-    ApiResponse<Vec<AiEmployeeConfigurationResponse>>
-);
-typed_endpoint!(
-    update_ai_employee_configuration,
-    put,
-    "/api/settings/ai-employees/configurations/{employee_id}",
-    "updateAiEmployeeConfiguration",
-    (("employee_id" = String, Path)),
-    UpdateAiEmployeeConfigurationRequest,
-    ApiResponse<AiEmployeeConfigurationResponse>
 );
 typed_endpoint!(
     apply_latest_platform_license,
@@ -1076,7 +1059,15 @@ typed_endpoint!(
     ApiResponse<Value>
 );
 
-typed_endpoint!(get_form_schema, get, "/api/forms/{formUuid}/schema", "getFormSchema", (("formUuid" = String, Path), ("scope" = Option<String>, Query), ("version" = Option<i32>, Query)), ApiResponse<ApiSchemaPayload>);
+typed_endpoint!(get_form_schema, get, "/api/forms/{formUuid}/schema", "getFormSchema", (("formUuid" = String, Path), ("version" = Option<i32>, Query)), ApiResponse<ApiSchemaPayload>);
+typed_endpoint!(
+    get_form_schema_contract,
+    get,
+    "/api/form-schema-contract",
+    "getFormSchemaContract",
+    (),
+    ApiResponse<serde_json::Value>
+);
 #[utoipa::path(get, path = "/api/forms/{formUuid}/views", operation_id = "listFormViews", params(("formUuid" = String, Path)), responses((status = 200, body = ApiResponse<Vec<FormViewResponse>>)))]
 #[allow(dead_code)]
 fn list_form_views() {}
@@ -1160,14 +1151,6 @@ typed_endpoint!(
     ApiResponse<ApiSchemaPayload>
 );
 typed_endpoint!(
-    publish_form_schema,
-    post,
-    "/api/forms/{formUuid}/publish",
-    "publishFormSchema",
-    (("formUuid" = String, Path)),
-    ApiResponse<ApiSchemaPayload>
-);
-typed_endpoint!(
     restore_form_version,
     post,
     "/api/forms/{formUuid}/versions/{version}/restore",
@@ -1179,8 +1162,8 @@ typed_endpoint!(
 typed_endpoint!(
     save_form_schema,
     post,
-    "/api/forms/{formUuid}/schema/draft",
-    "saveFormSchemaDraft",
+    "/api/forms/{formUuid}/schema",
+    "saveFormSchema",
     (("formUuid" = String, Path)),
     SaveSchemaRequest,
     ApiResponse<ApiSchemaPayload>
@@ -1235,8 +1218,6 @@ endpoint!(
         get_ai_employee_market,
         test_purchase_ai_employee,
         install_ai_employee,
-        list_ai_employee_configurations,
-        update_ai_employee_configuration,
         activate_platform_license,
         apply_latest_platform_license,
         get_communication_module_settings,
@@ -1336,6 +1317,7 @@ endpoint!(
         retry_automation_flow_run,
         retry_automation_flow_run_node,
         get_form_schema,
+        get_form_schema_contract,
         list_form_views,
         create_form_view,
         update_form_view,
@@ -1350,7 +1332,6 @@ endpoint!(
         delete_form_record,
         list_form_versions,
         get_form_version,
-        publish_form_schema,
         restore_form_version,
         save_form_schema,
         get_form,

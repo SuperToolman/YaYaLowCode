@@ -1,4 +1,4 @@
-//! Compiles published form Schemas and manages per-form physical storage metadata.
+//! Compiles current form Schemas and manages per-form physical storage metadata.
 
 use chrono::Utc;
 use sea_orm::{
@@ -139,7 +139,7 @@ pub(crate) fn compile_form_storage_plan(
     })
 }
 
-pub(crate) async fn sync_published_storage_plan<C>(
+pub(crate) async fn sync_current_storage_plan<C>(
     db: &C,
     form_uuid: &str,
     schema_version: i32,
@@ -259,14 +259,14 @@ where
         }
         let schema = FormSchemaEntity::find()
             .filter(form_schema_entity::Column::FormUuid.eq(definition.form_uuid.clone()))
-            .filter(form_schema_entity::Column::Version.eq(definition.published_schema_version))
+            .filter(form_schema_entity::Column::Version.eq(definition.current_schema_version))
             .one(db)
             .await?
-            .ok_or_else(|| AppError::NotFound("published form schema not found".to_string()))?;
-        sync_published_storage_plan(
+            .ok_or_else(|| AppError::NotFound("current form schema not found".to_string()))?;
+        sync_current_storage_plan(
             db,
             &definition.form_uuid,
-            definition.published_schema_version,
+            definition.current_schema_version,
             &schema.schema_json,
         )
         .await?;

@@ -45,16 +45,8 @@ export type AgentPluginDefinition = {
     version: string;
 };
 
-export type AiEmployeeConfigurationResponse = {
-    agentId?: string | null;
-    chatModel?: string | null;
-    employeeId: string;
-    enabled: boolean;
-    providerId?: string | null;
-    title: string;
-};
-
 export type AiEmployeeMarketItem = {
+    avatarUrl?: string | null;
     billingCycle: string;
     category: string;
     description: string;
@@ -88,14 +80,16 @@ export type ApiApp = {
     badge?: string | null;
     color: string;
     createdAt: string;
+    deploymentType: string;
     desc: string;
     icon: string;
     id: string;
     name: string;
+    onlineReleaseId?: string | null;
+    onlineVersion?: string | null;
     owner: string;
     ownerAvatarUrl?: string | null;
     records: number;
-    status: AppStatus;
 };
 
 export type ApiAppFieldOutline = {
@@ -216,7 +210,7 @@ export type ApiFieldOutlineForm = {
     name: string;
     physicalTable?: string | null;
     schemaVersion: number;
-    status: FormStatus;
+    status: string;
 };
 
 export type ApiFormRecord = {
@@ -248,15 +242,12 @@ export type ApiFormSummary = {
     id: string;
     latestSchemaVersion: number;
     name: string;
-    status: FormStatus;
+    status: string;
 };
 
 export type ApiFormVersionSummary = {
     changeLog?: string | null;
     createdAt: string;
-    isCurrentDraft: boolean;
-    isCurrentPublished: boolean;
-    published: boolean;
     version: number;
 };
 
@@ -314,20 +305,6 @@ export type ApiResponseAgentPluginDefinition = {
     time: string;
 };
 
-export type ApiResponseAiEmployeeConfigurationResponse = {
-    code: number;
-    data?: {
-        agentId?: string | null;
-        chatModel?: string | null;
-        employeeId: string;
-        enabled: boolean;
-        providerId?: string | null;
-        title: string;
-    };
-    message: string;
-    time: string;
-};
-
 export type ApiResponseApiAgentSession = {
     code: number;
     data?: {
@@ -353,14 +330,16 @@ export type ApiResponseApiApp = {
         badge?: string | null;
         color: string;
         createdAt: string;
+        deploymentType: string;
         desc: string;
         icon: string;
         id: string;
         name: string;
+        onlineReleaseId?: string | null;
+        onlineVersion?: string | null;
         owner: string;
         ownerAvatarUrl?: string | null;
         records: number;
-        status: AppStatus;
     };
     message: string;
     time: string;
@@ -496,7 +475,7 @@ export type ApiResponseApiFormSummary = {
         id: string;
         latestSchemaVersion: number;
         name: string;
-        status: FormStatus;
+        status: string;
     };
     message: string;
     time: string;
@@ -522,11 +501,8 @@ export type ApiResponseApiNavigationItem = {
 export type ApiResponseApiSchemaPayload = {
     code: number;
     data?: {
-        draftVersion: number;
         formUuid: string;
         latestVersion: number;
-        published: boolean;
-        publishedVersion: number;
         schema: unknown;
         version: number;
     };
@@ -977,23 +953,10 @@ export type ApiResponseVecAgentPluginDefinition = {
     time: string;
 };
 
-export type ApiResponseVecAiEmployeeConfigurationResponse = {
-    code: number;
-    data?: Array<{
-        agentId?: string | null;
-        chatModel?: string | null;
-        employeeId: string;
-        enabled: boolean;
-        providerId?: string | null;
-        title: string;
-    }>;
-    message: string;
-    time: string;
-};
-
 export type ApiResponseVecAiEmployeeMarketItem = {
     code: number;
     data?: Array<{
+        avatarUrl?: string | null;
         billingCycle: string;
         category: string;
         description: string;
@@ -1037,14 +1000,16 @@ export type ApiResponseVecApiApp = {
         badge?: string | null;
         color: string;
         createdAt: string;
+        deploymentType: string;
         desc: string;
         icon: string;
         id: string;
         name: string;
+        onlineReleaseId?: string | null;
+        onlineVersion?: string | null;
         owner: string;
         ownerAvatarUrl?: string | null;
         records: number;
-        status: AppStatus;
     }>;
     message: string;
     time: string;
@@ -1109,7 +1074,7 @@ export type ApiResponseVecApiFormSummary = {
         id: string;
         latestSchemaVersion: number;
         name: string;
-        status: FormStatus;
+        status: string;
     }>;
     message: string;
     time: string;
@@ -1120,9 +1085,6 @@ export type ApiResponseVecApiFormVersionSummary = {
     data?: Array<{
         changeLog?: string | null;
         createdAt: string;
-        isCurrentDraft: boolean;
-        isCurrentPublished: boolean;
-        published: boolean;
         version: number;
     }>;
     message: string;
@@ -1311,16 +1273,11 @@ export type ApiResponseUsize = {
 };
 
 export type ApiSchemaPayload = {
-    draftVersion: number;
     formUuid: string;
     latestVersion: number;
-    published: boolean;
-    publishedVersion: number;
     schema: unknown;
     version: number;
 };
-
-export type AppStatus = 'enabled' | 'paused' | 'draft';
 
 export type AutomationFlowType = 'trigger' | 'process';
 
@@ -1417,10 +1374,13 @@ export type CommunicationUserResponse = {
 };
 
 export type CreateAgentSessionRequest = {
+    agentId?: string | null;
     context?: null | AgentPageContext;
 };
 
 export type CreateAppRequest = {
+    description?: string | null;
+    icon?: string | null;
     name?: string | null;
 };
 
@@ -1557,8 +1517,6 @@ export type FormBootstrapResponse = {
     schema: ApiSchemaPayload;
 };
 
-export type FormStatus = 'draft' | 'published';
-
 export type FormType = 'normal' | 'workflow' | 'defined' | 'detail';
 
 export type FormViewResponse = {
@@ -1662,30 +1620,32 @@ export type OrganizationUnitResponse = {
 };
 
 export type PlatformAiEmployeeEntitlement = {
+    /**
+     * Final platform policy assigned to this AI employee by the operation center.
+     */
+    allowedTools?: Array<string>;
+    applicationIds?: Array<string>;
     expiresAt: number;
     id: string;
-    persona?: null | PlatformAiEmployeePersona;
     skills?: Array<PlatformAiEmployeeSkill>;
     systemPrompt?: string;
     templateVersion?: string;
     title: string;
 };
 
-export type PlatformAiEmployeePersona = {
-    description: string;
-    id: string;
-    systemPrompt: string;
-    title: string;
-};
-
 export type PlatformAiEmployeeSkill = {
-    allowedTools?: Array<string>;
     description: string;
     id: string;
     instructions: string;
     isSystem?: boolean;
     packageName?: string;
     packagePath?: string;
+    /**
+     * Canonical DSH Plugin manifest emitted by the operation center/package
+     * installer. Kept on the signed entitlement so Host can build its
+     * employee-scoped plugin registry without reading the database directly.
+     */
+    pluginManifestJson?: string;
     requiresConfirmation?: boolean;
     source?: string;
     title: string;
@@ -1835,6 +1795,7 @@ export type SaveFormViewRequest = {
 };
 
 export type SaveSchemaRequest = {
+    base_version?: number | null;
     change_log?: string | null;
     schema: unknown;
 };
@@ -1868,14 +1829,10 @@ export type UpdateAgentSessionRequest = {
     title?: string | null;
 };
 
-export type UpdateAiEmployeeConfigurationRequest = {
-    chatModel: string;
-    providerId: string;
-};
-
 export type UpdateAppRequest = {
+    description?: string | null;
+    icon?: string | null;
     name?: string | null;
-    status?: null | AppStatus;
 };
 
 export type UpdateAutomationFlowRequest = {
@@ -2839,6 +2796,19 @@ export type ListCommunicationUsersResponses = {
 
 export type ListCommunicationUsersResponse = ListCommunicationUsersResponses[keyof ListCommunicationUsersResponses];
 
+export type GetFormSchemaContractData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/form-schema-contract';
+};
+
+export type GetFormSchemaContractResponses = {
+    200: ApiResponseValue;
+};
+
+export type GetFormSchemaContractResponse = GetFormSchemaContractResponses[keyof GetFormSchemaContractResponses];
+
 export type DeleteFormData = {
     body?: never;
     path: {
@@ -2933,21 +2903,6 @@ export type CreateDetailFormResponses = {
 };
 
 export type CreateDetailFormResponse = CreateDetailFormResponses[keyof CreateDetailFormResponses];
-
-export type PublishFormSchemaData = {
-    body?: never;
-    path: {
-        formUuid: string;
-    };
-    query?: never;
-    url: '/api/forms/{formUuid}/publish';
-};
-
-export type PublishFormSchemaResponses = {
-    200: ApiResponseApiSchemaPayload;
-};
-
-export type PublishFormSchemaResponse = PublishFormSchemaResponses[keyof PublishFormSchemaResponses];
 
 export type ListFormRecordsData = {
     body?: never;
@@ -3147,7 +3102,6 @@ export type GetFormSchemaData = {
         formUuid: string;
     };
     query?: {
-        scope?: string;
         version?: number;
     };
     url: '/api/forms/{formUuid}/schema';
@@ -3159,20 +3113,20 @@ export type GetFormSchemaResponses = {
 
 export type GetFormSchemaResponse = GetFormSchemaResponses[keyof GetFormSchemaResponses];
 
-export type SaveFormSchemaDraftData = {
+export type SaveFormSchemaData = {
     body: SaveSchemaRequest;
     path: {
         formUuid: string;
     };
     query?: never;
-    url: '/api/forms/{formUuid}/schema/draft';
+    url: '/api/forms/{formUuid}/schema';
 };
 
-export type SaveFormSchemaDraftResponses = {
+export type SaveFormSchemaResponses = {
     200: ApiResponseApiSchemaPayload;
 };
 
-export type SaveFormSchemaDraftResponse = SaveFormSchemaDraftResponses[keyof SaveFormSchemaDraftResponses];
+export type SaveFormSchemaResponse = SaveFormSchemaResponses[keyof SaveFormSchemaResponses];
 
 export type ListFormVersionsData = {
     body?: never;
@@ -3624,34 +3578,6 @@ export type TestPurchaseAiEmployeeResponses = {
 };
 
 export type TestPurchaseAiEmployeeResponse = TestPurchaseAiEmployeeResponses[keyof TestPurchaseAiEmployeeResponses];
-
-export type ListAiEmployeeConfigurationsData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/settings/ai-employees/configurations';
-};
-
-export type ListAiEmployeeConfigurationsResponses = {
-    200: ApiResponseVecAiEmployeeConfigurationResponse;
-};
-
-export type ListAiEmployeeConfigurationsResponse = ListAiEmployeeConfigurationsResponses[keyof ListAiEmployeeConfigurationsResponses];
-
-export type UpdateAiEmployeeConfigurationData = {
-    body: UpdateAiEmployeeConfigurationRequest;
-    path: {
-        employee_id: string;
-    };
-    query?: never;
-    url: '/api/settings/ai-employees/configurations/{employee_id}';
-};
-
-export type UpdateAiEmployeeConfigurationResponses = {
-    200: ApiResponseAiEmployeeConfigurationResponse;
-};
-
-export type UpdateAiEmployeeConfigurationResponse = UpdateAiEmployeeConfigurationResponses[keyof UpdateAiEmployeeConfigurationResponses];
 
 export type GetCommunicationModuleSettingsData = {
     body?: never;

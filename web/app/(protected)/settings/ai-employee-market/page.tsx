@@ -15,6 +15,7 @@ type MarketEmployee = {
   priceCents: number;
   billingCycle: "month" | "year" | "one_time";
   version: string;
+  avatarUrl?: string | null;
   latestPackageVersion: string;
   installedPackageVersion: string | null;
   owned: boolean;
@@ -152,7 +153,7 @@ export default function AiEmployeeMarketPage() {
       <SettingsContentCard
         title="AI员工市场"
         subtitle="浏览运营管理平台上架的 AI 员工，购买权益后安装到当前客户环境。"
-        headerActions={<div className="flex items-center gap-1"><Popover><Popover.Trigger><Button isIconOnly variant="ghost" className="bg-[var(--color-warning-soft)] text-[var(--color-warning)] hover:bg-[var(--color-warning-soft)]" aria-label="AI 员工包管理说明"><CircleExclamation className="h-4 w-4" /></Button></Popover.Trigger><Popover.Content className="w-[min(24rem,calc(100vw-2rem))] !border !border-[var(--color-border)] !bg-[var(--color-bg-surface)] p-4 !opacity-100 shadow-[var(--shadow-floating)]"><Popover.Dialog aria-label="AI 员工包管理说明" className="space-y-3 text-xs leading-5 text-[var(--color-text-primary)]"><p className="font-semibold">AI 员工包管理</p><p>运营管理平台维护 AI 员工商品、版本和授权权益。安装或更新时，当前平台会校验许可证，拉取员工定义和每个绑定 Skill 的受保护 ZIP 文件包。</p><div className="space-y-1 rounded-md bg-[var(--color-bg-subtle)] p-3"><p className="font-medium">本地固定存储</p><p>安装清单：<code className="break-all font-mono">runtime/state/installed-ai-employees.json</code></p><p>员工元数据：<code className="break-all font-mono">runtime/state/installed-ai-employee-packages.json</code></p><p>Skill 文件：<code className="break-all font-mono">resources/skills/&lt;包名&gt;/</code></p></div><p>ZIP 会在路径校验和大小限制下解压；Python 等文件不会自动执行。以上路径由后端固定，无需配置环境变量。</p></Popover.Dialog></Popover.Content></Popover><Tooltip><Tooltip.Trigger><Button isIconOnly variant="secondary" aria-label="刷新 AI 员工市场" isDisabled={loading} onPress={() => void load()}><ArrowRotateRight className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /></Button></Tooltip.Trigger><Tooltip.Content>刷新</Tooltip.Content></Tooltip></div>}
+        headerActions={<div className="flex items-center gap-1"><Popover><Popover.Trigger><Button isIconOnly variant="ghost" className="bg-[var(--color-warning-soft)] text-[var(--color-warning)] hover:bg-[var(--color-warning-soft)]" aria-label="AI 员工包管理说明"><CircleExclamation className="h-4 w-4" /></Button></Popover.Trigger><Popover.Content className="w-[min(24rem,calc(100vw-2rem))] !border !border-[var(--color-border)] !bg-[var(--color-bg-surface)] p-4 !opacity-100 shadow-[var(--shadow-floating)]"><Popover.Dialog aria-label="AI 员工包管理说明" className="space-y-3 text-xs leading-5 text-[var(--color-text-primary)]"><p className="font-semibold">AI 员工包管理</p><p>运营管理平台维护 AI 员工商品、版本和授权权益。安装或更新时，平台校验许可证并保存受签名保护的员工定义；Cordis 会在运行时读取有效定义。</p><div className="space-y-1 rounded-md bg-[var(--color-bg-subtle)] p-3"><p className="font-medium">本地固定存储</p><p>安装清单：<code className="break-all font-mono">runtime/state/installed-ai-employees.json</code></p><p>授权快照：<code className="break-all font-mono">runtime/state/installed-ai-employee-packages.json</code></p></div><p>客户只能安装、更新和移除授权员工；Persona、Skills、工具边界和系统提示词由运营端发布。</p></Popover.Dialog></Popover.Content></Popover><Tooltip><Tooltip.Trigger><Button isIconOnly variant="secondary" aria-label="刷新 AI 员工市场" isDisabled={loading} onPress={() => void load()}><ArrowRotateRight className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /></Button></Tooltip.Trigger><Tooltip.Content>刷新</Tooltip.Content></Tooltip></div>}
       >
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -174,7 +175,7 @@ export default function AiEmployeeMarketPage() {
           {error ? <p className="py-3 text-sm text-[var(--color-danger)]">{error}</p> : null}
           {!error && filtered.length ? <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">
             {filtered.map((employee) => <Card className="flex min-w-0 flex-col border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4 shadow-none transition-colors hover:border-[var(--color-primary)]" key={employee.id}>
-              <div className="flex min-w-0 items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-soft)] text-[var(--color-primary)]"><FaceRobot className="h-5 w-5" /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-1.5"><h3 className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{employee.title}</h3><Chip size="sm" variant="soft">{employee.category}</Chip></div><p className="mt-1 truncate font-mono text-xs text-[var(--color-text-secondary)]">{employee.id} · v{employee.version}</p></div><OwnershipChip employee={employee} /></div>
+              <div className="flex min-w-0 items-start gap-3"><MarketEmployeeAvatar employee={employee} /><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-1.5"><h3 className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{employee.title}</h3><Chip size="sm" variant="soft">{employee.category}</Chip></div><p className="mt-1 truncate font-mono text-xs text-[var(--color-text-secondary)]">{employee.id} · v{employee.version}</p></div><OwnershipChip employee={employee} /></div>
               {employee.installed ? <>
                 <div className="mt-3 flex min-w-0 items-center justify-between gap-3 border-t border-[var(--color-border)] pt-3"><p className="min-w-0 truncate font-mono text-xs text-[var(--color-text-secondary)]">包 v{employee.installedPackageVersion || "未知"} → v{employee.latestPackageVersion}</p><div className="text-right"><p className="text-xs text-[var(--color-text-secondary)]">有效期至</p><p className="mt-1 whitespace-nowrap text-xs font-medium">{employee.expiresAt ? formatExpiry(employee.expiresAt) : "永久有效"}</p></div></div>
                 <div className="mt-3 flex justify-end gap-2 border-t border-[var(--color-border)] pt-3"><Button size="sm" isPending={syncingId === employee.id} isDisabled={Boolean(syncingId) || Boolean(removingId) || (employee.expiresAt !== null && employee.expiresAt < currentTimestamp)} onPress={() => void sync(employee)}>{employee.installedPackageVersion !== employee.latestPackageVersion ? "更新" : "同步"}</Button><Button size="sm" variant="danger-soft" isPending={removingId === employee.id} isDisabled={Boolean(syncingId) || Boolean(removingId)} onPress={() => void remove(employee)}>移除</Button></div>
@@ -193,13 +194,24 @@ function CategoryFilter({ label, count, active, onPress }: { label: string; coun
 }
 
 function Summary({ label, value }: { label: string; value: number }) {
-  return <Card className="p-3 shadow-none"><p className="text-xs text-[var(--color-text-secondary)]">{label}</p><p className="mt-1 text-lg font-semibold">{value}</p></Card>;
+  return <Card><p className="text-xs text-[var(--color-text-secondary)]">{label}</p><p className="mt-1 text-lg font-semibold">{value}</p></Card>;
 }
 
 function OwnershipChip({ employee }: { employee: MarketEmployee }) {
   if (employee.installed) return <Chip size="sm" color="success" variant="soft">已安装</Chip>;
   if (employee.owned) return <Chip size="sm" color="accent" variant="soft">已经拥有，未安装</Chip>;
   return <Chip size="sm" variant="soft">未购买</Chip>;
+}
+
+function MarketEmployeeAvatar({ employee }: { employee: MarketEmployee }) {
+  const [failed, setFailed] = useState(false);
+  // Always probe the stable platform proxy URL. Older cached market payloads
+  // may omit avatarUrl even though the employee already has an avatar.
+  const src = employee.avatarUrl || `/api/ai-employees/${encodeURIComponent(employee.id)}/avatar`;
+  if (failed) {
+    return <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-soft)] text-[var(--color-primary)]"><FaceRobot className="h-5 w-5" /></span>;
+  }
+  return <img src={src} alt={`${employee.title}头像`} className="h-9 w-9 shrink-0 rounded-md object-cover" onError={() => setFailed(true)} />;
 }
 
 

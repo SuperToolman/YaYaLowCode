@@ -1,31 +1,33 @@
-export type PendingAction = {
-  id: string;
-  actionType: string;
-  summary: string;
-  status: "pending";
-  createdAt: string;
-  expiresAt: string;
-};
-
 export type AttachedImage = { id: string; name: string; previewUrl: string };
-export type AgentToolActivity = { id: string; name: string; resourceName?: string; status: "running" | "completed" };
-export type AgentOption = { id: string; name: string; description: string; isAiEmployee: boolean };
+export type AttachedFile = { id: string; name: string; mimeType: string; size: number };
+export type AgentToolActivity = { id: string; name: string; resourceName?: string; status: "running" | "completed"; arguments?: unknown; command?: string; result?: unknown; error?: unknown };
+export type AgentTimelineItem =
+  | { id: string; type: "reasoning"; text: string }
+  | { id: string; type: "tool"; activity: AgentToolActivity }
+  | { id: string; type: "answer"; text: string };
+export type AgentTimelineInput =
+  | { type: "reasoning"; text: string }
+  | { type: "tool"; activity: AgentToolActivity }
+  | { type: "answer"; text: string };
+export type AgentOption = { id: string; name: string; description: string; isAiEmployee: boolean; avatarUrl?: string | null };
 
 export type AgentMessage = {
   id: string;
+  sessionId?: string;
   role: "assistant" | "user";
   content: string;
   createdAt?: string;
   metadata?: unknown;
   runId?: string;
   toolActivities?: AgentToolActivity[];
+  reasoning?: string;
   attachments?: AttachedImage[];
-  pendingActions?: PendingAction[];
+  files?: AttachedFile[];
+  timeline?: AgentTimelineItem[];
 };
 
-export type SessionSource = "general" | "schema_analysis" | "form_fill";
+export type SessionSource = "general" | "form_fill";
 export type SessionFilter = "all" | SessionSource;
-export type AgentApprovalMode = "request_approval" | "approve_on_behalf" | "full_access";
 export type AgentSession = {
   id: string;
   agentId: string;
@@ -52,13 +54,26 @@ export type AgentRunTrace = {
 };
 
 export type AgentSseEvent =
+  | { type: "artifact.created"; id: string; name: string; mimeType?: string; size?: number; sessionId: string }
+  | { type: "dsh.session.event"; event: DshSessionEvent }
   | { type: "message.delta"; delta: string }
+  | { type: "reasoning.delta"; delta: string }
   | { type: "message.completed"; runId?: string }
-  | { type: "tool.started"; name: string; resourceName?: string }
-  | { type: "tool.completed"; pendingAction?: { id: string; summary: string; actionType: string; expiresInSeconds: number } }
-  | { type: "run.paused"; action: PendingAction }
+  | { type: "tool.started"; name: string; resourceName?: string; callId?: string; arguments?: unknown; command?: string }
+  | { type: "tool.completed"; callId?: string; result?: unknown; error?: unknown }
+  | { type: "step.started"; turn: number; step: number }
+  | { type: "step.completed"; turn: number; step: number }
   | { type: "status" }
   | { type: "run.completed" }
   | { type: "run.failed"; message: string }
   | { type: "message.failed"; message: string }
   | { type: "unknown"; eventName: string; payload: unknown };
+
+export type DshSessionEvent = {
+  type: string;
+  seq: number;
+  time: number;
+  data: Record<string, unknown>;
+  surfaceOp?: unknown;
+  sourceEventSeqs?: number[];
+};

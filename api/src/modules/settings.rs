@@ -1,8 +1,8 @@
 //! Local platform settings persisted by the Rust backend.
 
-use axum::Json;
 use axum::extract::Path;
 use axum::http::StatusCode;
+use axum::{Json, body::Body, response::Response};
 use sea_orm::{
     ConnectOptions, ConnectionTrait, Database, DbBackend, Statement, TransactionTrait,
     Value as SeaValue,
@@ -40,6 +40,7 @@ pub(crate) struct AiEmployeeMarketItem {
     pub price_cents: i64,
     pub billing_cycle: String,
     pub version: String,
+    pub avatar_url: Option<String>,
     pub installed_version: Option<String>,
     pub latest_package_version: String,
     pub installed_package_version: Option<String>,
@@ -67,6 +68,44 @@ struct OperationMarketProduct {
     price_cents: i64,
     billing_cycle: String,
     version: String,
+    avatar_url: Option<String>,
+}
+
+pub(crate) async fn get_ai_employee_avatar(
+    Path(employee_id): Path<String>,
+) -> Result<Response, AppError> {
+    let operation_url = license_status()
+        .license_center_url
+        .ok_or_else(|| AppError::NotFound("AI employee avatar".to_string()))?;
+    let url = format!(
+        "{}/api/ai-employees/{}/avatar",
+        operation_url.trim_end_matches('/'),
+        employee_id
+    );
+    let response = reqwest::Client::new()
+        .get(url)
+        .send()
+        .await
+        .map_err(|_| AppError::NotFound("AI employee avatar".to_string()))?;
+    if !response.status().is_success() {
+        return Err(AppError::NotFound("AI employee avatar".to_string()));
+    }
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("image/webp")
+        .to_string();
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|_| AppError::NotFound("AI employee avatar".to_string()))?;
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", content_type)
+        .header("cache-control", "no-store")
+        .body(Body::from(bytes))
+        .map_err(|_| AppError::NotFound("AI employee avatar".to_string()))
 }
 
 #[derive(Deserialize)]
@@ -83,6 +122,21 @@ struct OperationMarketEnvelope<T> {
 pub(crate) struct AiEmployeeInstallationStatus {
     employee_id: String,
     installed: bool,
+}
+
+/// Runtime-safe AI employee definition derived from a signed license and the
+/// locally installed package metadata. Customer input never changes it.
+#[derive(Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RuntimeAiEmployee {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub system_prompt: String,
+    pub skills: Vec<crate::platform::license::PlatformAiEmployeeSkill>,
+    pub allowed_tools: Vec<String>,
+    pub application_ids: Vec<String>,
+    pub avatar_url: Option<String>,
 }
 
 fn require_local_deployment() -> Result<(), AppError> {
@@ -318,14 +372,79 @@ pub(crate) async fn get_ai_employee_market()
                 price_cents: product.price_cents,
                 billing_cycle: product.billing_cycle,
                 version: product.version,
+                avatar_url: product.avatar_url,
             }
         })
         .collect();
     Ok(Json(success_response("AI 员工市场已读取", items)))
 }
 
+pub(crate) async fn list_runtime_ai_employees()
+-> Result<Json<ApiResponse<Vec<RuntimeAiEmployee>>>, AppError> {
+    let status = license_status();
+    if !status.valid {
+        return Ok(Json(success_response(
+            "runtime AI employees loaded",
+            Vec::new(),
+        )));
+    }
+    let installed = load_installed_ai_employees();
+    let packages = load_installed_ai_employee_packages();
+    let now = chrono::Utc::now().timestamp();
+    let employees = status
+        .ai_employees
+        .into_iter()
+        .filter_map(|entitlement| {
+            if !installed.contains(&entitlement.id) || entitlement.expires_at < now {
+                return None;
+            }
+            let package = packages
+                .get(&entitlement.id)
+                .and_then(|value| {
+                    serde_json::from_value::<PlatformAiEmployeeEntitlement>(value.clone()).ok()
+                })
+                .unwrap_or_else(|| entitlement.clone());
+            if package.expires_at < now {
+                return None;
+            }
+            let system_prompt = package.system_prompt.clone();
+            let skills = package
+                .skills
+                .into_iter()
+                .map(|mut skill| {
+                    if skill.plugin_manifest_json.trim().is_empty() {
+                        skill.plugin_manifest_json = serde_json::json!({
+                            "id": skill.id,
+                            "version": skill.version,
+                            "kind": "skill",
+                            "entrypoint": skill.package_path,
+                            "tools": [],
+                        })
+                        .to_string();
+                    }
+                    skill
+                })
+                .collect();
+            let employee_id = package.id.clone();
+            Some(RuntimeAiEmployee {
+                id: employee_id.clone(),
+                title: package.title,
+                description: "运营中心授权的 AI 员工".to_string(),
+                system_prompt,
+                skills,
+                allowed_tools: package.allowed_tools,
+                application_ids: package.application_ids,
+                avatar_url: Some(format!("/api/ai-employees/{}/avatar", employee_id)),
+            })
+        })
+        .collect();
+    Ok(Json(success_response(
+        "runtime AI employees loaded",
+        employees,
+    )))
+}
+
 pub(crate) async fn install_ai_employee(
-    axum::extract::State(state): axum::extract::State<AppState>,
     Path(employee_id): Path<String>,
 ) -> Result<Json<ApiResponse<AiEmployeeInstallationStatus>>, AppError> {
     license_status()
@@ -344,20 +463,12 @@ pub(crate) async fn install_ai_employee(
         &employee_id,
     )
     .await?;
-    sync_ai_employee_skill_packages(
-        &state,
-        &settings.license_center_url,
-        &settings.license,
-        &entitlement,
-    )
-    .await?;
     save_installed_ai_employee_package(
         &employee_id,
         serde_json::to_value(&entitlement)
             .map_err(|error| AppError::Server(std::io::Error::other(error)))?,
     )
     .map_err(AppError::Server)?;
-    crate::modules::agent_config::sync_installed_ai_employee_runtime(&state, &entitlement).await?;
     let mut installed = load_installed_ai_employees();
     installed.insert(employee_id.clone());
     save_installed_ai_employees(&installed).map_err(AppError::Server)?;
@@ -371,7 +482,6 @@ pub(crate) async fn install_ai_employee(
 }
 
 pub(crate) async fn uninstall_ai_employee(
-    axum::extract::State(state): axum::extract::State<AppState>,
     Path(employee_id): Path<String>,
 ) -> Result<Json<ApiResponse<AiEmployeeInstallationStatus>>, AppError> {
     let mut installed = load_installed_ai_employees();
@@ -380,8 +490,6 @@ pub(crate) async fn uninstall_ai_employee(
     }
     save_installed_ai_employees(&installed).map_err(AppError::Server)?;
     remove_installed_ai_employee_package(&employee_id).map_err(AppError::Server)?;
-    crate::modules::agent_config::disable_installed_ai_employee_runtime(&state, &employee_id)
-        .await?;
     Ok(Json(success_response(
         "AI 员工已移除",
         AiEmployeeInstallationStatus {
@@ -425,60 +533,6 @@ async fn fetch_owned_ai_employee_package(
     payload
         .data
         .ok_or_else(|| AppError::BadRequest("运营管理平台未返回 AI 员工安装包".to_string()))
-}
-
-async fn sync_ai_employee_skill_packages(
-    state: &AppState,
-    operation_url: &str,
-    license: &str,
-    entitlement: &PlatformAiEmployeeEntitlement,
-) -> Result<(), AppError> {
-    for skill in &entitlement.skills {
-        let archive = fetch_owned_ai_employee_skill_archive(
-            operation_url,
-            license,
-            &entitlement.id,
-            &skill.id,
-        )
-        .await?;
-        crate::modules::agent_config::install_ai_employee_skill_package(state, skill, &archive)
-            .await?;
-    }
-    Ok(())
-}
-
-async fn fetch_owned_ai_employee_skill_archive(
-    operation_url: &str,
-    license: &str,
-    employee_id: &str,
-    skill_id: &str,
-) -> Result<Vec<u8>, AppError> {
-    let url = format!(
-        "{}/api/market/ai-employees/{}/skills/{}/archive",
-        operation_url.trim_end_matches('/'),
-        employee_id,
-        skill_id,
-    );
-    let response = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|error| AppError::Server(std::io::Error::other(error)))?
-        .get(url)
-        .bearer_auth(license)
-        .send()
-        .await
-        .map_err(|_| AppError::BadRequest("运营管理平台 Skill 文件包暂时不可访问".to_string()))?;
-    if !response.status().is_success() {
-        return Err(AppError::BadRequest("运营管理平台拒绝了 AI 员工 Skill 文件包请求".to_string()));
-    }
-    let archive = response
-        .bytes()
-        .await
-        .map_err(|_| AppError::BadRequest("运营管理平台返回了无效的 AI 员工 Skill 文件包".to_string()))?;
-    if archive.is_empty() {
-        return Err(AppError::BadRequest("运营管理平台返回了空的 AI 员工 Skill 文件包".to_string()));
-    }
-    Ok(archive.to_vec())
 }
 
 pub(crate) async fn test_purchase_ai_employee(

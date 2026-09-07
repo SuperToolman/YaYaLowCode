@@ -1,5 +1,6 @@
 ﻿import { COLUMN_COUNT } from "./designer-constants";
 import { getRowCount, normalizeRichTextLayouts } from "./designer-layout";
+import { getDefaultDesignerFieldProps } from "./components/CompTool";
 import type { PageDesignerProps, PlacedField } from "./designer-types";
 import {
   getDefaultActionPanelCode,
@@ -42,14 +43,6 @@ export function getDefaultPageDesignerProps(): PageDesignerProps {
       enabled: false,
       agentId: "",
       prompt: "",
-      context: {
-        generated: "",
-        overrides: "",
-        generatedAt: "",
-        sourceHash: "",
-        status: "idle",
-        error: "",
-      },
     },
   };
 }
@@ -58,6 +51,10 @@ export function normalizePageDesignerProps(
   pageProps?: Partial<PageDesignerProps> | null,
 ): PageDesignerProps {
   const defaults = getDefaultPageDesignerProps();
+  const agent = {
+    ...defaults.agent,
+    ...pageProps?.agent,
+  };
 
   return {
     ...defaults,
@@ -83,15 +80,26 @@ export function normalizePageDesignerProps(
       ...pageProps?.actionPanel,
       code: normalizeActionPanelCode(pageProps?.actionPanel),
     },
-    agent: {
-      ...defaults.agent,
-      ...pageProps?.agent,
-      context: {
-        ...defaults.agent.context,
-        ...pageProps?.agent?.context,
-      },
-    },
+    // Historical schemas may contain enabled=true without an employee binding.
+    // Treat those records as the explicit "Agent disabled" option.
+    agent: { ...agent, enabled: Boolean(agent.enabled && agent.agentId) },
   };
+}
+
+/** Restores defaults for fields persisted by older schema versions. */
+export function normalizeDesignerFields(fields?: PlacedField[] | null): PlacedField[] {
+  return normalizeRichTextLayouts(
+    (fields ?? [])
+      .filter((field): field is PlacedField => Boolean(field))
+      .map((field) => ({
+        ...field,
+        parentGroupId: field.parentGroupId ?? null,
+        props: {
+          ...getDefaultDesignerFieldProps(field.type),
+          ...(field.props ?? {}),
+        },
+      })),
+  );
 }
 
 export function buildSchema(

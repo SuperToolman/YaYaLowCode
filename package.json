@@ -5,7 +5,7 @@
   "packageManager": "pnpm@11.1.2",
   "scripts": {
     "dev": "pnpm dev:web",
-    "dev:agent": "pnpm --dir agent dev",
+    "dev:agent": "pnpm --dir agent/deepseek-harness yaya-agent-host",
     "dev:all": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-dev.ps1",
     "build": "pnpm export:openapi && pnpm codegen:api && pnpm build:web",
     "lint": "pnpm lint:web",
@@ -18,6 +18,6 @@
     "build:desktop": "pnpm --dir web desktop:build",
     "lint:web": "pnpm --dir web lint",
     "check:api": "cargo check --manifest-path api/Cargo.toml",
-    "check:agent": "pnpm --dir agent check"
+    "check:agent": "pnpm --dir agent/deepseek-harness typecheck"
   }
 }

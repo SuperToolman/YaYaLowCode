@@ -1,34 +1,26 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Avatar, Button, Card, Dropdown, Input, ListBox, SearchField, Select } from "@heroui/react";
+import { Avatar, Button, Card, Chip, Dropdown, Input, SearchField, TextArea, toast } from "@heroui/react";
+import { MyAvatar } from "./my-avatar";
 import { AlertDialog } from "@heroui/react/alert-dialog";
 import { Modal } from "@heroui/react/modal";
-import {
-  ArrowRight,
-  Calendar,
-  Ellipsis,
-  Clock,
-  Plus,
-  Rocket,
-} from "@gravity-ui/icons";
+import { Calendar, Clock, Ellipsis, Plus, Rocket } from "@gravity-ui/icons";
 import { createApp, listApps, type App as ApiApp } from "@/features/application/api";
-import { AppIcon } from "./app-icons";
 import { HomeQuickAccess } from "./home-page-client";
+import { AppIcon } from "./app-icons";
+import { MySurface } from "./my-surface";
+import { FieldOutlineModal } from "./field-outline-modal";
+import { PageContentLayout } from "./page-content-layout";
 import { useAuth } from "./auth-provider";
 import {
   appColorToneClass,
-  appStatusLabel,
-  appStatusTone,
+  appColorBorderClass,
   normalizeAppColorTone,
   type AppItem,
-  type AppStatus,
 } from "../lib/apps";
-
-const statusOrder: AppStatus[] = ["enabled", "paused", "draft"];
 
 type MyAppPageClientProps = {
   initialApps: AppItem[];
@@ -40,19 +32,26 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
   const [busyAppId, setBusyAppId] = useState<string | null>(null);
   const [renameApp, setRenameApp] = useState<AppItem | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [renameDescription, setRenameDescription] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createDescription, setCreateDescription] = useState("");
   const [deleteApp, setDeleteApp] = useState<AppItem | null>(null);
+  const [submittingAppId, setSubmittingAppId] = useState<string | null>(null);
+  const [isFieldOutlineOpen, setIsFieldOutlineOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "enabled" | "paused">("all");
   const router = useRouter();
   const { hasPermission, user } = useAuth();
   const canManageApps = hasPermission("apps.manage");
   const canImportApps = hasPermission("apps.import");
+  const isSystemAdministrator = hasPermission("*");
 
   useEffect(() => {
     let cancelled = false;
 
     startTransition(async () => {
       try {
+        await fetch("/api/market/applications/sync", { method: "POST" });
         const { data, error } = await listApps({
           responseStyle: "fields",
         });
@@ -61,10 +60,12 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
           throw new Error("load apps failed");
         }
 
-        if (!cancelled && data.data.length > 0) {
+        if (!cancelled) {
           setApps(sortApps(data.data.map(toAppItem).map(normalizeAppItem)));
         }
-      } catch { }
+      } catch (cause) {
+        if (!cancelled) toast.danger("应用列表加载失败", { description: cause instanceof Error ? cause.message : "请刷新后重试" });
+      }
     });
 
     return () => {
@@ -72,22 +73,29 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
     };
   }, []);
 
+  useEffect(() => {
+    const reload = () => {
+      void listApps({ responseStyle: "fields" }).then(({ data }) => {
+        if (data?.code === 0 && data.data) setApps(sortApps(data.data.map(toAppItem).map(normalizeAppItem)));
+      }).catch(() => undefined);
+    };
+    window.addEventListener("yaya-apps-updated", reload);
+    return () => window.removeEventListener("yaya-apps-updated", reload);
+  }, []);
+
   const filteredApps = sortApps(apps).filter((app) => {
-    const matchesStatus = statusFilter === "all" || app.status === statusFilter;
     const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
     const matchesQuery = !normalizedQuery || [app.name, app.owner, app.desc]
       .some((value) => value.toLocaleLowerCase("zh-CN").includes(normalizedQuery));
-    return matchesStatus && matchesQuery;
+    return matchesQuery;
   });
-  const enabledCount = apps.filter((app) => app.status === "enabled").length;
-  const pausedCount = apps.filter((app) => app.status === "paused").length;
   const totalRecords = apps.reduce((total, app) => total + app.records, 0);
 
   async function handleCreateApp() {
     startTransition(async () => {
       try {
         const { data, error } = await createApp({
-          body: {},
+          body: { name: createName.trim() || undefined, description: createDescription.trim() || undefined },
           responseStyle: "fields",
         });
 
@@ -97,41 +105,12 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
 
         const createdApp = toAppItem(data.data);
         setApps((current) => sortApps([normalizeAppItem(createdApp), ...current]));
+        setCreateOpen(false);
+        setCreateName("");
+        setCreateDescription("");
         router.push(`/${createdApp.id}`);
       } catch { }
     });
-  }
-
-  async function handleToggleApp(app: AppItem) {
-    setBusyAppId(app.id);
-
-    try {
-      const nextStatus = app.status === "enabled" ? "paused" : "enabled";
-      const response = await fetch(`/api/apps/${app.id}`, {
-        method: "PATCH",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ status: nextStatus }),
-      });
-      const payload = (await response.json()) as {
-        code: number;
-        data: ApiApp | null;
-        message: string;
-      };
-
-      if (payload.code !== 0 || !payload.data) {
-        throw new Error(payload.message);
-      }
-
-      const updatedApp = normalizeAppItem(toAppItem(payload.data));
-      setApps((current) =>
-        sortApps(current.map((item) => (item.id === app.id ? updatedApp : item))),
-      );
-    } catch {
-    } finally {
-      setBusyAppId(null);
-    }
   }
 
   async function handleRenameApp(app: AppItem) {
@@ -150,7 +129,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify({ name: nextName }),
+        body: JSON.stringify({ name: nextName, description: renameDescription.trim() }),
       });
       const payload = (await response.json()) as {
         code: number;
@@ -167,7 +146,8 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
         sortApps(current.map((item) => (item.id === app.id ? updatedApp : item))),
       );
       setRenameApp(null);
-    } catch {
+    } catch (cause) {
+      toast.danger("应用更新失败", { description: cause instanceof Error ? cause.message : "请稍后重试" });
     } finally {
       setBusyAppId(null);
     }
@@ -191,219 +171,130 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
 
       setApps((current) => current.filter((item) => item.id !== app.id));
       setDeleteApp(null);
-    } catch {
+    } catch (cause) {
+      toast.danger("删除应用失败", { description: cause instanceof Error ? cause.message : "请稍后重试" });
     } finally {
       setBusyAppId(null);
     }
   }
 
+  async function handleSubmitMarket(app: AppItem) {
+    setSubmittingAppId(app.id);
+    try {
+      const response = await fetch(`/api/apps/${encodeURIComponent(app.id)}/market-submission`, { method: "POST" });
+      const payload = await response.json() as { code: number; message: string };
+      if (!response.ok || payload.code !== 0) throw new Error(payload.message || "上线申请失败");
+      toast.success("上线申请已提交", { description: payload.message || "申请已发送，等待运营中心审核。" });
+    } catch (cause) {
+      toast.danger("上线申请失败", { description: cause instanceof Error ? cause.message : "请稍后重试。" });
+    } finally {
+      setSubmittingAppId(null);
+    }
+  }
+
   return (
-    <div className="theme-page-shell h-full min-h-0">
-      <main className="mx-auto flex h-full min-h-0 w-full flex-col gap-4 pb-6">
-        <Card className="shrink-0 border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4 shadow-none sm:p-5">
-          <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-[var(--color-primary)]">应用中心</p>
-            <h1 className="mt-1 text-2xl font-semibold leading-tight text-[var(--color-text-primary)]">你好，{user?.displayName || "管理员"}</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--color-text-secondary)]">集中管理应用与业务入口。</p>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-3">
+    <PageContentLayout
+      title={`你好，${user?.displayName || "管理员"}`}
+      subtitle="集中管理应用与业务入口。"
+      center={
+        <SearchField aria-label="搜索应用" value={query} onChange={setQuery}>
+          <SearchField.Group>
+            <SearchField.SearchIcon />
+            <SearchField.Input placeholder="搜索应用名称或负责人" />
+            <SearchField.ClearButton aria-label="清除应用搜索" />
+          </SearchField.Group>
+        </SearchField>
+      }
+      actions={
+        <>
+                <Button onPress={() => setIsFieldOutlineOpen(true)}>
+                  字段大纲
+                </Button>
                 {canManageApps ? (
-                  <Button
-                    onClick={handleCreateApp}
-                    isDisabled={isPending}
-                    className="h-10 gap-2 rounded-lg bg-[var(--color-primary)] px-4 text-sm font-medium text-[var(--color-text-on-primary)]"
-                  >
-                    <Plus className="h-4 w-4" />
+                    <Button onClick={() => setCreateOpen(true)} isDisabled={isPending}>
+                    <Plus />
                     {isPending ? "创建中..." : "创建应用"}
                   </Button>
                 ) : null}
                 {canImportApps ? (
-                  <Button
-                    variant="ghost"
-                    className="h-10 gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-4 text-sm font-medium text-[var(--color-text-primary)]"
-                  >
-                    <Rocket className="h-4 w-4" />
+                  <Button>
+                    <Rocket />
                     导入应用
                   </Button>
                 ) : null}
-          </div>
-          </header>
-        </Card>
+        </>
+      }
+    >
+      <main className="mx-auto flex h-full min-h-0 w-full flex-col gap-4">
 
-        <Card className="flex min-h-0 flex-1 flex-col border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4 shadow-none sm:p-5">
+        <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <Card.Content className="flex min-h-0 flex-1 flex-col px-4 py-4 sm:px-6 sm:py-5">
           <HomeQuickAccess apps={apps} />
 
-          <section aria-labelledby="applications-heading" className="mt-6 flex min-h-0 flex-1 flex-col border-t border-[var(--color-border)] pt-5">
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-              <div>
-                <div className="flex items-center gap-3">
-                  <h2 id="applications-heading" className="text-base font-semibold text-[var(--color-text-primary)]">应用筛选</h2>
-                  <span className="text-sm text-[var(--color-text-secondary)]">{filteredApps.length} / {apps.length}</span>
-                </div>
-                <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <Select
-                    aria-label="应用状态筛选"
-                    className="w-full sm:w-36"
-                    selectedKey={statusFilter}
-                    onSelectionChange={(key) => setStatusFilter(String(key ?? "all") as typeof statusFilter)}
-                  >
-                    <Select.Trigger><Select.Value /><Select.Indicator /></Select.Trigger>
-                    <Select.Popover>
-                      <ListBox>
-                        <ListBox.Item id="all">全部状态</ListBox.Item>
-                        <ListBox.Item id="enabled">已启用</ListBox.Item>
-                        <ListBox.Item id="paused">已停用</ListBox.Item>
-                      </ListBox>
-                    </Select.Popover>
-                  </Select>
-                  <SearchField aria-label="搜索应用" value={query} onChange={setQuery} className="w-full sm:max-w-[320px]">
-                    <SearchField.Group>
-                      <SearchField.SearchIcon />
-                      <SearchField.Input placeholder="搜索应用名称或负责人" />
-                      <SearchField.ClearButton aria-label="清除应用搜索" />
-                    </SearchField.Group>
-                  </SearchField>
-                </div>
+          <section aria-labelledby="applications-heading" className="flex min-h-0 flex-1 flex-col pt-5">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-separator pb-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <h2 id="applications-heading" className="page-section-title">应用筛选</h2>
+                <span className="text-xs text-muted">{filteredApps.length} / {apps.length}</span>
               </div>
-              <dl className="grid grid-cols-2 gap-x-5 gap-y-4 border-t border-[var(--color-border)] pt-4 sm:grid-cols-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
-                <SummaryMetric label="应用总数" value={apps.length} />
-                <SummaryMetric label="已启用" value={enabledCount} />
-                <SummaryMetric label="已停用" value={pausedCount} />
+              <dl className="grid grid-cols-4 gap-x-5 sm:gap-x-7">
+                <SummaryMetric label="应用" value={apps.length} />
+                <SummaryMetric label="可见应用" value={apps.length} />
                 <SummaryMetric label="数据记录" value={totalRecords} />
               </dl>
             </div>
-          <div className="mt-6 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">全部应用</h2>
-            <span className="text-sm text-[var(--color-text-secondary)]">按创建时间排序</span>
+          <div className="mt-5 flex items-center justify-between">
+            <h2 className="page-section-title">全部应用</h2>
+            <p className="page-section-meta">按创建时间排序</p>
           </div>
-          <div className="mt-5 grid min-h-0 flex-1 grid-cols-1 content-start gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+          <div className="mt-5 grid min-h-0 flex-1 grid-cols-1 content-start gap-4 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {filteredApps.map((app) => (
-              <article
-                key={app.id}
-                className="group flex min-w-0 flex-col border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-3.5 shadow-none transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-bg-hover)]"
-              >
-                <div className="flex min-w-0 items-start gap-3">
-                  <span
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${appColorToneClass[app.color]}`}
-                  >
-                    <AppIcon type={app.icon} />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex min-w-0 items-center gap-1.5">
-                          <h2 className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
-                            {app.name}
-                          </h2>
-                          {app.badge ? (
-                            <span className="shrink-0 rounded bg-[var(--color-danger-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-danger)]">
-                              {app.badge}
-                            </span>
-                          ) : null}
-                        </div>
-                        <p className="mt-1 line-clamp-2 min-h-9 text-xs leading-[18px] text-[var(--color-text-secondary)]">
-                          {app.desc}
-                        </p>
-                      </div>
-                      {canManageApps || hasPermission(`app:${app.id}:edit_info`) ? <Dropdown>
-                        <Dropdown.Trigger
-                          aria-label={`${app.name} 更多操作`}
-                          className="inline-flex h-7 w-7 min-w-7 shrink-0 items-center justify-center rounded-md p-0 text-[var(--color-text-secondary)] opacity-0 transition-opacity hover:bg-[var(--color-bg-panel-soft)] group-hover:opacity-100 focus:opacity-100"
-                        >
-                          <Ellipsis className="h-4 w-4" />
-                        </Dropdown.Trigger>
-                        <Dropdown.Popover>
-                          <Dropdown.Menu
-                            aria-label={`${app.name} 操作菜单`}
-                            className="min-w-[160px]"
-                          >
-                            {hasPermission(`app:${app.id}:edit_info`) ? <Dropdown.Item
-                              id="toggle"
-                              isDisabled={busyAppId === app.id}
-                              onAction={() => void handleToggleApp(app)}
-                            >
-                              {app.status === "enabled" ? "关闭" : "启动"}
-                            </Dropdown.Item> : null}
-                            {hasPermission(`app:${app.id}:edit_info`) ? <Dropdown.Item
-                              id="rename"
-                              isDisabled={busyAppId === app.id}
-                              onAction={() => {
-                                setRenameApp(app);
-                                setRenameValue(app.name);
-                              }}
-                            >
-                              编辑名称
-                            </Dropdown.Item> : null}
-                            {canManageApps ? <Dropdown.Item
-                              id="delete"
-                              isDisabled={busyAppId === app.id}
-                              className="text-[var(--color-danger)]"
-                              onAction={() => setDeleteApp(app)}
-                            >
-                              删除应用
-                            </Dropdown.Item> : null}
-                          </Dropdown.Menu>
-                        </Dropdown.Popover>
-                      </Dropdown> : null}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  <span
-                    className={`inline-flex items-center rounded-md px-1.5 py-1 text-[11px] font-medium ${appStatusTone[app.status]}`}
-                  >
-                    {appStatusLabel[app.status]}
-                  </span>
-                  <InfoPill icon={<Clock />} text={`${app.records} 条`} />
-                  <InfoPill icon={<Calendar />} text={app.createdAt} />
-                </div>
-
-                <div className="mt-3 flex items-center justify-between border-t border-[var(--color-border)] pt-3">
-                  <div className="flex min-w-0 items-center gap-2 text-xs text-[var(--color-text-secondary)]">
-                    <Avatar className="h-6 w-6 shrink-0 text-[10px]">
-                      {app.ownerAvatarUrl ? <Avatar.Image src={app.ownerAvatarUrl} alt="" /> : null}
-                      <Avatar.Fallback>{app.owner.slice(0, 1)}</Avatar.Fallback>
-                    </Avatar>
-                    <span className="truncate">{app.owner}</span>
-                  </div>
-                  <Link
-                    href={`/${app.id}`}
-                    aria-label={`访问 ${app.name}`}
-                    className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-[var(--color-primary)] px-2 text-xs font-medium text-[var(--color-text-on-primary)] transition-colors hover:bg-[var(--color-primary-hover)] active:bg-[var(--color-primary-active)]"
-                  >
-                    打开
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </Link>
-                </div>
-              </article>
+              <AppCard key={app.id} app={app} onOpen={() => router.push(`/${app.id}`)} actions={(isSystemAdministrator || app.owner === user?.displayName) ? <Dropdown.Menu aria-label={`${app.name} 操作菜单`}>
+                <Dropdown.Item id="rename" isDisabled={busyAppId === app.id} onAction={() => { setRenameApp(app); setRenameValue(app.name); setRenameDescription(app.desc); }}>编辑应用</Dropdown.Item>
+                <Dropdown.Item id="delete" isDisabled={busyAppId === app.id} onAction={() => setDeleteApp(app)}>删除应用</Dropdown.Item>
+                    <Dropdown.Item id="market-submit" isDisabled={submittingAppId === app.id} onAction={() => void handleSubmitMarket(app)}><span className="flex items-center gap-2"><Rocket className="h-4 w-4" />上线申请</span></Dropdown.Item>
+              </Dropdown.Menu> : undefined} />
             ))}
-            {filteredApps.length === 0 ? <div className="col-span-full border border-dashed border-[var(--color-border)] py-12 text-center text-sm text-[var(--color-text-secondary)]">未找到匹配的应用</div> : null}
+            {filteredApps.length === 0 ? <div className="col-span-full py-12 text-center">未找到匹配的应用</div> : null}
           </div>
           </section>
+          </Card.Content>
         </Card>
       </main>
 
+      <FieldOutlineModal isOpen={isFieldOutlineOpen} onOpenChange={setIsFieldOutlineOpen} />
+
+      <Modal isOpen={createOpen} onOpenChange={setCreateOpen}>
+        <Modal.Backdrop isDismissable><Modal.Container placement="center" size="md"><Modal.Dialog>
+          <Modal.Header><Modal.Heading>创建应用</Modal.Heading></Modal.Header>
+          <Modal.Body className="space-y-3">
+            <label className="block text-sm">应用名称<Input className="mt-1" aria-label="应用名称" value={createName} onChange={(event) => setCreateName(event.currentTarget.value)} placeholder="请输入应用名称" autoFocus /></label>
+            <label className="block text-sm">应用描述<TextArea className="mt-1" aria-label="应用描述" value={createDescription} onChange={(event) => setCreateDescription(event.currentTarget.value)} placeholder="描述应用用途（可选）" /></label>
+          </Modal.Body>
+          <Modal.Footer><Button onPress={() => setCreateOpen(false)}>取消</Button><Button onPress={() => void handleCreateApp()} isDisabled={isPending || !createName.trim()}>创建</Button></Modal.Footer>
+        </Modal.Dialog></Modal.Container></Modal.Backdrop>
+      </Modal>
+
       <Modal isOpen={renameApp !== null} onOpenChange={(isOpen) => !isOpen && setRenameApp(null)}>
-        <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
+        <Modal.Backdrop isDismissable>
           <Modal.Container placement="center" size="md">
-            <Modal.Dialog className="rounded-2xl bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]">
-              <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
-                <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
-                  编辑应用名称
+            <Modal.Dialog>
+              <Modal.Header>
+                <Modal.Heading>
+                  编辑应用
                 </Modal.Heading>
               </Modal.Header>
-              <Modal.Body className="px-5 py-4">
+              <Modal.Body>
                 <Input
                   aria-label="应用名称"
                   value={renameValue}
                   onChange={(event) => setRenameValue(event.currentTarget.value)}
                   placeholder="请输入应用名称"
                 />
+                <label className="mt-3 block text-sm">应用描述<TextArea className="mt-1" aria-label="应用描述" value={renameDescription} onChange={(event) => setRenameDescription(event.currentTarget.value)} placeholder="请输入应用描述" /></label>
               </Modal.Body>
-              <Modal.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
-                <Button variant="ghost" onPress={() => setRenameApp(null)}>
+              <Modal.Footer>
+                <Button onPress={() => setRenameApp(null)}>
                   取消
                 </Button>
                 <Button
@@ -419,25 +310,24 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
       </Modal>
 
       <AlertDialog isOpen={deleteApp !== null} onOpenChange={(isOpen) => !isOpen && setDeleteApp(null)}>
-        <AlertDialog.Backdrop className="theme-modal-backdrop">
+        <AlertDialog.Backdrop>
           <AlertDialog.Container placement="center" size="md">
-            <AlertDialog.Dialog className="rounded-2xl bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]">
-              <AlertDialog.Header className="border-b border-[var(--color-border)] px-5 py-4">
-                <AlertDialog.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
+            <AlertDialog.Dialog>
+              <AlertDialog.Header>
+                <AlertDialog.Heading>
                   删除应用
                 </AlertDialog.Heading>
               </AlertDialog.Header>
-              <AlertDialog.Body className="px-5 py-4 text-sm leading-6 text-[var(--color-text-secondary)]">
+              <AlertDialog.Body>
                 {deleteApp
                   ? `确认删除应用“${deleteApp.name}”吗？这会同时删除该应用下的表单、版本和导航数据。`
                   : ""}
               </AlertDialog.Body>
-              <AlertDialog.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)] px-5 py-3">
-                <Button variant="ghost" onPress={() => setDeleteApp(null)}>
+              <AlertDialog.Footer>
+                <Button onPress={() => setDeleteApp(null)}>
                   取消
                 </Button>
                 <Button
-                  className="bg-[var(--color-danger)] text-[var(--color-text-on-danger)]"
                   isDisabled={!deleteApp || busyAppId === deleteApp.id}
                   onPress={() => deleteApp && void handleDeleteApp(deleteApp)}
                 >
@@ -448,59 +338,51 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
           </AlertDialog.Container>
         </AlertDialog.Backdrop>
       </AlertDialog>
-    </div>
+    </PageContentLayout>
   );
 }
 
 function sortApps(items: AppItem[]) {
   return [...items].sort((left, right) => {
-    const statusDelta =
-      statusOrder.indexOf(left.status) - statusOrder.indexOf(right.status);
-
-    if (statusDelta !== 0) {
-      return statusDelta;
-    }
-
     return right.createdAt.localeCompare(left.createdAt);
   });
+}
+
+function AppCard({ app, actions, onOpen }: { app: AppItem; actions?: ReactNode; onOpen: () => void }) {
+  const tone = appColorToneClass[app.color];
+  return <MySurface role="link" tabIndex={0} aria-label={`打开 ${app.name}`} onClick={onOpen} onKeyDown={(event: KeyboardEvent<HTMLElement>) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }} className={`group min-w-0 cursor-pointer overflow-hidden border-l-4 ${appColorBorderClass[app.color]} transition-all hover:-translate-y-0.5 hover:bg-default/70 hover:shadow-md focus-visible:ring-2 focus-visible:ring-focus`}>
+    <div className="flex min-h-52 flex-col p-4">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar className={`shrink-0 ${tone}`}><Avatar.Fallback><AppIcon type={app.icon} /></Avatar.Fallback></Avatar>
+          <div className="min-w-0"><div className="flex min-w-0 items-center gap-2"><h3 className="truncate text-sm font-semibold text-foreground">{app.name}</h3>{app.badge ? <Chip size="sm" className={tone}>{app.badge}</Chip> : null}</div><p className="mt-1 truncate text-xs text-muted">{app.desc}</p></div>
+        </div>
+        {actions ? <div onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}><Dropdown><Dropdown.Trigger aria-label={`${app.name} 更多操作`} className="-mr-2 -mt-2 rounded-full p-2 text-muted opacity-60 transition-opacity hover:bg-default/60 hover:text-foreground group-hover:opacity-100"><Ellipsis /></Dropdown.Trigger><Dropdown.Popover>{actions}</Dropdown.Popover></Dropdown></div> : null}
+      </div>
+      <div className="mt-5 flex flex-wrap items-center gap-1.5 text-xs">{app.deploymentType === "online" ? <Chip size="sm" className={tone}>线上应用 {app.onlineVersion || "-"}</Chip> : null}<Chip size="sm" className="bg-default/60 text-muted"><Clock />{app.records} 条记录</Chip></div>
+      <div className="mt-auto flex items-end justify-between gap-3 border-t border-separator pt-4"><div className="flex min-w-0 items-center gap-2 text-xs text-muted"><MyAvatar name={app.owner} imageUrl={app.ownerAvatarUrl} size="sm" /><span className="min-w-0 truncate">{app.owner}</span><span className="shrink-0 opacity-60">·</span><span className="flex shrink-0 items-center gap-1"><Calendar />{app.createdAt}</span></div><span className="shrink-0 text-xs font-medium text-accent">点击卡片进入</span></div>
+    </div>
+  </MySurface>;
 }
 
 function toAppItem(app: ApiApp): AppItem {
   return {
     ...app,
-    status: app.status as AppStatus,
+    deploymentType: app.deploymentType === "online" ? "online" : "local",
     badge: app.badge ?? undefined,
     color: normalizeAppColorTone(app.color),
   };
 }
 
 function normalizeAppItem(app: AppItem): AppItem {
-  if (app.status !== "draft") {
-    return app;
-  }
-
-  return {
-    ...app,
-    status: "paused",
-  };
-}
-
-function InfoPill({ icon, text }: { icon: ReactNode; text: string }) {
-  return (
-    <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-[var(--color-bg-panel-soft)] px-1.5 py-1 text-[11px] text-[var(--color-text-secondary)]">
-      <span className="flex h-3 w-3 shrink-0 items-center justify-center [&>svg]:h-3 [&>svg]:w-3">
-        {icon}
-      </span>
-      <span className="truncate">{text}</span>
-    </span>
-  );
+  return app;
 }
 
 function SummaryMetric({ label, value }: { label: string; value: number }) {
   return (
-    <div>
-      <dt className="text-xs text-[var(--color-text-secondary)]">{label}</dt>
-      <dd className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">{value}</dd>
+    <div className="min-w-14">
+      <dt className="text-[11px] text-muted">{label}</dt>
+      <dd className="mt-0.5 text-lg font-semibold leading-none text-foreground">{value}</dd>
     </div>
   );
 }

@@ -43,22 +43,36 @@ pub(crate) async fn create_automation_flow(
     Path(app_id): Path<String>,
     payload: Option<Json<CreateAutomationFlowRequest>>,
 ) -> Result<(StatusCode, Json<ApiResponse<ApiAutomationFlow>>), AppError> {
+    let flow =
+        create_automation_definition(&state, &app_id, payload.map(|Json(value)| value)).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(success_response(
+            "创建集成自动化成功",
+            ApiAutomationFlow::from(flow),
+        )),
+    ))
+}
+
+pub(crate) async fn create_automation_definition(
+    state: &AppState,
+    app_id: &str,
+    payload: Option<CreateAutomationFlowRequest>,
+) -> Result<automation_flow_entity::Model, AppError> {
     AppEntity::find()
-        .filter(app_entity::Column::RouteAppId.eq(app_id.clone()))
+        .filter(app_entity::Column::RouteAppId.eq(app_id.to_string()))
         .one(&state.db)
         .await?
         .ok_or_else(|| AppError::NotFound("app not found".to_string()))?;
 
-    let payload = payload
-        .map(|Json(value)| value)
-        .unwrap_or(CreateAutomationFlowRequest {
-            name: None,
-            description: None,
-            trigger_form_uuid: None,
-            trigger_event: None,
-            trigger_events: None,
-            operator: None,
-        });
+    let payload = payload.unwrap_or(CreateAutomationFlowRequest {
+        name: None,
+        description: None,
+        trigger_form_uuid: None,
+        trigger_event: None,
+        trigger_events: None,
+        operator: None,
+    });
     let now = Utc::now();
     let operator = normalize_operator(payload.operator);
     let trigger_form_uuid = normalize_optional_text(payload.trigger_form_uuid);
@@ -84,7 +98,7 @@ pub(crate) async fn create_automation_flow(
     let flow = automation_flow_entity::ActiveModel {
         id: Set(Uuid::new_v4()),
         flow_uuid: Set(generate_automation_flow_uuid()),
-        app_route_app_id: Set(app_id),
+        app_route_app_id: Set(app_id.to_string()),
         name: Set(normalize_optional_text(payload.name)
             .unwrap_or_else(|| format!("未命名自动化 {}", now.format("%m%d%H%M")))),
         description: Set(normalize_optional_text(payload.description)),
@@ -115,13 +129,7 @@ pub(crate) async fn create_automation_flow(
     create_automation_snapshot(&txn, &flow, None).await?;
     txn.commit().await?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(success_response(
-            "创建集成自动化成功",
-            ApiAutomationFlow::from(flow),
-        )),
-    ))
+    Ok(flow)
 }
 
 pub(crate) async fn create_process_flow_for_form<C>(
@@ -351,8 +359,20 @@ pub(crate) async fn update_automation_flow(
     Path(flow_uuid): Path<String>,
     Json(payload): Json<UpdateAutomationFlowRequest>,
 ) -> Result<Json<ApiResponse<ApiAutomationFlow>>, AppError> {
+    let updated = update_automation_definition(&state, &flow_uuid, payload).await?;
+    Ok(Json(success_response(
+        "更新集成自动化成功",
+        ApiAutomationFlow::from(updated),
+    )))
+}
+
+pub(crate) async fn update_automation_definition(
+    state: &AppState,
+    flow_uuid: &str,
+    payload: UpdateAutomationFlowRequest,
+) -> Result<automation_flow_entity::Model, AppError> {
     let flow = AutomationFlowEntity::find()
-        .filter(automation_flow_entity::Column::FlowUuid.eq(flow_uuid))
+        .filter(automation_flow_entity::Column::FlowUuid.eq(flow_uuid.to_string()))
         .one(&state.db)
         .await?
         .ok_or_else(|| AppError::NotFound("automation flow not found".to_string()))?;
@@ -521,18 +541,26 @@ pub(crate) async fn update_automation_flow(
     }
     txn.commit().await?;
 
-    Ok(Json(success_response(
-        "更新集成自动化成功",
-        ApiAutomationFlow::from(updated),
-    )))
+    Ok(updated)
 }
 
 pub(crate) async fn delete_automation_flow(
     State(state): State<AppState>,
     Path(flow_uuid): Path<String>,
 ) -> Result<Json<ApiResponse<Value>>, AppError> {
+    delete_automation_definition(&state, &flow_uuid).await?;
+    Ok(Json(success_response(
+        "删除集成自动化成功",
+        json!({ "deleted": true, "id": flow_uuid }),
+    )))
+}
+
+pub(crate) async fn delete_automation_definition(
+    state: &AppState,
+    flow_uuid: &str,
+) -> Result<(), AppError> {
     let flow = AutomationFlowEntity::find()
-        .filter(automation_flow_entity::Column::FlowUuid.eq(flow_uuid.clone()))
+        .filter(automation_flow_entity::Column::FlowUuid.eq(flow_uuid.to_string()))
         .one(&state.db)
         .await?
         .ok_or_else(|| AppError::NotFound("automation flow not found".to_string()))?;
@@ -556,10 +584,7 @@ pub(crate) async fn delete_automation_flow(
         .await?;
     txn.commit().await?;
 
-    Ok(Json(success_response(
-        "删除集成自动化成功",
-        json!({ "deleted": true, "id": flow_uuid }),
-    )))
+    Ok(())
 }
 
 pub(crate) async fn execute_automation_flows_for_event(

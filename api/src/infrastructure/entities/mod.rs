@@ -3,11 +3,13 @@
 
 pub mod agent_config_profile_entity;
 pub mod agent_definition_entity;
+pub mod agent_file_entity;
+pub mod agent_file_link_entity;
 pub mod agent_model_provider_entity;
-pub mod agent_pending_action_entity;
 pub mod agent_provider_model_entity;
 pub mod agent_resource_entity;
 pub mod agent_session_entity;
+pub mod agent_transaction_entity;
 pub mod app_entity;
 pub mod app_navigation_entity;
 pub mod automation_edge_entity;

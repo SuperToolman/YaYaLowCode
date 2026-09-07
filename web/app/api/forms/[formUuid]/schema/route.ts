@@ -7,3 +7,11 @@ export async function GET(request: Request, { params }: Context) {
   const query = new URL(request.url).search;
   return proxyBackendJson(request, `/api/forms/${encodeURIComponent(formUuid)}/schema${query}`);
 }
+
+export async function POST(request: Request, { params }: Context) {
+  const { formUuid } = await params;
+  return proxyBackendJson(
+    request,
+    `/api/forms/${encodeURIComponent(formUuid)}/schema`,
+  );
+}

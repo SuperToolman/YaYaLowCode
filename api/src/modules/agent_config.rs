@@ -21,27 +21,24 @@ use crate::infrastructure::entities::agent_provider_model_entity::{
 use crate::infrastructure::entities::agent_resource_entity::{self, Entity as AgentResourceEntity};
 use crate::platform::config::{
     AgentConfigProfile, AgentDefinition, AgentKnowledgeBaseDefinition, AgentModelProvider,
-    AgentPersonaDefinition, AgentPluginDefinition, AgentRegistry, AgentSettings,
-    AgentSkillDefinition, ResolvedAgentRuntime, ensure_skill_package, import_skill_package,
-    load_installed_ai_employees, write_skill_markdown,
+    AgentPluginDefinition, AgentRegistry, AgentSettings, AgentSkillDefinition,
+    ResolvedAgentRuntime, ensure_skill_package, import_skill_package, load_installed_ai_employees,
+    write_skill_markdown,
 };
-use crate::platform::license::{PlatformAiEmployeeEntitlement, PlatformAiEmployeeSkill, license_status};
+use crate::platform::license::{
+    PlatformAiEmployeeEntitlement, PlatformAiEmployeeSkill, license_status,
+};
 use crate::platform::prelude::{ApiResponse, AppError, AppState};
 use crate::shared::success_response;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter,
 };
 
-fn default_approval_mode() -> String {
-    "approve_on_behalf".to_string()
-}
-
 #[derive(Clone, Deserialize, Serialize)]
 struct AgentRuntimeCore {
     providers: Vec<AgentModelProvider>,
     profiles: Vec<AgentConfigProfile>,
     agents: Vec<AgentDefinition>,
-    personas: Vec<AgentPersonaDefinition>,
     plugins: Vec<AgentPluginDefinition>,
     skills: Vec<AgentSkillDefinition>,
     knowledge_bases: Vec<AgentKnowledgeBaseDefinition>,
@@ -93,7 +90,6 @@ pub(crate) async fn resolve_database_agent_runtime(
             .all(&state.db)
             .await
             .map_err(|e| e.to_string())?;
-        let personas = resources_of_kind(&resources, "persona").map_err(|e| e.to_string())?;
         let plugins = resources_of_kind(&resources, "plugin").map_err(|e| e.to_string())?;
         let skills = resources_of_kind(&resources, "skill").map_err(|e| e.to_string())?;
         let knowledge_bases =
@@ -102,7 +98,6 @@ pub(crate) async fn resolve_database_agent_runtime(
             providers,
             profiles,
             agents,
-            personas,
             plugins,
             skills,
             knowledge_bases,
@@ -116,33 +111,16 @@ pub(crate) async fn resolve_database_agent_runtime(
         providers: core.providers,
         profiles: core.profiles,
         agents: core.agents,
-        personas: core.personas,
         plugins: core.plugins,
         skills: core.skills,
         knowledge_bases: core.knowledge_bases,
     };
-    let mut runtime = crate::platform::config::resolve_agent_runtime_from_registry(
+    let runtime = crate::platform::config::resolve_agent_runtime_from_registry(
         &registry,
         agent_id,
         app_id,
         business_id,
     )?;
-    if runtime.allowed_tools.contains("create_form_draft") {
-        runtime
-            .allowed_tools
-            .insert("list_navigation_groups".to_string());
-        runtime
-            .allowed_tools
-            .insert("move_form_to_group".to_string());
-        runtime
-            .allowed_tools
-            .insert("create_navigation_group".to_string());
-        runtime
-            .allowed_tools
-            .insert("delete_navigation_group".to_string());
-        runtime.allowed_tools.insert("publish_form".to_string());
-        runtime.allowed_tools.insert("delete_form".to_string());
-    }
     Ok(runtime)
 }
 
@@ -183,8 +161,8 @@ pub(crate) async fn resolve_system_ai_runtime(
         plugins: Vec::new(),
         skills: Vec::new(),
         knowledge_bases: Vec::new(),
-        approval_mode: "approve_on_behalf".to_string(),
         allowed_tools: HashSet::new(),
+        application_ids: HashSet::new(),
     })
 }
 
@@ -245,28 +223,10 @@ async fn resource_in_use(
     kind: &str,
     id: &str,
 ) -> Result<bool, AppError> {
-    for row in AgentResourceEntity::find()
-        .filter(agent_resource_entity::Column::Kind.eq("persona"))
-        .all(db)
-        .await?
-    {
-        let persona: AgentPersonaDefinition = serde_json::from_value(row.configuration_json)
-            .map_err(|error| AppError::BadRequest(error.to_string()))?;
-        let used = match kind {
-            "plugin" => persona.plugin_ids.iter().any(|value| value == id),
-            "skill" => persona.skill_ids.iter().any(|value| value == id),
-            "knowledge_base" => persona.knowledge_base_ids.iter().any(|value| value == id),
-            _ => false,
-        };
-        if used {
-            return Ok(true);
-        }
-    }
     for row in AgentConfigProfileEntity::find().all(db).await? {
         let profile: AgentConfigProfile = serde_json::from_value(row.configuration_json)
             .map_err(|error| AppError::BadRequest(error.to_string()))?;
         let used = match kind {
-            "persona" => profile.persona_id == id,
             "plugin" => profile.plugin_ids.iter().any(|value| value == id),
             "skill" => profile.skill_ids.iter().any(|value| value == id),
             "knowledge_base" => profile.knowledge_base_ids.iter().any(|value| value == id),
@@ -275,9 +235,6 @@ async fn resource_in_use(
         if used {
             return Ok(true);
         }
-    }
-    if kind == "persona" {
-        return Ok(false);
     }
     for row in AgentDefinitionEntity::find().all(db).await? {
         let agent: AgentDefinition = serde_json::from_value(row.configuration_json)
@@ -325,7 +282,6 @@ async fn delete_resource(
 ) -> Result<(), AppError> {
     if resource_in_use(db, kind, id).await? {
         let resource_name = match kind {
-            "persona" => "人格",
             "plugin" => "插件",
             "skill" => "Skill",
             "knowledge_base" => "知识库",
@@ -418,7 +374,6 @@ pub(crate) struct ProfileRequest {
     max_steps: usize,
     max_retries: usize,
     image_caption_model: String,
-    persona_id: String,
     web_search_enabled: bool,
     #[serde(default)]
     allow_create_apps: bool,
@@ -426,8 +381,10 @@ pub(crate) struct ProfileRequest {
     allow_create_forms: bool,
     #[serde(default)]
     allow_create_automations: bool,
-    #[serde(default = "default_approval_mode")]
-    approval_mode: String,
+    #[serde(default)]
+    allowed_tools: Vec<String>,
+    #[serde(default)]
+    application_ids: Vec<String>,
     context_max_turns: i32,
     context_discard_turns: usize,
     context_overflow_strategy: String,
@@ -435,21 +392,6 @@ pub(crate) struct ProfileRequest {
     context_keep_recent_ratio: f64,
     context_compression_provider_id: Option<String>,
     max_context_tokens: usize,
-    #[serde(default)]
-    plugin_ids: Vec<String>,
-    #[serde(default)]
-    skill_ids: Vec<String>,
-    #[serde(default)]
-    knowledge_base_ids: Vec<String>,
-}
-
-#[derive(Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct PersonaRequest {
-    name: String,
-    #[serde(default)]
-    description: String,
-    system_prompt: String,
     #[serde(default)]
     plugin_ids: Vec<String>,
     #[serde(default)]
@@ -496,7 +438,6 @@ pub(crate) struct SkillRequest {
     name: String,
     description: String,
     enabled: bool,
-    allowed_tools: Vec<String>,
     #[serde(default)]
     instructions: String,
     requires_confirmation: bool,
@@ -552,10 +493,38 @@ pub(crate) async fn list_platform_tools(
                 risk_level: "read",
             },
             PlatformToolResponse {
+                id: "create_app",
+                name: "创建应用",
+                description: "创建新的低代码应用。",
+                category: "app",
+                risk_level: "write",
+            },
+            PlatformToolResponse {
+                id: "update_app",
+                name: "编辑应用",
+                description: "修改低代码应用的名称、描述或状态。",
+                category: "app",
+                risk_level: "write",
+            },
+            PlatformToolResponse {
+                id: "delete_app",
+                name: "删除应用",
+                description: "永久删除低代码应用及其资源，始终要求人工确认。",
+                category: "app",
+                risk_level: "destructive",
+            },
+            PlatformToolResponse {
                 id: "get_application_business_context",
                 name: "读取应用业务地图",
                 description: "读取应用说明、表单、字段摘要、关联关系和明细父表关系。",
                 category: "app",
+                risk_level: "read",
+            },
+            PlatformToolResponse {
+                id: "get_field_outline",
+                name: "读取字段大纲",
+                description: "读取应用内所有表单、字段、字段类型和层级关系。",
+                category: "form",
                 risk_level: "read",
             },
             PlatformToolResponse {
@@ -584,12 +553,19 @@ pub(crate) async fn list_platform_tools(
                 name: "删除导航分组",
                 description: "删除分组容器并将内部项目上移，需用户确认。",
                 category: "form",
-                risk_level: "write",
+                risk_level: "destructive",
             },
             PlatformToolResponse {
                 id: "get_form_schema",
                 name: "读取表单 Schema",
-                description: "读取表单草稿结构和字段。",
+                description: "读取表单当前版本结构和字段。",
+                category: "form",
+                risk_level: "read",
+            },
+            PlatformToolResponse {
+                id: "get_form_schema_contract",
+                name: "读取表单 Schema 规范",
+                description: "读取平台通用表单 Schema 结构、字段布局和表单类型规则；没有参考表单时用于设计新表单。",
                 category: "form",
                 risk_level: "read",
             },
@@ -643,37 +619,30 @@ pub(crate) async fn list_platform_tools(
                 risk_level: "read",
             },
             PlatformToolResponse {
-                id: "create_form_draft",
-                name: "创建表单草稿",
-                description: "创建空白表单草稿；还要求 Profile 开启创建表单能力。",
+                id: "create_form",
+                name: "创建表单",
+                description: "创建空白表单；还要求 Profile 开启创建表单能力。",
                 category: "form",
                 risk_level: "write",
             },
             PlatformToolResponse {
                 id: "move_form_to_group",
                 name: "移动表单到分组",
-                description: "将已有表单移动到指定导航分组或根级，需用户确认。",
+                description: "将已有表单移动到指定导航分组或根级。",
                 category: "form",
                 risk_level: "write",
             },
             PlatformToolResponse {
-                id: "create_detail_form_draft",
+                id: "create_detail_form",
                 name: "生成明细表配置",
-                description: "为父表的 subform 字段生成明细表，需用户确认且要求 Profile 允许创建表单。",
+                description: "为父表的 subform 字段生成明细表，要求 Profile 允许创建表单。",
                 category: "form",
                 risk_level: "write",
             },
             PlatformToolResponse {
-                id: "save_form_schema_draft",
-                name: "保存表单草稿",
-                description: "保存表单草稿结构；还要求 Profile 开启创建表单能力。",
-                category: "form",
-                risk_level: "write",
-            },
-            PlatformToolResponse {
-                id: "publish_form",
-                name: "发布表单",
-                description: "发布表单当前 Schema 草稿并同步运行时存储计划，需用户确认。",
+                id: "save_form_schema",
+                name: "保存表单 Schema",
+                description: "保存表单 Schema 并立即成为当前版本。",
                 category: "form",
                 risk_level: "write",
             },
@@ -725,13 +694,6 @@ pub(crate) async fn list_platform_tools(
                 description: "读取一条工作流记录的实例、待办和动作轨迹。",
                 category: "workflow",
                 risk_level: "read",
-            },
-            PlatformToolResponse {
-                id: "call_plugin_tool",
-                name: "调用插件工具",
-                description: "调用当前 Profile 绑定的受控 HTTP 插件。",
-                category: "plugin",
-                risk_level: "external",
             },
         ],
     )))
@@ -900,8 +862,13 @@ pub(crate) async fn sync_installed_ai_employee_runtime(
             serde_json::from_value::<AgentConfigProfile>(profile_row.configuration_json.clone())
                 .map_err(|error| AppError::BadRequest(format!("AI 员工模型配置无效: {error}")))?;
         let profile_name = format!("{} 模型配置", entitlement.title);
-        if profile.name != profile_name {
+        let policy_changed = profile.name != profile_name
+            || profile.allowed_tools != entitlement.allowed_tools
+            || profile.application_ids != entitlement.application_ids;
+        if policy_changed {
             profile.name = profile_name;
+            profile.allowed_tools = entitlement.allowed_tools.clone();
+            profile.application_ids = entitlement.application_ids.clone();
             let mut active_profile: agent_config_profile_entity::ActiveModel = profile_row.into();
             active_profile.name = Set(profile.name.clone());
             active_profile.configuration_json = Set(serde_json::to_value(&profile)
@@ -934,9 +901,16 @@ pub(crate) async fn install_ai_employee_skill_package(
         is_system: skill.is_system,
         description: skill.description.clone(),
         enabled: true,
-        allowed_tools: skill.allowed_tools.clone(),
         instructions: skill.instructions.clone(),
         requires_confirmation: skill.requires_confirmation,
+        plugin_manifest_json: serde_json::json!({
+            "id": skill.id,
+            "version": skill.version,
+            "kind": "skill",
+            "entrypoint": skill.package_path,
+            "tools": []
+        })
+        .to_string(),
     };
     import_skill_package(&mut item, archive).map_err(AppError::BadRequest)?;
     item.source = "market".to_string();
@@ -944,24 +918,32 @@ pub(crate) async fn install_ai_employee_skill_package(
     item.is_system = skill.is_system;
     item.name = skill.title.clone();
     item.description = skill.description.clone();
-    item.allowed_tools = skill.allowed_tools.clone();
     item.requires_confirmation = skill.requires_confirmation;
 
     let now = chrono::Utc::now();
-    if let Some(existing) = AgentResourceEntity::find_by_id(&item.id).one(&state.db).await? {
+    if let Some(existing) = AgentResourceEntity::find_by_id(&item.id)
+        .one(&state.db)
+        .await?
+    {
         if existing.kind != "skill" {
-            return Err(AppError::BadRequest(format!("AI 员工 Skill ID 与本地 {} 资源冲突", existing.kind)));
+            return Err(AppError::BadRequest(format!(
+                "AI 员工 Skill ID 与本地 {} 资源冲突",
+                existing.kind
+            )));
         }
         let mut active: agent_resource_entity::ActiveModel = existing.into();
         active.name = Set(item.name.clone());
-        active.configuration_json = Set(serde_json::to_value(&item)
-            .map_err(|error| AppError::BadRequest(error.to_string()))?);
+        active.configuration_json =
+            Set(serde_json::to_value(&item)
+                .map_err(|error| AppError::BadRequest(error.to_string()))?);
         active.updated_at = Set(now);
         active.update(&state.db).await?;
     } else {
         insert_resource(&state.db, "skill", &item.id, &item.name, &item, now).await?;
     }
-    state.bump_cache_version("yaya:v1:agent-runtime:version").await;
+    state
+        .bump_cache_version("yaya:v1:agent-runtime:version")
+        .await;
     Ok(())
 }
 
@@ -1058,7 +1040,11 @@ pub(crate) async fn update_ai_employee_configuration(
         agent.enabled = true;
         agent.profile_id = profile.id.clone();
         agent.system_prompt = system_prompt;
-        agent.skill_ids = entitlement.skills.iter().map(|skill| skill.id.clone()).collect();
+        agent.skill_ids = entitlement
+            .skills
+            .iter()
+            .map(|skill| skill.id.clone())
+            .collect();
         let mut active: agent_definition_entity::ActiveModel = row.into();
         active.name = Set(agent.name.clone());
         active.enabled = Set(true);
@@ -1080,7 +1066,11 @@ pub(crate) async fn update_ai_employee_configuration(
             profile_id: profile.id.clone(),
             system_prompt,
             plugin_ids: Vec::new(),
-            skill_ids: entitlement.skills.iter().map(|skill| skill.id.clone()).collect(),
+            skill_ids: entitlement
+                .skills
+                .iter()
+                .map(|skill| skill.id.clone())
+                .collect(),
             knowledge_base_ids: Vec::new(),
         };
         agent_definition_entity::ActiveModel {
@@ -1117,16 +1107,27 @@ pub(crate) async fn update_ai_employee_configuration(
 }
 
 fn market_skill_package_name(skill: &PlatformAiEmployeeSkill) -> String {
-    let value = if skill.package_name.trim().is_empty() { &skill.id } else { &skill.package_name };
-    let normalized = value.chars().map(|character| {
-        if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
-            character.to_ascii_lowercase()
-        } else {
-            '-'
-        }
-    }).collect::<String>();
+    let value = if skill.package_name.trim().is_empty() {
+        &skill.id
+    } else {
+        &skill.package_name
+    };
+    let normalized = value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+                character.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
     let normalized = normalized.trim_matches('-');
-    if normalized.is_empty() { "market-skill".to_string() } else { normalized.to_string() }
+    if normalized.is_empty() {
+        "market-skill".to_string()
+    } else {
+        normalized.to_string()
+    }
 }
 
 pub(crate) async fn create_provider(
@@ -1282,94 +1283,6 @@ pub(crate) async fn list_profiles(
     Ok(Json(success_response("agent profiles loaded", profiles)))
 }
 
-pub(crate) async fn list_personas(
-    State(state): State<AppState>,
-) -> Result<Json<ApiResponse<Vec<AgentPersonaDefinition>>>, AppError> {
-    let rows = AgentResourceEntity::find()
-        .filter(agent_resource_entity::Column::Kind.eq("persona"))
-        .all(&state.db)
-        .await?;
-    Ok(Json(success_response(
-        "agent personas loaded",
-        resources_of_kind(&rows, "persona")
-            .map_err(|error| AppError::BadRequest(error.to_string()))?,
-    )))
-}
-
-pub(crate) async fn create_persona(
-    State(state): State<AppState>,
-    Json(payload): Json<PersonaRequest>,
-) -> Result<(StatusCode, Json<ApiResponse<AgentPersonaDefinition>>), AppError> {
-    validate_resource_name(&payload.name)?;
-    ensure_resource_ids(&state.db, "plugin", &payload.plugin_ids).await?;
-    ensure_resource_ids(&state.db, "skill", &payload.skill_ids).await?;
-    ensure_resource_ids(&state.db, "knowledge_base", &payload.knowledge_base_ids).await?;
-    let item = AgentPersonaDefinition {
-        id: format!("persona-{}", Uuid::new_v4().simple()),
-        name: payload.name.trim().to_string(),
-        description: payload.description.trim().to_string(),
-        system_prompt: payload.system_prompt.trim().to_string(),
-        plugin_ids: payload.plugin_ids,
-        skill_ids: payload.skill_ids,
-        knowledge_base_ids: payload.knowledge_base_ids,
-    };
-    insert_resource(
-        &state.db,
-        "persona",
-        &item.id,
-        &item.name,
-        &item,
-        chrono::Utc::now(),
-    )
-    .await?;
-    state
-        .bump_cache_version("yaya:v1:agent-runtime:version")
-        .await;
-    Ok((
-        StatusCode::CREATED,
-        Json(success_response("persona created", item)),
-    ))
-}
-
-pub(crate) async fn update_persona(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(payload): Json<PersonaRequest>,
-) -> Result<Json<ApiResponse<AgentPersonaDefinition>>, AppError> {
-    validate_resource_name(&payload.name)?;
-    ensure_resource_ids(&state.db, "plugin", &payload.plugin_ids).await?;
-    ensure_resource_ids(&state.db, "skill", &payload.skill_ids).await?;
-    ensure_resource_ids(&state.db, "knowledge_base", &payload.knowledge_base_ids).await?;
-    let item = AgentPersonaDefinition {
-        id,
-        name: payload.name.trim().to_string(),
-        description: payload.description.trim().to_string(),
-        system_prompt: payload.system_prompt.trim().to_string(),
-        plugin_ids: payload.plugin_ids,
-        skill_ids: payload.skill_ids,
-        knowledge_base_ids: payload.knowledge_base_ids,
-    };
-    save_resource(&state.db, "persona", &item.id, &item.name, &item).await?;
-    state
-        .bump_cache_version("yaya:v1:agent-runtime:version")
-        .await;
-    Ok(Json(success_response("persona updated", item)))
-}
-
-pub(crate) async fn delete_persona(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
-    delete_resource(&state.db, "persona", &id).await?;
-    state
-        .bump_cache_version("yaya:v1:agent-runtime:version")
-        .await;
-    Ok(Json(success_response(
-        "persona deleted",
-        serde_json::json!({ "id": id }),
-    )))
-}
-
 pub(crate) async fn create_profile(
     State(state): State<AppState>,
     Json(payload): Json<ProfileRequest>,
@@ -1382,12 +1295,6 @@ pub(crate) async fn create_profile(
     {
         return Err(AppError::BadRequest("model provider not found".to_string()));
     }
-    ensure_resource_ids(
-        &state.db,
-        "persona",
-        std::slice::from_ref(&payload.persona_id),
-    )
-    .await?;
     ensure_resource_ids(&state.db, "plugin", &payload.plugin_ids).await?;
     ensure_resource_ids(&state.db, "skill", &payload.skill_ids).await?;
     ensure_resource_ids(&state.db, "knowledge_base", &payload.knowledge_base_ids).await?;
@@ -1425,12 +1332,6 @@ pub(crate) async fn update_profile(
     {
         return Err(AppError::BadRequest("model provider not found".to_string()));
     }
-    ensure_resource_ids(
-        &state.db,
-        "persona",
-        std::slice::from_ref(&payload.persona_id),
-    )
-    .await?;
     ensure_resource_ids(&state.db, "plugin", &payload.plugin_ids).await?;
     ensure_resource_ids(&state.db, "skill", &payload.skill_ids).await?;
     ensure_resource_ids(&state.db, "knowledge_base", &payload.knowledge_base_ids).await?;
@@ -1712,13 +1613,14 @@ pub(crate) async fn create_skill(
         is_system: false,
         description: payload.description.trim().to_string(),
         enabled: payload.enabled,
-        allowed_tools: payload.allowed_tools,
         instructions: payload.instructions.trim().to_string(),
         requires_confirmation: payload.requires_confirmation,
+        plugin_manifest_json: String::new(),
     };
     ensure_skill_package(&mut item).map_err(AppError::Server)?;
     let instructions = item.instructions.clone();
     write_skill_markdown(&mut item, &instructions).map_err(AppError::Server)?;
+    item.plugin_manifest_json = skill_plugin_manifest(&item);
     insert_resource(
         &state.db,
         "skill",
@@ -1771,11 +1673,12 @@ pub(crate) async fn import_skill(
         is_system: false,
         description: String::new(),
         enabled: true,
-        allowed_tools: Vec::new(),
         instructions: String::new(),
         requires_confirmation: false,
+        plugin_manifest_json: String::new(),
     };
     import_skill_package(&mut item, &bytes).map_err(AppError::BadRequest)?;
+    item.plugin_manifest_json = skill_plugin_manifest(&item);
     if item.name.trim().is_empty() {
         item.name = item.package_name.clone();
     }
@@ -1821,12 +1724,13 @@ pub(crate) async fn update_skill(
         is_system: existing.is_system,
         description: payload.description.trim().to_string(),
         enabled: payload.enabled,
-        allowed_tools: payload.allowed_tools,
         instructions: payload.instructions.trim().to_string(),
         requires_confirmation: payload.requires_confirmation,
+        plugin_manifest_json: existing.plugin_manifest_json,
     };
     let instructions = item.instructions.clone();
     write_skill_markdown(&mut item, &instructions).map_err(AppError::Server)?;
+    item.plugin_manifest_json = skill_plugin_manifest(&item);
     save_resource(&state.db, "skill", &item.id, &item.name, &item).await?;
     state
         .bump_cache_version("yaya:v1:agent-runtime:version")
@@ -1993,6 +1897,17 @@ fn validate_resource_name(name: &str) -> Result<(), AppError> {
     }
 }
 
+fn skill_plugin_manifest(skill: &AgentSkillDefinition) -> String {
+    serde_json::json!({
+        "id": skill.id,
+        "version": skill.version,
+        "kind": "skill",
+        "entrypoint": skill.package_path,
+        "tools": [],
+    })
+    .to_string()
+}
+
 fn validate_plugin(payload: &PluginRequest) -> Result<(), AppError> {
     validate_resource_name(&payload.name)?;
     crate::platform::config::parse_plugin_manifest(&payload.manifest_json)
@@ -2016,10 +1931,6 @@ fn validate_profile_payload(payload: &ProfileRequest) -> Result<(), AppError> {
         || payload.max_retries > 20
         || !(0.0..=2.0).contains(&payload.temperature)
         || !(0.0..=0.3).contains(&payload.context_keep_recent_ratio)
-        || !matches!(
-            payload.approval_mode.as_str(),
-            "request_approval" | "approve_on_behalf" | "full_access"
-        )
     {
         return Err(AppError::BadRequest(
             "invalid configuration profile".to_string(),
@@ -2063,12 +1974,12 @@ fn profile_from_request(id: String, payload: ProfileRequest) -> AgentConfigProfi
         max_steps: payload.max_steps,
         max_retries: payload.max_retries,
         image_caption_model: payload.image_caption_model.trim().to_string(),
-        persona_id: payload.persona_id,
         web_search_enabled: payload.web_search_enabled,
         allow_create_apps: payload.allow_create_apps,
         allow_create_forms: payload.allow_create_forms,
         allow_create_automations: payload.allow_create_automations,
-        approval_mode: payload.approval_mode,
+        allowed_tools: payload.allowed_tools,
+        application_ids: payload.application_ids,
         context_max_turns: payload.context_max_turns,
         context_discard_turns: payload.context_discard_turns,
         context_overflow_strategy: payload.context_overflow_strategy,
@@ -2118,15 +2029,7 @@ fn require_configurable_ai_employee(
 }
 
 fn ai_employee_system_prompt(entitlement: &PlatformAiEmployeeEntitlement) -> String {
-    if !entitlement.system_prompt.trim().is_empty() {
-        entitlement.system_prompt.clone()
-    } else {
-        entitlement
-            .persona
-            .as_ref()
-            .map(|persona| persona.system_prompt.clone())
-            .unwrap_or_default()
-    }
+    entitlement.system_prompt.clone()
 }
 
 fn default_ai_employee_profile(entitlement: &PlatformAiEmployeeEntitlement) -> AgentConfigProfile {
@@ -2140,16 +2043,12 @@ fn default_ai_employee_profile(entitlement: &PlatformAiEmployeeEntitlement) -> A
         max_steps: 8,
         max_retries: 3,
         image_caption_model: String::new(),
-        persona_id: entitlement
-            .persona
-            .as_ref()
-            .map(|persona| persona.id.clone())
-            .unwrap_or_else(|| "persona-default".to_string()),
         web_search_enabled: false,
         allow_create_apps: false,
         allow_create_forms: false,
         allow_create_automations: false,
-        approval_mode: "approve_on_behalf".to_string(),
+        allowed_tools: Vec::new(),
+        application_ids: Vec::new(),
         context_max_turns: 50,
         context_discard_turns: 10,
         context_overflow_strategy: "llm_compress".to_string(),

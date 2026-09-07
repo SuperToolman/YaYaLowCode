@@ -1,11 +1,11 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
-import { Button, Input, Switch, toast } from "@heroui/react";
-import { Card } from "@heroui/react/card";
+import { Button, Input, Surface, Switch, toast } from "@heroui/react";
 import { isRequestAborted, jsonRequest, requestApi } from "../../../lib/api-request";
 import { Field } from "../_components/field";
 import { SettingsContentCard } from "../_components/settings-content-card";
+import styles from "./notifications.module.css";
 
 type NotificationSettings = {
   inAppEnabled: boolean;
@@ -63,35 +63,36 @@ export default function NotificationSettingsPage() {
     } finally { setSaving(false); }
   }
 
-  return <section className="h-full min-h-0">
+  return <section className={styles.page}>
     <SettingsContentCard
       title="通知设置"
       subtitle="管理流程站内通知，并预先维护钉钉、邮件和 WebSocket 渠道的接入配置。"
-      footer={<><p className="text-xs leading-5 text-[var(--color-text-secondary)]">外部渠道尚未接入投递器；保存配置不会向钉钉或邮箱发送任何消息。</p><Button isDisabled={loading || saving} onPress={() => void save()}>{saving ? "正在保存…" : "保存设置"}</Button></>}
+      footer={<><p className={styles.footerNote}>外部渠道尚未接入投递器；保存配置不会向钉钉或邮箱发送任何消息。</p><Button isDisabled={loading || saving} onPress={() => void save()}>{saving ? "正在保存…" : "保存设置"}</Button></>}
     >
-      <div className="space-y-4">
-        <Card className="border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-5">
-          <h3 className="text-base font-semibold text-[var(--color-text-primary)]">站内通知</h3>
-          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">流程待办和抄送会显示在导航栏用户头像菜单中。</p>
-          <div className="mt-6 space-y-5">
+      <div className={styles.sections}>
+        <Surface className={styles.card}>
+          <h3 className={styles.heading}>站内通知</h3>
+          <p className={styles.description}>流程待办和抄送会显示在导航栏用户头像菜单中。</p>
+          <div className={styles.content}>
             <Switch isSelected={form.inAppEnabled} isDisabled={loading || saving} onChange={(value) => setForm({ ...form, inAppEnabled: value })}><Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control>启用站内流程通知</Switch.Content></Switch>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className={styles.grid}>
               <Field label="轮询间隔（秒）" hint="15 至 3600 秒。"><Input type="number" value={String(form.pollIntervalSeconds)} disabled={loading || saving} onChange={(event) => setForm({ ...form, pollIntervalSeconds: Number(event.currentTarget.value) || 0 })} /></Field>
               <Field label="保留天数" hint="用于后续清理已读历史通知。"><Input type="number" value={String(form.retentionDays)} disabled={loading || saving} onChange={(event) => setForm({ ...form, retentionDays: Number(event.currentTarget.value) || 0 })} /></Field>
             </div>
           </div>
-        </Card>
+        </Surface>
 
-        <Card className="border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-5">
-          <h3 className="text-base font-semibold text-[var(--color-text-primary)]">外部渠道预留</h3>
-          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">渠道参数会安全保存，待投递器、重试和 Outbox 接入后才会实际生效。</p>
-          <div className="mt-6 space-y-5">
-            <div className="space-y-3 border-b border-[var(--color-border)] pb-5"><Switch isSelected={form.dingtalkEnabled} isDisabled={loading || saving} onChange={(value) => setForm({ ...form, dingtalkEnabled: value })}><Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control>预启用钉钉通知</Switch.Content></Switch><Field label="钉钉机器人 Webhook"><Input type="url" value={form.dingtalkWebhookUrl} disabled={loading || saving} onChange={(event) => setForm({ ...form, dingtalkWebhookUrl: event.currentTarget.value })} placeholder="https://oapi.dingtalk.com/robot/send?..." /></Field></div>
-            <div className="space-y-3 border-b border-[var(--color-border)] pb-5"><Switch isSelected={form.emailEnabled} isDisabled={loading || saving} onChange={(value) => setForm({ ...form, emailEnabled: value })}><Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control>预启用邮件通知</Switch.Content></Switch><Field label="发件人地址"><Input type="email" value={form.emailFromAddress} disabled={loading || saving} onChange={(event) => setForm({ ...form, emailFromAddress: event.currentTarget.value })} placeholder="no-reply@example.com" /></Field></div>
+        <Surface className={styles.card}>
+          <h3 className={styles.heading}>外部渠道预留</h3>
+          <p className={styles.description}>渠道参数会安全保存，待投递器、重试和 Outbox 接入后才会实际生效。</p>
+          <div className={styles.content}>
+            <div className={styles.channel}><Switch isSelected={form.dingtalkEnabled} isDisabled={loading || saving} onChange={(value) => setForm({ ...form, dingtalkEnabled: value })}><Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control>预启用钉钉通知</Switch.Content></Switch><Field label="钉钉机器人 Webhook"><Input type="url" value={form.dingtalkWebhookUrl} disabled={loading || saving} onChange={(event) => setForm({ ...form, dingtalkWebhookUrl: event.currentTarget.value })} placeholder="https://oapi.dingtalk.com/robot/send?..." /></Field></div>
+            <div className={styles.channel}><Switch isSelected={form.emailEnabled} isDisabled={loading || saving} onChange={(value) => setForm({ ...form, emailEnabled: value })}><Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control>预启用邮件通知</Switch.Content></Switch><Field label="发件人地址"><Input type="email" value={form.emailFromAddress} disabled={loading || saving} onChange={(event) => setForm({ ...form, emailFromAddress: event.currentTarget.value })} placeholder="no-reply@example.com" /></Field></div>
             <Switch isSelected={form.websocketEnabled} isDisabled={loading || saving} onChange={(value) => setForm({ ...form, websocketEnabled: value })}><Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control>预启用 WebSocket 实时推送</Switch.Content></Switch>
           </div>
-        </Card>
+        </Surface>
       </div>
     </SettingsContentCard>
   </section>;
 }
+

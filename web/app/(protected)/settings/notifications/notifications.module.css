@@ -1,0 +1,10 @@
+.page { height: 100%; min-height: 0; }
+.sections { display: flex; flex-direction: column; gap: 1rem; }
+.card { padding: 1.25rem; }
+.heading { margin: 0; color: var(--color-text-primary); font-size: 1rem; font-weight: 600; }
+.description { margin: .25rem 0 0; color: var(--color-text-secondary); font-size: .875rem; }
+.content { display: flex; flex-direction: column; gap: 1.25rem; margin-block-start: 1.5rem; }
+.grid { display: grid; gap: 1rem; }
+.channel { display: flex; flex-direction: column; gap: .75rem; border-block-end: 1px solid var(--color-border); padding-block-end: 1.25rem; }
+.footerNote { margin: 0; color: var(--color-text-secondary); font-size: .75rem; line-height: 1.25rem; }
+@media (min-width: 640px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

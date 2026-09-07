@@ -9,7 +9,6 @@ pub struct Model {
     pub version: i32,
     pub schema_json: Json,
     pub change_log: Option<String>,
-    pub published: bool,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }

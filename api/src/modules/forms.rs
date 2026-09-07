@@ -9,7 +9,7 @@ use crate::modules::navigation::{
 };
 use crate::modules::recycle_bin;
 use crate::platform::authorization;
-use crate::platform::form_storage::{delete_storage_definition, sync_published_storage_plan};
+use crate::platform::form_storage::{delete_storage_definition, sync_current_storage_plan};
 use crate::platform::prelude::*;
 use crate::platform::records::{QueryFieldKind, RecordRepository, StoredFormRecord};
 use crate::shared::*;
@@ -215,7 +215,7 @@ pub(crate) async fn get_app_field_outline(
     let outlined_forms = forms
         .into_iter()
         .map(|form| {
-            let schema = schemas_by_key.get(&(form.form_uuid.clone(), form.draft_schema_version));
+            let schema = schemas_by_key.get(&(form.form_uuid.clone(), form.current_schema_version));
             let fields = schema
                 .and_then(|item| item.schema_json.get("fields"))
                 .and_then(Value::as_array)
@@ -226,8 +226,8 @@ pub(crate) async fn get_app_field_outline(
                 form_uuid: form.form_uuid,
                 name: form.name,
                 form_type: form.form_type,
-                status: form.status,
-                schema_version: form.draft_schema_version,
+                status: "active".to_string(),
+                schema_version: form.current_schema_version,
                 physical_table: storage.map(|item| item.physical_table.clone()),
                 compiled_schema_version: storage.map(|item| item.compiled_schema_version),
                 fields,
@@ -242,6 +242,89 @@ pub(crate) async fn get_app_field_outline(
             app_name: app.name,
             forms: outlined_forms,
         },
+    )))
+}
+
+/// Returns the platform-level form Schema contract for Agents designing a
+/// form when the current application has no existing form to use as a model.
+pub(crate) async fn get_form_schema_contract(
+    State(_state): State<AppState>,
+) -> Result<Json<ApiResponse<Value>>, AppError> {
+    Ok(Json(success_response(
+        "表单 Schema 规范已读取",
+        json!({
+            "version": "1",
+            "root": {
+                "required": ["formUuid", "formName", "columns", "rows", "pageProps", "fields"],
+                "properties": {
+                    "formUuid": { "type": "string" },
+                    "formName": { "type": "string" },
+                    "columns": { "type": "integer", "minimum": 1 },
+                    "rows": { "type": "integer", "minimum": 1 },
+                    "pageProps": { "type": "object" },
+                    "fields": { "type": "array", "items": { "type": "object" } }
+                }
+            },
+            "field": {
+                "required": ["id", "type", "label", "row", "column", "rowSpan", "colSpan", "parentGroupId", "props"],
+                "layout": { "row": "integer", "column": "integer", "rowSpan": "integer", "colSpan": "integer" },
+                "parentGroupId": "string or null",
+                "label": "string; field display label belongs at the field top level",
+                "props": "object; component-specific settings belong inside props",
+                "requiredProperty": "props.isRequired (boolean)",
+                "optionsProperty": "props.options (array of {label, value}) for option controls",
+                "agentDataAccess": ["allow", "mask", "deny"]
+            },
+            "componentTypes": [
+                "singleLineText", "multiLineText", "description", "number", "radio", "checkbox",
+                "select", "multiSelect", "link", "date", "dateRange", "attachment", "imageUpload",
+                "member", "department", "button", "groupContainer", "subform", "richText",
+                "associationFormField", "countryCity", "cascader", "serialNumber", "html", "tsx"
+            ],
+            "formTypes": {
+                "normal": { "allows": ["standard fields"] },
+                "workflow": { "allows": ["standard fields", "workflow configuration"] },
+                "defined": { "allows": ["standard fields", "html", "tsx"] }
+            },
+            "rules": [
+                "root properties and field properties marked required must be present",
+                "fields must be an array and each persisted field must use the canonical designer shape",
+                "label is a top-level field property; component settings belong in props",
+                "use props.isRequired for required state and props.options for option values",
+                "html and tsx components are only valid for defined forms",
+                "use an existing form Schema when reusing platform-specific props or options",
+                "never invent fieldId, fieldName, top-level required/options aliases, or unsupported component types",
+                "saving a Schema immediately makes it the current form version; there is no separate form draft or publish step"
+            ],
+            "example": {
+                "formUuid": "FORM-...",
+                "formName": "示例表单",
+                "columns": 6,
+                "rows": 1,
+                "pageProps": {},
+                "fields": [{
+                    "id": "name",
+                    "type": "singleLineText",
+                    "label": "姓名",
+                    "row": 0,
+                    "column": 0,
+                    "rowSpan": 1,
+                    "colSpan": 1,
+                    "parentGroupId": null,
+                    "props": {
+                        "titlePosition": "top",
+                        "isRequired": true,
+                        "isDisabled": false,
+                        "isHidden": false,
+                        "isReadOnly": false,
+                        "defaultValue": "",
+                        "placeholder": "请输入单行文本",
+                        "showClearButton": false,
+                        "showCounter": false
+                    }
+                }]
+            }
+        }),
     )))
 }
 
@@ -276,13 +359,12 @@ pub(crate) async fn create_form(
     Path(app_id): Path<String>,
     Json(payload): Json<CreateFormRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<ApiFormSummary>>), AppError> {
-    let form_type = normalize_form_type(payload.form_type.as_deref())?;
-    let definition = create_blank_form(
+    let definition = create_form_definition(
         &state.db,
         &app_id,
-        None,
-        form_type,
+        payload.form_type.as_deref(),
         payload.parent_id.as_deref(),
+        None,
     )
     .await?;
     Ok((
@@ -294,23 +376,51 @@ pub(crate) async fn create_form(
     ))
 }
 
+/// Domain operation shared by HTTP and Agent callers. Transport handlers
+/// remain responsible for decoding requests and formatting responses.
+pub(crate) async fn create_form_definition(
+    db: &DatabaseConnection,
+    app_id: &str,
+    form_type: Option<&str>,
+    parent_group_id: Option<&str>,
+    name: Option<&str>,
+) -> Result<form_definition_entity::Model, AppError> {
+    let form_type = normalize_form_type(form_type)?;
+    create_blank_form(
+        db,
+        app_id,
+        name.map(ToString::to_string),
+        form_type,
+        parent_group_id,
+    )
+    .await
+}
+
 pub(crate) async fn create_detail_form(
     State(state): State<AppState>,
     Path(source_form_uuid): Path<String>,
     Json(payload): Json<CreateDetailFormRequest>,
 ) -> Result<(StatusCode, Json<ApiResponse<ApiDetailForm>>), AppError> {
+    let detail = create_detail_form_definition(&state, &source_form_uuid, payload).await?;
+    return Ok((
+        StatusCode::CREATED,
+        Json(success_response("detail form created", detail)),
+    ));
+}
+
+pub(crate) async fn create_detail_form_definition(
+    state: &AppState,
+    source_form_uuid: &str,
+    payload: CreateDetailFormRequest,
+) -> Result<ApiDetailForm, AppError> {
     let source = find_form_definition(&state.db, &source_form_uuid).await?;
     if source.form_type == "detail" {
         return Err(AppError::BadRequest(
             "a detail form cannot own another detail form".to_string(),
         ));
     }
-    let schema = load_schema_version(
-        &state.db,
-        &source_form_uuid,
-        source.published_schema_version,
-    )
-    .await?;
+    let schema =
+        load_schema_version(&state.db, &source_form_uuid, source.current_schema_version).await?;
     let subform_id = payload.subform_field_id.trim();
     let subform = schema
         .schema_json
@@ -323,7 +433,7 @@ pub(crate) async fn create_detail_form(
             })
         })
         .ok_or_else(|| {
-            AppError::BadRequest("subform field not found in the published schema".to_string())
+            AppError::BadRequest("subform field not found in the current schema".to_string())
         })?;
     if form_detail_definition_entity::Entity::find()
         .filter(form_detail_definition_entity::Column::SourceFormUuid.eq(source_form_uuid.clone()))
@@ -375,9 +485,7 @@ pub(crate) async fn create_detail_form(
         name: Set(title.clone()),
         slug: Set(detail_uuid.to_lowercase()),
         form_type: Set("detail".to_string()),
-        status: Set("published".to_string()),
-        draft_schema_version: Set(1),
-        published_schema_version: Set(1),
+        current_schema_version: Set(1),
         latest_schema_version: Set(1),
         created_at: Set(now.into()),
         updated_at: Set(now.into()),
@@ -411,7 +519,6 @@ pub(crate) async fn create_detail_form(
         version: Set(1),
         schema_json: Set(detail_schema),
         change_log: Set(Some("generated detail form".to_string())),
-        published: Set(true),
         created_at: Set(now.into()),
         updated_at: Set(now.into()),
     }
@@ -420,7 +527,7 @@ pub(crate) async fn create_detail_form(
     form_detail_definition_entity::ActiveModel {
         id: Set(Uuid::new_v4()),
         detail_form_uuid: Set(detail_uuid.clone()),
-        source_form_uuid: Set(source_form_uuid.clone()),
+        source_form_uuid: Set(source_form_uuid.to_string()),
         subform_field_id: Set(subform_id.to_string()),
         title: Set(title.clone()),
         primary_display_field_id: Set(primary_display_field_id.clone()),
@@ -457,20 +564,14 @@ pub(crate) async fn create_detail_form(
     .insert(&txn)
     .await?;
     txn.commit().await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(success_response(
-            "detail form created",
-            ApiDetailForm {
-                detail_form_uuid: detail_uuid,
-                source_form_uuid,
-                subform_field_id: subform_id.to_string(),
-                title,
-                primary_display_field_id,
-                secondary_display_field_id,
-            },
-        )),
-    ))
+    Ok(ApiDetailForm {
+        detail_form_uuid: detail_uuid,
+        source_form_uuid: source_form_uuid.to_string(),
+        subform_field_id: subform_id.to_string(),
+        title,
+        primary_display_field_id,
+        secondary_display_field_id,
+    })
 }
 
 pub(crate) async fn list_detail_forms(
@@ -590,9 +691,7 @@ pub(crate) async fn create_blank_form(
         name: Set(form_name),
         slug: Set(slug),
         form_type: Set(form_type.to_string()),
-        status: Set("draft".to_string()),
-        draft_schema_version: Set(1),
-        published_schema_version: Set(1),
+        current_schema_version: Set(1),
         latest_schema_version: Set(1),
         created_at: Set(now.into()),
         updated_at: Set(now.into()),
@@ -623,7 +722,6 @@ pub(crate) async fn create_blank_form(
         version: Set(1),
         schema_json: Set(initial_schema.clone()),
         change_log: Set(Some("initial version".to_string())),
-        published: Set(true),
         created_at: Set(now.into()),
         updated_at: Set(now.into()),
     }
@@ -640,7 +738,7 @@ pub(crate) async fn create_blank_form(
         .await?;
     }
 
-    sync_published_storage_plan(&txn, &form_uuid, 1, &initial_schema).await?;
+    sync_current_storage_plan(&txn, &form_uuid, 1, &initial_schema).await?;
     txn.commit().await?;
 
     Ok(definition)
@@ -666,6 +764,39 @@ pub(crate) fn validate_schema_for_form_type(
             "form schema fields must be an array".to_string(),
         ));
     };
+
+    for (index, field) in fields.iter().enumerate() {
+        let Some(object) = field.as_object() else {
+            return Err(AppError::BadRequest(format!(
+                "fields[{index}] must be an object"
+            )));
+        };
+        // Custom page components are self-contained UI nodes and may omit the
+        // record-layout fields required by data-backed controls.
+        let custom_component = matches!(
+            object.get("type").and_then(Value::as_str),
+            Some("html") | Some("tsx")
+        );
+        if custom_component {
+            continue;
+        }
+        for key in ["id", "type", "row", "column", "rowSpan", "colSpan", "props"] {
+            if !object.contains_key(key) {
+                return Err(AppError::BadRequest(format!(
+                    "fields[{index}].{key} is required; use the canonical runtime Schema contract"
+                )));
+            }
+        }
+        if object.contains_key("fieldId")
+            || object.contains_key("fieldName")
+            || object.contains_key("required")
+            || object.contains_key("options")
+        {
+            return Err(AppError::BadRequest(format!(
+                "fields[{index}] contains non-canonical aliases; use id/props/row/column and read the Schema contract first"
+            )));
+        }
+    }
 
     for field in fields {
         if let Some(access) = field
@@ -802,7 +933,7 @@ pub(crate) async fn get_form_bootstrap(
 ) -> Result<Json<ApiResponse<FormBootstrapResponse>>, AppError> {
     let definition = find_form_definition(&state.db, &form_uuid).await?;
     let schema =
-        load_schema_version(&state.db, &form_uuid, definition.published_schema_version).await?;
+        load_schema_version(&state.db, &form_uuid, definition.current_schema_version).await?;
     let metadata = ApiFormSummary::from(definition.clone());
     let schema = build_schema_payload(&definition, schema);
 
@@ -871,6 +1002,17 @@ pub(crate) async fn delete_form(
     State(state): State<AppState>,
     Path(form_uuid): Path<String>,
 ) -> Result<Json<ApiResponse<Value>>, AppError> {
+    delete_form_definition(&state, &form_uuid).await?;
+    Ok(Json(success_response(
+        "删除表单成功",
+        json!({ "deleted": true }),
+    )))
+}
+
+pub(crate) async fn delete_form_definition(
+    state: &AppState,
+    form_uuid: &str,
+) -> Result<(), AppError> {
     let definition = find_form_definition(&state.db, &form_uuid).await?;
 
     let txn = state.db.begin().await?;
@@ -895,10 +1037,7 @@ pub(crate) async fn delete_form(
             .exec(&txn)
             .await?;
         txn.commit().await?;
-        return Ok(Json(success_response(
-            "删除明细表单成功",
-            json!({ "deleted": true }),
-        )));
+        return Ok(());
     }
     // A source form owns all generated detail definitions. Remove their navigation entries
     // and schemas with the source so no orphaned logical forms remain.
@@ -1006,10 +1145,7 @@ pub(crate) async fn delete_form(
         .await?;
     txn.commit().await?;
 
-    Ok(Json(success_response(
-        "删除表单成功",
-        json!({ "deleted": true }),
-    )))
+    Ok(())
 }
 
 pub(crate) async fn update_form_name(
@@ -1022,9 +1158,9 @@ pub(crate) async fn update_form_name(
         return Err(AppError::BadRequest("form name required".to_string()));
     }
     let definition = find_form_definition(&state.db, &form_uuid).await?;
-    let latest =
-        load_schema_version(&state.db, &form_uuid, definition.latest_schema_version).await?;
-    let mut schema = latest.schema_json;
+    let current =
+        load_schema_version(&state.db, &form_uuid, definition.current_schema_version).await?;
+    let mut schema = current.schema_json;
     let object = schema
         .as_object_mut()
         .ok_or_else(|| AppError::BadRequest("form schema must be an object".to_string()))?;
@@ -1035,6 +1171,7 @@ pub(crate) async fn update_form_name(
         Json(SaveSchemaRequest {
             schema,
             change_log: Some(format!("rename form to {name}")),
+            base_version: None,
         }),
     )
     .await
@@ -1167,8 +1304,8 @@ pub(crate) async fn query_form_records(
             "detail forms do not support record query yet".to_string(),
         ));
     }
-    let published =
-        load_schema_version(&state.db, &form_uuid, definition.published_schema_version).await?;
+    let current_schema =
+        load_schema_version(&state.db, &form_uuid, definition.current_schema_version).await?;
     let mut field_kinds = HashMap::from([
         ("id".to_string(), QueryFieldKind::Text),
         ("recordUuid".to_string(), QueryFieldKind::Text),
@@ -1187,7 +1324,7 @@ pub(crate) async fn query_form_records(
         ),
         ("workflowSubmitter".to_string(), QueryFieldKind::Text),
     ]);
-    collect_queryable_field_kinds(&published.schema_json, &mut field_kinds);
+    collect_queryable_field_kinds(&current_schema.schema_json, &mut field_kinds);
     for field_id in request
         .filters
         .iter()
@@ -1720,6 +1857,22 @@ pub(crate) async fn save_form_schema(
     Path(form_uuid): Path<String>,
     Json(payload): Json<SaveSchemaRequest>,
 ) -> Result<Json<ApiResponse<ApiSchemaPayload>>, AppError> {
+    let (unchanged, payload) = save_form_schema_definition(&state, &form_uuid, payload).await?;
+    Ok(Json(success_response(
+        if unchanged {
+            "应用当前表单版本成功"
+        } else {
+            "保存表单 Schema 成功"
+        },
+        payload,
+    )))
+}
+
+pub(crate) async fn save_form_schema_definition(
+    state: &AppState,
+    form_uuid: &str,
+    payload: SaveSchemaRequest,
+) -> Result<(bool, ApiSchemaPayload), AppError> {
     let definition = FormDefinitionEntity::find()
         .filter(form_definition_entity::Column::FormUuid.eq(form_uuid.clone()))
         .one(&state.db)
@@ -1728,16 +1881,23 @@ pub(crate) async fn save_form_schema(
 
     validate_schema_for_form_type(&definition.form_type, &payload.schema)?;
 
-    let latest_schema =
-        load_schema_version(&state.db, &form_uuid, definition.latest_schema_version).await?;
-    if latest_schema.schema_json == payload.schema {
-        return Ok(Json(success_response(
-            "当前设计没有做有效变更，不进行保存。",
-            build_schema_payload(&definition, latest_schema),
-        )));
-    }
-
-    let next_version = definition.latest_schema_version + 1;
+    // Saving is also the apply operation. Reusing an existing schema keeps
+    // the global version sequence stable when the editor saves without
+    // changes (including after switching back to an older version).
+    let current_schema = load_schema_version(
+        &state.db,
+        &form_uuid,
+        payload
+            .base_version
+            .unwrap_or(definition.current_schema_version),
+    )
+    .await?;
+    let unchanged = current_schema.schema_json == payload.schema;
+    let next_version = if unchanged {
+        current_schema.version
+    } else {
+        definition.latest_schema_version + 1
+    };
     let now = Utc::now();
     let next_name = payload
         .schema
@@ -1745,26 +1905,30 @@ pub(crate) async fn save_form_schema(
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .unwrap_or("未命名表单")
+        .unwrap_or(&definition.name)
         .to_string();
 
-    form_schema_entity::ActiveModel {
-        id: Set(Uuid::new_v4()),
-        form_uuid: Set(form_uuid.clone()),
-        version: Set(next_version),
-        schema_json: Set(payload.schema.clone()),
-        change_log: Set(payload.change_log.clone()),
-        published: Set(false),
-        created_at: Set(now.into()),
-        updated_at: Set(now.into()),
+    if !unchanged {
+        form_schema_entity::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            form_uuid: Set(form_uuid.to_string()),
+            version: Set(next_version),
+            schema_json: Set(payload.schema.clone()),
+            change_log: Set(payload.change_log.clone()),
+            created_at: Set(now.into()),
+            updated_at: Set(now.into()),
+        }
+        .insert(&state.db)
+        .await?;
     }
-    .insert(&state.db)
-    .await?;
 
+    let is_detail_form = definition.form_type == "detail";
     let mut definition_active: form_definition_entity::ActiveModel = definition.into();
     definition_active.name = Set(next_name);
-    definition_active.draft_schema_version = Set(next_version);
-    definition_active.latest_schema_version = Set(next_version);
+    definition_active.current_schema_version = Set(next_version);
+    if !unchanged {
+        definition_active.latest_schema_version = Set(next_version);
+    }
     definition_active.updated_at = Set(now.into());
     let updated_definition = definition_active.update(&state.db).await?;
 
@@ -1777,25 +1941,28 @@ pub(crate) async fn save_form_schema(
     )
     .await?;
 
-    Ok(Json(success_response(
-        "保存表单 Schema 成功",
+    let applied = load_schema_version(&state.db, &form_uuid, next_version).await?;
+    if !is_detail_form {
+        sync_current_storage_plan(&state.db, &form_uuid, next_version, &applied.schema_json)
+            .await?;
+    }
+
+    Ok((
+        unchanged,
         ApiSchemaPayload {
-            form_uuid,
-            schema: payload.schema,
+            form_uuid: form_uuid.to_string(),
+            schema: applied.schema_json,
             version: next_version,
-            draft_version: updated_definition.draft_schema_version,
-            published_version: updated_definition.published_schema_version,
             latest_version: updated_definition.latest_schema_version,
-            published: false,
         },
-    )))
+    ))
 }
 
 pub(crate) async fn list_form_versions(
     State(state): State<AppState>,
     Path(form_uuid): Path<String>,
 ) -> Result<Json<ApiResponse<Vec<ApiFormVersionSummary>>>, AppError> {
-    let definition = find_form_definition(&state.db, &form_uuid).await?;
+    let _definition = find_form_definition(&state.db, &form_uuid).await?;
     let versions = FormSchemaEntity::find()
         .filter(form_schema_entity::Column::FormUuid.eq(form_uuid))
         .order_by_desc(form_schema_entity::Column::Version)
@@ -1808,9 +1975,6 @@ pub(crate) async fn list_form_versions(
             .into_iter()
             .map(|item| ApiFormVersionSummary {
                 version: item.version,
-                published: item.published,
-                is_current_draft: item.version == definition.draft_schema_version,
-                is_current_published: item.version == definition.published_schema_version,
                 change_log: item.change_log,
                 created_at: item.created_at.to_rfc3339(),
             })
@@ -1828,54 +1992,6 @@ pub(crate) async fn get_form_version(
     Ok(Json(success_response(
         "获取指定版本 Schema 成功",
         build_schema_payload(&definition, schema),
-    )))
-}
-
-pub(crate) async fn publish_form_schema(
-    State(state): State<AppState>,
-    Path(form_uuid): Path<String>,
-) -> Result<Json<ApiResponse<ApiSchemaPayload>>, AppError> {
-    let txn = state.db.begin().await?;
-    let definition = FormDefinitionEntity::find()
-        .filter(form_definition_entity::Column::FormUuid.eq(form_uuid.clone()))
-        .one(&txn)
-        .await?
-        .ok_or_else(|| AppError::NotFound("form not found".to_string()))?;
-    let now = Utc::now();
-    let draft_version = definition.draft_schema_version;
-
-    if let Some(current_published) = FormSchemaEntity::find()
-        .filter(form_schema_entity::Column::FormUuid.eq(form_uuid.clone()))
-        .filter(form_schema_entity::Column::Published.eq(true))
-        .one(&txn)
-        .await?
-    {
-        let mut published_active: form_schema_entity::ActiveModel = current_published.into();
-        published_active.published = Set(false);
-        published_active.updated_at = Set(now.into());
-        published_active.update(&txn).await?;
-    }
-
-    let draft_schema = load_schema_version_for_connection(&txn, &form_uuid, draft_version).await?;
-    validate_schema_for_form_type(&definition.form_type, &draft_schema.schema_json)?;
-    if definition.form_type != "detail" {
-        sync_published_storage_plan(&txn, &form_uuid, draft_version, &draft_schema.schema_json)
-            .await?;
-    }
-    let mut draft_active: form_schema_entity::ActiveModel = draft_schema.clone().into();
-    draft_active.published = Set(true);
-    draft_active.updated_at = Set(now.into());
-    let published_schema = draft_active.update(&txn).await?;
-
-    let mut definition_active: form_definition_entity::ActiveModel = definition.into();
-    definition_active.published_schema_version = Set(draft_version);
-    definition_active.updated_at = Set(now.into());
-    let updated_definition = definition_active.update(&txn).await?;
-    txn.commit().await?;
-
-    Ok(Json(success_response(
-        "发布表单版本成功",
-        build_schema_payload(&updated_definition, published_schema),
     )))
 }
 
@@ -1960,16 +2076,7 @@ pub(crate) fn resolve_schema_version(
     definition: &form_definition_entity::Model,
     query: &GetSchemaQuery,
 ) -> i32 {
-    if let Some(version) = query.version {
-        return version;
-    }
-
-    match query.scope.as_deref() {
-        Some("draft") => definition.draft_schema_version,
-        Some("latest") => definition.latest_schema_version,
-        Some("published") | None => definition.published_schema_version,
-        Some(_) => definition.published_schema_version,
-    }
+    query.version.unwrap_or(definition.current_schema_version)
 }
 
 pub(crate) fn build_schema_payload(
@@ -1981,14 +2088,65 @@ pub(crate) fn build_schema_payload(
         schema: if definition.form_type == "detail" {
             normalize_detail_schema(schema.schema_json)
         } else {
-            schema.schema_json
+            normalize_runtime_schema(schema.schema_json)
         },
         version: schema.version,
-        draft_version: definition.draft_schema_version,
-        published_version: definition.published_schema_version,
         latest_version: definition.latest_schema_version,
-        published: schema.published,
     }
+}
+
+/// Accept the compact field shape emitted by Agent tools and normalize it to
+/// the runtime renderer contract. Older Agent-created forms may contain
+/// `fieldId`/`fieldName` and top-level `options`/`required`; these aliases must
+/// not make an otherwise valid form crash when opened.
+fn normalize_runtime_schema(mut schema: Value) -> Value {
+    let Some(fields) = schema.get_mut("fields").and_then(Value::as_array_mut) else {
+        return schema;
+    };
+    for (index, field) in fields.iter_mut().enumerate() {
+        let Some(object) = field.as_object_mut() else {
+            continue;
+        };
+        if !object.contains_key("id") {
+            if let Some(id) = object
+                .get("fieldId")
+                .cloned()
+                .or_else(|| object.get("fieldName").cloned())
+            {
+                object.insert("id".to_string(), id);
+            }
+        }
+        if !object.contains_key("id") {
+            object.insert(
+                "id".to_string(),
+                Value::String(format!("field_{}", index + 1)),
+            );
+        }
+        object
+            .entry("row")
+            .or_insert_with(|| Value::from(index as i64));
+        object.entry("column").or_insert_with(|| Value::from(0));
+        object.entry("rowSpan").or_insert_with(|| Value::from(1));
+        object.entry("colSpan").or_insert_with(|| Value::from(1));
+        let required_alias = object.get("required").cloned();
+        let options_alias = object.get("options").cloned();
+        let props = object
+            .entry("props")
+            .or_insert_with(|| Value::Object(serde_json::Map::new()));
+        if let Some(props) = props.as_object_mut() {
+            if !props.contains_key("required") {
+                if let Some(required) = required_alias {
+                    props.insert("required".to_string(), required);
+                }
+            }
+            if !props.contains_key("options") {
+                if let Some(options) = options_alias {
+                    props.insert("options".to_string(), options);
+                }
+            }
+        }
+    }
+    schema
 }
 
 /// Detail forms edit one child-record at a time, rather than rendering the source
@@ -2054,6 +2212,19 @@ mod tests {
     fn custom_page_scripts_require_sri() {
         let schema = json!({"fields": [], "pageProps": {"assets": [{"id": "chart", "type": "script", "url": "https://cdn.example.com/chart.js"}]}});
         assert!(validate_schema_for_form_type("defined", &schema).is_err());
+    }
+
+    #[test]
+    fn compact_agent_fields_are_normalized_for_runtime() {
+        let schema = normalize_runtime_schema(json!({"fields": [{
+            "fieldId": "name", "fieldName": "name", "label": "姓名",
+            "type": "text", "required": true
+        }]}));
+        let field = &schema["fields"][0];
+        assert_eq!(field["id"], "name");
+        assert_eq!(field["row"], 0);
+        assert_eq!(field["column"], 0);
+        assert_eq!(field["props"]["required"], true);
     }
 }
 

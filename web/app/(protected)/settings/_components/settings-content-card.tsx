@@ -14,7 +14,7 @@ type SettingsContentCardProps = {
 };
 
 export function SettingsContentCard({ title, subtitle, children, headerActions, footer, className = "", headerClassName = "", bodyClassName = "", bodyScrollable = true, footerClassName = "" }: SettingsContentCardProps) {
-  return <Card className={`theme-panel flex h-full min-h-0 flex-col !overflow-clip p-6 shadow-[var(--shadow-card)] ${className}`.trim()} style={{ overflow: "clip" }}>
+  return <Card className={`flex h-full min-h-0 flex-col !overflow-clip p-6 ${className}`.trim()} style={{ overflow: "clip" }}>
     <header className={`shrink-0 flex flex-wrap items-start justify-between gap-4 ${headerClassName}`.trim()}>
       <div>
         <h2 className="text-2xl font-semibold text-[var(--color-text-primary)]">{title}</h2>

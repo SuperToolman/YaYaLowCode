@@ -45,7 +45,7 @@ export function BranchRulesEditor({
         </Button>
       </div>
       <div className="automation-rule-horizontal-scroll w-full max-w-full overflow-x-auto pb-2">
-        <div className="w-max min-w-[590px] space-y-4 pr-1">
+        <div className="w-max min-w-[590px] space-y-4">
           {rootRules.length > 0 ? (
             <div
               className={

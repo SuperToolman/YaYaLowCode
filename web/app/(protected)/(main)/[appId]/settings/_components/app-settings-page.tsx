@@ -76,6 +76,7 @@ export default function AppSettingsPage({
   const { appId } = use(params);
   const activeSection = section;
   const [appName, setAppName] = useState("");
+  const [appDescription, setAppDescription] = useState("");
   const [businessContext, setBusinessContext] = useState({ businessOverview: "", terminology: "", processDescription: "", analysisGuidance: "" });
   const [forms, setForms] = useState<FormSettingsItem[]>([]);
   const [defaultEntryKey, setDefaultEntryKey] = useState(`${SYSTEM_PAGE_PREFIX}tasks`);
@@ -86,7 +87,10 @@ export default function AppSettingsPage({
 
     void getAppResource(appId)
       .then((app) => {
-        if (!cancelled) setAppName(app.name);
+        if (!cancelled) {
+          setAppName(app.name);
+          setAppDescription(app.desc ?? "");
+        }
       })
       .catch(() => undefined);
 
@@ -137,7 +141,7 @@ export default function AppSettingsPage({
     setIsSaving(true);
     try {
       const [appResult, navigationResult] = await Promise.all([
-        updateApp({ path: { appId }, body: { name: nextName }, responseStyle: "fields" }),
+        updateApp({ path: { appId }, body: { name: nextName, description: appDescription.trim() }, responseStyle: "fields" }),
         setDefaultNavigationEntry({
           path: { appId },
           body: defaultEntryKey.startsWith(SYSTEM_PAGE_PREFIX)
@@ -153,6 +157,7 @@ export default function AppSettingsPage({
       }
       invalidateAppResources(appId, ["app", "navigation"]);
       setAppName(appPayload.data?.name ?? nextName);
+      setAppDescription(appPayload.data?.desc ?? appDescription.trim());
       toast.success("基础设置已保存", {
         description: "进入应用时将默认打开所选页面。",
       });
@@ -243,6 +248,8 @@ export default function AppSettingsPage({
             appId={appId}
             appName={appName}
             onAppNameChange={setAppName}
+            appDescription={appDescription}
+            onAppDescriptionChange={setAppDescription}
             businessContext={businessContext}
             onBusinessContextChange={setBusinessContext}
             forms={forms}
@@ -290,11 +297,13 @@ function SettingsContent({
   activeSection,
   appId,
   appName,
+  appDescription,
   businessContext,
   defaultEntryKey,
   forms,
   isSaving,
   onAppNameChange,
+  onAppDescriptionChange,
   onBusinessContextChange,
   onDefaultEntryChange,
   onSaveBasicSettings,
@@ -303,11 +312,13 @@ function SettingsContent({
   activeSection: SettingsSection;
   appId: string;
   appName: string;
+  appDescription: string;
   businessContext: { businessOverview: string; terminology: string; processDescription: string; analysisGuidance: string };
   defaultEntryKey: string;
   forms: FormSettingsItem[];
   isSaving: boolean;
   onAppNameChange: (value: string) => void;
+  onAppDescriptionChange: (value: string) => void;
   onBusinessContextChange: (value: { businessOverview: string; terminology: string; processDescription: string; analysisGuidance: string }) => void;
   onDefaultEntryChange: (value: string) => void;
   onSaveBasicSettings: () => void;
@@ -353,7 +364,7 @@ function SettingsContent({
                 </div>
                 <label className="mt-4 flex w-full flex-col gap-2 text-sm font-medium text-[var(--color-text-primary)]">
                   <span>应用说明</span>
-                  <TextArea aria-label="应用说明" className="min-h-36 w-full" defaultValue="用于集中管理业务表单、流程与数据。" />
+                  <TextArea aria-label="应用说明" className="min-h-36 w-full" value={appDescription} onChange={(event) => onAppDescriptionChange(event.currentTarget.value)} placeholder="描述应用用途（可选）" />
                 </label>
               </SettingsPanel>
               <SettingsPanel title="默认展示" description="控制进入应用后的默认页面与导航行为。">
