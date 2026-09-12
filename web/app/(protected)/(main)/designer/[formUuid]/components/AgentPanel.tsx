@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button, ListBox, Select, TextArea, Tooltip } from "@heroui/react";
-import { InfoIcon } from "../../../../../components/app-icons";
+import { CircleInfo as InfoIcon } from "@gravity-ui/icons";
 import { fetchAvailableAgents } from "../../../../../../features/agent-assistant/api";
 import type { AgentOption } from "../../../../../../features/agent-assistant/types";
 import type { PageDesignerProps } from "../designer-types";

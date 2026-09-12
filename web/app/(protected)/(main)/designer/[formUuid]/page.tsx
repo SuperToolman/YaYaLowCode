@@ -58,10 +58,10 @@ import type {
   ResizeDirection,
   ResizeState,
 } from "./designer-types";
-import type { RuntimeDebugEvent } from "../../../../components/runtime-form-renderer";
+import type { RuntimeDebugEvent } from "../../../../components/RuntimeFormRenderer";
 import { getFormulaFieldKey } from "../../../../lib/form-formula";
 import { FORM_COMPONENT_AGENT_CAPABILITIES_VERSION, getFormComponentAgentCapability } from "../../../../lib/form-component-agent-capabilities";
-import { useAuth } from "../../../../components/auth-provider";
+import { useAuth } from "../../../../components/AuthProvider";
 
 const NO_EFFECTIVE_SCHEMA_CHANGE_MESSAGE = "当前设计没有做有效变更，不进行保存。";
 
@@ -944,7 +944,7 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
   }
 
   if (appId && !canEditForm) {
-    return <main className="grid h-full min-h-0 place-items-center p-6"><div className="max-w-md text-center"><h1 className="text-xl font-semibold text-[var(--color-text-primary)]">无表单开发权限</h1><p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">请联系应用管理员授予“表单开发 - 编辑表单”权限。</p></div></main>;
+    return <main className="grid h-full min-h-0 place-items-center p-6"><div className="max-w-md text-center"><h1 className="text-xl font-semibold text-[var(--color-text-primary)]">无表单开发权限</h1><p className="mt-2 ">请联系应用管理员授予“表单开发 - 编辑表单”权限。</p></div></main>;
   }
 
   return (

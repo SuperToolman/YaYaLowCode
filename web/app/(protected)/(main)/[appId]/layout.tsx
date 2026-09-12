@@ -1,18 +1,26 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeftIcon, LogoIcon } from "../../../components/app-icons";
+import { ArrowLeft as ArrowLeftIcon, Box as LogoIcon } from "@gravity-ui/icons";
 import {
   getAppByRouteId,
   normalizeAppColorTone,
   type AppItem,
 } from "../../../lib/apps";
-import { AppMainContent, AppShell } from "./components/app-shell";
-import { AppSidebarToggle } from "./components/app-sidebar-toggle";
-import { AppHeaderTitle } from "./components/app-header-title";
-import { AppTopNav } from "./components/app-top-nav";
-import { FormSidebar } from "./components/form-sidebar";
-import { Button, Card, Input, ListBox, Select, Switch, TextArea, toast } from "@heroui/react";
-
+import { AppMainContent, AppShell } from "./components/AppShell";
+import { AppSidebarToggle } from "./components/AppSidebarToggle";
+import { AppHeaderTitle } from "./components/AppHeaderTitle";
+import { AppTopNav } from "./components/AppTopNav";
+import { FormSidebar } from "./components/FormSidebar";
+import {
+  Button,
+  Card,
+  Input,
+  ListBox,
+  Select,
+  Switch,
+  TextArea,
+  toast,
+} from "@heroui/react";
 
 export default async function AppLayout({
   children,
@@ -50,7 +58,9 @@ export default async function AppLayout({
                   <div className="truncate text-base font-semibold text-[var(--color-text-primary)] sm:text-lg">
                     <AppHeaderTitle appId={routeAppId} initialName={app.name} />
                   </div>
-                  <p className="hidden truncate text-xs text-[var(--color-text-secondary)] sm:block">应用工作台</p>
+                  <p className="hidden truncate text-xs text-[var(--color-text-secondary)] sm:block">
+                    应用工作台
+                  </p>
                 </div>
               </div>
 

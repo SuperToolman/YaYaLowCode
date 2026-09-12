@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { Button, Input, Surface, Switch, toast } from "@heroui/react";
 import { isRequestAborted, jsonRequest, requestApi } from "../../../lib/api-request";
-import { Field } from "../_components/field";
-import { SettingsContentCard } from "../_components/settings-content-card";
+import { Field } from "../components/Field";
+import { SettingsContentCard } from "../components/SettingsContentCard";
 import styles from "./notifications.module.css";
 
 type NotificationSettings = {

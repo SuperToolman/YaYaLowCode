@@ -1,3 +1,5 @@
+import { createRandomUuid } from "@/app/lib/random-uuid";
+
 type ExcelColumn = { id: string; label: string; header: string };
 type ParsedExcel = { headers: string[]; rows: unknown[][]; mappings: Record<number, string> };
 
@@ -7,7 +9,7 @@ function runWorker<TResult>(
 ): Promise<TResult> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("./xlsx.worker.ts", import.meta.url));
-    const requestId = crypto.randomUUID();
+    const requestId = createRandomUuid();
     worker.onmessage = (event: MessageEvent<Record<string, unknown>>) => {
       if (event.data.requestId !== requestId) return;
       worker.terminate();

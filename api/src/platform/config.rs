@@ -190,12 +190,13 @@ pub fn parse_plugin_manifest(manifest_json: &str) -> Result<PluginManifest, Stri
     if manifest.endpoint.trim().is_empty() {
         return Err("plugin manifest endpoint is required when tools are declared".to_string());
     }
-    let mut names = std::collections::HashSet::new();
+    let mut names = HashSet::new();
     for tool in &manifest.tools {
         if tool.name.trim().is_empty()
-            || !tool.name.chars().all(|character| {
-                character.is_ascii_alphanumeric() || matches!(character, '_' | '-')
-            })
+            || !tool
+                .name
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
             || tool.description.trim().is_empty()
             || !names.insert(tool.name.as_str())
         {
@@ -682,7 +683,7 @@ pub fn ensure_skill_package(skill: &mut AgentSkillDefinition) -> Result<bool, st
     let root = skill_packages_root();
     let package_dir = root.join(&skill.package_name);
     fs::create_dir_all(&package_dir)?;
-    let package_path = format!("skills/{}/SKILL.md", skill.package_name);
+    let package_path = format!("{}/SKILL.md", skill.package_name);
     if skill.package_path != package_path {
         skill.package_path = package_path;
         changed = true;
@@ -786,7 +787,7 @@ pub fn import_skill_package(
     skill.instructions = instructions.ok_or_else(|| "Skill 压缩包必须包含 SKILL.md".to_string())?;
     skill.source = "local".to_string();
     skill.version = default_skill_version();
-    skill.package_path = format!("skills/{}/SKILL.md", skill.package_name);
+    skill.package_path = format!("{}/SKILL.md", skill.package_name);
     Ok(())
 }
 
@@ -816,7 +817,15 @@ fn skill_package_name(value: &str) -> String {
 }
 
 fn skill_packages_root() -> PathBuf {
-    PathBuf::from("resources/skills")
+    // Install skills to DSH agents home for automatic discovery by skill-filesystem provider
+    let agents_home = std::env::var("DSH_AGENTS_HOME")
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME")
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .unwrap_or_else(|_| ".".to_string());
+            format!("{}/.agents", home)
+        });
+    PathBuf::from(agents_home).join("skills")
 }
 
 pub(crate) fn resolve_agent_runtime_from_registry(
@@ -1228,12 +1237,11 @@ pub struct AgentWorkspaceSettings {
 
 pub fn agent_workspace_settings() -> AgentWorkspaceSettings {
     AgentWorkspaceSettings {
-        // Local API runs from api/, while the DSH host resolves its fallback
-        // two levels above agent/deepseek-harness; both therefore land in the
-        // repository-level runtime directory. Production sets an absolute
-        // path through YAYA_AGENT_WORKSPACE_ROOT.
+        // Local API runs from api/, while the DSH host runs from
+        // agent/deepseek-harness. Both fallbacks resolve to agent/runtime;
+        // production sets an absolute path through YAYA_AGENT_WORKSPACE_ROOT.
         root: std::env::var("YAYA_AGENT_WORKSPACE_ROOT")
-            .unwrap_or_else(|_| "../runtime/agent-workspaces".to_string()),
+            .unwrap_or_else(|_| "../agent/runtime/workspaces".to_string()),
         max_bytes: env_u64("YAYA_AGENT_WORKSPACE_MAX_BYTES", 1_073_741_824),
         max_files: env_u64("YAYA_AGENT_WORKSPACE_MAX_FILES", 10_000),
         retention_days: env_u64("YAYA_AGENT_WORKSPACE_RETENTION_DAYS", 30).min(u32::MAX as u64)
@@ -1448,7 +1456,13 @@ fn platform_license_settings_path() -> PathBuf {
 fn runtime_state_path(variable: &str, file_name: &str) -> PathBuf {
     std::env::var_os(variable)
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("runtime/state").join(file_name))
+        .unwrap_or_else(|| api_runtime_root().join("state").join(file_name))
+}
+
+fn api_runtime_root() -> PathBuf {
+    std::env::var_os("YAYA_API_RUNTIME_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("runtime"))
 }
 
 /// Moves local runtime state out of the source root without overwriting an
@@ -1497,17 +1511,20 @@ pub fn migrate_legacy_runtime_layout() -> Result<(), std::io::Error> {
         ),
     ];
 
-    fs::create_dir_all("runtime/state")?;
+    fs::create_dir_all(api_runtime_root().join("state"))?;
     for (variable, legacy, file_name) in state_migrations {
         if std::env::var_os(variable).is_none() {
             move_runtime_path(Path::new(legacy), &runtime_state_path(variable, file_name))?;
         }
     }
     if std::env::var_os("YAYA_UPLOAD_DIR").is_none() {
-        move_runtime_path(Path::new("data/uploads"), Path::new("runtime/uploads"))?;
+        move_runtime_path(
+            Path::new("data/uploads"),
+            &api_runtime_root().join("uploads"),
+        )?;
     }
     if std::env::var_os("YAYA_LOG_DIRECTORY").is_none() {
-        move_runtime_path(Path::new("data/logs"), Path::new("runtime/logs"))?;
+        move_runtime_path(Path::new("data/logs"), &api_runtime_root().join("logs"))?;
     }
     if Path::new("data").is_dir() && fs::read_dir("data")?.next().is_none() {
         fs::remove_dir("data")?;

@@ -178,6 +178,23 @@ pub(crate) fn build(state: AppState) -> Router {
             get(agent_config::get_system_ai_status),
         )
         .route(
+            "/api/agent/providers",
+            get(agent_config::list_providers).post(agent_config::create_provider),
+        )
+        .route(
+            "/api/agent/providers/{id}",
+            axum::routing::put(agent_config::update_provider)
+                .delete(agent_config::delete_provider),
+        )
+        .route(
+            "/api/agent/plugins",
+            get(agent_config::list_plugins).post(agent_config::create_plugin),
+        )
+        .route(
+            "/api/agent/plugins/{id}",
+            axum::routing::put(agent_config::update_plugin).delete(agent_config::delete_plugin),
+        )
+        .route(
             "/api/agent/runtime-model-route",
             get(byom::runtime_model_route),
         )
@@ -299,6 +316,18 @@ pub(crate) fn build(state: AppState) -> Router {
         .route(
             "/api/agent/sessions/{session_uuid}/access",
             get(agents::runtime_session_access),
+        )
+        .route(
+            "/api/agent/sessions/{session_uuid}/transactions",
+            get(agents::list_transactions).post(agents::create_transaction),
+        )
+        .route(
+            "/api/agent/sessions/{session_uuid}/transactions/{action_uuid}/execute",
+            post(agents::execute_transaction),
+        )
+        .route(
+            "/api/agent/sessions/{session_uuid}/transactions/{action_uuid}/cancel",
+            post(agents::cancel_transaction),
         )
         .route("/api/apps", get(apps::list_apps).post(apps::create_app))
         .route(

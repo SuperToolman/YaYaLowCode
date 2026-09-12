@@ -419,6 +419,20 @@ body,
   box-sizing: border-box;
 }
 
+/*
+ * Keep every scroll container scrollable while removing the visual scrollbar.
+ * Components that intentionally expose a horizontal rail (for example,
+ * subforms and record tables) override these defaults below.
+ */
+* {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+}
+
 /* Subforms intentionally expose horizontal scrolling for large column sets. */
 .subform-horizontal-scroll {
   -ms-overflow-style: auto !important;

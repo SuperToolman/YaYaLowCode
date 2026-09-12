@@ -175,7 +175,12 @@ async fn log_files() -> std::io::Result<Vec<PathBuf>> {
 fn log_directory() -> PathBuf {
     std::env::var_os("YAYA_LOG_DIRECTORY")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("runtime/logs"))
+        .unwrap_or_else(|| {
+            std::env::var_os("YAYA_API_RUNTIME_ROOT")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("runtime"))
+                .join("logs")
+        })
 }
 
 fn retention_days() -> i64 {

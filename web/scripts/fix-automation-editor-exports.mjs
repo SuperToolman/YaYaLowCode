@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const directory = resolve(fileURLToPath(new URL(".", import.meta.url)));
 const modelPath = resolve(directory, "../app/(main)/[appId]/automations/[automationId]/automation-editor-model.ts");
-const componentsPath = resolve(directory, "../app/(main)/[appId]/automations/[automationId]/automation-node-editor-components.tsx");
+const componentsPath = resolve(directory, "../app/(main)/[appId]/automations/[automationId]/AutomationNodeEditorComponents.tsx");
 
 let model = await readFile(modelPath, "utf8");
 model = model.replace(/^type /gm, "export type ");

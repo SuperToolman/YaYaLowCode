@@ -13,11 +13,11 @@ import {
   SquareListUl,
   TrashBin,
 } from "@gravity-ui/icons";
-import { AgentAssistantTrigger } from "./agent-assistant-trigger";
-import { useAuth } from "./auth-provider";
-import { WorkflowNotificationItems } from "./workflow-notification-items";
-import { AppIcon } from "./app-icons";
-import { MyAvatar } from "./my-avatar";
+import { Box } from "@gravity-ui/icons";
+import { AgentAssistantTrigger } from "./agent/AgentAssistantTrigger";
+import { useAuth } from "./AuthProvider";
+import { WorkflowNotificationItems } from "./WorkflowNotificationItems";
+import { MyAvatar } from "./my-fields/MyAvatar";
 import {
   listApps,
   type App,
@@ -44,20 +44,27 @@ const primaryNavItems: NavItem[] = [
     match: (pathname) => pathname === "/",
   },
   {
+    href: "/myApp",
+    label: "应用",
+    icon: SquareListUl,
+    match: (pathname) => pathname.startsWith("/myApp"),
+  },
+  {
     href: "/messages",
     label: "消息",
     icon: Comment,
     match: (pathname) => pathname.startsWith("/messages"),
   },
-  {
-    href: "/recycle-bin",
-    label: "回收站",
-    icon: TrashBin,
-    match: (pathname) => pathname.startsWith("/recycle-bin"),
-  },
 ];
 
-const ThemeSwitcherMenu = dynamic(() => import("./theme-switcher-menu"), {
+const recycleBinNavItem: NavItem = {
+  href: "/recycle-bin",
+  label: "回收站",
+  icon: TrashBin,
+  match: (pathname) => pathname.startsWith("/recycle-bin"),
+};
+
+const ThemeSwitcherMenu = dynamic(() => import("./ThemeSwitcherMenu"), {
   ssr: false,
   loading: () => (
     <div className="flex h-[68px] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border border-transparent px-2 text-center text-[var(--color-text-secondary)] backdrop-blur-xl">
@@ -146,9 +153,11 @@ export default function HomeSideBar() {
     ? []
     : primaryNavItems.filter((item) => {
         if (item.href === "/messages") return communicationEnabled;
-        if (item.href === "/recycle-bin") return hasPermission("settings.database");
         return true;
       });
+  const visibleRecycleBinNavItems = permissionsReady && hasPermission("settings.database")
+    ? [recycleBinNavItem]
+    : [];
   const canUseSettings =
     permissions.includes("*") || permissions.some((permission) => permission.startsWith("settings."));
   const visibleSecondaryNavItems = !permissionsReady || !canUseSettings
@@ -162,9 +171,9 @@ export default function HomeSideBar() {
   }
 
   return (
-    <aside className="sticky top-2 z-50 hidden h-[calc(100dvh-16px)] w-[54px] shrink-0 lg:flex lg:flex-col">
+    <aside >
       <div className="flex h-full flex-col">
-        <div className="mb-4"><UserMenu user={user} onLogout={() => void handleLogout()} onTasks={() => router.push("/tasks")} /></div>
+        <div className="mb-2"><UserMenu user={user} onLogout={() => void handleLogout()} onTasks={() => router.push("/tasks")} /></div>
 
         <div className="flex flex-1 flex-col justify-between">
           <div className="flex flex-col gap-2">
@@ -175,6 +184,7 @@ export default function HomeSideBar() {
               pathname={pathname}
             />
             {permissionsReady && hasPermission("agent.window") ? <AgentAssistantTrigger /> : null}
+            <NavGroup items={visibleRecycleBinNavItems} pathname={pathname} />
             <ThemeSwitcherMenu />
           </div>
           <div>
@@ -287,7 +297,7 @@ function NavGroup({
           </Link>
         );
 
-        if (item.href !== "/") return <div key={item.label}>{navLink}</div>;
+        if (item.href !== "/myApp") return <div key={item.label}>{navLink}</div>;
 
         return (
           <div key={item.label} className="group/home relative">
@@ -310,7 +320,7 @@ function NavGroup({
                         className="group/app flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-bg-hover)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]"
                       >
                         <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md [&>svg]:h-4 [&>svg]:w-4 ${colorClass}`}>
-                          <AppIcon type={app.icon} />
+                          <Box className="h-5 w-5" />
                         </span>
                         <span className="min-w-0 flex-1 truncate text-xs font-medium text-[var(--color-text-primary)]">{app.name}</span>
                         <ArrowRight className="h-3.5 w-3.5 shrink-0 text-[var(--color-text-disabled)] transition-transform group-hover/app:translate-x-0.5 group-hover/app:text-[var(--color-primary)]" />

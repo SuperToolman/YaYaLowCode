@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input, Switch, toast } from "@heroui/react";
 import { Card } from "@heroui/react/card";
-import { Field } from "../_components/field";
-import { SettingsContentCard } from "../_components/settings-content-card";
+import { Field } from "../components/Field";
+import { SettingsContentCard } from "../components/SettingsContentCard";
 import type { ApiEnvelope } from "@/app/lib/api-request";
 
 type DatabaseSettings = {

@@ -4,9 +4,9 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Button, Card, Checkbox, Input, Modal, Popover, ScrollShadow, Tabs, TextArea, Tooltip } from "@heroui/react";
 import { Comment, Envelope, FaceSmile, PaperPlane, Paperclip, Plus } from "@gravity-ui/icons";
-import { useAuth } from "../../components/auth-provider";
-import { MyAvatar } from "../../components/my-avatar";
-import { PageContentLayout } from "../../components/page-content-layout";
+import { useAuth } from "../../components/AuthProvider";
+import { MyAvatar } from "../../components/my-fields/MyAvatar";
+import { PageContentLayout } from "../../components/PageContentLayout";
 import styles from "./messages.module.css";
 import {
   createDirectConversation, createGroupConversation, listCommunicationConversations,

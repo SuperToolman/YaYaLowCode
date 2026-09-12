@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { Button, Chip, Surface } from "@heroui/react";
-import { useAuth } from "../../../components/auth-provider";
-import { openLicenseManagementModal } from "../../../components/license-management-modal";
-import { SettingsContentCard } from "../_components/settings-content-card";
+import { useAuth } from "../../../components/AuthProvider";
+import { openLicenseManagementModal } from "../../../components/LicenseManagementModal";
+import { SettingsContentCard } from "../components/SettingsContentCard";
 import styles from "./about.module.css";
 
 type LicenseStatus = {

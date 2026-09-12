@@ -2,12 +2,7 @@
 
 import type { ChangeEvent, KeyboardEvent } from "react";
 import { Button, Card, Dropdown, Input, Tabs } from "@heroui/react";
-import {
-  ArrowLeftIcon,
-  PreviewIcon,
-  RestoreIcon,
-  SaveIcon,
-} from "../../../../../components/app-icons";
+import { ArrowLeft as ArrowLeftIcon, Eye as PreviewIcon, ArrowRotateLeft as RestoreIcon, FloppyDisk as SaveIcon } from "@gravity-ui/icons";
 
 export type FormVersionSummary = {
   version: number;

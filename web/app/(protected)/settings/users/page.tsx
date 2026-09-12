@@ -1,7 +1,16 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Avatar, Button, Checkbox, Dropdown, Input, Modal, Table, Tooltip } from "@heroui/react";
+import {
+  Avatar,
+  Button,
+  Checkbox,
+  Dropdown,
+  Input,
+  Modal,
+  Table,
+  Tooltip,
+} from "@heroui/react";
 import {
   createLocalUser,
   deleteUser,
@@ -11,8 +20,8 @@ import {
   type UpdateUserRequest,
   type UserResponse,
 } from "@/features/identity-access/api";
-import { SettingsContentCard } from "../_components/settings-content-card";
-import { InfoIcon } from "../../../components/app-icons";
+import { SettingsContentCard } from "../components/SettingsContentCard";
+import { CircleInfo } from "@gravity-ui/icons";
 import type { ApiEnvelope } from "@/app/lib/api-request";
 
 type EmailAddressItem = { label: string; email: string };
@@ -108,7 +117,8 @@ export default function UsersSettingsPage() {
   const [newName, setNewName] = useState("");
   const [newRoleIds, setNewRoleIds] = useState<string[]>([]);
   const [initializingCredentials, setInitializingCredentials] = useState(false);
-  const [credentialInitializationResult, setCredentialInitializationResult] = useState<CredentialInitializationResult | null>(null);
+  const [credentialInitializationResult, setCredentialInitializationResult] =
+    useState<CredentialInitializationResult | null>(null);
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -120,14 +130,28 @@ export default function UsersSettingsPage() {
       ]);
       const usersData = usersResult.data;
       const rolesData = rolesResult.data;
-      if (usersResult.error || !usersData || usersData.code !== 0 || !usersData.data)
+      if (
+        usersResult.error ||
+        !usersData ||
+        usersData.code !== 0 ||
+        !usersData.data
+      )
         throw new Error(usersData?.message || "无法加载用户");
-      if (rolesResult.error || !rolesData || rolesData.code !== 0 || !rolesData.data)
+      if (
+        rolesResult.error ||
+        !rolesData ||
+        rolesData.code !== 0 ||
+        !rolesData.data
+      )
         throw new Error(rolesData?.message || "无法加载角色");
       const nextUsers = usersData.data.map(normalizeUser);
       setUsers(nextUsers);
       setRoles(rolesData.data.filter((role) => role.status === "active"));
-      setSelectedId((current) => current && nextUsers.some((user) => user.id === current) ? current : nextUsers[0]?.id || null);
+      setSelectedId((current) =>
+        current && nextUsers.some((user) => user.id === current)
+          ? current
+          : nextUsers[0]?.id || null,
+      );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法加载用户");
     } finally {
@@ -176,7 +200,9 @@ export default function UsersSettingsPage() {
     setEditEmailAddresses(user.emailAddresses ?? []);
     setEditRoleIds(
       (user.roleIds ?? []).filter((roleId) =>
-        roles.some((role) => role.id === roleId && role.sourceType === user.sourceType),
+        roles.some(
+          (role) => role.id === roleId && role.sourceType === user.sourceType,
+        ),
       ),
     );
   }
@@ -187,7 +213,8 @@ export default function UsersSettingsPage() {
         body: payload,
         responseStyle: "fields",
       });
-      if (error || !data || data.code !== 0) throw new Error(data?.message || "更新用户失败");
+      if (error || !data || data.code !== 0)
+        throw new Error(data?.message || "更新用户失败");
       await loadUsers();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "更新用户失败");
@@ -218,7 +245,10 @@ export default function UsersSettingsPage() {
   }
   async function remove(user: UserItem) {
     try {
-      const { error } = await deleteUser({ path: { userId: user.id }, responseStyle: "fields" });
+      const { error } = await deleteUser({
+        path: { userId: user.id },
+        responseStyle: "fields",
+      });
       if (error) throw new Error("删除用户失败");
       await loadUsers();
       setDeleting(null);
@@ -241,7 +271,8 @@ export default function UsersSettingsPage() {
         },
         responseStyle: "fields",
       });
-      if (error || !data || data.code !== 0) throw new Error(data?.message || "创建用户失败");
+      if (error || !data || data.code !== 0)
+        throw new Error(data?.message || "创建用户失败");
       setCreating(false);
       setNewUsername("");
       setNewPassword("");
@@ -256,8 +287,12 @@ export default function UsersSettingsPage() {
     setInitializingCredentials(true);
     setError("");
     try {
-      const response = await fetch("/api/identity/users/initialize-local-credentials", { method: "POST" });
-      const payload = await response.json() as ApiEnvelope<CredentialInitializationResult>;
+      const response = await fetch(
+        "/api/identity/users/initialize-local-credentials",
+        { method: "POST" },
+      );
+      const payload =
+        (await response.json()) as ApiEnvelope<CredentialInitializationResult>;
       if (!response.ok || payload.code !== 0 || !payload.data) {
         throw new Error(payload.message || "初始化账号密码失败");
       }
@@ -275,7 +310,56 @@ export default function UsersSettingsPage() {
       title="用户管理"
       subtitle={`管理平台账号与组织身份源。共 ${users.length} 人，其中 ${users.filter((user) => user.status === "active").length} 人已启用。`}
       bodyClassName="flex flex-col overflow-clip"
-      headerActions={<div className="flex flex-wrap items-center justify-end gap-2"><Input aria-label="搜索用户" className="w-64" placeholder="搜索姓名、部门、角色或手机号" value={query} onChange={(event) => setQuery(event.currentTarget.value)} /><div className="flex items-center gap-1"><Button variant="secondary" isDisabled={loading || initializingCredentials} onPress={() => void initializeCredentials()}>{initializingCredentials ? "正在初始化…" : "初始化账号密码"}</Button><Tooltip><Tooltip.Trigger><Button isIconOnly variant="ghost" aria-label="账号密码初始化规则"><InfoIcon /></Button></Tooltip.Trigger><Tooltip.Content><div className="max-w-64 space-y-1.5 text-xs leading-5"><p>仅处理尚未设置账号密码的用户。</p><p>有主邮箱：邮箱同时作为账号和密码。</p><p>无主邮箱但有手机号：手机号同时作为账号和密码。</p><p>两者均无则跳过，并在结果中列出。</p></div></Tooltip.Content></Tooltip></div><Button variant="secondary" onPress={() => setCreating(true)}>添加用户</Button><Button variant="secondary" isDisabled={loading} onPress={() => void loadUsers()}><RefreshIcon />{loading ? "刷新中…" : "刷新"}</Button></div>}
+      headerActions={
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Input
+            aria-label="搜索用户"
+            className="w-64"
+            placeholder="搜索姓名、部门、角色或手机号"
+            value={query}
+            onChange={(event) => setQuery(event.currentTarget.value)}
+          />
+          <div className="flex items-center gap-1">
+            <Button
+              variant="secondary"
+              isDisabled={loading || initializingCredentials}
+              onPress={() => void initializeCredentials()}
+            >
+              {initializingCredentials ? "正在初始化…" : "初始化账号密码"}
+            </Button>
+            <Tooltip>
+              <Tooltip.Trigger>
+                <Button
+                  isIconOnly
+                  variant="ghost"
+                  aria-label="账号密码初始化规则"
+                >
+                  <CircleInfo />
+                </Button>
+              </Tooltip.Trigger>
+              <Tooltip.Content>
+                <div className="max-w-64 space-y-1.5 text-xs leading-5">
+                  <p>仅处理尚未设置账号密码的用户。</p>
+                  <p>有主邮箱：邮箱同时作为账号和密码。</p>
+                  <p>无主邮箱但有手机号：手机号同时作为账号和密码。</p>
+                  <p>两者均无则跳过，并在结果中列出。</p>
+                </div>
+              </Tooltip.Content>
+            </Tooltip>
+          </div>
+          <Button variant="secondary" onPress={() => setCreating(true)}>
+            添加用户
+          </Button>
+          <Button
+            variant="secondary"
+            isDisabled={loading}
+            onPress={() => void loadUsers()}
+          >
+            <RefreshIcon />
+            {loading ? "刷新中…" : "刷新"}
+          </Button>
+        </div>
+      }
     >
       <div className="hidden">
         <div>
@@ -324,161 +408,302 @@ export default function UsersSettingsPage() {
       <div className="relative min-h-0 flex-1">
         <div className="settings-scroll-area absolute inset-0 overflow-y-auto overscroll-contain">
           <div className="mb-5 flex flex-wrap items-center gap-2">
-            <FilterChip label="全部用户" count={users.length} active={sourceFilter === "all"} onPress={() => setSourceFilter("all")} />
-            <FilterChip label="平台账号" count={users.filter((user) => user.sourceType === "local").length} active={sourceFilter === "local"} onPress={() => setSourceFilter("local")} />
-            <FilterChip label="钉钉" count={users.filter((user) => user.sourceType === "dingtalk").length} active={sourceFilter === "dingtalk"} onPress={() => setSourceFilter("dingtalk")} />
+            <FilterChip
+              label="全部用户"
+              count={users.length}
+              active={sourceFilter === "all"}
+              onPress={() => setSourceFilter("all")}
+            />
+            <FilterChip
+              label="平台账号"
+              count={users.filter((user) => user.sourceType === "local").length}
+              active={sourceFilter === "local"}
+              onPress={() => setSourceFilter("local")}
+            />
+            <FilterChip
+              label="钉钉"
+              count={
+                users.filter((user) => user.sourceType === "dingtalk").length
+              }
+              active={sourceFilter === "dingtalk"}
+              onPress={() => setSourceFilter("dingtalk")}
+            />
             <span className="mx-1 h-5 w-px bg-[var(--color-border)]" />
-            <FilterChip label="全部状态" count={users.length} active={statusFilter === "all"} onPress={() => setStatusFilter("all")} />
-            <FilterChip label="已启用" count={users.filter((user) => user.status === "active").length} active={statusFilter === "active"} onPress={() => setStatusFilter("active")} />
-            <FilterChip label="已停用" count={users.filter((user) => user.status !== "active").length} active={statusFilter === "inactive"} onPress={() => setStatusFilter("inactive")} />
+            <FilterChip
+              label="全部状态"
+              count={users.length}
+              active={statusFilter === "all"}
+              onPress={() => setStatusFilter("all")}
+            />
+            <FilterChip
+              label="已启用"
+              count={users.filter((user) => user.status === "active").length}
+              active={statusFilter === "active"}
+              onPress={() => setStatusFilter("active")}
+            />
+            <FilterChip
+              label="已停用"
+              count={users.filter((user) => user.status !== "active").length}
+              active={statusFilter === "inactive"}
+              onPress={() => setStatusFilter("inactive")}
+            />
           </div>
-          <Table className="min-h-0"><Table.ScrollContainer className="overflow-x-auto"><Table.Content aria-label="用户列表" className="min-w-[940px] w-full table-fixed"><Table.Header><Table.Column id="user" isRowHeader className="w-[21%]">用户</Table.Column><Table.Column id="source" className="w-[9%]">来源</Table.Column><Table.Column id="department" className="w-[14%]">组织</Table.Column><Table.Column id="roles" className="w-[14%]">角色</Table.Column><Table.Column id="contact" className="w-[18%]">联系方式</Table.Column><Table.Column id="status" className="w-[12%]">状态</Table.Column><Table.Column id="actions" className="w-[12%]">操作</Table.Column></Table.Header><Table.Body renderEmptyState={() => <p className="py-16 text-center text-sm text-[var(--color-text-secondary)]">{loading ? "正在加载用户…" : "没有符合当前条件的用户。"}</p>}><Table.Collection items={filteredUsers}>{(user) => <Table.Row key={user.id} id={user.id}><Table.Cell><div className="flex min-w-0 items-center gap-3"><UserAvatar user={user} size="sm" /><div className="min-w-0"><p className="truncate text-sm font-medium text-[var(--color-text-primary)]">{user.displayName}</p><p className="mt-0.5 truncate text-[11px] text-[var(--color-text-secondary)]">{user.title || user.jobNumber || "未设置职位"}</p></div></div></Table.Cell><Table.Cell><SourceTag source={user.sourceType} /></Table.Cell><Table.Cell><TagList values={user.departments} empty="未分配组织" /></Table.Cell><Table.Cell><TagList values={user.roles} empty="未分配角色" /></Table.Cell><Table.Cell><div className="min-w-0 text-xs text-[var(--color-text-secondary)]"><p className="truncate text-[var(--color-text-primary)]">{user.mobile || "未设置手机号"}</p><p className="mt-0.5 truncate">{user.email || "未设置邮箱"}</p></div></Table.Cell><Table.Cell><span className={`w-fit shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${user.status === "active" ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-control-soft)] text-[var(--color-text-disabled)]"}`}>{user.status === "active" ? "已启用" : "已停用"}</span></Table.Cell><Table.Cell><UserActions user={user} onEdit={openEdit} onToggle={(target) => void update(target, { status: target.status === "active" ? "inactive" : "active" })} onDelete={setDeleting} /></Table.Cell></Table.Row>}</Table.Collection></Table.Body></Table.Content></Table.ScrollContainer></Table>
-        </div>
-        {false && <div className="hidden">
-          <div className="settings-scroll-area h-full w-[180px] shrink-0 overflow-y-auto border-r border-[var(--color-border)] bg-[var(--color-control-soft)] p-3 overscroll-contain">
-            <FilterGroup label="用户来源">
-              <FilterButton
-                label="全部用户"
-                count={users.length}
-                active={sourceFilter === "all"}
-                onPress={() => setSourceFilter("all")}
-              />
-              <FilterButton
-                label="平台账号"
-                count={
-                  users.filter((user) => user.sourceType === "local").length
-                }
-                active={sourceFilter === "local"}
-                onPress={() => setSourceFilter("local")}
-              />
-              <FilterButton
-                label="钉钉"
-                count={
-                  users.filter((user) => user.sourceType === "dingtalk").length
-                }
-                active={sourceFilter === "dingtalk"}
-                onPress={() => setSourceFilter("dingtalk")}
-              />
-            </FilterGroup>
-            <FilterGroup label="账号状态">
-              <FilterButton
-                label="全部状态"
-                count={users.length}
-                active={statusFilter === "all"}
-                onPress={() => setStatusFilter("all")}
-              />
-              <FilterButton
-                label="已启用"
-                count={users.filter((user) => user.status === "active").length}
-                active={statusFilter === "active"}
-                onPress={() => setStatusFilter("active")}
-              />
-              <FilterButton
-                label="已停用"
-                count={users.filter((user) => user.status !== "active").length}
-                active={statusFilter === "inactive"}
-                onPress={() => setStatusFilter("inactive")}
-              />
-            </FilterGroup>
-          </div>
-
-          <div className="settings-scroll-area h-full min-h-0 min-w-0 flex-1 overflow-y-scroll overscroll-contain">
-            <div className="sticky top-0 z-10 grid min-w-[1010px] grid-cols-[minmax(180px,1.15fr)_110px_80px_minmax(150px,1fr)_minmax(150px,1fr)_90px_110px] gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)]">
-              <div>用户</div>
-              <div>账号</div>
-              <div>来源</div>
-              <div>组织</div>
-              <div>角色</div>
-              <div>状态</div>
-              <div>操作</div>
-            </div>
-            {filteredUsers.map((user) => (
-              <div
-                role="button"
-                tabIndex={0}
-                key={user.id}
-                className={`grid min-w-[1010px] grid-cols-[minmax(180px,1.15fr)_110px_80px_minmax(150px,1fr)_minmax(150px,1fr)_90px_110px] items-center gap-3 border-b border-[var(--color-border)] px-4 py-3 text-left ${selectedId === user.id ? "bg-[var(--color-primary-soft)]" : "hover:bg-[var(--color-bg-hover)]"}`}
-                onClick={() => setSelectedId(user.id)}
+          <Table className="min-h-0">
+            <Table.ScrollContainer className="overflow-x-auto">
+              <Table.Content
+                aria-label="用户列表"
+                className="min-w-[940px] w-full table-fixed"
               >
-                <div className="flex min-w-0 items-center gap-3">
-                  <UserAvatar user={user} size="sm" />
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-[var(--color-text-primary)]">
-                      {user.displayName}
-                    </div>
-                    <div className="mt-0.5 truncate text-[11px] text-[var(--color-text-secondary)]">
-                      {user.title ||
-                        user.mobile ||
-                        user.email ||
-                        user.jobNumber ||
-                        "—"}
+                <Table.Header>
+                  <Table.Column id="user" isRowHeader className="w-[21%]">
+                    用户
+                  </Table.Column>
+                  <Table.Column id="source" className="w-[9%]">
+                    来源
+                  </Table.Column>
+                  <Table.Column id="department" className="w-[14%]">
+                    组织
+                  </Table.Column>
+                  <Table.Column id="roles" className="w-[14%]">
+                    角色
+                  </Table.Column>
+                  <Table.Column id="contact" className="w-[18%]">
+                    联系方式
+                  </Table.Column>
+                  <Table.Column id="status" className="w-[12%]">
+                    状态
+                  </Table.Column>
+                  <Table.Column id="actions" className="w-[12%]">
+                    操作
+                  </Table.Column>
+                </Table.Header>
+                <Table.Body
+                  renderEmptyState={() => (
+                    <p className="py-16 text-center text-sm text-[var(--color-text-secondary)]">
+                      {loading ? "正在加载用户…" : "没有符合当前条件的用户。"}
+                    </p>
+                  )}
+                >
+                  <Table.Collection items={filteredUsers}>
+                    {(user) => (
+                      <Table.Row key={user.id} id={user.id}>
+                        <Table.Cell>
+                          <div className="flex min-w-0 items-center gap-3">
+                            <UserAvatar user={user} size="sm" />
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-[var(--color-text-primary)]">
+                                {user.displayName}
+                              </p>
+                              <p className="mt-0.5 truncate text-[11px] text-[var(--color-text-secondary)]">
+                                {user.title || user.jobNumber || "未设置职位"}
+                              </p>
+                            </div>
+                          </div>
+                        </Table.Cell>
+                        <Table.Cell>
+                          <SourceTag source={user.sourceType} />
+                        </Table.Cell>
+                        <Table.Cell>
+                          <TagList
+                            values={user.departments}
+                            empty="未分配组织"
+                          />
+                        </Table.Cell>
+                        <Table.Cell>
+                          <TagList values={user.roles} empty="未分配角色" />
+                        </Table.Cell>
+                        <Table.Cell>
+                          <div className="min-w-0 text-xs text-[var(--color-text-secondary)]">
+                            <p className="truncate text-[var(--color-text-primary)]">
+                              {user.mobile || "未设置手机号"}
+                            </p>
+                            <p className="mt-0.5 truncate">
+                              {user.email || "未设置邮箱"}
+                            </p>
+                          </div>
+                        </Table.Cell>
+                        <Table.Cell>
+                          <span
+                            className={`w-fit shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${user.status === "active" ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-control-soft)] text-[var(--color-text-disabled)]"}`}
+                          >
+                            {user.status === "active" ? "已启用" : "已停用"}
+                          </span>
+                        </Table.Cell>
+                        <Table.Cell>
+                          <UserActions
+                            user={user}
+                            onEdit={openEdit}
+                            onToggle={(target) =>
+                              void update(target, {
+                                status:
+                                  target.status === "active"
+                                    ? "inactive"
+                                    : "active",
+                              })
+                            }
+                            onDelete={setDeleting}
+                          />
+                        </Table.Cell>
+                      </Table.Row>
+                    )}
+                  </Table.Collection>
+                </Table.Body>
+              </Table.Content>
+            </Table.ScrollContainer>
+          </Table>
+        </div>
+        {false && (
+          <div className="hidden">
+            <div className="settings-scroll-area h-full w-[180px] shrink-0 overflow-y-auto border-r border-[var(--color-border)] bg-[var(--color-control-soft)] p-3 overscroll-contain">
+              <FilterGroup label="用户来源">
+                <FilterButton
+                  label="全部用户"
+                  count={users.length}
+                  active={sourceFilter === "all"}
+                  onPress={() => setSourceFilter("all")}
+                />
+                <FilterButton
+                  label="平台账号"
+                  count={
+                    users.filter((user) => user.sourceType === "local").length
+                  }
+                  active={sourceFilter === "local"}
+                  onPress={() => setSourceFilter("local")}
+                />
+                <FilterButton
+                  label="钉钉"
+                  count={
+                    users.filter((user) => user.sourceType === "dingtalk")
+                      .length
+                  }
+                  active={sourceFilter === "dingtalk"}
+                  onPress={() => setSourceFilter("dingtalk")}
+                />
+              </FilterGroup>
+              <FilterGroup label="账号状态">
+                <FilterButton
+                  label="全部状态"
+                  count={users.length}
+                  active={statusFilter === "all"}
+                  onPress={() => setStatusFilter("all")}
+                />
+                <FilterButton
+                  label="已启用"
+                  count={
+                    users.filter((user) => user.status === "active").length
+                  }
+                  active={statusFilter === "active"}
+                  onPress={() => setStatusFilter("active")}
+                />
+                <FilterButton
+                  label="已停用"
+                  count={
+                    users.filter((user) => user.status !== "active").length
+                  }
+                  active={statusFilter === "inactive"}
+                  onPress={() => setStatusFilter("inactive")}
+                />
+              </FilterGroup>
+            </div>
+
+            <div className="settings-scroll-area h-full min-h-0 min-w-0 flex-1 overflow-y-scroll overscroll-contain">
+              <div className="sticky top-0 z-10 grid min-w-[1010px] grid-cols-[minmax(180px,1.15fr)_110px_80px_minmax(150px,1fr)_minmax(150px,1fr)_90px_110px] gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)]">
+                <div>用户</div>
+                <div>账号</div>
+                <div>来源</div>
+                <div>组织</div>
+                <div>角色</div>
+                <div>状态</div>
+                <div>操作</div>
+              </div>
+              {filteredUsers.map((user) => (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  key={user.id}
+                  className={`grid min-w-[1010px] grid-cols-[minmax(180px,1.15fr)_110px_80px_minmax(150px,1fr)_minmax(150px,1fr)_90px_110px] items-center gap-3 border-b border-[var(--color-border)] px-4 py-3 text-left ${selectedId === user.id ? "bg-[var(--color-primary-soft)]" : "hover:bg-[var(--color-bg-hover)]"}`}
+                  onClick={() => setSelectedId(user.id)}
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <UserAvatar user={user} size="sm" />
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-[var(--color-text-primary)]">
+                        {user.displayName}
+                      </div>
+                      <div className="mt-0.5 truncate text-[11px] text-[var(--color-text-secondary)]">
+                        {user.title ||
+                          user.mobile ||
+                          user.email ||
+                          user.jobNumber ||
+                          "—"}
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="truncate text-xs text-[var(--color-text-primary)]">
-                  {user.username || "—"}
-                </div>
-                <div>
-                  <SourceTag source={user.sourceType} />
-                </div>
-                <TagList values={user.departments} empty="未分配组织" />
-                <TagList values={user.roles} empty="未分配角色" />
-                <span
-                  className={`w-fit rounded-full px-2.5 py-1 text-[10px] font-semibold ${user.status === "active" ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-control-soft)] text-[var(--color-text-disabled)]"}`}
-                >
-                  {user.status === "active" ? "已启用" : "已停用"}
-                </span>
-                <div
-                  className="flex gap-1"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <UserIconAction
-                    title="编辑用户"
-                    onClick={() => openEdit(user)}
+                  <div className="truncate text-xs text-[var(--color-text-primary)]">
+                    {user.username || "—"}
+                  </div>
+                  <div>
+                    <SourceTag source={user.sourceType} />
+                  </div>
+                  <TagList values={user.departments} empty="未分配组织" />
+                  <TagList values={user.roles} empty="未分配角色" />
+                  <span
+                    className={`w-fit rounded-full px-2.5 py-1 text-[10px] font-semibold ${user.status === "active" ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-control-soft)] text-[var(--color-text-disabled)]"}`}
                   >
-                    <EditIcon />
-                  </UserIconAction>
-                  <UserIconAction
-                    title={user.status === "active" ? "禁用用户" : "启用用户"}
-                    onClick={() =>
-                      void update(user, {
-                        status:
-                          user.status === "active" ? "inactive" : "active",
-                      })
-                    }
+                    {user.status === "active" ? "已启用" : "已停用"}
+                  </span>
+                  <div
+                    className="flex gap-1"
+                    onClick={(event) => event.stopPropagation()}
                   >
-                    {user.status === "active" ? (
-                      <DisableIcon />
-                    ) : (
-                      <EnableIcon />
-                    )}
-                  </UserIconAction>
-                  <UserIconAction
-                    title="删除用户"
-                    danger
-                    onClick={() => setDeleting(user)}
-                  >
-                    <TrashIcon />
-                  </UserIconAction>
+                    <UserIconAction
+                      title="编辑用户"
+                      onClick={() => openEdit(user)}
+                    >
+                      <EditIcon />
+                    </UserIconAction>
+                    <UserIconAction
+                      title={user.status === "active" ? "禁用用户" : "启用用户"}
+                      onClick={() =>
+                        void update(user, {
+                          status:
+                            user.status === "active" ? "inactive" : "active",
+                        })
+                      }
+                    >
+                      {user.status === "active" ? (
+                        <DisableIcon />
+                      ) : (
+                        <EnableIcon />
+                      )}
+                    </UserIconAction>
+                    <UserIconAction
+                      title="删除用户"
+                      danger
+                      onClick={() => setDeleting(user)}
+                    >
+                      <TrashIcon />
+                    </UserIconAction>
+                  </div>
                 </div>
-              </div>
-            ))}
-            {!loading && filteredUsers.length === 0 ? (
-              <div className="flex min-h-64 items-center justify-center text-sm text-[var(--color-text-secondary)]">
-                没有符合当前条件的用户。
-              </div>
-            ) : null}
+              ))}
+              {!loading && filteredUsers.length === 0 ? (
+                <div className="flex min-h-64 items-center justify-center text-sm text-[var(--color-text-secondary)]">
+                  没有符合当前条件的用户。
+                </div>
+              ) : null}
+            </div>
+            <aside className="settings-scroll-area h-full w-[300px] shrink-0 overflow-y-auto border-l border-[var(--color-border)] bg-[var(--color-control-soft)] p-5 overscroll-contain">
+              {selectedUser !== null ? (
+                <UserDetails user={selectedUser as UserItem} />
+              ) : (
+                <div className="text-sm text-[var(--color-text-secondary)]">
+                  选择一个用户查看完整资料。
+                </div>
+              )}
+            </aside>
           </div>
-          <aside className="settings-scroll-area h-full w-[300px] shrink-0 overflow-y-auto border-l border-[var(--color-border)] bg-[var(--color-control-soft)] p-5 overscroll-contain">
-            {selectedUser !== null ? (
-              <UserDetails user={selectedUser as UserItem} />
-            ) : (
-              <div className="text-sm text-[var(--color-text-secondary)]">
-                选择一个用户查看完整资料。
-              </div>
-            )}
-          </aside>
-        </div>}
+        )}
       </div>
       <Modal
         isOpen={editing !== null}
@@ -763,7 +988,7 @@ export default function UsersSettingsPage() {
                 <Modal.CloseTrigger aria-label="关闭" />
               </Modal.Header>
               <Modal.Body>
-                <p className="text-sm leading-6 text-[var(--color-text-secondary)]">
+                <p className="">
                   确认删除用户「{deleting?.displayName}」吗？删除后无法恢复。
                 </p>
               </Modal.Body>
@@ -833,16 +1058,71 @@ export default function UsersSettingsPage() {
           </Modal.Container>
         </Modal.Backdrop>
       </Modal>
-      <Modal isOpen={credentialInitializationResult !== null} onOpenChange={(open) => !open && setCredentialInitializationResult(null)}>
+      <Modal
+        isOpen={credentialInitializationResult !== null}
+        onOpenChange={(open) =>
+          !open && setCredentialInitializationResult(null)
+        }
+      >
         <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
           <Modal.Container placement="center" size="md">
             <Modal.Dialog className="rounded-2xl bg-[var(--color-bg-surface)]">
-              <Modal.Header><Modal.Heading>账号密码初始化结果</Modal.Heading><Modal.CloseTrigger aria-label="关闭" /></Modal.Header>
+              <Modal.Header>
+                <Modal.Heading>账号密码初始化结果</Modal.Heading>
+                <Modal.CloseTrigger aria-label="关闭" />
+              </Modal.Header>
               <Modal.Body className="space-y-4">
-                <div className="grid grid-cols-2 gap-3"><div className="rounded-lg bg-[var(--color-success-soft)] p-3"><p className="text-xs text-[var(--color-success)]">已初始化</p><p className="mt-1 text-xl font-semibold text-[var(--color-success)]">{credentialInitializationResult?.initialized ?? 0}</p></div><div className="rounded-lg bg-[var(--color-control-soft)] p-3"><p className="text-xs text-[var(--color-text-secondary)]">原本已有账号密码</p><p className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">{credentialInitializationResult?.alreadyConfigured ?? 0}</p></div></div>
-                {credentialInitializationResult?.skipped.length ? <div><p className="text-sm font-semibold text-[var(--color-text-primary)]">已跳过 {credentialInitializationResult.skipped.length} 位用户</p><div className="mt-2 max-h-52 space-y-2 overflow-y-auto rounded-lg border border-[var(--color-border)] p-2">{credentialInitializationResult.skipped.map((item) => <div key={item.userId} className="flex items-center justify-between gap-3 px-2 py-1.5 text-sm"><span className="min-w-0 truncate text-[var(--color-text-primary)]">{item.displayName}</span><span className="shrink-0 text-xs text-[var(--color-text-secondary)]">{item.reason}</span></div>)}</div></div> : <p className="text-sm text-[var(--color-text-secondary)]">没有需要跳过的用户。</p>}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg bg-[var(--color-success-soft)] p-3">
+                    <p className="text-xs text-[var(--color-success)]">
+                      已初始化
+                    </p>
+                    <p className="mt-1 text-xl font-semibold text-[var(--color-success)]">
+                      {credentialInitializationResult?.initialized ?? 0}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-[var(--color-control-soft)] p-3">
+                    <p className="text-xs text-[var(--color-text-secondary)]">
+                      原本已有账号密码
+                    </p>
+                    <p className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">
+                      {credentialInitializationResult?.alreadyConfigured ?? 0}
+                    </p>
+                  </div>
+                </div>
+                {credentialInitializationResult?.skipped.length ? (
+                  <div>
+                    <p className="text-sm font-semibold text-[var(--color-text-primary)]">
+                      已跳过 {credentialInitializationResult.skipped.length}{" "}
+                      位用户
+                    </p>
+                    <div className="mt-2 max-h-52 space-y-2 overflow-y-auto rounded-lg border border-[var(--color-border)] p-2">
+                      {credentialInitializationResult.skipped.map((item) => (
+                        <div
+                          key={item.userId}
+                          className="flex items-center justify-between gap-3 px-2 py-1.5 text-sm"
+                        >
+                          <span className="min-w-0 truncate text-[var(--color-text-primary)]">
+                            {item.displayName}
+                          </span>
+                          <span className="shrink-0 text-xs text-[var(--color-text-secondary)]">
+                            {item.reason}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-[var(--color-text-secondary)]">
+                    没有需要跳过的用户。
+                  </p>
+                )}
               </Modal.Body>
-              <Modal.Footer><Button onPress={() => setCredentialInitializationResult(null)}>完成</Button></Modal.Footer>
+              <Modal.Footer>
+                <Button onPress={() => setCredentialInitializationResult(null)}>
+                  完成
+                </Button>
+              </Modal.Footer>
             </Modal.Dialog>
           </Modal.Container>
         </Modal.Backdrop>
@@ -851,12 +1131,73 @@ export default function UsersSettingsPage() {
   );
 }
 
-function FilterChip({ label, count, active, onPress }: { label: string; count: number; active: boolean; onPress: () => void }) {
-  return <Button variant={active ? "primary" : "secondary"} className="h-8 px-3 text-xs" onPress={onPress}>{label}<span className="opacity-65">{count}</span></Button>;
+function FilterChip({
+  label,
+  count,
+  active,
+  onPress,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Button
+      variant={active ? "primary" : "secondary"}
+      className="h-8 px-3 text-xs"
+      onPress={onPress}
+    >
+      {label}
+      <span className="opacity-65">{count}</span>
+    </Button>
+  );
 }
 
-function UserActions({ user, onEdit, onToggle, onDelete }: { user: UserItem; onEdit: (user: UserItem) => void; onToggle: (user: UserItem) => void; onDelete: (user: UserItem) => void }) {
-  return <Dropdown><Dropdown.Trigger aria-label={`${user.displayName}更多操作`} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-base text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]">•••</Dropdown.Trigger><Dropdown.Popover><Dropdown.Menu aria-label={`${user.displayName}操作`} className="min-w-52"><Dropdown.Item id="account" isDisabled>账号：{user.username || "未设置"}</Dropdown.Item><Dropdown.Item id="edit" onAction={() => onEdit(user)}>查看并编辑完整资料</Dropdown.Item><Dropdown.Item id="toggle" onAction={() => onToggle(user)}>{user.status === "active" ? "停用用户" : "启用用户"}</Dropdown.Item><Dropdown.Item id="delete" className="text-[var(--color-danger)]" onAction={() => onDelete(user)}>删除用户</Dropdown.Item></Dropdown.Menu></Dropdown.Popover></Dropdown>;
+function UserActions({
+  user,
+  onEdit,
+  onToggle,
+  onDelete,
+}: {
+  user: UserItem;
+  onEdit: (user: UserItem) => void;
+  onToggle: (user: UserItem) => void;
+  onDelete: (user: UserItem) => void;
+}) {
+  return (
+    <Dropdown>
+      <Dropdown.Trigger
+        aria-label={`${user.displayName}更多操作`}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-base text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]"
+      >
+        •••
+      </Dropdown.Trigger>
+      <Dropdown.Popover>
+        <Dropdown.Menu
+          aria-label={`${user.displayName}操作`}
+          className="min-w-52"
+        >
+          <Dropdown.Item id="account" isDisabled>
+            账号：{user.username || "未设置"}
+          </Dropdown.Item>
+          <Dropdown.Item id="edit" onAction={() => onEdit(user)}>
+            查看并编辑完整资料
+          </Dropdown.Item>
+          <Dropdown.Item id="toggle" onAction={() => onToggle(user)}>
+            {user.status === "active" ? "停用用户" : "启用用户"}
+          </Dropdown.Item>
+          <Dropdown.Item
+            id="delete"
+            className="text-[var(--color-danger)]"
+            onAction={() => onDelete(user)}
+          >
+            删除用户
+          </Dropdown.Item>
+        </Dropdown.Menu>
+      </Dropdown.Popover>
+    </Dropdown>
+  );
 }
 
 function FilterGroup({
@@ -892,7 +1233,7 @@ function RoleMultiSelect({
       .includes(query.toLocaleLowerCase("zh-CN")),
   );
   return (
-      <details className="mt-3">
+    <details className="mt-3">
       <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)]">
         <span className="truncate">
           {selected.length

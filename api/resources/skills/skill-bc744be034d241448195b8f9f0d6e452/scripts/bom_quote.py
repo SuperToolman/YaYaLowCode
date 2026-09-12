@@ -142,10 +142,17 @@ def find_source_sheet(workbook: Any, requested: str | None) -> Any:
 
 def find_header(ws: Any, require_purchase_quantity: bool) -> tuple[int, dict[str, int]] | None:
     aliases = {
-        "vision_name": {"visionname", "vision_name"},
-        "qty": {"qty", HEADER_QTY_CN},
-        "purchase_quantity": {"purchasequantity", "purchase_quantity", HEADER_PURCHASE_QTY_CN},
-        "unit": {"unit", HEADER_UNIT_CN},
+        "vision_name": {"visionname", "物料名称", "物料", "元件名称", "器件名称", "名称"},
+        "matched_source": {"匹配源", "匹配型号", "匹配料号", "供应商型号"},
+        "manufacturer_part_number": {"制造商型号", "制造商料号", "厂商型号", "型号", "mpn", "partnumber"},
+        "spec": {"规格参数", "规格", "参数", "描述", "物料描述"},
+        "manufacturer": {"制造商", "厂商", "品牌"},
+        "package": {"封装", "package"},
+        "qty": {"qty", HEADER_QTY_CN, "单套用量", "每套用量", "单机用量", "数量", "需求数量"},
+        "purchase_quantity": {
+            "purchasequantity", "采购数量", "采购批量", "采购总量", "报价数量", "生产数量", "套数", "批量",
+        },
+        "unit": {"unit", HEADER_UNIT_CN, "uom"},
     }
     for row_index in range(1, min(ws.max_row, 60) + 1):
         mapping: dict[str, int] = {}
@@ -154,12 +161,28 @@ def find_header(ws: Any, require_purchase_quantity: bool) -> tuple[int, dict[str
             for canonical, names in aliases.items():
                 if key in names and canonical not in mapping:
                     mapping[canonical] = col_index
-        required = {"vision_name", "qty"}
+        has_material_identity = any(
+            key in mapping
+            for key in ("vision_name", "matched_source", "manufacturer_part_number", "spec")
+        )
+        required = {"qty"}
         if require_purchase_quantity:
             required.add("purchase_quantity")
-        if required.issubset(mapping):
+        if required.issubset(mapping) and has_material_identity:
             return row_index, mapping
     return None
+
+
+def row_material_identity(ws: Any, excel_row: int, columns: dict[str, int]) -> str:
+    values = []
+    for key in ("vision_name", "matched_source", "manufacturer_part_number", "spec", "manufacturer", "package"):
+        column = columns.get(key)
+        if column is None:
+            continue
+        value = str(ws.cell(excel_row, column).value or "").strip()
+        if value and value not in values:
+            values.append(value)
+    return " ".join(values)
 
 
 def read_bom_rows(
@@ -173,17 +196,17 @@ def read_bom_rows(
     if not header:
         if default_purchase_quantity is None:
             raise SystemExit(
-                "Cannot find Vision_name, Qty, and Purchase_Quantity. "
+                "Cannot find a material identifier, usage quantity, and purchase quantity. "
                 "Pass --purchase-quantity if this BOM uses one quote quantity for all rows."
             )
         header = find_header(ws, require_purchase_quantity=False)
     if not header:
-        raise SystemExit("Cannot find a header row containing Vision_name and Qty.")
+        raise SystemExit("Cannot find a header row containing a material identifier and usage quantity.")
 
     header_row, columns = header
     rows: list[BomRow] = []
     for excel_row in range(header_row + 1, ws.max_row + 1):
-        vision_name = str(ws.cell(excel_row, columns["vision_name"]).value or "").strip()
+        vision_name = row_material_identity(ws, excel_row, columns)
         if not vision_name:
             continue
         qty = to_number(ws.cell(excel_row, columns["qty"]).value)

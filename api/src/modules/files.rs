@@ -19,6 +19,19 @@ use crate::{
 
 const DEFAULT_MAX_UPLOAD_BYTES: usize = 20 * 1024 * 1024;
 
+fn upload_root() -> String {
+    std::env::var("YAYA_UPLOAD_DIR").unwrap_or_else(|_| {
+        std::env::var("YAYA_API_RUNTIME_ROOT")
+            .map(|root| {
+                std::path::Path::new(&root)
+                    .join("uploads")
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .unwrap_or_else(|_| "runtime/uploads".to_string())
+    })
+}
+
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct UploadedFileResponse {
@@ -47,7 +60,7 @@ pub(crate) async fn upload_file(
     let id = Uuid::new_v4();
     let date = Utc::now().format("%Y/%m/%d").to_string();
     let storage_key = format!("{date}/{id}");
-    let root = std::env::var("YAYA_UPLOAD_DIR").unwrap_or_else(|_| "runtime/uploads".to_string());
+    let root = upload_root();
     let path = std::path::PathBuf::from(&root).join(&storage_key);
     let parent = path
         .parent()
@@ -151,7 +164,7 @@ pub(crate) async fn download_file(
             return Err(AppError::Forbidden("无权访问该文件".to_string()));
         }
     }
-    let root = std::env::var("YAYA_UPLOAD_DIR").unwrap_or_else(|_| "runtime/uploads".to_string());
+    let root = upload_root();
     let file = tokio::fs::File::open(std::path::PathBuf::from(root).join(storage_key))
         .await
         .map_err(|_| AppError::NotFound("stored file not found".to_string()))?;

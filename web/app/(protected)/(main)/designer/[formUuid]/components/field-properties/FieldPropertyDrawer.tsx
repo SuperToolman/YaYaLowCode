@@ -791,10 +791,10 @@ function AssociationFormProperties({
         <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
           <Modal.Container placement="center" size="sm">
             <Modal.Dialog className="theme-menu-surface w-[min(560px,92vw)] rounded-xl shadow-[var(--shadow-dialog)]">
-              <Modal.Header className="border-b border-[var(--designer-border)] px-5 py-4">
+              <Modal.Header className="border-b border-[var(--designer-border)]">
                 <Modal.Heading>选择关联表单</Modal.Heading>
               </Modal.Header>
-              <Modal.Body className="px-5 py-4">
+              <Modal.Body className="">
                 <Tabs
                   variant="secondary"
                   selectedKey={scope}
@@ -1954,7 +1954,7 @@ function MemberProperties({
         <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
           <Modal.Container placement="center" scroll="inside" size="sm">
             <Modal.Dialog className="theme-menu-surface flex max-h-[72vh] w-[min(520px,92vw)] flex-col overflow-hidden rounded-xl shadow-[var(--shadow-dialog)]">
-              <Modal.Header className="border-b border-[var(--designer-border)] px-5 py-4">
+              <Modal.Header className="border-b border-[var(--designer-border)]">
                 <Modal.Heading className="text-base font-semibold">
                   选择{scope === "roles" ? "角色" : "成员"}
                 </Modal.Heading>

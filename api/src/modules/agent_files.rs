@@ -4,11 +4,11 @@ use crate::{
     shared::success_response,
 };
 use axum::{
-    Json,
     body::Body,
     extract::{Multipart, Path, State},
-    http::{HeaderMap, HeaderValue, header},
+    http::{header, HeaderMap, HeaderValue},
     response::Response,
+    Json,
 };
 use chrono::Utc;
 use sea_orm::{ConnectionTrait, DbBackend, Statement, Value as SeaValue};
@@ -20,16 +20,19 @@ use uuid::Uuid;
 
 #[derive(Deserialize)]
 pub(crate) struct LinkRequest {
+    #[serde(alias = "fileId")]
     pub file_id: Uuid,
     pub role: String,
+    #[serde(alias = "messageSeq")]
     pub message_seq: Option<i64>,
+    #[serde(alias = "runId")]
     pub run_id: Option<String>,
 }
 
 fn root() -> std::path::PathBuf {
     std::path::PathBuf::from(
         std::env::var("YAYA_AGENT_WORKSPACE_ROOT")
-            .unwrap_or_else(|_| "../runtime/agent-workspaces".into()),
+            .unwrap_or_else(|_| "../agent/runtime/workspaces".into()),
     )
 }
 fn seg(v: &str) -> String {
@@ -115,6 +118,7 @@ pub(crate) async fn upload(
         file.write_all(&chunk).await?;
     }
     file.flush().await?;
+    file.sync_all().await?;
     let checksum = format!("{:x}", hasher.finalize());
     let duplicate = state
         .db
@@ -190,7 +194,7 @@ pub(crate) async fn list(
     let kind = query.get("kind").cloned();
     let (sql, values) = if let Some(kind) = kind {
         (
-            "SELECT id,original_name,mime_type,byte_size,kind,created_at FROM agent_files WHERE session_id=$1 AND owner_user_id=$2 AND kind=$3 ORDER BY created_at",
+            "SELECT id,original_name,storage_key,mime_type,byte_size,checksum,kind,created_at FROM agent_files WHERE session_id=$1 AND owner_user_id=$2 AND kind=$3 AND NOT (kind='output' AND storage_key LIKE '.attachments/%') ORDER BY created_at",
             vec![
                 SeaValue::Uuid(Some(session.id)),
                 SeaValue::Uuid(Some(user.id)),
@@ -199,7 +203,7 @@ pub(crate) async fn list(
         )
     } else {
         (
-            "SELECT id,original_name,mime_type,byte_size,kind,created_at FROM agent_files WHERE session_id=$1 AND owner_user_id=$2 ORDER BY created_at",
+            "SELECT id,original_name,storage_key,mime_type,byte_size,checksum,kind,created_at FROM agent_files WHERE session_id=$1 AND owner_user_id=$2 AND NOT (kind='output' AND storage_key LIKE '.attachments/%') ORDER BY created_at",
             vec![
                 SeaValue::Uuid(Some(session.id)),
                 SeaValue::Uuid(Some(user.id)),
@@ -214,7 +218,7 @@ pub(crate) async fn list(
             values,
         ))
         .await?;
-    let data: Vec<_> = rows.into_iter().map(|r| serde_json::json!({"id":r.try_get::<Uuid>("","id").unwrap_or_default(),"name":r.try_get::<String>("","original_name").unwrap_or_default(),"mimeType":r.try_get::<String>("","mime_type").unwrap_or_default(),"size":r.try_get::<i64>("","byte_size").unwrap_or_default(),"kind":r.try_get::<String>("","kind").unwrap_or_default(),"checksum":r.try_get::<String>("","checksum").unwrap_or_default(),"createdAt":r.try_get::<chrono::DateTime<Utc>>("","created_at").map(|v| v.to_rfc3339()).unwrap_or_default()})).collect();
+      let data: Vec<_> = rows.into_iter().map(|r| serde_json::json!({"id":r.try_get::<Uuid>("","id").unwrap_or_default(),"name":r.try_get::<String>("","original_name").unwrap_or_default(),"storageKey":r.try_get::<String>("","storage_key").unwrap_or_default(),"mimeType":r.try_get::<String>("","mime_type").unwrap_or_default(),"size":r.try_get::<i64>("","byte_size").unwrap_or_default(),"kind":r.try_get::<String>("","kind").unwrap_or_default(),"checksum":r.try_get::<String>("","checksum").unwrap_or_default(),"createdAt":r.try_get::<chrono::DateTime<Utc>>("","created_at").map(|v| v.to_rfc3339()).unwrap_or_default()})).collect();
     Ok(Json(success_response("agent files loaded", data)))
 }
 
@@ -236,21 +240,65 @@ pub(crate) async fn download(
     let file = tokio::fs::File::open(path)
         .await
         .map_err(|_| AppError::NotFound("stored file not found".into()))?;
+    let actual_size = file
+        .metadata()
+        .await
+        .map_err(|_| AppError::NotFound("stored file metadata unavailable".into()))?
+        .len();
+    if actual_size == 0 {
+        return Err(AppError::NotFound("stored file is empty".into()));
+    }
     let mime = row.try_get::<String>("", "mime_type")?;
     let name = row.try_get::<String>("", "original_name")?;
+    let disposition = content_disposition(&name);
     Ok(Response::builder()
         .header(header::CONTENT_TYPE, mime)
-        .header(header::CONTENT_LENGTH, row.try_get::<i64>("", "byte_size")?)
-        .header(
-            header::CONTENT_DISPOSITION,
-            HeaderValue::from_str(&format!(
-                "attachment; filename=\"{}\"",
-                name.replace('"', "_")
-            ))
-            .unwrap(),
-        )
+        // Use the size observed from the opened file. A stale or zero DB
+        // byte_size must never cause an otherwise valid stream to be framed
+        // as an empty HTTP response.
+        .header(header::CONTENT_LENGTH, actual_size)
+        .header(header::CONTENT_DISPOSITION, disposition)
         .body(Body::from_stream(ReaderStream::new(file)))
         .unwrap())
+}
+
+/// Build an RFC 6266-compatible disposition without putting non-ASCII bytes
+/// directly into an HTTP header. The ASCII filename keeps older clients
+/// working while filename* preserves the original UTF-8 name.
+fn content_disposition(name: &str) -> HeaderValue {
+    let fallback: String = name
+        .chars()
+        .map(|value| {
+            if value.is_ascii_alphanumeric() || matches!(value, '.' | '_' | '-' | ' ') {
+                value
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let fallback = if fallback.trim().is_empty() {
+        "download".to_string()
+    } else {
+        fallback
+    };
+    let encoded = name
+        .as_bytes()
+        .iter()
+        .flat_map(|byte| {
+            if byte.is_ascii_alphanumeric() || matches!(*byte, b'.' | b'_' | b'-' | b' ') {
+                vec![*byte as char]
+            } else {
+                let hex = format!("%{:02X}", byte);
+                hex.chars().collect()
+            }
+        })
+        .collect::<String>();
+    HeaderValue::from_str(&format!(
+        "attachment; filename=\"{}\"; filename*=UTF-8''{}",
+        fallback.replace('"', "_"),
+        encoded
+    ))
+    .unwrap_or_else(|_| HeaderValue::from_static("attachment; filename=\"download\""))
 }
 
 pub(crate) async fn delete(
@@ -271,15 +319,23 @@ pub(crate) async fn delete(
             vec![SeaValue::Uuid(Some(id))],
         ))
         .await?;
-    let _ = tokio::fs::remove_file(
-        workspace(
-            &user.id.to_string(),
-            &session.agent_id,
-            &session.session_uuid,
-        )
-        .join(key),
-    )
-    .await;
+    let session_workspace = workspace(
+        &user.id.to_string(),
+        &session.agent_id,
+        &session.session_uuid,
+    );
+    let _ = tokio::fs::remove_file(session_workspace.join(key)).await;
+    // The DSH host materializes a tool-readable copy for binary attachments.
+    // Remove copies for this id as well when the user deletes the attachment.
+    let attachments = session_workspace.join(".attachments");
+    if let Ok(mut entries) = tokio::fs::read_dir(&attachments).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            if file_name == id.to_string() || file_name.starts_with(&format!("{}.", id)) {
+                let _ = tokio::fs::remove_file(entry.path()).await;
+            }
+        }
+    }
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
@@ -328,4 +384,19 @@ pub(crate) async fn register_output(
         "agent output registered",
         serde_json::json!({"id":id,"name":display,"size":meta.len(),"kind":"output"}),
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::content_disposition;
+
+    #[test]
+    fn content_disposition_supports_utf8_names() {
+        let value = content_disposition("模板_步骤2_2000套_修复后核验.xlsx");
+        let text = value.to_str().expect("header value must be ASCII");
+        assert!(text.starts_with("attachment; filename=\""));
+        assert!(text.contains(".xlsx\"; filename*=UTF-8''"));
+        assert!(text.contains("filename*=UTF-8''"));
+        assert!(text.contains("%E6%A8%A1%E6%9D%BF"));
+    }
 }

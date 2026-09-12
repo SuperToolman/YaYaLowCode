@@ -1,4 +1,4 @@
-import { AutomationsPageClient } from "./automations-page-client";
+import { AutomationsPageClient } from "./components/AutomationsPageClient";
 
 export default async function AutomationsPage({
   params,

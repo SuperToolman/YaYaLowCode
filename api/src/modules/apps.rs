@@ -77,7 +77,7 @@ pub(crate) async fn create_app_definition(
     let description = payload
         .description
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "空白应用".to_string());
+        .unwrap_or_default();
     let icon = payload
         .icon
         .filter(|value| !value.trim().is_empty())
@@ -285,7 +285,7 @@ pub(crate) async fn delete_app_definition(
     }
 
     let form_uuids = FormDefinitionEntity::find()
-        .filter(form_definition_entity::Column::AppRouteAppId.eq(app_id.clone()))
+        .filter(form_definition_entity::Column::AppRouteAppId.eq(app_id))
         .all(&state.db)
         .await?
         .into_iter()

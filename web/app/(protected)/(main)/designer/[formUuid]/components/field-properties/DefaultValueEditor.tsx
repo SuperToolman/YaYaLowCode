@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 字段默认值编辑器
  * */
 
@@ -21,7 +21,7 @@ import type {
   PlacedField,
 } from "../../designer-types";
 import { FormulaEditor } from "./FormulaEditor";
-import { useTheme } from "../../../../../../components/theme-provider";
+import { useTheme } from "../../../../../../components/ThemeProvider";
 import { FORMULA_FUNCTION_ITEMS } from "./formula-definitions";
 import { NumberWithActions } from "./PropertyLayout";
 import {
@@ -390,7 +390,7 @@ function FormulaEditorModal({
             data-theme={resolvedTheme}
             className="designer-theme-surface flex h-[84vh] w-[min(1240px,92vw)] max-w-[92vw] flex-col overflow-hidden rounded-2xl bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]"
           >
-            <Modal.Header className="border-b border-[var(--designer-border)] bg-[var(--designer-surface-solid)] px-5 py-4">
+            <Modal.Header className="border-b border-[var(--designer-border)] bg-[var(--designer-surface-solid)]">
               <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
                 <div className="flex min-w-0 items-center gap-3">
                   <Modal.Heading className="truncate text-xl font-semibold text-[var(--color-text-primary)]">
@@ -727,7 +727,7 @@ function FormulaFunctionPanel({
 
 function FormulaHelpPanel() {
   return (
-    <section className="min-h-0 space-y-4 overflow-auto bg-[var(--designer-surface-solid)] px-4 py-3 text-sm leading-6 text-[var(--color-text-secondary)]">
+    <section className="min-h-0 space-y-4 overflow-auto bg-[var(--designer-surface-solid)] px-4 py-3 ">
       <p>从左侧面板选择字段名和函数，或输入函数。</p>
       <p>
         公式编辑举例：

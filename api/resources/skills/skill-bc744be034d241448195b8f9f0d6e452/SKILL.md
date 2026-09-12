@@ -1,21 +1,21 @@
 ---
 name: bom-quote
-description: "Create BOM quotation workbooks from Excel BOM files, query supplier websites including LCSC/立创商城 and ICKEY for Vision_name-based electronic component pricing, compare stock, MOQ, lead time, and price by business priority, and generate Excel quote sheets. Use when the user asks for BOM询价/报价, electronic component supplier lookup, website-specific supplier API querying, or quotation workbook generation from columns like Vision_name, Qty, and Purchase_Quantity."
+description: "Create BOM quotation workbooks from Chinese or English Excel BOM files, query supplier websites including LCSC/立创商城 and ICKEY, compare stock, MOQ, lead time, and price by business priority, and generate Excel quote sheets."
 ---
 
 # BOM Quote
 
 ## Overview
 
-Use this skill to turn a customer BOM workbook into a supplier-backed quotation workbook. The expected source is an Excel BOM sheet with `Vision_name`, `Qty`, and `Purchase_Quantity`; when `Purchase_Quantity` is not present, request or infer the quotation set quantity before building the quote.
+Use this skill to turn a customer BOM workbook into a supplier-backed quotation workbook. `Vision_name`, `Qty`, and `Purchase_Quantity` are internal normalized names, not required user-facing column names. Recognize Chinese and English semantic equivalents. When a per-row purchase quantity is absent, request or infer one quotation quantity for the workbook before building the quote.
 
 ## Workflow
 
-1. Identify the source BOM sheet. Prefer a sheet named `原始bom`; otherwise use the first worksheet that contains `Vision_name` and `Qty`.
+1. Identify the source BOM sheet. Prefer a sheet named `原始bom`; otherwise use the first worksheet with a material identifier and a per-unit usage column.
 2. Normalize each BOM row:
-   - `Vision_name`: original material description.
-   - `Qty`: per-set usage.
-   - `Purchase_Quantity`: quote set count or purchasing batch count.
+   - Material identifier: accept `Vision_name`, `物料名称`, `匹配源`, `制造商型号`, `规格参数`, `型号`, or a combination of those fields. Preserve the source values; do not translate or guess them.
+   - `Qty`: per-set usage, accepting `Qty`, `用量`, `单套用量`, `每套用量`, `数量`, and equivalent headers.
+   - `Purchase_Quantity`: quote set count or purchasing batch count, accepting `Purchase_Quantity`, `采购数量`, `采购批量`, `采购总量`, `报价数量`, `生产数量`, `套数`, and equivalent headers.
    - `total_quantity = Qty * Purchase_Quantity`.
    - `search_keyword`: text after the first `:` or `：`; if no colon exists, use the full `Vision_name`.
 3. Generate the query list:
@@ -33,6 +33,7 @@ Use this skill to turn a customer BOM workbook into a supplier-backed quotation 
    python scripts/bom_quote.py build --bom INPUT.xlsx --results offers.json --append-sheet
    ```
    This adds or replaces sheet `整理后的报价` inside the source workbook. If the source workbook cannot be saved, pass `--out FALLBACK.xlsx` so the script can save a copy.
+   Do not create a final quotation workbook with ad hoc spreadsheet code. The final workbook must be emitted by `scripts/bom_quote.py build`, so the selected-offer ranking, two-row headers, formulas, and traceable supplier fields remain consistent.
 6. Verify the output workbook:
    - Every BOM row has a row in the quotation sheet.
    - Main selected offer follows the ranking rules below.

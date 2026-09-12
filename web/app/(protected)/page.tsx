@@ -1,6 +1,6 @@
 import { apps } from "../lib/apps";
-import { MyAppPageClient } from "../components/my-app-page-client";
+import { HomePageClient } from "../components/HomePageClient";
 
 export default function Home() {
-  return <MyAppPageClient initialApps={apps} />;
+  return <HomePageClient initialApps={apps} />;
 }

@@ -224,6 +224,13 @@ if ([string]::IsNullOrWhiteSpace($env:YAYA_BYOM_ENCRYPTION_KEY)) {
 if ([string]::IsNullOrWhiteSpace($env:AGENT_RUNTIME_SHARED_SECRET)) {
     $env:AGENT_RUNTIME_SHARED_SECRET = "yaya-development-agent-runtime-secret"
 }
+# Keep runtime data within the component that owns it. Rust and DSH must still
+# resolve one absolute per-session workspace root because they have different
+# working directories.
+$env:YAYA_AGENT_WORKSPACE_ROOT = Join-Path $repositoryRoot "agent\runtime\workspaces"
+$env:YAYA_API_RUNTIME_ROOT = Join-Path $repositoryRoot "api\runtime"
+$env:YAYA_UPLOAD_DIR = Join-Path $repositoryRoot "api\runtime\uploads"
+$env:YAYA_LOG_DIRECTORY = Join-Path $repositoryRoot "api\runtime\logs"
 if ([string]::IsNullOrWhiteSpace($LicensePublicKeyPath)) {
     $LicensePublicKeyPath = $defaultLicensePublicKeyPath
 }
@@ -238,6 +245,32 @@ Stop-RunningService -Port $BackendPort -ServiceName "backend"
 Stop-RunningService -Port $FrontendPort -ServiceName "frontend"
 Stop-RunningService -Port $AgentPort -ServiceName "DSH Agent"
 Stop-ExistingNextDevServer -WebDirectory $webRoot
+
+function Move-LegacyRuntimePath {
+    param(
+        [string]$Source,
+        [string]$Destination
+    )
+
+    if (-not (Test-Path -LiteralPath $Source) -or (Test-Path -LiteralPath $Destination)) {
+        return
+    }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Destination) | Out-Null
+    Move-Item -LiteralPath $Source -Destination $Destination
+}
+
+# Migrate pre-1.11a development data after dependent services stop. The move is
+# deliberately non-overwriting so an existing component-owned runtime wins.
+$legacyRuntimeRoot = Join-Path $repositoryRoot "runtime"
+Move-LegacyRuntimePath (Join-Path $legacyRuntimeRoot "agent-workspaces") $env:YAYA_AGENT_WORKSPACE_ROOT
+Move-LegacyRuntimePath (Join-Path $legacyRuntimeRoot "cargo-check-agent-skill") (Join-Path $repositoryRoot "agent\runtime\cargo-check-agent-skill")
+Move-LegacyRuntimePath (Join-Path $legacyRuntimeRoot "dsh-restart.log") (Join-Path $repositoryRoot "agent\runtime\logs\dsh-restart.log")
+Move-LegacyRuntimePath (Join-Path $legacyRuntimeRoot "uploads") $env:YAYA_UPLOAD_DIR
+Move-LegacyRuntimePath (Join-Path $legacyRuntimeRoot "logs") $env:YAYA_LOG_DIRECTORY
+Move-LegacyRuntimePath (Join-Path $legacyRuntimeRoot "state") (Join-Path $env:YAYA_API_RUNTIME_ROOT "state")
+if ((Test-Path -LiteralPath $legacyRuntimeRoot) -and -not (Get-ChildItem -LiteralPath $legacyRuntimeRoot -Force | Select-Object -First 1)) {
+    Remove-Item -LiteralPath $legacyRuntimeRoot -Force
+}
 
 # Turbopack persists incremental metadata in .next. A previous interrupted
 # publish/codegen can leave a truncated binary JSON record which Next repeatedly

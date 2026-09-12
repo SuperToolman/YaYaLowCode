@@ -1,12 +1,12 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Card } from "@heroui/react/card";
 import { ScrollShadow } from "@heroui/react";
-import { useAuth } from "../../components/auth-provider";
-import { PageContentLayout } from "../../components/page-content-layout";
+import { useAuth } from "../../components/AuthProvider";
+import { PageContentLayout } from "../../components/PageContentLayout";
 import { Typography } from "@heroui/react";
 
 const settingsGroups = [

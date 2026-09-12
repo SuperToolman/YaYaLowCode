@@ -1,8 +1,8 @@
 "use client";
 
 import { FaceRobot } from "@gravity-ui/icons";
-import { AgentMarkdown } from "@/app/components/agent-markdown";
-import { MySurface } from "../../../components/my-surface";
+import { AgentMarkdown } from "@/app/components/agent/AgentMarkdown";
+import { MySurface } from "../../../components/my-fields/MySurface";
 import type { AgentMessage as Message, AgentTimelineItem } from "@/features/agent-assistant/types";
 import { agentFileDownloadUrl } from "@/features/agent-assistant/api";
 import { ThinkBlock } from "./ThinkBlock";

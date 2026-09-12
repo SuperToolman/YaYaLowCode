@@ -18,7 +18,7 @@ import {
 } from "@/features/identity-access/api";
 import { listAppNavigation, listApps } from "@/features/application/api";
 import { mapWithConcurrency } from "../../../lib/async";
-import { SettingsContentCard } from "../_components/settings-content-card";
+import { SettingsContentCard } from "../components/SettingsContentCard";
 
 type Role = {
   id: string;

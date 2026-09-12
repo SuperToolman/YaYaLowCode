@@ -436,7 +436,7 @@ pub(crate) async fn create_detail_form_definition(
             AppError::BadRequest("subform field not found in the current schema".to_string())
         })?;
     if form_detail_definition_entity::Entity::find()
-        .filter(form_detail_definition_entity::Column::SourceFormUuid.eq(source_form_uuid.clone()))
+        .filter(form_detail_definition_entity::Column::SourceFormUuid.eq(source_form_uuid))
         .filter(form_detail_definition_entity::Column::SubformFieldId.eq(subform_id.to_string()))
         .one(&state.db)
         .await?
@@ -538,7 +538,7 @@ pub(crate) async fn create_detail_form_definition(
     .insert(&txn)
     .await?;
     let parent = app_navigation_entity::Entity::find()
-        .filter(app_navigation_entity::Column::TargetFormUuid.eq(Some(source_form_uuid.clone())))
+        .filter(app_navigation_entity::Column::TargetFormUuid.eq(Some(source_form_uuid)))
         .one(&txn)
         .await?;
     let sort_order = next_navigation_sort_order(
@@ -1021,15 +1021,15 @@ pub(crate) async fn delete_form_definition(
     if definition.form_type == "detail" {
         recycle_bin::delete_entries_for_form(&txn, &form_uuid).await?;
         app_navigation_entity::Entity::delete_many()
-            .filter(app_navigation_entity::Column::TargetFormUuid.eq(Some(form_uuid.clone())))
+            .filter(app_navigation_entity::Column::TargetFormUuid.eq(Some(form_uuid)))
             .exec(&txn)
             .await?;
         form_detail_definition_entity::Entity::delete_many()
-            .filter(form_detail_definition_entity::Column::DetailFormUuid.eq(form_uuid.clone()))
+            .filter(form_detail_definition_entity::Column::DetailFormUuid.eq(form_uuid))
             .exec(&txn)
             .await?;
         FormSchemaEntity::delete_many()
-            .filter(form_schema_entity::Column::FormUuid.eq(form_uuid.clone()))
+            .filter(form_schema_entity::Column::FormUuid.eq(form_uuid))
             .exec(&txn)
             .await?;
         FormDefinitionEntity::delete_many()
@@ -1042,7 +1042,7 @@ pub(crate) async fn delete_form_definition(
     // A source form owns all generated detail definitions. Remove their navigation entries
     // and schemas with the source so no orphaned logical forms remain.
     let detail_form_uuids = form_detail_definition_entity::Entity::find()
-        .filter(form_detail_definition_entity::Column::SourceFormUuid.eq(form_uuid.clone()))
+        .filter(form_detail_definition_entity::Column::SourceFormUuid.eq(form_uuid))
         .all(&txn)
         .await?
         .into_iter()
@@ -1067,7 +1067,7 @@ pub(crate) async fn delete_form_definition(
             .await?;
     }
     form_detail_definition_entity::Entity::delete_many()
-        .filter(form_detail_definition_entity::Column::SourceFormUuid.eq(form_uuid.clone()))
+        .filter(form_detail_definition_entity::Column::SourceFormUuid.eq(form_uuid))
         .exec(&txn)
         .await?;
     let record_repository = RecordRepository::new(&txn);
@@ -1082,22 +1082,22 @@ pub(crate) async fn delete_form_definition(
     delete_storage_definition(&txn, &form_uuid).await?;
 
     FormSchemaEntity::delete_many()
-        .filter(form_schema_entity::Column::FormUuid.eq(form_uuid.clone()))
+        .filter(form_schema_entity::Column::FormUuid.eq(form_uuid))
         .exec(&txn)
         .await?;
 
     form_view_entity::Entity::delete_many()
-        .filter(form_view_entity::Column::FormUuid.eq(form_uuid.clone()))
+        .filter(form_view_entity::Column::FormUuid.eq(form_uuid))
         .exec(&txn)
         .await?;
 
     AppNavigationEntity::delete_many()
-        .filter(app_navigation_entity::Column::TargetFormUuid.eq(Some(form_uuid.clone())))
+        .filter(app_navigation_entity::Column::TargetFormUuid.eq(Some(form_uuid)))
         .exec(&txn)
         .await?;
 
     let flow_ids = AutomationFlowEntity::find()
-        .filter(automation_flow_entity::Column::TriggerFormUuid.eq(Some(form_uuid.clone())))
+        .filter(automation_flow_entity::Column::TriggerFormUuid.eq(Some(form_uuid)))
         .all(&txn)
         .await?
         .into_iter()
@@ -1874,7 +1874,7 @@ pub(crate) async fn save_form_schema_definition(
     payload: SaveSchemaRequest,
 ) -> Result<(bool, ApiSchemaPayload), AppError> {
     let definition = FormDefinitionEntity::find()
-        .filter(form_definition_entity::Column::FormUuid.eq(form_uuid.clone()))
+        .filter(form_definition_entity::Column::FormUuid.eq(form_uuid))
         .one(&state.db)
         .await?
         .ok_or_else(|| AppError::NotFound("form not found".to_string()))?;

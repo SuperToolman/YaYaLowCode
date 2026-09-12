@@ -2,11 +2,12 @@
   "name": "@yaya-low-code/web",
   "version": "0.2.0-alpha.0",
   "private": true,
+  "packageManager": "pnpm@11.1.2",
   "scripts": {
     "codegen:api": "openapi-ts && node scripts/patch-api-compat.mjs",
     "data:location-catalog": "node scripts/generate-location-catalog.mjs",
     "data:location-catalog:import": "node scripts/import-location-catalog.mjs",
-    "predev": "pnpm --dir .. codegen:api",
+    "predev": "pnpm run codegen:api",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

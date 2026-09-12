@@ -1,6 +1,8 @@
 export type AttachedImage = { id: string; name: string; previewUrl: string };
 export type AttachedFile = { id: string; name: string; mimeType: string; size: number };
 export type AgentToolActivity = { id: string; name: string; resourceName?: string; status: "running" | "completed"; arguments?: unknown; command?: string; result?: unknown; error?: unknown };
+export type AgentRunStatus = "thinking" | "working" | "responding" | "completed" | "failed" | "stopped";
+export type AgentRuntimeStatus = "running" | "completed" | "failed" | "stopped" | "idle";
 export type AgentTimelineItem =
   | { id: string; type: "reasoning"; text: string }
   | { id: string; type: "tool"; activity: AgentToolActivity }

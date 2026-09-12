@@ -1,6 +1,6 @@
 //! Local platform settings persisted by the Rust backend.
 
-use axum::extract::Path;
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::{Json, body::Body, response::Response};
 use sea_orm::{
@@ -29,6 +29,8 @@ use crate::platform::license::{
     validate_license_remotely, validate_license_token,
 };
 use crate::platform::prelude::{ApiResponse, AppError, AppState};
+
+const MAX_SKILL_ARCHIVE_BYTES: u64 = 10 * 1024 * 1024;
 
 #[derive(Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -445,6 +447,7 @@ pub(crate) async fn list_runtime_ai_employees()
 }
 
 pub(crate) async fn install_ai_employee(
+    State(state): State<AppState>,
     Path(employee_id): Path<String>,
 ) -> Result<Json<ApiResponse<AiEmployeeInstallationStatus>>, AppError> {
     license_status()
@@ -463,6 +466,17 @@ pub(crate) async fn install_ai_employee(
         &employee_id,
     )
     .await?;
+    for skill in &entitlement.skills {
+        let archive = fetch_owned_ai_employee_skill_archive(
+            &settings.license_center_url,
+            &settings.license,
+            &employee_id,
+            &skill.id,
+        )
+        .await?;
+        crate::modules::agent_config::install_ai_employee_skill_package(&state, skill, &archive)
+            .await?;
+    }
     save_installed_ai_employee_package(
         &employee_id,
         serde_json::to_value(&entitlement)
@@ -479,6 +493,69 @@ pub(crate) async fn install_ai_employee(
             installed: true,
         },
     )))
+}
+
+async fn fetch_owned_ai_employee_skill_archive(
+    operation_url: &str,
+    license: &str,
+    employee_id: &str,
+    skill_id: &str,
+) -> Result<Vec<u8>, AppError> {
+    let url = format!(
+        "{}/api/market/ai-employees/{}/skills/{}/archive",
+        operation_url.trim_end_matches('/'),
+        encode_path_segment(employee_id),
+        encode_path_segment(skill_id),
+    );
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|error| AppError::Server(std::io::Error::other(error)))?
+        .get(url)
+        .bearer_auth(license)
+        .send()
+        .await
+        .map_err(|_| {
+            AppError::BadRequest("运营管理平台暂时无法下载 AI 员工 Skill 包".to_string())
+        })?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(AppError::BadRequest(format!(
+            "运营管理平台拒绝下载 AI 员工 Skill 包（HTTP {}）",
+            status
+        )));
+    }
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_SKILL_ARCHIVE_BYTES)
+    {
+        return Err(AppError::BadRequest(
+            "AI 员工 Skill 包超过 10 MB 限制".to_string(),
+        ));
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|_| AppError::BadRequest("无法读取 AI 员工 Skill 包".to_string()))?;
+    if bytes.is_empty() || bytes.len() > MAX_SKILL_ARCHIVE_BYTES as usize {
+        return Err(AppError::BadRequest(
+            "AI 员工 Skill 包为空或超过 10 MB 限制".to_string(),
+        ));
+    }
+    Ok(bytes.to_vec())
+}
+
+fn encode_path_segment(value: &str) -> String {
+    value
+        .bytes()
+        .map(|byte| {
+            if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+                char::from(byte).to_string()
+            } else {
+                format!("%{byte:02X}")
+            }
+        })
+        .collect()
 }
 
 pub(crate) async fn uninstall_ai_employee(
@@ -592,7 +669,12 @@ pub(crate) async fn activate_platform_license(
         let _ = std::fs::remove_file(
             std::env::var_os("YAYA_LICENSE_SETTINGS_PATH")
                 .map(std::path::PathBuf::from)
-                .unwrap_or_else(|| std::path::PathBuf::from("runtime/state/license.json")),
+                .unwrap_or_else(|| {
+                    std::env::var_os("YAYA_API_RUNTIME_ROOT")
+                        .map(std::path::PathBuf::from)
+                        .unwrap_or_else(|| std::path::PathBuf::from("runtime"))
+                        .join("state/license.json")
+                }),
         );
         return Err(AppError::BadRequest(error));
     }
@@ -704,7 +786,16 @@ pub(crate) async fn cleanup_communication_data(
         }
     }
     transaction.commit().await?;
-    let root = std::env::var("YAYA_UPLOAD_DIR").unwrap_or_else(|_| "runtime/uploads".to_string());
+    let root = std::env::var("YAYA_UPLOAD_DIR").unwrap_or_else(|_| {
+        std::env::var("YAYA_API_RUNTIME_ROOT")
+            .map(|root| {
+                std::path::Path::new(&root)
+                    .join("uploads")
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .unwrap_or_else(|_| "runtime/uploads".to_string())
+    });
     for storage_key in storage_keys {
         let _ = tokio::fs::remove_file(std::path::Path::new(&root).join(storage_key)).await;
     }

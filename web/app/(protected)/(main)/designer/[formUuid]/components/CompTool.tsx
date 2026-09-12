@@ -18,17 +18,11 @@ import {
   RangeCalendar,
   Select,
 } from "@heroui/react";
-import { MySurface } from "../../../../../components/my-surface";
+import { MySurface } from "../../../../../components/my-fields/MySurface";
 import { DateInputGroup } from "@heroui/react/date-input-group";
 import { Description } from "@heroui/react/description";
 import { parseDate } from "@internationalized/date";
-import {
-  FormIcon,
-  FolderIcon,
-  GridIcon,
-  LinkIcon as AppLinkIcon,
-  MessageIcon,
-} from "../../../../../components/app-icons";
+import { FileText as FormIcon, Folder as FolderIcon, LayoutCellsLarge as GridIcon, Link as AppLinkIcon, Comment as MessageIcon } from "@gravity-ui/icons";
 import type { CountryCityValue } from "../../../../../lib/location-catalog";
 import {
   DEFAULT_CASCADER_DATA_SOURCE,
@@ -888,7 +882,7 @@ export function FieldPreview({
         </div>
       ) : null}
       {type === "description" ? (
-        <p className="rounded-xl bg-[var(--color-bg-subtle)] px-3 py-2 text-sm leading-6 text-[var(--color-text-secondary)]">
+        <p className="rounded-xl bg-[var(--color-bg-subtle)] px-3 py-2 ">
           {textDefaultValue || placeholder}
         </p>
       ) : null}

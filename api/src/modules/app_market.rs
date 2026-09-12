@@ -45,7 +45,12 @@ fn default_version() -> String {
 fn root() -> PathBuf {
     std::env::var_os("YAYA_MARKET_RELEASES_PATH")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("runtime/state/application-releases"))
+        .unwrap_or_else(|| {
+            std::env::var_os("YAYA_API_RUNTIME_ROOT")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("runtime"))
+                .join("state/application-releases")
+        })
 }
 
 fn path(app_id: &str) -> PathBuf {
@@ -175,8 +180,7 @@ pub(crate) async fn submit(
         "automations": flows.iter().map(|f| json!({"flowUuid":f.flow_uuid,"name":f.name,"description":f.description,"status":f.status,"currentVersion":f.current_version,"flowType":f.flow_type,"triggerFormUuid":f.trigger_form_uuid,"triggerEvent":f.trigger_event,"triggerConfig":f.trigger_config,"nodes":f.nodes_json,"edges":f.edges_json})).collect::<Vec<_>>(),
         "excludes": ["records", "workflowInstances", "users", "credentials", "instancePhysicalTableNames", "secrets"]
     });
-    // The first-generation package is structure-only. Physical table names and
-    // records are deliberately absent; installers recreate storage locally.
+
     let mut package = ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default();
     for (name, value) in [

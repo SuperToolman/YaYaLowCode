@@ -1,1 +1,1 @@
-export { RecordsTable, RuntimeFormPanel } from "@/app/(protected)/(main)/[appId]/[formUuid]/records-table";
+export { RecordsTable, RuntimeFormPanel } from "@/app/(protected)/(main)/[appId]/[formUuid]/RecordsTable";

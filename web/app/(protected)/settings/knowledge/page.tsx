@@ -1,2 +1,2 @@
-import { AgentResourceSettingsContent } from "../_components/agent-resource-settings-content";
+import { AgentResourceSettingsContent } from "../components/AgentResourceSettingsContent";
 export default function KnowledgePage() { return <AgentResourceSettingsContent kind="knowledge" />; }

@@ -3,8 +3,6 @@
 
 pub mod agent_config_profile_entity;
 pub mod agent_definition_entity;
-pub mod agent_file_entity;
-pub mod agent_file_link_entity;
 pub mod agent_model_provider_entity;
 pub mod agent_provider_model_entity;
 pub mod agent_resource_entity;

@@ -1,7 +1,17 @@
 ﻿import { MarkerType } from "@xyflow/react";
-import type { ApiDetailForm, ApiFormSummary } from "@/features/automation-editor/api";
-import { automationWorkflowPaletteGroups, processWorkflowPaletteGroups } from "../automation-workflow-node-registry";
-import { triggerEvents, type AutomationStatus, type TriggerEvent } from "../automation-shared";
+import type {
+  ApiDetailForm,
+  ApiFormSummary,
+} from "@/features/automation-editor/api";
+import {
+  automationWorkflowPaletteGroups,
+  processWorkflowPaletteGroups,
+} from "../components/AutomationWorkflowNodeRegistry";
+import {
+  triggerEvents,
+  type AutomationStatus,
+  type TriggerEvent,
+} from "../components/AutomationShared";
 import {
   serializeWorkflowGraph,
   type WorkflowGraphEdge,
@@ -137,7 +147,11 @@ export type ActionConfig = {
   headersText?: string;
 };
 
-export type AssigneeConfig = { assigneeIds?: string[]; assignees?: string[]; approvalMode?: "all" | "any" };
+export type AssigneeConfig = {
+  assigneeIds?: string[];
+  assignees?: string[];
+  approvalMode?: "all" | "any";
+};
 export type CopyConfig = { recipientIds?: string[]; recipients?: string[] };
 export type MemberOption = { id: string; displayName: string; status: string };
 
@@ -155,7 +169,10 @@ export type WorkflowNodeData = WorkflowNodeDataBase<
   WorkflowNodeConfig
 >;
 
-export type WorkflowNode = WorkflowGraphNode<WorkflowNodeKind, WorkflowNodeConfig>;
+export type WorkflowNode = WorkflowGraphNode<
+  WorkflowNodeKind,
+  WorkflowNodeConfig
+>;
 export type PaletteNodeKind = Exclude<WorkflowNodeKind, "trigger">;
 export type NodeMenuItem = {
   kind: PaletteNodeKind;
@@ -191,37 +208,44 @@ export type InsertContext = {
   position?: { x: number; y: number };
 };
 
-export const triggerEventRows: Array<{ label: string; events: TriggerEvent[] }> = [
+export const triggerEventRows: Array<{
+  label: string;
+  events: TriggerEvent[];
+}> = [
   { label: "创建成功", events: ["before_create", "after_create"] },
   { label: "编辑成功", events: ["before_update", "after_update"] },
   { label: "删除成功", events: ["before_delete", "after_delete"] },
 ];
 
-export const triggerDataNodeMenu: Array<{ group: string; items: NodeMenuItem[] }> =
-  automationWorkflowPaletteGroups.map((group) => ({
-    group: group.group,
-    items: group.items
-      .filter((item) => item.kind !== "trigger")
-      .map((item) => ({
-        kind: item.kind as PaletteNodeKind,
-        label: item.label,
-        description: item.description,
-        group: item.group,
-      })),
-  }));
+export const triggerDataNodeMenu: Array<{
+  group: string;
+  items: NodeMenuItem[];
+}> = automationWorkflowPaletteGroups.map((group) => ({
+  group: group.group,
+  items: group.items
+    .filter((item) => item.kind !== "trigger")
+    .map((item) => ({
+      kind: item.kind as PaletteNodeKind,
+      label: item.label,
+      description: item.description,
+      group: item.group,
+    })),
+}));
 
-export const processDataNodeMenu: Array<{ group: string; items: NodeMenuItem[] }> =
-  processWorkflowPaletteGroups.map((group) => ({
-    group: group.group,
-    items: group.items
-      .filter((item) => item.kind !== "trigger")
-      .map((item) => ({
-        kind: item.kind as PaletteNodeKind,
-        label: item.label,
-        description: item.description,
-        group: item.group,
-      })),
-  }));
+export const processDataNodeMenu: Array<{
+  group: string;
+  items: NodeMenuItem[];
+}> = processWorkflowPaletteGroups.map((group) => ({
+  group: group.group,
+  items: group.items
+    .filter((item) => item.kind !== "trigger")
+    .map((item) => ({
+      kind: item.kind as PaletteNodeKind,
+      label: item.label,
+      description: item.description,
+      group: item.group,
+    })),
+}));
 
 export const placeholderNodeGroups = [
   {
@@ -234,27 +258,38 @@ export const placeholderNodeGroups = [
   },
 ];
 
-export const branchOperators: Array<{ id: BranchRuleOperator; label: string }> = [
-  { id: "eq", label: "等于" },
-  { id: "neq", label: "不等于" },
-  { id: "inAny", label: "等于任意一个" },
-  { id: "notInAny", label: "不等于任意一个" },
-  { id: "hasValue", label: "有值" },
-  { id: "noValue", label: "无值" },
-];
+export const branchOperators: Array<{ id: BranchRuleOperator; label: string }> =
+  [
+    { id: "eq", label: "等于" },
+    { id: "neq", label: "不等于" },
+    { id: "inAny", label: "等于任意一个" },
+    { id: "notInAny", label: "不等于任意一个" },
+    { id: "hasValue", label: "有值" },
+    { id: "noValue", label: "无值" },
+  ];
 
 export const nodeTone: Record<WorkflowNodeKind, string> = {
-  trigger: "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]",
-  condition: "border-[var(--color-warning)] bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
-  "add-data": "border-[var(--color-success)] bg-[var(--color-success-soft)] text-[var(--color-success)]",
-  "update-data": "border-[var(--color-info)] bg-[var(--color-info-soft)] text-[var(--color-info)]",
-  "get-one": "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]",
-  "get-many": "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]",
-  "delete-data": "border-[var(--color-danger)] bg-[var(--color-danger-soft)] text-[var(--color-danger)]",
-  "http-request": "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]",
-  approval: "border-[var(--color-warning)] bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
+  trigger:
+    "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]",
+  condition:
+    "border-[var(--color-warning)] bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
+  "add-data":
+    "border-[var(--color-success)] bg-[var(--color-success-soft)] text-[var(--color-success)]",
+  "update-data":
+    "border-[var(--color-info)] bg-[var(--color-info-soft)] text-[var(--color-info)]",
+  "get-one":
+    "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]",
+  "get-many":
+    "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]",
+  "delete-data":
+    "border-[var(--color-danger)] bg-[var(--color-danger-soft)] text-[var(--color-danger)]",
+  "http-request":
+    "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]",
+  approval:
+    "border-[var(--color-warning)] bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
   copy: "border-[var(--color-info)] bg-[var(--color-info-soft)] text-[var(--color-info)]",
-  executor: "border-[var(--color-success)] bg-[var(--color-success-soft)] text-[var(--color-success)]",
+  executor:
+    "border-[var(--color-success)] bg-[var(--color-success-soft)] text-[var(--color-success)]",
   end: "border-[var(--color-danger)] bg-[var(--color-danger-soft)] text-[var(--color-danger)]",
 };
 
@@ -364,11 +399,29 @@ export function defaultNodeTemplate(kind: WorkflowNodeKind): WorkflowNodeData {
         } satisfies ActionConfig,
       };
     case "approval":
-      return { kind, label: "审批人", description: "等待审批人同意或拒绝", config: { assigneeIds: [], approvalMode: "all" } satisfies AssigneeConfig };
+      return {
+        kind,
+        label: "审批人",
+        description: "等待审批人同意或拒绝",
+        config: {
+          assigneeIds: [],
+          approvalMode: "all",
+        } satisfies AssigneeConfig,
+      };
     case "copy":
-      return { kind, label: "抄送人", description: "通知抄送人后自动继续", config: { recipientIds: [] } satisfies CopyConfig };
+      return {
+        kind,
+        label: "抄送人",
+        description: "通知抄送人后自动继续",
+        config: { recipientIds: [] } satisfies CopyConfig,
+      };
     case "executor":
-      return { kind, label: "执行人", description: "等待执行人完成处理", config: { assigneeIds: [] } satisfies AssigneeConfig };
+      return {
+        kind,
+        label: "执行人",
+        description: "等待执行人完成处理",
+        config: { assigneeIds: [] } satisfies AssigneeConfig,
+      };
     case "end":
       return { kind, label: "结束", description: "完成审批流程", config: {} };
   }
@@ -425,13 +478,14 @@ export function normalizeWorkflowNodes(rawNodes: unknown): WorkflowNode[] {
       return [];
     }
 
-    const normalizedKind = kind === "create-record"
-      ? "add-data"
-      : kind === "update-record"
-        ? "update-data"
-        : kind === "delete-record"
-          ? "delete-data"
-          : kind;
+    const normalizedKind =
+      kind === "create-record"
+        ? "add-data"
+        : kind === "update-record"
+          ? "update-data"
+          : kind === "delete-record"
+            ? "delete-data"
+            : kind;
 
     const template = defaultNodeTemplate(normalizedKind);
     return [
@@ -442,7 +496,8 @@ export function normalizeWorkflowNodes(rawNodes: unknown): WorkflowNode[] {
         data: {
           kind: normalizedKind,
           label: readStringValue(rawData.label) || template.label,
-          description: readStringValue(rawData.description) || template.description,
+          description:
+            readStringValue(rawData.description) || template.description,
           config: normalizeNodeConfigByKind(normalizedKind, rawData.config),
         },
       },
@@ -479,14 +534,19 @@ export function normalizeWorkflowEdges(rawEdges: unknown): WorkflowEdge[] {
   });
 }
 
-export function migrateConditionEdgeHandles(edges: WorkflowEdge[], nodes: WorkflowNode[]) {
+export function migrateConditionEdgeHandles(
+  edges: WorkflowEdge[],
+  nodes: WorkflowNode[],
+) {
   const nodeLookup = new Map(nodes.map((node) => [node.id, node]));
   return edges.map((edge) => {
     if (edge.sourceHandle) {
       return edge;
     }
     const sourceNode = nodeLookup.get(edge.source);
-    const sourceHandle = sourceNode ? defaultSourceHandleForNode(sourceNode) : null;
+    const sourceHandle = sourceNode
+      ? defaultSourceHandleForNode(sourceNode)
+      : null;
     return sourceHandle ? { ...edge, sourceHandle } : edge;
   });
 }
@@ -511,7 +571,10 @@ export function ensureTriggerNode(
   return [createTriggerNode(flowState, forms), ...nodes];
 }
 
-export function createTriggerNode(flowState: FlowState, forms: ApiFormSummary[]): WorkflowNode {
+export function createTriggerNode(
+  flowState: FlowState,
+  forms: ApiFormSummary[],
+): WorkflowNode {
   return {
     id: "trigger-1",
     type: "workflow",
@@ -520,7 +583,11 @@ export function createTriggerNode(flowState: FlowState, forms: ApiFormSummary[])
   };
 }
 
-export function syncTriggerNode(nodes: WorkflowNode[], flowState: FlowState, forms: ApiFormSummary[]) {
+export function syncTriggerNode(
+  nodes: WorkflowNode[],
+  flowState: FlowState,
+  forms: ApiFormSummary[],
+) {
   return nodes.map((node) =>
     node.data.kind === "trigger"
       ? {
@@ -531,14 +598,22 @@ export function syncTriggerNode(nodes: WorkflowNode[], flowState: FlowState, for
   );
 }
 
-export function buildTriggerNodeData(flowState: FlowState, forms: ApiFormSummary[]): WorkflowNodeData {
+export function buildTriggerNodeData(
+  flowState: FlowState,
+  forms: ApiFormSummary[],
+): WorkflowNodeData {
   const formName =
-    forms.find((form) => form.id === flowState.triggerFormUuid)?.name ?? "未配置表单";
-  const eventLabel = flowState.flowType === "process"
-    ? "表单提交时"
-    : flowState.triggerEvents
-        .map((event) => triggerEvents.find((item) => item.id === event)?.label ?? event)
-        .join("、");
+    forms.find((form) => form.id === flowState.triggerFormUuid)?.name ??
+    "未配置表单";
+  const eventLabel =
+    flowState.flowType === "process"
+      ? "表单提交时"
+      : flowState.triggerEvents
+          .map(
+            (event) =>
+              triggerEvents.find((item) => item.id === event)?.label ?? event,
+          )
+          .join("、");
 
   return {
     kind: "trigger",
@@ -551,18 +626,20 @@ export function buildTriggerNodeData(flowState: FlowState, forms: ApiFormSummary
   };
 }
 
-export function buildAutomationName(
-  forms: ApiFormSummary[],
-  formUuid: string,
-) {
+export function buildAutomationName(forms: ApiFormSummary[], formUuid: string) {
   return forms.find((form) => form.id === formUuid)?.name ?? "未命名自动化";
 }
 
-export function serializeWorkflow(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
+export function serializeWorkflow(
+  nodes: WorkflowNode[],
+  edges: WorkflowEdge[],
+) {
   return serializeWorkflowGraph(nodes, edges);
 }
 
-export function normalizeFormSchema(schema: Record<string, unknown>): FormSchemaDescriptor {
+export function normalizeFormSchema(
+  schema: Record<string, unknown>,
+): FormSchemaDescriptor {
   const fields = Array.isArray(schema.fields) ? schema.fields : [];
   return {
     formUuid: readStringValue(schema.formUuid),
@@ -573,7 +650,9 @@ export function normalizeFormSchema(schema: Record<string, unknown>): FormSchema
   };
 }
 
-export function normalizeSchemaField(value: unknown): FormFieldDescriptor | null {
+export function normalizeSchemaField(
+  value: unknown,
+): FormFieldDescriptor | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -609,20 +688,31 @@ export function normalizeSchemaField(value: unknown): FormFieldDescriptor | null
   };
 }
 
-export function collectSchemaTargets(flowState: FlowState, nodes: WorkflowNode[]) {
+export function collectSchemaTargets(
+  flowState: FlowState,
+  nodes: WorkflowNode[],
+) {
   const targetSet = new Set<string>();
   if (flowState.triggerFormUuid) {
     targetSet.add(flowState.triggerFormUuid);
   }
   for (const node of nodes) {
-    if (node.data.kind === "add-data" || node.data.kind === "update-data" || node.data.kind === "delete-data") {
-      const formUuid = readStringValue((node.data.config as ActionConfig).targetFormUuid);
+    if (
+      node.data.kind === "add-data" ||
+      node.data.kind === "update-data" ||
+      node.data.kind === "delete-data"
+    ) {
+      const formUuid = readStringValue(
+        (node.data.config as ActionConfig).targetFormUuid,
+      );
       if (formUuid) {
         targetSet.add(formUuid);
       }
     }
     if (node.data.kind === "get-one" || node.data.kind === "get-many") {
-      const formUuid = readStringValue((node.data.config as GetDataConfig).formUuid);
+      const formUuid = readStringValue(
+        (node.data.config as GetDataConfig).formUuid,
+      );
       if (formUuid) {
         targetSet.add(formUuid);
       }
@@ -685,7 +775,9 @@ export function buildGetManySourceOptions(
 
 export function buildQueryNodeOptions(nodes: WorkflowNode[]) {
   return nodes
-    .filter((node) => node.data.kind === "get-one" || node.data.kind === "get-many")
+    .filter(
+      (node) => node.data.kind === "get-one" || node.data.kind === "get-many",
+    )
     .map((node) => ({
       id: node.id,
       label: node.data.label || node.id,
@@ -717,7 +809,10 @@ export function buildUpdateTargetFormOptions(
   }));
 }
 
-export function collectUpstreamNodeIds(edges: WorkflowEdge[], currentNodeId: string | null) {
+export function collectUpstreamNodeIds(
+  edges: WorkflowEdge[],
+  currentNodeId: string | null,
+) {
   const upstreamIds = new Set<string>();
   if (!currentNodeId) {
     return upstreamIds;
@@ -750,7 +845,9 @@ export function buildDataNodeFieldChoices({
   nodeId: string;
   nodes: WorkflowNode[];
 }) {
-  const sourceNode = nodes.find((node) => node.id === nodeId && node.data.kind === "get-many");
+  const sourceNode = nodes.find(
+    (node) => node.id === nodeId && node.data.kind === "get-many",
+  );
   if (!sourceNode) {
     return [];
   }
@@ -773,8 +870,9 @@ export function getSchemaForNodeTarget(
   node: WorkflowNode,
   formSchemas: Record<string, FormSchemaDescriptor>,
 ) {
-  const targetFormUuid =
-    readStringValue((node.data.config as AddDataConfig | ActionConfig).targetFormUuid);
+  const targetFormUuid = readStringValue(
+    (node.data.config as AddDataConfig | ActionConfig).targetFormUuid,
+  );
   return targetFormUuid ? formSchemas[targetFormUuid] : undefined;
 }
 
@@ -782,7 +880,7 @@ export function getSchemaFields(
   formUuid: string | undefined,
   formSchemas: Record<string, FormSchemaDescriptor>,
 ) {
-  return formUuid ? formSchemas[formUuid]?.fields ?? [] : [];
+  return formUuid ? (formSchemas[formUuid]?.fields ?? []) : [];
 }
 
 export function createFieldMappingRow(fieldId: string): FieldMappingRow {
@@ -809,7 +907,10 @@ export function createBranchRule(parentId?: string): BranchRule {
   };
 }
 
-export function promoteRuleToChildGroup(rules: BranchRule[], ruleId: string): BranchRule[] {
+export function promoteRuleToChildGroup(
+  rules: BranchRule[],
+  ruleId: string,
+): BranchRule[] {
   const index = rules.findIndex((rule) => rule.id === ruleId);
   const target = rules[index];
   if (!target || target.isGroup) return rules;
@@ -829,7 +930,13 @@ export function promoteRuleToChildGroup(rules: BranchRule[], ruleId: string): Br
     isGroup: true,
   };
 
-  return [...rules.slice(0, index), group, movedRule, newRule, ...rules.slice(index + 1)];
+  return [
+    ...rules.slice(0, index),
+    group,
+    movedRule,
+    newRule,
+    ...rules.slice(index + 1),
+  ];
 }
 
 export function createConditionBranch(priority: number): ConditionBranch {
@@ -848,7 +955,10 @@ export function conditionBranchHandleId(branchId: string) {
   return `condition-branch:${branchId}`;
 }
 
-export function syncRequiredRows(rows: FieldMappingRow[], fields: FormFieldDescriptor[]) {
+export function syncRequiredRows(
+  rows: FieldMappingRow[],
+  fields: FormFieldDescriptor[],
+) {
   const nextRows = [...rows];
   for (const field of fields.filter((item) => item.isRequired)) {
     if (!nextRows.some((row) => row.fieldId === field.id)) {
@@ -859,14 +969,25 @@ export function syncRequiredRows(rows: FieldMappingRow[], fields: FormFieldDescr
 }
 
 export function normalizePosition(value: unknown, index: number) {
-  if (isRecord(value) && typeof value.x === "number" && typeof value.y === "number") {
+  if (
+    isRecord(value) &&
+    typeof value.x === "number" &&
+    typeof value.y === "number"
+  ) {
     return { x: value.x, y: value.y };
   }
 
   return { x: 340 + index * 30, y: 200 + index * 36 };
 }
 
-export function normalizeNodeKind(value: unknown): WorkflowNodeKind | "create-record" | "update-record" | "delete-record" | null {
+export function normalizeNodeKind(
+  value: unknown,
+):
+  | WorkflowNodeKind
+  | "create-record"
+  | "update-record"
+  | "delete-record"
+  | null {
   if (
     value === "trigger" ||
     value === "condition" ||
@@ -889,7 +1010,10 @@ export function normalizeNodeKind(value: unknown): WorkflowNodeKind | "create-re
   return null;
 }
 
-export function normalizeNodeConfigByKind(kind: WorkflowNodeKind, value: unknown): WorkflowNodeConfig {
+export function normalizeNodeConfigByKind(
+  kind: WorkflowNodeKind,
+  value: unknown,
+): WorkflowNodeConfig {
   switch (kind) {
     case "trigger":
       return normalizeTriggerConfig(value);
@@ -917,10 +1041,13 @@ export function normalizeNodeConfigByKind(kind: WorkflowNodeKind, value: unknown
 export function normalizeTriggerConfig(value: unknown): TriggerConfig {
   const current = isRecord(value) ? value : {};
   const legacyFieldId = readStringValue(current.changedFieldsText);
-  const changedFieldId = readStringValue(current.changedFieldId) || legacyFieldId;
+  const changedFieldId =
+    readStringValue(current.changedFieldId) || legacyFieldId;
   return {
     changedFieldMode:
-      current.changedFieldMode === "specific" || changedFieldId ? "specific" : "any",
+      current.changedFieldMode === "specific" || changedFieldId
+        ? "specific"
+        : "any",
     changedFieldId,
     changedFieldsText: legacyFieldId,
   };
@@ -932,7 +1059,9 @@ export function normalizeConditionConfig(value: unknown): ConditionConfig {
 
   if (rawBranches.length > 0) {
     return {
-      branches: rawBranches.map((item, index) => normalizeConditionBranch(item, index)),
+      branches: rawBranches.map((item, index) =>
+        normalizeConditionBranch(item, index),
+      ),
     };
   }
 
@@ -954,14 +1083,19 @@ export function normalizeConditionConfig(value: unknown): ConditionConfig {
   };
 }
 
-export function normalizeConditionBranch(value: unknown, index: number): ConditionBranch {
+export function normalizeConditionBranch(
+  value: unknown,
+  index: number,
+): ConditionBranch {
   const current = isRecord(value) ? value : {};
   const rawRules = Array.isArray(current.rules) ? current.rules : [];
   return {
     id: readStringValue(current.id) || `branch-${index + 1}`,
     name: readStringValue(current.name) || `条件分支 ${index + 1}`,
     mode:
-      current.mode === "rules" || current.mode === "expression" || current.mode === "all"
+      current.mode === "rules" ||
+      current.mode === "expression" ||
+      current.mode === "all"
         ? current.mode
         : "all",
     priority:
@@ -1050,17 +1184,41 @@ export function normalizeActionConfig(value: unknown): ActionConfig {
 export function normalizeAssigneeConfig(value: unknown): AssigneeConfig {
   const current = isRecord(value) ? value : {};
   return {
-    assigneeIds: Array.isArray(current.assigneeIds) ? current.assigneeIds.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : Array.isArray(current.assignees) ? current.assignees.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [],
+    assigneeIds: Array.isArray(current.assigneeIds)
+      ? current.assigneeIds.filter(
+          (item): item is string =>
+            typeof item === "string" && item.trim().length > 0,
+        )
+      : Array.isArray(current.assignees)
+        ? current.assignees.filter(
+            (item): item is string =>
+              typeof item === "string" && item.trim().length > 0,
+          )
+        : [],
     approvalMode: current.approvalMode === "any" ? "any" : "all",
   };
 }
 
 export function normalizeCopyConfig(value: unknown): CopyConfig {
   const current = isRecord(value) ? value : {};
-  return { recipientIds: Array.isArray(current.recipientIds) ? current.recipientIds.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : Array.isArray(current.recipients) ? current.recipients.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [] };
+  return {
+    recipientIds: Array.isArray(current.recipientIds)
+      ? current.recipientIds.filter(
+          (item): item is string =>
+            typeof item === "string" && item.trim().length > 0,
+        )
+      : Array.isArray(current.recipients)
+        ? current.recipients.filter(
+            (item): item is string =>
+              typeof item === "string" && item.trim().length > 0,
+          )
+        : [],
+  };
 }
 
-export function normalizeFieldMappingRow(value: unknown): FieldMappingRow | null {
+export function normalizeFieldMappingRow(
+  value: unknown,
+): FieldMappingRow | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -1098,7 +1256,9 @@ export function normalizeValueType(value: unknown): FieldValueType {
   return value === "field" || value === "formula" ? value : "value";
 }
 
-export function normalizeBranchRuleOperator(value: unknown): BranchRuleOperator {
+export function normalizeBranchRuleOperator(
+  value: unknown,
+): BranchRuleOperator {
   return value === "neq" ||
     value === "inAny" ||
     value === "notInAny" ||
@@ -1151,7 +1311,9 @@ export function getSchemaForSourceNode(
   flowState: FlowState,
 ) {
   if (node.data.kind === "trigger") {
-    return flowState.triggerFormUuid ? formSchemas[flowState.triggerFormUuid] : undefined;
+    return flowState.triggerFormUuid
+      ? formSchemas[flowState.triggerFormUuid]
+      : undefined;
   }
 
   if (node.data.kind === "get-one" || node.data.kind === "get-many") {
@@ -1168,7 +1330,9 @@ export function getSchemaForSourceNode(
       node.data.kind === "add-data"
         ? normalizeAddDataConfig(node.data.config)
         : normalizeActionConfig(node.data.config);
-    return config.targetFormUuid ? formSchemas[config.targetFormUuid] : undefined;
+    return config.targetFormUuid
+      ? formSchemas[config.targetFormUuid]
+      : undefined;
   }
 
   return undefined;
@@ -1285,7 +1449,10 @@ export function extractExpressionTokens(value: string) {
     .filter((item) => item.length > 0);
 }
 
-export function fieldTypeMatches(sourceType: string, targetType: string | undefined) {
+export function fieldTypeMatches(
+  sourceType: string,
+  targetType: string | undefined,
+) {
   if (!targetType) {
     return true;
   }

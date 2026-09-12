@@ -4,23 +4,20 @@ COPY api ./api
 RUN cargo run --manifest-path api/Cargo.toml -- --export-openapi
 
 FROM node:22-bookworm-slim AS build
-WORKDIR /workspace
+WORKDIR /workspace/web
 RUN corepack enable
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY web/package.json ./web/package.json
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
-COPY web ./web
-COPY --from=openapi-build /workspace/api/openapi/openapi.json ./api/openapi/openapi.json
-RUN pnpm --dir web codegen:api
-RUN pnpm --dir web build
+COPY web ./
+COPY --from=openapi-build /workspace/api/openapi/openapi.json /workspace/api/openapi/openapi.json
+RUN pnpm codegen:api
+RUN pnpm build
 
 FROM node:22-bookworm-slim
-WORKDIR /app
+WORKDIR /app/web
 ENV NODE_ENV=production PORT=8787
 RUN corepack enable
-COPY --from=build /workspace/package.json /workspace/pnpm-lock.yaml /workspace/pnpm-workspace.yaml ./
-COPY --from=build /workspace/web ./web
+COPY --from=build /workspace/web ./
 RUN pnpm install --prod --frozen-lockfile
-WORKDIR /app/web
 EXPOSE 8787
 CMD ["pnpm", "start"]

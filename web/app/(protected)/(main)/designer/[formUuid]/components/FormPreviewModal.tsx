@@ -1,14 +1,14 @@
-﻿"use client";
+"use client";
 
 import { Drawer } from "@heroui/react/drawer";
 import type { FormDesignerSchema } from "../designer-schema";
-import { useTheme } from "../../../../../components/theme-provider";
+import { useTheme } from "../../../../../components/ThemeProvider";
 import {
   RuntimeFormRenderer,
   RuntimeFormSurface,
   type RuntimeDebugEvent,
   type RuntimeFormSchema,
-} from "../../../../../components/runtime-form-renderer";
+} from "../../../../../components/RuntimeFormRenderer";
 
 type FormPreviewModalProps = {
   isOpen: boolean;
@@ -36,16 +36,16 @@ export function FormPreviewModal({
         <Drawer.Content placement="right">
           <Drawer.Dialog
             data-theme={resolvedTheme}
-            className="designer-theme-surface flex h-[100dvh] w-[90vw] max-w-[90vw] flex-col overflow-hidden bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]"
+            className="w-[90vw]"
           >
-            <Drawer.Header className="border-b border-[var(--designer-border)] bg-[var(--designer-surface-solid)] px-5 py-4">
-              <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
+            <Drawer.Header>
+              <div className="flex justify-between">
                 <div className="min-w-0">
-                  <Drawer.Heading className="mt-1 truncate text-xl font-semibold text-[var(--color-text-primary)]">
+                  <Drawer.Heading>
                     {schema.formName}
                   </Drawer.Heading>
                 </div>
-                <span className="shrink-0 rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-sm font-medium text-[var(--color-primary)]">
+                <span className="shrink-0 mr-5 rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-sm font-medium text-[var(--color-primary)]">
                   {visibleFields.length} 个控件
                 </span>
                 <Drawer.CloseTrigger
@@ -55,7 +55,7 @@ export function FormPreviewModal({
               </div>
             </Drawer.Header>
 
-            <Drawer.Body className="flex-1 overflow-auto bg-[var(--designer-surface-soft)] p-5">
+            <Drawer.Body>
               <RuntimeFormSurface>
                 {visibleFields.length > 0 ? (
                   <RuntimeFormRenderer
@@ -69,7 +69,7 @@ export function FormPreviewModal({
                     }}
                   />
                 ) : (
-                  <div className="flex min-h-[320px] items-center justify-center rounded-2xl border border-dashed border-[var(--designer-border)] bg-[var(--designer-surface-muted)] text-sm text-[var(--color-text-secondary)]">
+                  <div>
                     当前没有可预览控件
                   </div>
                 )}

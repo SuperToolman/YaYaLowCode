@@ -2,7 +2,7 @@
 
 面向表单设计、数据录入、流程审批、集成自动化和 AI 员工的低代码平台。
 
-当前版本：**1.08a**（内部包版本：`0.2.0-alpha.0`）
+当前版本：**1.11b**（内部包版本：`0.2.0-alpha.0`）
 
 平台面向客户部署；商品、订单、许可证、AI 员工和未来的插件包由独立运营端 `E:\yaya-operation-center` 管理。客户平台负责验证授权、安装已购内容并执行受控业务能力，不向客户暴露 Agent 核心插件或运营侧模型密钥。
 
@@ -44,12 +44,16 @@ Operation Center
 ### DSH Agent Runtime
 
 - Agent 已从 Rust 推理运行时剥离，使用独立 DSH Harness 运行。
-- YaYa 平台能力通过 `agent/deepseek-harness/packages/extensions/yaya-platform` 插件注入。
+- YaYa 平台能力通过 `agent/deepseek-harness/packages/extensions/yaya-platform` 插件注入；`yaya-agent-host` 负责 `/api/agent` 会话、流式事件、文件和产物适配。
 - 默认插件覆盖模型、工具、Skills、会话、JSON/PostgreSQL 存储、记忆、策略审批、审计、沙盒、调度、workflow 和 UI 协议适配。
 - Agent 会话通过 BFF 访问 Cordis；平台 JWT 会被验证并转换为 tenant/user/权限快照，平台仍是授权、审批与领域写入的唯一事实来源。
 - 工具写操作进入持久化 `transaction` 状态机；执行、取消、过期和最终领域写入由 Rust API 记录与执行。workflow 在暂停时持久化 checkpoint，并在执行后恢复同一 run。
 - 支持 OpenAI-compatible tool-calling、迭代/超时/token 预算、步骤审计和 SSE 流式事件。
 - 记忆按租户、用户、路由隔离，并具备常见 PII 脱敏、保留期、删除权和嵌入版本边界。
+- AI 员工会话工作区按“用户 / AI 员工 / 会话”隔离；上传附件复制为会话输入，Agent 产物单独登记和下载。
+- AI 员工市场安装时会导入授权 Skill 包，DSH Host 仅在对应员工会话中注册其 Skill、工具与插件能力。
+- `/agent` 支持 DSH 持久化会话恢复、运行状态、停止生成、工具调用记录和可收纳的产物侧栏。
+- DSH Host 会在回合结束后从工作区登记新增产物，并以原始二进制流、UTF-8 文件名和受限工作区路径提供下载。
 
 ### 授权与商业交付
 
@@ -73,7 +77,8 @@ Operation Center
 首次启用自有模型前，为 Rust API 设置 Base64 编码的 32 字节 `YAYA_BYOM_ENCRYPTION_KEY`。`AGENT_RUNTIME_SHARED_SECRET` 仅在 YaYa Host 适配层启用后配置。
 
 ```powershell
-pnpm install
+pnpm --dir web install
+pnpm --dir agent/deepseek-harness install
 .\scripts\start-dev.ps1
 ```
 
@@ -87,26 +92,27 @@ pnpm install
 常用命令：
 
 ```powershell
-pnpm dev:web
-pnpm dev:api
-pnpm dev:agent
-pnpm dev:all
-pnpm export:openapi
-pnpm codegen:api
-pnpm lint:web
-pnpm check:api
-pnpm check:agent
+pnpm --dir web dev
+cargo run --manifest-path api/Cargo.toml
+pnpm --dir agent/deepseek-harness yaya-agent-host
+.\scripts\start-dev.ps1
+cargo run --release --manifest-path api/Cargo.toml -- --export-openapi
+pnpm --dir web codegen:api
+pnpm --dir web lint
+cargo check --manifest-path api/Cargo.toml
+pnpm --dir agent/deepseek-harness typecheck
 ```
 
-Web 启动前会生成 OpenAPI 客户端。修改 Rust 路由、DTO 或 OpenAPI 定义后，应执行 `pnpm export:openapi` 与 `pnpm codegen:api`。
+Web 启动前会生成 OpenAPI 客户端。修改 Rust 路由、DTO 或 OpenAPI 定义后，应执行 `cargo run --release --manifest-path api/Cargo.toml -- --export-openapi` 与 `pnpm --dir web codegen:api`。
 
 ## 部署
 
-`deploy/compose.yaml` 当前只运行 Web/Rust API；DSH Harness 需要单独部署，YaYa `/api/agent` Host 适配层尚未完成。
+`deploy/compose.yaml` 当前只运行 Web/Rust API；DSH Harness 与 YaYa Agent Host 需要单独部署，并通过 `AGENT_RUNTIME_BASE_URL` 连接到 Web BFF。
 
 生产环境必须：
 
 - 使用 HTTPS、强随机 `AUTH_TOKEN_SECRET` 和 `BACKEND_INTERNAL_TOKEN`。
+- 为 DSH Host 配置 `AGENT_RUNTIME_SHARED_SECRET`、`YAYA_PLATFORM_API_URL`、`DSH_AGENTS_HOME`、工作区根目录和配额；Host 必须与平台 API 使用同一受控运行时文件卷策略。
 - 将模型 API Key、Worker token、数据库凭据和许可证公钥放入部署密钥管理，不写入 Git、许可证或插件 manifest。
 - 使用 PostgreSQL storage、持久化调度和受限数据库账号；备份 PostgreSQL 与 `api-state` 运行时卷。
 - 审查 sandbox 的容器、网络、挂载和资源限制后才启用命令执行能力。
@@ -159,8 +165,8 @@ scripts/                本地开发启动脚本
 ## 验证
 
 ```powershell
-pnpm check:agent
-pnpm lint:web
+pnpm --dir agent/deepseek-harness typecheck
+pnpm --dir web lint
 cargo check --manifest-path api/Cargo.toml
 git diff --check
 ```

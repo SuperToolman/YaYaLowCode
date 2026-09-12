@@ -24,7 +24,7 @@ import VolcengineIcon from "@lobehub/icons/es/Volcengine/components/Color";
 import XAIIcon from "@lobehub/icons/es/XAI/components/Mono";
 import ZhipuIcon from "@lobehub/icons/es/Zhipu/components/Color";
 import { Button, Input, ListBox, Modal, Select, Switch, Table, Tooltip, toast } from "@heroui/react";
-import { SettingsContentCard } from "../_components/settings-content-card";
+import { SettingsContentCard } from "../components/SettingsContentCard";
 import type { AgentModelProvider } from "../agent-types";
 import providerPresetsJson from "./provider-presets.json";
 

@@ -5,18 +5,7 @@ import type { ReactNode } from "react";
 import type { Monaco } from "@monaco-editor/react";
 import dynamic from "next/dynamic";
 import { Button, Card, Checkbox, CheckboxGroup, Input, ListBox, Modal, Select, Switch, TextArea, Tooltip, toast } from "@heroui/react";
-import {
-  AddIcon,
-  CodeIcon,
-  GearMiniIcon,
-  GridIcon,
-  InfoIcon,
-  ListIcon,
-  MessageIcon,
-  SwapIcon,
-  TrashIcon,
-  ToolIcon,
-} from "../../../../../components/app-icons";
+import { Plus as AddIcon, Code as CodeIcon, Gear as GearMiniIcon, LayoutCellsLarge as GridIcon, CircleInfo as InfoIcon, ListUl as ListIcon, Comment as MessageIcon, ArrowRightArrowLeft as SwapIcon, TrashBin as TrashIcon, Wrench as ToolIcon } from "@gravity-ui/icons";
 import { CompTool } from "./CompTool";
 import type { FormDesignerSchema } from "../designer-schema";
 import type {
@@ -25,8 +14,8 @@ import type {
   PageDesignerProps,
   PlacedField,
 } from "../designer-types";
-import type { RuntimeDebugEvent } from "../../../../../components/runtime-form-renderer";
-import { AgentMarkdown } from "../../../../../components/agent-markdown";
+import type { RuntimeDebugEvent } from "../../../../../components/RuntimeFormRenderer";
+import { AgentMarkdown } from "../../../../../components/agent/AgentMarkdown";
 import { AgentPanel } from "./AgentPanel";
 import { fetchAvailableAgents } from "../../../../../../features/agent-assistant/api";
 import type { AgentOption } from "../../../../../../features/agent-assistant/types";
@@ -662,7 +651,7 @@ function ActionContextDialog({
       <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
         <Modal.Container placement="center" scroll="inside" size="lg">
           <Modal.Dialog className="designer-theme-surface rounded-3xl bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]">
-            <Modal.Header className="border-b border-[var(--color-border)] px-5 py-4">
+            <Modal.Header className="border-b border-[var(--color-border)]">
               <div className="flex items-center gap-3">
                 <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
                   <CodeIcon />

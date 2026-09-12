@@ -23,15 +23,14 @@ RUN /workspace/yaya-api --export-openapi
 FROM node:22-bookworm-slim AS web-build
 ARG NEXT_PUBLIC_BACKEND_WS_URL
 ENV NEXT_PUBLIC_BACKEND_WS_URL=${NEXT_PUBLIC_BACKEND_WS_URL}
-WORKDIR /workspace
+WORKDIR /workspace/web
 RUN corepack enable
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY web/package.json ./web/package.json
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
-COPY web ./web
-COPY --from=api-build /workspace/api/openapi/openapi.json ./api/openapi/openapi.json
-RUN pnpm --dir web codegen:api
-RUN pnpm --dir web build
+COPY web ./
+COPY --from=api-build /workspace/api/openapi/openapi.json /workspace/api/openapi/openapi.json
+RUN pnpm codegen:api
+RUN pnpm build
 
 FROM node:22-bookworm-slim AS agent-runtime
 WORKDIR /workspace/agent
@@ -57,12 +56,11 @@ RUN sed -i "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g; s|http://deb.debi
     && useradd --system --create-home --uid 10001 yaya
 WORKDIR /app
 RUN corepack enable
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY web/package.json ./web/package.json
+COPY --from=web-build /workspace/web/package.json /workspace/web/pnpm-lock.yaml /workspace/web/pnpm-workspace.yaml ./web/
 RUN chown yaya:yaya /app /app/web /home/yaya
 USER yaya
 RUN --mount=type=cache,id=yaya-pnpm-store,target=/home/yaya/.local/share/pnpm/store \
-    pnpm install --prod --frozen-lockfile
+    pnpm --dir /app/web install --prod --frozen-lockfile
 USER root
 COPY --chown=yaya:yaya --from=web-runtime /workspace/web ./web
 COPY --chown=yaya:yaya --from=agent-runtime /workspace/agent ./agent/deepseek-harness

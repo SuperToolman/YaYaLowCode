@@ -1,0 +1,1148 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  pointerWithin,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { Gear } from "@gravity-ui/icons";
+import {
+  Alert,
+  Button,
+  Dropdown,
+  Input,
+  SearchField,
+  Select,
+  ListBox,
+} from "@heroui/react";
+import { Modal } from "@heroui/react/modal";
+import { Card } from "@heroui/react/card";
+import { Plus as AddIcon, Folder as FolderIcon, FolderOpen as FolderOpenIcon, FileText as FormIcon, LayoutRows as DetailFormIcon, Code as DefinedPageIcon, ArrowRightArrowLeft as WorkflowFormIcon, Link as LinkIcon, Copy as CopiedIcon, CirclePlus as CreatedIcon, CircleCheck as ProcessedIcon, Clock as TodoIcon } from "@gravity-ui/icons";
+import {
+  createForm,
+  createNavigationGroup,
+  deleteForm,
+  deleteNavigationGroup,
+  moveFormNavigation,
+  reorderNavigationItem,
+  updateNavigationGroup,
+  updateFormName,
+} from "@/features/application/api";
+import {
+  getAppNavigation,
+  getAppForms,
+  invalidateAppResources,
+} from "../../../../lib/app-resources";
+import { useAuth } from "../../../../components/AuthProvider";
+import {
+  APP_NAVIGATION_CHANGED_EVENT,
+  type AppNavigationChangedDetail,
+} from "./app-navigation-events";
+
+type FormSidebarProps = {
+  routeAppId: string;
+};
+
+type NavigationItem = {
+  id: string;
+  itemType: "form" | "system" | "group" | "link";
+  targetFormUuid?: string | null;
+  title: string;
+  pathSlug: string;
+  sortOrder: number;
+  isDefaultEntry: boolean;
+  parentId?: string | null;
+  formType?: "normal" | "workflow" | "defined" | "detail";
+};
+
+type SidebarNode = {
+  id: string;
+  name: string;
+  href?: string;
+  itemType: NavigationItem["itemType"];
+  parentId?: string | null;
+  sortOrder: number;
+  targetFormUuid?: string | null;
+  pathSlug: string;
+  formType?: "normal" | "workflow" | "defined" | "detail";
+  children: SidebarNode[];
+};
+
+type NavigationDragData = {
+  kind: "navigation-item";
+  itemId: string;
+};
+
+type NavigationDropData = {
+  kind: "navigation-drop";
+  targetId: string;
+  placement: "before" | "after" | "inside";
+};
+
+const ROOT_PARENT_VALUE = "__root__";
+type GroupAction = "rename" | "move" | "delete";
+type FormAction = "rename" | "move" | "delete";
+
+export function FormSidebar({ routeAppId }: FormSidebarProps) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { hasPermission, permissionsReady } = useAuth();
+  const canCreateForm = hasPermission(`app:${routeAppId}:create_form`);
+  const canCreateGroup = hasPermission(`app:${routeAppId}:create_group`);
+  const [items, setItems] = useState<NavigationItem[]>([]);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [isPending, startTransition] = useTransition();
+  const [errorMessage, setErrorMessage] = useState("");
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
+  const [groupName, setGroupName] = useState("");
+  const [groupParentId, setGroupParentId] = useState(ROOT_PARENT_VALUE);
+  const [selectedGroup, setSelectedGroup] = useState<NavigationItem | null>(null);
+  const [groupAction, setGroupAction] = useState<GroupAction | null>(null);
+  const [groupActionValue, setGroupActionValue] = useState("");
+  const [groupActionPending, setGroupActionPending] = useState(false);
+  const [selectedForm, setSelectedForm] = useState<NavigationItem | null>(null);
+  const [formAction, setFormAction] = useState<FormAction | null>(null);
+  const [formActionValue, setFormActionValue] = useState("");
+  const [formActionPending, setFormActionPending] = useState(false);
+  const [dragState, setDragState] = useState<{
+    itemId: string;
+    targetId?: string;
+    placement?: "before" | "after" | "inside";
+  } | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+  );
+
+  const tree = useMemo(
+    () => buildNavigationTree(routeAppId, permissionsReady ? items as unknown as NavigationItem[] : []),
+    [permissionsReady, routeAppId, items],
+  );
+  const groupOptions = useMemo(() => flattenGroups(tree), [tree]);
+  const moveGroupOptions = useMemo(() => {
+    if (!selectedGroup) return groupOptions;
+    return groupOptions.filter(
+      (option) =>
+        option.id !== selectedGroup.id &&
+        !isNavigationDescendant(items, option.id, selectedGroup.id),
+    );
+  }, [groupOptions, items, selectedGroup]);
+
+  useEffect(() => {
+    if (!permissionsReady) return;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const [navigation, forms] = await Promise.all([
+          getAppNavigation(routeAppId),
+          getAppForms(routeAppId),
+        ]);
+        const nextItems = applyFormTypes(navigation as unknown as NavigationItem[], forms);
+        if (!cancelled) {
+          startTransition(() => {
+            setItems(nextItems as unknown as NavigationItem[]);
+            setExpandedGroups((current) => expandGroupsFromItems(nextItems as unknown as NavigationItem[], current));
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setErrorMessage("导航加载失败，当前展示本地数据。");
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [permissionsReady, routeAppId]);
+
+  const refreshNavigation = useCallback(() => {
+    void (async () => {
+      try {
+        const [navigation, forms] = await Promise.all([
+          getAppNavigation(routeAppId, true),
+          getAppForms(routeAppId, true),
+        ]);
+        const nextItems = applyFormTypes(navigation as unknown as NavigationItem[], forms);
+        startTransition(() => {
+          setItems(nextItems as unknown as NavigationItem[]);
+          setExpandedGroups((current) => expandGroupsFromItems(nextItems as unknown as NavigationItem[], current));
+        });
+      } catch {
+        setErrorMessage("导航刷新失败，请稍后重试。");
+      }
+    })();
+  }, [routeAppId, startTransition]);
+
+  useEffect(() => {
+    function handleNavigationChanged(event: Event) {
+      const detail = (event as CustomEvent<AppNavigationChangedDetail>).detail;
+      if (detail?.appId === routeAppId) {
+        refreshNavigation();
+      }
+    }
+
+    window.addEventListener(APP_NAVIGATION_CHANGED_EVENT, handleNavigationChanged);
+    return () => {
+      window.removeEventListener(APP_NAVIGATION_CHANGED_EVENT, handleNavigationChanged);
+    };
+  }, [refreshNavigation, routeAppId]);
+
+  function handleCreateForm(formType: "normal" | "workflow" | "defined" = "normal") {
+    setErrorMessage("");
+
+    void (async () => {
+      try {
+        const { data, error } = await createForm({
+          path: { appId: routeAppId },
+          body: { formType },
+          responseStyle: "fields",
+        });
+        if (error || !data || data.code !== 0 || !data.data) {
+          setErrorMessage(data?.message || "创建表单失败。");
+          return;
+        }
+
+        invalidateAppResources(routeAppId, ["forms", "navigation"]);
+        refreshNavigation();
+        router.push(`/designer/${data.data.id}?appId=${routeAppId}`);
+      } catch {
+        setErrorMessage("创建表单失败，请稍后重试。");
+      }
+    })();
+  }
+
+  function handleCreateGroup() {
+    const nextTitle = groupName.trim();
+
+    if (!nextTitle) {
+      return;
+    }
+
+    setErrorMessage("");
+
+    void (async () => {
+      try {
+        const { data, error } = await createNavigationGroup({
+          path: { appId: routeAppId },
+          body: {
+            title: nextTitle,
+            parent_id: groupParentId === ROOT_PARENT_VALUE ? null : groupParentId,
+          },
+          responseStyle: "fields",
+        });
+        if (error || !data || data.code !== 0) {
+          setErrorMessage(data?.message || "创建分组失败。");
+          return;
+        }
+
+        setGroupName("");
+        setGroupParentId(ROOT_PARENT_VALUE);
+        setCreateGroupOpen(false);
+        invalidateAppResources(routeAppId, ["navigation"]);
+        refreshNavigation();
+      } catch {
+        setErrorMessage("创建分组失败，请稍后重试。");
+      }
+    })();
+  }
+
+  function toggleGroup(groupId: string) {
+    setExpandedGroups((current) => ({
+      ...current,
+      [groupId]: !current[groupId],
+    }));
+  }
+
+  function openGroupAction(node: SidebarNode, action: GroupAction) {
+    const group = items.find((item) => item.id === node.id);
+    if (!group) return;
+    setSelectedGroup(group);
+    setGroupAction(action);
+    setGroupActionValue(
+      action === "rename"
+        ? group.title
+        : group.parentId ?? ROOT_PARENT_VALUE,
+    );
+  }
+
+  function closeGroupAction() {
+    if (groupActionPending) return;
+    setSelectedGroup(null);
+    setGroupAction(null);
+    setGroupActionValue("");
+  }
+
+  function handleGroupAction() {
+    if (!selectedGroup || !groupAction) return;
+    const title = groupAction === "rename" ? groupActionValue.trim() : selectedGroup.title;
+    if (groupAction === "rename" && !title) return;
+    setGroupActionPending(true);
+    setErrorMessage("");
+
+    void (async () => {
+      try {
+        const request = groupAction === "delete"
+          ? deleteNavigationGroup({
+            path: { appId: routeAppId, groupId: selectedGroup.id },
+            responseStyle: "fields",
+          })
+          : updateNavigationGroup({
+            path: { appId: routeAppId, groupId: selectedGroup.id },
+            body: {
+              title,
+              parent_id:
+                groupAction === "move"
+                  ? groupActionValue === ROOT_PARENT_VALUE ? null : groupActionValue
+                  : selectedGroup.parentId ?? null,
+            },
+            responseStyle: "fields",
+          });
+        const { data, error } = await request;
+        if (error || !data || data.code !== 0) {
+          setErrorMessage(data?.message || `${groupAction === "delete" ? "删除" : "更新"}分组失败。`);
+          return;
+        }
+        closeGroupAction();
+        invalidateAppResources(routeAppId, ["navigation"]);
+        refreshNavigation();
+      } catch {
+        setErrorMessage(`${groupAction === "delete" ? "删除" : "更新"}分组失败，请稍后重试。`);
+      } finally {
+        setGroupActionPending(false);
+      }
+    })();
+  }
+
+  function openFormAction(node: SidebarNode, action: FormAction) {
+    const form = items.find((item) => item.id === node.id);
+    if (!form?.targetFormUuid) return;
+    setSelectedForm(form);
+    setFormAction(action);
+    setFormActionValue(action === "rename" ? form.title : form.parentId ?? ROOT_PARENT_VALUE);
+  }
+
+  function closeFormAction() {
+    if (formActionPending) return;
+    setSelectedForm(null);
+    setFormAction(null);
+    setFormActionValue("");
+  }
+
+  function handleFormAction() {
+    if (!selectedForm?.targetFormUuid || !formAction) return;
+    const name = formActionValue.trim();
+    if (formAction === "rename" && !name) return;
+    setFormActionPending(true);
+    setErrorMessage("");
+
+    void (async () => {
+      try {
+        const request = formAction === "delete"
+          ? deleteForm({ path: { formUuid: selectedForm.targetFormUuid! }, responseStyle: "fields" })
+          : formAction === "move"
+            ? moveFormNavigation({
+              path: { appId: routeAppId, formUuid: selectedForm.targetFormUuid! },
+              body: { parent_group_id: formActionValue === ROOT_PARENT_VALUE ? null : formActionValue },
+              responseStyle: "fields",
+            })
+            : updateFormName({
+              path: { formUuid: selectedForm.targetFormUuid! },
+              body: { name },
+              responseStyle: "fields",
+            });
+        const result = await request;
+        const response = result.data as { code?: number; message?: string } | undefined;
+        if (result.error || !response || response.code !== 0) {
+          setErrorMessage(response?.message || `${formAction === "delete" ? "删除" : "更新"}表单失败。`);
+          return;
+        }
+        closeFormAction();
+        invalidateAppResources(routeAppId, ["forms", "navigation"]);
+        refreshNavigation();
+        if (formAction === "delete" && pathname === `/${routeAppId}/${selectedForm.targetFormUuid}`) {
+          router.push(`/${routeAppId}`);
+        }
+      } catch {
+        setErrorMessage(`${formAction === "delete" ? "删除" : "更新"}表单失败，请稍后重试。`);
+      } finally {
+        setFormActionPending(false);
+      }
+    })();
+  }
+
+  function handleDragStart(event: DragStartEvent) {
+    const data = event.active.data.current as NavigationDragData | undefined;
+    if (data?.kind === "navigation-item") {
+      setDragState({ itemId: data.itemId });
+    }
+  }
+
+  function handleDragOver(event: DragOverEvent) {
+    const dragData = event.active.data.current as NavigationDragData | undefined;
+    const dropData = event.over?.data.current as NavigationDropData | undefined;
+
+    if (
+      dragData?.kind !== "navigation-item" ||
+      dropData?.kind !== "navigation-drop" ||
+      !canDropNavigationItem(items, dragData.itemId, dropData.targetId)
+    ) {
+      if (dragData?.kind === "navigation-item") {
+        setDragState({ itemId: dragData.itemId });
+      }
+      return;
+    }
+
+    setDragState({
+      itemId: dragData.itemId,
+      targetId: dropData.targetId,
+      placement: dropData.placement,
+    });
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const dragData = event.active.data.current as NavigationDragData | undefined;
+    const dropData = event.over?.data.current as NavigationDropData | undefined;
+    clearDragState();
+
+    if (
+      dragData?.kind !== "navigation-item" ||
+      dropData?.kind !== "navigation-drop" ||
+      !canDropNavigationItem(items, dragData.itemId, dropData.targetId)
+    ) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const { data, error } = await reorderNavigationItem({
+          path: { appId: routeAppId },
+          body: {
+            item_id: dragData.itemId,
+            target_item_id: dropData.targetId,
+            placement: dropData.placement,
+          },
+          responseStyle: "fields",
+        });
+        if (!error && data?.code === 0 && data.data) {
+          const nextItems = data.data as NavigationItem[];
+          invalidateAppResources(routeAppId, ["navigation"]);
+          startTransition(() => {
+            setItems(nextItems);
+            setExpandedGroups((current) => expandGroupsFromItems(nextItems as unknown as NavigationItem[], current));
+          });
+        } else {
+          setErrorMessage(data?.message || "更新导航顺序失败。");
+        }
+      } catch {
+        setErrorMessage("更新导航顺序失败，请稍后重试。");
+      } finally {
+        clearDragState();
+      }
+    })();
+  }
+
+  function clearDragState() {
+    setDragState(null);
+  }
+
+  return (
+    <DndContext
+      id={`form-sidebar-${routeAppId}`}
+      collisionDetection={pointerWithin}
+      sensors={sensors}
+      onDragCancel={clearDragState}
+      onDragEnd={handleDragEnd}
+      onDragOver={handleDragOver}
+      onDragStart={handleDragStart}
+    >
+      <Card className="flex h-full w-full min-h-0 flex-col overflow-hidden text-left">
+        <div className="flex min-w-0 shrink-0 items-center gap-2">
+          <SearchField aria-label="搜索表单" name="search" className="min-w-0 flex-1">
+            <SearchField.Group>
+              <SearchField.SearchIcon />
+              <SearchField.Input placeholder="搜索表单..." />
+              <SearchField.ClearButton />
+            </SearchField.Group>
+          </SearchField>
+          {canCreateForm || canCreateGroup ? <Dropdown>
+            <Dropdown.Trigger
+              aria-label="新增导航项"
+              className="inline-flex h-10 w-10 min-w-10 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-control-soft)] text-[var(--color-primary)] hover:bg-[var(--color-control-soft-hover)]"
+            >
+              <AddIcon />
+            </Dropdown.Trigger>
+            <Dropdown.Popover>
+              <Dropdown.Menu
+                aria-label="新增导航项"
+                onAction={(key) => {
+                  if (key === "form") {
+                    handleCreateForm("normal");
+                  }
+                  if (key === "workflow-form") {
+                    handleCreateForm("workflow");
+                  }
+                  if (key === "defined-form") {
+                    handleCreateForm("defined");
+                  }
+                  if (key === "group") {
+                    setCreateGroupOpen(true);
+                  }
+                }}
+              >
+                {canCreateForm ? (
+                  <Dropdown.Item id="form" textValue="创建普通表单">
+                    <span className="flex items-center gap-2">
+                      <FormIcon />
+                      创建普通表单
+                    </span>
+                  </Dropdown.Item>
+                ) : null}
+                {canCreateForm ? (
+                  <Dropdown.Item id="defined-form" textValue="创建自定义页面">
+                    <span className="flex items-center gap-2">
+                      <DefinedPageIcon />
+                      创建自定义页面
+                    </span>
+                  </Dropdown.Item>
+                ) : null}
+                {canCreateForm ? (
+                  <Dropdown.Item id="workflow-form" textValue="新增流程表单">
+                    <span className="flex items-center gap-2">
+                      <WorkflowFormIcon />
+                      新增流程表单
+                    </span>
+                  </Dropdown.Item>
+                ) : null}
+                {canCreateGroup ? <Dropdown.Item id="group">创建分组</Dropdown.Item> : null}
+              </Dropdown.Menu>
+            </Dropdown.Popover>
+          </Dropdown> : null}
+        </div>
+
+        {errorMessage ? (
+          <Alert status="danger">
+            <Alert.Content>
+              <Alert.Description>{errorMessage}</Alert.Description>
+            </Alert.Content>
+          </Alert>
+        ) : null}
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {tree.map((node) => (
+            <SidebarTreeItem
+              key={node.id}
+              dragState={dragState}
+              isExpanded={expandedGroups[node.id] ?? false}
+              level={0}
+              node={node}
+              pathname={pathname}
+              onToggleGroup={toggleGroup}
+              onGroupAction={openGroupAction}
+              onFormAction={openFormAction}
+              resolveExpanded={(groupId) => expandedGroups[groupId] ?? false}
+            />
+          ))}
+        </div>
+
+        <Modal
+          isOpen={createGroupOpen}
+          onOpenChange={(isOpen) => {
+            if (!isOpen) {
+              setCreateGroupOpen(false);
+            }
+          }}
+        >
+          <Modal.Trigger aria-hidden="true" tabIndex={-1} className="hidden" />
+          <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
+            <Modal.Container placement="center" size="md">
+              <Modal.Dialog className="theme-menu-surface rounded-2xl shadow-[var(--shadow-dialog)]">
+                <Modal.Header className="border-b border-[var(--color-border)]">
+                  <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
+                    创建分组
+                  </Modal.Heading>
+                </Modal.Header>
+                <Modal.Body className="space-y-4">
+                  <Input
+                    aria-label="分组名称"
+                    placeholder="请输入分组名称"
+                    value={groupName}
+                    onChange={(event) => setGroupName(event.currentTarget.value)}
+                  />
+                  <Select
+                    aria-label="上级分组"
+                    selectedKey={groupParentId}
+                    onSelectionChange={(key) => setGroupParentId(String(key ?? ROOT_PARENT_VALUE))}
+                  >
+                    <Select.Trigger>
+                      <Select.Value>
+                        {groupParentId === ROOT_PARENT_VALUE
+                          ? "顶级分组"
+                          : groupOptions.find((item) => item.id === groupParentId)?.label ??
+                          "顶级分组"}
+                      </Select.Value>
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        <ListBox.Item id={ROOT_PARENT_VALUE} textValue="顶级分组">
+                          顶级分组
+                        </ListBox.Item>
+                        {groupOptions.map((item) => (
+                          <ListBox.Item key={item.id} id={item.id} textValue={item.label}>
+                            {item.label}
+                          </ListBox.Item>
+                        ))}
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                </Modal.Body>
+                <Modal.Footer className="">
+                  <Button
+                    onClick={() => setCreateGroupOpen(false)}
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    onClick={handleCreateGroup}
+                    isDisabled={isPending || !groupName.trim()}
+                  >
+                    创建
+                  </Button>
+                </Modal.Footer>
+              </Modal.Dialog>
+            </Modal.Container>
+          </Modal.Backdrop>
+        </Modal>
+        <Modal isOpen={Boolean(selectedGroup && groupAction)} onOpenChange={(open) => !open && closeGroupAction()}>
+          <Modal.Trigger aria-hidden="true" tabIndex={-1} className="hidden" />
+          <Modal.Backdrop className="theme-modal-backdrop" isDismissable={!groupActionPending}>
+            <Modal.Container placement="center" size="md">
+              <Modal.Dialog className="theme-menu-surface rounded-2xl shadow-[var(--shadow-dialog)]">
+                <Modal.Header className="border-b border-[var(--color-border)]">
+                  <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
+                    {groupAction === "rename" ? "修改分组名称" : groupAction === "move" ? "移动分组" : "删除分组"}
+                  </Modal.Heading>
+                </Modal.Header>
+                <Modal.Body className="space-y-4">
+                  {groupAction === "rename" ? (
+                    <Input aria-label="分组名称" value={groupActionValue} onChange={(event) => setGroupActionValue(event.currentTarget.value)} />
+                  ) : null}
+                  {groupAction === "move" ? (
+                    <Select aria-label="移动到" selectedKey={groupActionValue} onSelectionChange={(key) => setGroupActionValue(String(key ?? ROOT_PARENT_VALUE))}>
+                      <Select.Trigger><Select.Value>{groupActionValue === ROOT_PARENT_VALUE ? "顶级" : moveGroupOptions.find((item) => item.id === groupActionValue)?.label ?? "顶级"}</Select.Value><Select.Indicator /></Select.Trigger>
+                      <Select.Popover><ListBox>
+                        <ListBox.Item id={ROOT_PARENT_VALUE} textValue="顶级">顶级</ListBox.Item>
+                        {moveGroupOptions.map((item) => <ListBox.Item key={item.id} id={item.id} textValue={item.label}>{item.label}</ListBox.Item>)}
+                      </ListBox></Select.Popover>
+                    </Select>
+                  ) : null}
+                  {groupAction === "delete" ? (
+                    <p className="">
+                      确定删除分组“{selectedGroup?.title}”吗？分组内的表单和子分组不会被删除，它们会自动上移到当前分组的父级。
+                    </p>
+                  ) : null}
+                </Modal.Body>
+                <Modal.Footer className="">
+                  <Button onClick={closeGroupAction} isDisabled={groupActionPending}>取消</Button>
+                  <Button onClick={handleGroupAction} isDisabled={groupActionPending || (groupAction === "rename" && !groupActionValue.trim())} className={groupAction === "delete" ? "bg-[var(--color-danger)] text-white" : "bg-[var(--color-primary)] text-[var(--color-text-on-primary)]"}>
+                    {groupAction === "delete" ? "删除" : "确定"}
+                  </Button>
+                </Modal.Footer>
+              </Modal.Dialog>
+            </Modal.Container>
+          </Modal.Backdrop>
+        </Modal>
+        <Modal isOpen={Boolean(selectedForm && formAction)} onOpenChange={(open) => !open && closeFormAction()}>
+          <Modal.Trigger aria-hidden="true" tabIndex={-1} className="hidden" />
+          <Modal.Backdrop className="theme-modal-backdrop" isDismissable={!formActionPending}>
+            <Modal.Container placement="center" size="md">
+              <Modal.Dialog className="theme-menu-surface rounded-2xl shadow-[var(--shadow-dialog)]">
+                <Modal.Header className="border-b border-[var(--color-border)]">
+                  <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
+                    {formAction === "rename" ? "修改表单名称" : formAction === "move" ? "移动表单" : "删除表单"}
+                  </Modal.Heading>
+                </Modal.Header>
+                <Modal.Body className="space-y-4">
+                  {formAction === "rename" ? (
+                    <Input aria-label="表单名称" value={formActionValue} onChange={(event) => setFormActionValue(event.currentTarget.value)} />
+                  ) : null}
+                  {formAction === "move" ? (
+                    <Select aria-label="移动到" selectedKey={formActionValue} onSelectionChange={(key) => setFormActionValue(String(key ?? ROOT_PARENT_VALUE))}>
+                      <Select.Trigger><Select.Value>{formActionValue === ROOT_PARENT_VALUE ? "顶级" : groupOptions.find((item) => item.id === formActionValue)?.label ?? "顶级"}</Select.Value><Select.Indicator /></Select.Trigger>
+                      <Select.Popover><ListBox>
+                        <ListBox.Item id={ROOT_PARENT_VALUE} textValue="顶级">顶级</ListBox.Item>
+                        {groupOptions.map((item) => <ListBox.Item key={item.id} id={item.id} textValue={item.label}>{item.label}</ListBox.Item>)}
+                      </ListBox></Select.Popover>
+                    </Select>
+                  ) : null}
+                  {formAction === "delete" ? (
+                    <p className="">
+                      确定永久删除表单“{selectedForm?.title}”吗？表单 Schema、记录、导航、视图及关联流程数据将一并删除，此操作不可恢复。
+                    </p>
+                  ) : null}
+                </Modal.Body>
+                <Modal.Footer className="">
+                  <Button onClick={closeFormAction} isDisabled={formActionPending}>取消</Button>
+                  <Button onClick={handleFormAction} isDisabled={formActionPending || (formAction === "rename" && !formActionValue.trim())} className={formAction === "delete" ? "bg-[var(--color-danger)] text-white" : "bg-[var(--color-primary)] text-[var(--color-text-on-primary)]"}>
+                    {formAction === "delete" ? "删除" : "确定"}
+                  </Button>
+                </Modal.Footer>
+              </Modal.Dialog>
+            </Modal.Container>
+          </Modal.Backdrop>
+        </Modal>
+      </Card>
+      <DragOverlay dropAnimation={null}>
+        {dragState ? (
+          <div className="pointer-events-none max-w-52 truncate rounded-lg border border-[var(--color-primary)] bg-[var(--color-bg-surface)] px-3 py-2 text-xs font-medium text-[var(--color-text-primary)] shadow-[var(--shadow-floating)]">
+            {items.find((item) => item.id === dragState.itemId)?.title ?? "导航项"}
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
+  );
+}
+
+function SidebarTreeItem({
+  dragState,
+  isExpanded,
+  level,
+  node,
+  pathname,
+  onToggleGroup,
+  onGroupAction,
+  onFormAction,
+  resolveExpanded,
+}: {
+  dragState: {
+    itemId: string;
+    targetId?: string;
+    placement?: "before" | "after" | "inside";
+  } | null;
+  isExpanded: boolean;
+  level: number;
+  node: SidebarNode;
+  pathname: string;
+  onToggleGroup: (groupId: string) => void;
+  onGroupAction: (node: SidebarNode, action: GroupAction) => void;
+  onFormAction: (node: SidebarNode, action: FormAction) => void;
+  resolveExpanded: (groupId: string) => boolean;
+}) {
+  const isActive = Boolean(node.href && pathname === node.href);
+  const isDropTarget = dragState?.targetId === node.id;
+  const showChildren = node.itemType !== "group" || isExpanded;
+  const paddingLeft = 10 + level * 14;
+  const nodeIcon = getSidebarNodeIcon(node.itemType, node.pathSlug, isExpanded, node.formType);
+  const nodeIconColor = getSidebarNodeIconColor(node.itemType, node.formType);
+  const isDetailForm = node.itemType === "form" && node.formType === "detail";
+  const isDraggable = node.itemType !== "system" && !isDetailForm;
+  const { attributes, isDragging, listeners, setNodeRef } = useDraggable({
+    id: `navigation-item:${node.id}`,
+    data: { kind: "navigation-item", itemId: node.id } satisfies NavigationDragData,
+    disabled: !isDraggable,
+  });
+
+  return (
+    <div>
+      <div
+        ref={setNodeRef}
+        className={[
+          "group/sidebar-item relative rounded-[var(--radius)] border-0 text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-control-soft-hover)] hover:text-[var(--color-text-primary)]",
+          isDragging ? "opacity-35" : "",
+          isActive
+            ? "bg-[var(--color-control-selected)] text-[var(--color-text-primary)]"
+            : "",
+          isDropTarget && dragState?.placement === "inside"
+            ? ""
+            : "",
+          isDropTarget && dragState?.placement === "before"
+            ? "shadow-[inset_0_3px_0_0_var(--color-primary)]"
+            : "",
+          isDropTarget && dragState?.placement === "after"
+            ? "shadow-[inset_0_-3px_0_0_var(--color-primary)]"
+            : "",
+        ].join(" ")}
+      >
+        {dragState && dragState.itemId !== node.id && node.itemType !== "system" && !isDetailForm ? (
+          <NavigationItemDropZones node={node} />
+        ) : null}
+        {node.itemType === "group" ? (
+          <button
+            type="button"
+            onClick={() => onToggleGroup(node.id)}
+            className="flex w-full items-center gap-2.5 py-2 text-left"
+            style={{ paddingLeft }}
+          >
+            <span className={`inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center ${nodeIconColor}`}>
+              {nodeIcon}
+            </span>
+            <span className="min-w-0 truncate text-xs font-medium">{node.name}</span>
+          </button>
+        ) : (
+          <Link
+            href={node.href ?? "#"}
+            className="flex w-full items-center gap-2.5 py-2 text-left"
+            style={{ paddingLeft }}
+          >
+            <span className={`inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center ${nodeIconColor}`}>
+              {nodeIcon}
+            </span>
+            <span className="min-w-0 truncate text-xs font-medium">{node.name}</span>
+          </Link>
+        )}
+        {node.itemType === "group" ? (
+          <Dropdown>
+            <Dropdown.Trigger aria-label={`${node.name} 设置`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="pointer-events-none absolute right-8 top-1/2 z-30 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-[var(--radius)] text-[var(--color-text-disabled)] opacity-0 transition-opacity hover:bg-[var(--color-control-soft-hover)] hover:text-[var(--color-text-primary)] group-hover/sidebar-item:pointer-events-auto group-hover/sidebar-item:opacity-100 group-focus-within/sidebar-item:pointer-events-auto group-focus-within/sidebar-item:opacity-100">
+              <Gear className="h-4 w-4" />
+            </Dropdown.Trigger>
+            <Dropdown.Popover>
+              <Dropdown.Menu aria-label={`${node.name} 分组操作`} onAction={(key) => onGroupAction(node, String(key) as GroupAction)}>
+                <Dropdown.Item id="rename">修改名称</Dropdown.Item>
+                <Dropdown.Item id="move">移动到</Dropdown.Item>
+                <Dropdown.Item id="delete" className="text-[var(--color-danger)]">删除</Dropdown.Item>
+              </Dropdown.Menu>
+            </Dropdown.Popover>
+          </Dropdown>
+        ) : null}
+        {node.itemType === "form" ? (
+          <Dropdown>
+            <Dropdown.Trigger aria-label={`${node.name} 设置`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className={`pointer-events-none absolute top-1/2 z-30 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-[var(--radius)] text-[var(--color-text-disabled)] opacity-0 transition-opacity hover:bg-[var(--color-control-soft-hover)] hover:text-[var(--color-text-primary)] group-hover/sidebar-item:pointer-events-auto group-hover/sidebar-item:opacity-100 group-focus-within/sidebar-item:pointer-events-auto group-focus-within/sidebar-item:opacity-100 ${isDraggable ? "right-8" : "right-1"}`}>
+              <Gear className="h-4 w-4" />
+            </Dropdown.Trigger>
+            <Dropdown.Popover>
+              <Dropdown.Menu aria-label={`${node.name} 表单操作`} onAction={(key) => onFormAction(node, String(key) as FormAction)}>
+                <Dropdown.Item id="rename">修改名称</Dropdown.Item>
+                <Dropdown.Item id="move">移动到</Dropdown.Item>
+                <Dropdown.Item id="delete" className="text-[var(--color-danger)]">删除</Dropdown.Item>
+              </Dropdown.Menu>
+            </Dropdown.Popover>
+          </Dropdown>
+        ) : null}
+        {isDraggable ? (
+          <button
+            type="button"
+            aria-label={`拖拽 ${node.name}`}
+            onClick={(event) => event.stopPropagation()}
+            {...attributes}
+            {...listeners}
+            className="pointer-events-none absolute right-1 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 cursor-grab items-center justify-center rounded-[var(--radius)] text-[10px] tracking-[-2px] text-[var(--color-text-disabled)] opacity-0 transition-opacity hover:bg-[var(--color-control-soft-hover)] hover:text-[var(--color-text-primary)] active:cursor-grabbing group-hover/sidebar-item:pointer-events-auto group-hover/sidebar-item:opacity-100 group-focus-within/sidebar-item:pointer-events-auto group-focus-within/sidebar-item:opacity-100"
+            style={{ touchAction: "none" }}
+          >
+            ⋮⋮
+          </button>
+        ) : null}
+      </div>
+      {node.itemType === "group" && showChildren ? (
+        <div
+          className={[
+            "mb-1 rounded-lg",
+            dragState?.targetId === node.id && dragState.placement === "inside"
+              ? "bg-[var(--color-primary-soft)]"
+              : "",
+          ].join(" ")}
+        >
+          {node.children.length > 0 ? (
+            node.children.map((child) => (
+              <SidebarTreeItem
+                key={child.id}
+                dragState={dragState}
+                isExpanded={resolveExpanded(child.id)}
+                level={level + 1}
+                node={child}
+                pathname={pathname}
+                onToggleGroup={onToggleGroup}
+                onGroupAction={onGroupAction}
+                onFormAction={onFormAction}
+                resolveExpanded={resolveExpanded}
+              />
+            ))
+          ) : dragState && dragState.itemId !== node.id ? (
+            <EmptyGroupDropZone groupId={node.id} />
+          ) : null}
+        </div>
+      ) : null}
+      {node.itemType !== "group" && node.children.length > 0 && showChildren
+        ? node.children.map((child) => (
+          <SidebarTreeItem
+            key={child.id}
+            dragState={dragState}
+            isExpanded={resolveExpanded(child.id)}
+            level={level + 1}
+            node={child}
+            pathname={pathname}
+            onToggleGroup={onToggleGroup}
+            onGroupAction={onGroupAction}
+            onFormAction={onFormAction}
+            resolveExpanded={resolveExpanded}
+          />
+        ))
+        : null}
+    </div>
+  );
+}
+
+function NavigationItemDropZones({ node }: { node: SidebarNode }) {
+  return (
+    <>
+      <NavigationDropZone
+        id={`navigation-drop:${node.id}:before`}
+        targetId={node.id}
+        placement="before"
+        className={node.itemType === "group" ? "top-0 h-1/4" : "top-0 h-1/2"}
+      />
+      {node.itemType === "group" ? (
+        <NavigationDropZone
+          id={`navigation-drop:${node.id}:inside`}
+          targetId={node.id}
+          placement="inside"
+          className="top-1/4 h-1/2"
+        />
+      ) : null}
+      <NavigationDropZone
+        id={`navigation-drop:${node.id}:after`}
+        targetId={node.id}
+        placement="after"
+        className={node.itemType === "group" ? "bottom-0 h-1/4" : "bottom-0 h-1/2"}
+      />
+    </>
+  );
+}
+
+function NavigationDropZone({
+  className,
+  id,
+  placement,
+  targetId,
+}: {
+  className: string;
+  id: string;
+  placement: NavigationDropData["placement"];
+  targetId: string;
+}) {
+  const { isOver, setNodeRef } = useDroppable({
+    id,
+    data: { kind: "navigation-drop", targetId, placement } satisfies NavigationDropData,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`absolute inset-x-0 z-20 ${className} ${isOver ? "bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)]" : ""}`}
+    />
+  );
+}
+
+function EmptyGroupDropZone({ groupId }: { groupId: string }) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: `navigation-drop:${groupId}:empty-inside`,
+    data: {
+      kind: "navigation-drop",
+      targetId: groupId,
+      placement: "inside",
+    } satisfies NavigationDropData,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`mb-2 ml-12 mr-1 flex h-8 items-center rounded-[var(--radius)] px-3 text-xs text-[var(--color-text-secondary)] ${isOver ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]" : ""}`}
+    >
+      拖拽到这里放入分组
+    </div>
+  );
+}
+
+function canDropNavigationItem(
+  items: NavigationItem[],
+  itemId: string,
+  targetId: string,
+) {
+  const target = items.find((item) => item.id === targetId);
+  return Boolean(
+    target &&
+    target.itemType !== "system" &&
+    itemId !== targetId &&
+    !isNavigationDescendant(items, targetId, itemId),
+  );
+}
+
+function isNavigationDescendant(
+  items: NavigationItem[],
+  candidateId: string,
+  ancestorId: string,
+) {
+  let current = items.find((item) => item.id === candidateId);
+  const visited = new Set<string>();
+
+  while (current?.parentId && !visited.has(current.id)) {
+    if (current.parentId === ancestorId) {
+      return true;
+    }
+
+    visited.add(current.id);
+    current = items.find((item) => item.id === current?.parentId);
+  }
+
+  return false;
+}
+
+function buildNavigationTree(routeAppId: string, items: NavigationItem[]) {
+  const legacyTaskSlugs = new Set(["todo", "processed", "created", "copied"]);
+  const visibleItems = items.filter((item) => !(item.itemType === "system" && legacyTaskSlugs.has(item.pathSlug)));
+  if (!visibleItems.some((item) => item.itemType === "system" && item.pathSlug === "tasks")) {
+    visibleItems.unshift({ id: "system-tasks", itemType: "system", title: "任务", pathSlug: "tasks", sortOrder: -1, isDefaultEntry: false, parentId: null });
+  }
+  const nodeMap = new Map<string, SidebarNode>();
+
+  for (const item of visibleItems) {
+    const routeId = item.targetFormUuid ?? item.pathSlug;
+    nodeMap.set(item.id, {
+      id: item.id,
+      name: item.title,
+      href: item.itemType === "group" ? undefined : `/${routeAppId}/${routeId}${item.itemType === "system" && routeId === "tasks" ? `?appId=${encodeURIComponent(routeAppId)}` : ""}`,
+      itemType: item.itemType,
+      parentId: item.parentId ?? null,
+      sortOrder: item.sortOrder,
+      targetFormUuid: item.targetFormUuid,
+      pathSlug: item.pathSlug,
+      formType: item.formType,
+      children: [],
+    });
+  }
+
+  const roots: SidebarNode[] = [];
+
+  for (const item of visibleItems) {
+    const node = nodeMap.get(item.id);
+    if (!node) {
+      continue;
+    }
+
+    if (item.parentId && nodeMap.has(item.parentId)) {
+      nodeMap.get(item.parentId)?.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  const sortNodes = (nodes: SidebarNode[]) => {
+    nodes.sort((left, right) => left.sortOrder - right.sortOrder);
+    for (const node of nodes) {
+      sortNodes(node.children);
+    }
+  };
+
+  sortNodes(roots);
+  return roots;
+}
+
+function getSidebarNodeIcon(
+  itemType: NavigationItem["itemType"],
+  pathSlug: string,
+  isExpanded = false,
+  formType: "normal" | "workflow" | "defined" | "detail" | undefined,
+) {
+  switch (itemType) {
+    case "group":
+      return isExpanded ? <FolderOpenIcon /> : <FolderIcon />;
+    case "system":
+      switch (pathSlug) {
+        case "tasks":
+          return <TodoIcon />;
+        case "processed":
+          return <ProcessedIcon />;
+        case "created":
+          return <CreatedIcon />;
+        case "copied":
+          return <CopiedIcon />;
+        case "todo":
+        default:
+          return <TodoIcon />;
+      }
+    case "link":
+      return <LinkIcon />;
+    case "form":
+      if (formType === "workflow") return <WorkflowFormIcon />;
+      if (formType === "defined") return <DefinedPageIcon />;
+      if (formType === "detail") return <DetailFormIcon />;
+      return <FormIcon />;
+    default:
+      return <FormIcon />;
+  }
+}
+
+function getSidebarNodeIconColor(
+  itemType: NavigationItem["itemType"],
+  formType?: "normal" | "workflow" | "defined" | "detail",
+) {
+  switch (itemType) {
+    case "group":
+      return "text-[var(--nav-group-icon)]";
+    case "form":
+      if (formType === "detail") return "text-[var(--form-type-detail-icon-color)]";
+      if (formType === "workflow") return "text-[var(--form-type-workflow-icon-color)]";
+      if (formType === "defined") return "text-[var(--form-type-defined-icon-color)]";
+      return "text-[var(--nav-form-icon)]";
+    case "link":
+      return "text-[var(--nav-link-icon)]";
+    case "system":
+    default:
+      return "text-[var(--color-text-secondary)]";
+  }
+}
+
+function expandGroupsFromItems(
+  items: NavigationItem[],
+  current: Record<string, boolean>,
+) {
+  const next = { ...current };
+  for (const item of items) {
+    if (item.itemType === "group" && next[item.id] === undefined) {
+      next[item.id] = false;
+    }
+  }
+  return next;
+}
+
+function flattenGroups(nodes: SidebarNode[], level = 0): Array<{ id: string; label: string }> {
+  const result: Array<{ id: string; label: string }> = [];
+
+  for (const node of nodes) {
+    if (node.itemType === "group") {
+      result.push({
+        id: node.id,
+        label: `${"　".repeat(level)}${node.name}`,
+      });
+      result.push(...flattenGroups(node.children, level + 1));
+    }
+  }
+
+  return result;
+}
+
+function applyFormTypes(
+  navigation: NavigationItem[],
+  forms: Array<{ id: string; formType?: string }>,
+): NavigationItem[] {
+  const typesById = new Map(
+    forms.map((form) => [form.id, form.formType === "workflow" ? "workflow" as const : form.formType === "defined" ? "defined" as const : form.formType === "detail" ? "detail" as const : "normal" as const]),
+  );
+  return navigation.map((item) => ({
+    ...item,
+    formType: item.targetFormUuid ? typesById.get(item.targetFormUuid) : undefined,
+  }));
+}

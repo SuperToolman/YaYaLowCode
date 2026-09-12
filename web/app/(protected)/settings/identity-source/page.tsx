@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { Button, Input, Modal, Switch, Tabs } from "@heroui/react";
-import { Field } from "../_components/field";
-import { SettingsContentCard } from "../_components/settings-content-card";
-import { OrganizationArchitectureSection } from "../_components/organization-architecture-section";
+import { Field } from "../components/Field";
+import { SettingsContentCard } from "../components/SettingsContentCard";
+import { OrganizationArchitectureSection } from "../components/OrganizationArchitectureSection";
 import type { ApiEnvelope } from "@/app/lib/api-request";
 
 type ProviderTab = "local" | "dingtalk" | "wecom" | "feishu";
@@ -263,7 +263,7 @@ export default function IdentitySourceSettingsPage() {
               <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-control-soft)] p-5">
                 <div>
                   <div className="text-base font-semibold text-[var(--color-text-primary)]">平台用户体系</div>
-                  <p className="mt-1 max-w-xl text-sm leading-6 text-[var(--color-text-secondary)]">用户由管理员创建，组织和角色均在平台内维护，不提供公开注册入口。平台账号与已配置的第三方身份源可以同时登录。</p>
+                  <p className="mt-1 max-w-xl ">用户由管理员创建，组织和角色均在平台内维护，不提供公开注册入口。平台账号与已配置的第三方身份源可以同时登录。</p>
                 </div>
               </div>
               <OrganizationArchitectureSection sourceType="local" sourceLabel="平台" />
@@ -365,7 +365,7 @@ export default function IdentitySourceSettingsPage() {
                 <Modal.CloseTrigger aria-label="关闭" isDisabled={clearingDingTalk} />
               </Modal.Header>
               <Modal.Body>
-                <p className="text-sm leading-6 text-[var(--color-text-secondary)]">
+                <p className="">
                   确认清除所有钉钉来源的组织架构、用户、角色及角色权限配置吗？此操作不可恢复，不会删除钉钉应用凭据。
                 </p>
               </Modal.Body>
@@ -405,7 +405,7 @@ function ProviderPlaceholder({ name }: { name: string }) {
   return (
     <div className="flex min-h-72 flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-6 text-center">
       <div className="text-base font-semibold text-[var(--color-text-primary)]">{name}身份源</div>
-      <p className="mt-2 max-w-md text-sm leading-6 text-[var(--color-text-secondary)]">Tab 和配置扩展位置已经预留，后续接入时可以复用当前身份源接口与统一用户映射模型。</p>
+      <p className="mt-2 max-w-md ">Tab 和配置扩展位置已经预留，后续接入时可以复用当前身份源接口与统一用户映射模型。</p>
       <span className="mt-4 rounded-full bg-[var(--color-warning-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--color-warning)]">待接入</span>
     </div>
   );

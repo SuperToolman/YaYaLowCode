@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Button, Card, Input } from "@heroui/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CompactThemeSwitcher } from "../components/theme-switcher-menu";
+import { CompactThemeSwitcher } from "../components/ThemeSwitcherMenu";
 import { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY, type AuthUser, writeAuthStorage } from "../lib/auth";
 
 type LoginMode = "password" | "dingtalk";
@@ -176,7 +176,7 @@ function LoginScreen() {
               <div>
                 <p className="text-sm font-medium text-[var(--color-primary)]">欢迎回来</p>
                 <h2 className="mt-2 text-3xl font-semibold text-[var(--color-text-primary)]">登录丫丫 LowCode</h2>
-                <p className="mt-3 text-sm leading-6 text-[var(--color-text-secondary)]">
+                <p className="mt-3 ">
                   选择一种身份验证方式进入工作台。
                 </p>
               </div>
@@ -274,7 +274,7 @@ function LoginScreen() {
                     <QrPlaceholder />
                   </div>
                   <h3 className="mt-5 text-base font-semibold text-[var(--color-text-primary)]">钉钉扫码登录</h3>
-                  <p className="mt-2 max-w-xs text-sm leading-6 text-[var(--color-text-secondary)]">
+                  <p className="mt-2 max-w-xs ">
                     将跳转至钉钉完成扫码授权，并安全返回本平台。
                   </p>
                   {visibleError ? (

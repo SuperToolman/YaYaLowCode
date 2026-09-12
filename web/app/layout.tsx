@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { WebVitalsReporter } from "./components/web-vitals-reporter";
+import { WebVitalsReporter } from "./components/WebVitalsReporter";
 import "./globals.css";
 
 export const metadata: Metadata = {

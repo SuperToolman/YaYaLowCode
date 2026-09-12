@@ -7,8 +7,7 @@ use crate::modules::agent_config::{
     KnowledgeBaseRequest, PluginRequest, ProviderRequest, ProviderResponse, SystemAiStatusResponse,
 };
 use crate::modules::agents::{
-    ApiAgentSession, CreateAgentSessionRequest,
-    UpdateAgentSessionRequest,
+    ApiAgentSession, CreateAgentSessionRequest, UpdateAgentSessionRequest,
 };
 use crate::modules::apps::{ApiApp, CreateAppRequest, UpdateAppRequest};
 use crate::modules::automations::{

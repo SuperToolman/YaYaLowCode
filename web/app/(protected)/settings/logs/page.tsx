@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowRotateRight, Eye, TrashBin } from "@gravity-ui/icons";
 import { Alert, Button, Chip, EmptyState, Modal, Table, Tabs, Tooltip } from "@heroui/react";
-import { SettingsContentCard } from "../_components/settings-content-card";
+import { SettingsContentCard } from "../components/SettingsContentCard";
 import styles from "./logs.module.css";
 
 type LogLevel = "all" | "debug" | "info" | "warn" | "error";
