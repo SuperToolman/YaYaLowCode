@@ -36,7 +36,7 @@ import type {
   AgentToolActivity,
   AgentTimelineItem,
 } from "@/features/agent-assistant/types";
-import { PageContentLayout } from "../../components/PageContentLayout";
+import { PageContentLayout } from "@components/PageContentLayout";
 import {
   AgentMessage as AgentMessageView,
   AgentMessageComposer,
@@ -47,7 +47,7 @@ import {
   WorkspaceFiles,
 } from "@/features/agent-workbench/components";
 import { createRandomUuid } from "@/app/lib/random-uuid";
-import { MySurface } from "@/app/components/my-fields/MySurface";
+import { MySurface } from "@shared/ui/MySurface";
 
 const pageContext: AgentPageContext = { route: "/agent" };
 
@@ -642,13 +642,21 @@ export default function AgentPage() {
 }
 
 async function fileFingerprint(file: File) {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    await file.arrayBuffer(),
-  );
-  return Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
+  // Web Crypto is unavailable on non-secure origins (common for self-hosted
+  // HTTP deployments). Keep content hashing where available and fall back to
+  // a stable file identity so selecting the same file still de-duplicates.
+  const browserCrypto = globalThis.crypto;
+  if (typeof browserCrypto?.subtle?.digest === "function") {
+    const digest = await browserCrypto.subtle.digest(
+      "SHA-256",
+      await file.arrayBuffer(),
+    );
+    return Array.from(new Uint8Array(digest), (byte) =>
+      byte.toString(16).padStart(2, "0"),
+    ).join("");
+  }
+
+  return [file.name, file.size, file.lastModified].join(":");
 }
 
 function applyDshEvent(

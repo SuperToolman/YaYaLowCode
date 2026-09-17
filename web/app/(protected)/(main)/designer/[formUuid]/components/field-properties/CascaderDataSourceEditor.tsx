@@ -6,7 +6,7 @@ import {
   DEFAULT_CASCADER_DATA_SOURCE,
   normalizeCascaderDataSource,
   parseCascaderDataSource,
-} from "../../../../../../lib/cascader-data-source";
+} from "@lib/cascader-data-source";
 import type { FieldPropsChangeHandler, PlacedField } from "../../designer-types";
 
 export function CascaderDataSourceEditor({ field, onPropsChange }: { field: PlacedField; onPropsChange: FieldPropsChangeHandler }) {

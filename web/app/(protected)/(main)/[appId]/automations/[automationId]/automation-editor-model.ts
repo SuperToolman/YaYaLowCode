@@ -17,7 +17,7 @@ import {
   type WorkflowGraphEdge,
   type WorkflowGraphNode,
   type WorkflowNodeData as WorkflowNodeDataBase,
-} from "../../../../../components/workflow-editor/workflow-core";
+} from "@components/workflow-editor/workflow-core";
 
 export type WorkflowNodeKind =
   | "trigger"

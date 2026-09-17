@@ -50,7 +50,7 @@ impl IntoResponse for AppError {
                 error!("server error: {err}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(error_response(500, "server error")),
+                    Json(error_response(500, err.to_string())),
                 )
                     .into_response()
             }

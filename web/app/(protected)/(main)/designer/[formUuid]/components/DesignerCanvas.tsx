@@ -18,7 +18,7 @@ import {
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { Card } from "@heroui/react";
 import { TrashBin as TrashIcon } from "@gravity-ui/icons";
-import { RichTextEditor } from "../../../../../components/RichTextEditor";
+import { RichTextEditor } from "@shared/ui/RichTextEditor";
 import {
   CELL_MIN_HEIGHT,
   COLUMN_COUNT,
@@ -40,7 +40,8 @@ import type {
   PlacedField,
   ResizeDirection,
 } from "../designer-types";
-import { MySurface } from "@/app/components/my-fields/MySurface";
+import { MySurface } from "@shared/ui/MySurface";
+import runtimeStyles from "@features/form-runtime/components/RuntimeFormControls.module.css";
 
 type DesignerCanvasProps = {
   fields: PlacedField[];
@@ -597,7 +598,7 @@ function SubformFieldCanvas({
         </span>
       </div>
       <div className="flex min-w-0">
-        <div className="subform-horizontal-scroll min-w-0 flex-1 overflow-x-auto">
+        <div className={`${runtimeStyles["form-runtime-controls__subform-horizontal-scroll"]} min-w-0 flex-1 overflow-x-auto`}>
           <div
             className="grid min-h-[68px] divide-x divide-[var(--color-border)]"
             style={{

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Dropdown } from "@heroui/react";
-import { listWorkflowNotifications, readWorkflowNotification } from "@/features/workflow/api";
+import { getWorkflowNotificationPreferences, listWorkflowNotifications, readWorkflowNotification } from "@/features/workflow/api";
 
 type Notification = {
   id: string;
@@ -16,7 +16,6 @@ type Notification = {
   createdAt: string;
 };
 type Envelope = { code: number; message: string; data: { unread?: number; items?: Notification[] } | null };
-type PreferenceEnvelope = { code: number; message: string; data: { inAppEnabled?: boolean; pollIntervalSeconds?: number } | null };
 
 export function WorkflowNotificationItems() {
   const router = useRouter();
@@ -34,11 +33,7 @@ export function WorkflowNotificationItems() {
   useEffect(() => {
     let timer: number | undefined;
     let cancelled = false;
-    void fetch("/api/workflow/notification-preferences", { cache: "no-store" })
-      .then(async (response) => {
-        const result = await response.json() as PreferenceEnvelope;
-        return response.ok && result.code === 0 ? result.data : null;
-      })
+    void getWorkflowNotificationPreferences<{ inAppEnabled?: boolean; pollIntervalSeconds?: number }>()
       .catch(() => null)
       .then((preferences) => {
         if (cancelled || preferences?.inAppEnabled === false) return;

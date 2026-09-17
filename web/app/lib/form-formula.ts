@@ -1,4 +1,4 @@
-import type { RuntimeSchemaField } from "../components/RuntimeFormRenderer";
+import type { RuntimeSchemaField } from "@features/form-runtime/components";
 
 export function getFormulaFieldKey(fieldId: string) {
   return fieldId.replace(/[^A-Za-z0-9_]/g, "_");

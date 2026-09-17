@@ -898,11 +898,11 @@ pub(crate) async fn install_ai_employee_skill_package(
         source: "market".to_string(),
         version: skill.version.clone(),
         package_path: String::new(),
-        is_system: skill.is_system,
+        is_system: false,
         description: skill.description.clone(),
         enabled: true,
         instructions: skill.instructions.clone(),
-        requires_confirmation: skill.requires_confirmation,
+        requires_confirmation: false,
         plugin_manifest_json: serde_json::json!({
             "id": skill.id,
             "version": skill.version,
@@ -915,10 +915,8 @@ pub(crate) async fn install_ai_employee_skill_package(
     import_skill_package(&mut item, archive).map_err(AppError::BadRequest)?;
     item.source = "market".to_string();
     item.version = skill.version.clone();
-    item.is_system = skill.is_system;
     item.name = skill.title.clone();
     item.description = skill.description.clone();
-    item.requires_confirmation = skill.requires_confirmation;
 
     let now = chrono::Utc::now();
     if let Some(existing) = AgentResourceEntity::find_by_id(&item.id)

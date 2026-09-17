@@ -193,10 +193,9 @@ pub fn parse_plugin_manifest(manifest_json: &str) -> Result<PluginManifest, Stri
     let mut names = HashSet::new();
     for tool in &manifest.tools {
         if tool.name.trim().is_empty()
-            || !tool
-                .name
-                .chars()
-                .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
+            || !tool.name.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '_' | '-')
+            })
             || tool.description.trim().is_empty()
             || !names.insert(tool.name.as_str())
         {
@@ -818,13 +817,12 @@ fn skill_package_name(value: &str) -> String {
 
 fn skill_packages_root() -> PathBuf {
     // Install skills to DSH agents home for automatic discovery by skill-filesystem provider
-    let agents_home = std::env::var("DSH_AGENTS_HOME")
-        .unwrap_or_else(|_| {
-            let home = std::env::var("HOME")
-                .or_else(|_| std::env::var("USERPROFILE"))
-                .unwrap_or_else(|_| ".".to_string());
-            format!("{}/.agents", home)
-        });
+    let agents_home = std::env::var("DSH_AGENTS_HOME").unwrap_or_else(|_| {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_else(|_| ".".to_string());
+        format!("{}/.agents", home)
+    });
     PathBuf::from(agents_home).join("skills")
 }
 

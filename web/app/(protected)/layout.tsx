@@ -1,7 +1,7 @@
 import { AppToastProvider } from "../components/AppToastProvider";
 import { AuthProvider } from "../components/AuthProvider";
 import { AuthenticatedAppShell } from "../components/AuthenticatedAppShell";
-import { ThemeProvider } from "../components/ThemeProvider";
+import { ThemeProvider } from "@shared/ThemeProvider";
 import { QueryProvider } from "../components/QueryProvider";
 
 export default function ProtectedLayout({ children }: Readonly<{ children: React.ReactNode }>) {

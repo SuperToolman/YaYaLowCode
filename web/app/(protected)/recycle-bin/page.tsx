@@ -1,17 +1,18 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowRotateLeft, Eye, Gear, TrashBin } from "@gravity-ui/icons";
 import { Button, Checkbox, Drawer, EmptyState, Input, Modal, Table, toast, Tooltip, type Selection } from "@heroui/react";
-import { RuntimeFormRenderer, type RuntimeFormSchema } from "../../components/RuntimeFormRenderer";
-import { PageContentLayout } from "../../components/PageContentLayout";
+import { RuntimeFormRenderer, type RuntimeFormSchema } from "@features/form-runtime/components";
+import { PageContentLayout } from "@components/PageContentLayout";
 import { getFormSchema } from "@/features/form-runtime/api";
+import { useRecycleBinMutations } from "@features/recycle-bin/mutations";
+import { useRecycleBinQuery, useRecycleBinSettingsQuery } from "@features/recycle-bin/queries";
+import type { RecycleBinEntry } from "@lib/api-client";
 
-type Entry = { id: string; formUuid: string; recordUuid: string; sourceAppName: string | null; sourceFormName: string; formType: string; deletedAt: string; expiresAt: string; recordData: Record<string, unknown> };
-type Envelope<T> = { code: number; message: string; data: T | null };
+type Entry = RecycleBinEntry & { recordData: Record<string, unknown> };
 type DeleteConfirmation = { kind: "entries"; entries: Entry[] } | { kind: "all" } | null;
-type RecycleBinSettings = { retentionDays: number };
 
 const typeLabel: Record<string, string> = { normal: "普通表单", workflow: "流程表单", detail: "明细表" };
 const destructiveButtonClass = "bg-[var(--color-danger)] text-white hover:bg-[var(--color-danger)]";
@@ -23,9 +24,7 @@ export default function RecycleBinPage() {
 function RecycleBinContent() {
   const searchParams = useSearchParams();
   const formUuidFilter = searchParams.get("formUuid")?.trim() ?? "";
-  const [items, setItems] = useState<Entry[]>([]);
   const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set());
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmation>(null);
   const [preview, setPreview] = useState<Entry | null>(null);
@@ -36,38 +35,26 @@ function RecycleBinContent() {
   const [retentionDays, setRetentionDays] = useState("7");
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const itemsQuery = useRecycleBinQuery(formUuidFilter || undefined);
+  const settingsQuery = useRecycleBinSettingsQuery(settingsOpen);
+  const mutations = useRecycleBinMutations();
+  const items = (itemsQuery.data ?? []) as Entry[];
+  const loading = itemsQuery.isPending;
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const query = formUuidFilter ? `?formUuid=${encodeURIComponent(formUuidFilter)}` : "";
-      const response = await fetch(`/api/recycle-bin${query}`, { cache: "no-store" });
-      const body = await response.json() as Envelope<Entry[]>;
-      if (!response.ok || body.code !== 0) throw new Error(body.message);
-      setItems(body.data ?? []);
-      setSelectedKeys(new Set());
-    } catch (error) {
-      toast.danger("无法加载回收站", { description: error instanceof Error ? error.message : "请稍后重试" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // The timer postpones the initial request until after hydration and is rerun when the URL filter changes.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { const timer = window.setTimeout(() => { void load(); }, 0); return () => window.clearTimeout(timer); }, [formUuidFilter]);
+  async function refreshItems() {
+    await itemsQuery.refetch();
+    setSelectedKeys(new Set());
+  }
 
   const restoreEntries = async (entries: Entry[], successMessage: string) => {
     if (!entries.length) return;
     setBusy("restore");
     try {
       for (const item of entries) {
-        const response = await fetch(`/api/recycle-bin/${item.id}/restore`, { method: "POST" });
-        const body = await response.json() as Envelope<unknown>;
-        if (!response.ok || body.code !== 0) throw new Error(body.message);
+        await mutations.restore.mutateAsync(item.id);
       }
       toast.success(successMessage);
-      await load();
+      await refreshItems();
     } catch (error) {
       toast.danger("恢复失败", { description: error instanceof Error ? error.message : "请稍后重试" });
     } finally { setBusy(null); }
@@ -78,13 +65,11 @@ function RecycleBinContent() {
     setBusy("delete");
     try {
       for (const item of entries) {
-        const response = await fetch(`/api/recycle-bin/${item.id}`, { method: "DELETE" });
-        const body = await response.json() as Envelope<unknown>;
-        if (!response.ok || body.code !== 0) throw new Error(body.message);
+        await mutations.remove.mutateAsync(item.id);
       }
       toast.success(entries.length === 1 ? "数据已永久删除" : `已永久删除 ${entries.length} 条数据`);
       setDeleteConfirmation(null);
-      await load();
+      await refreshItems();
     } catch (error) {
       toast.danger("永久删除失败", { description: error instanceof Error ? error.message : "请稍后重试" });
     } finally { setBusy(null); }
@@ -93,12 +78,10 @@ function RecycleBinContent() {
   const emptyRecycleBin = async () => {
     setBusy("all");
     try {
-      const response = await fetch("/api/recycle-bin", { method: "DELETE" });
-      const body = await response.json() as Envelope<unknown>;
-      if (!response.ok || body.code !== 0) throw new Error(body.message);
+      await mutations.empty.mutateAsync();
       toast.success("回收站已清空");
       setDeleteConfirmation(null);
-      await load();
+      await refreshItems();
     } catch (error) {
       toast.danger("清空失败", { description: error instanceof Error ? error.message : "请稍后重试" });
     } finally { setBusy(null); }
@@ -119,10 +102,9 @@ function RecycleBinContent() {
   const openSettings = async () => {
     setSettingsOpen(true); setSettingsLoading(true);
     try {
-      const response = await fetch("/api/settings/recycle-bin", { cache: "no-store" });
-      const body = await response.json() as Envelope<RecycleBinSettings>;
-      if (!response.ok || body.code !== 0 || !body.data) throw new Error(body.message || "无法加载回收站设置");
-      setRetentionDays(String(body.data.retentionDays));
+      const result = await settingsQuery.refetch();
+      if (!result.data) throw new Error("无法加载回收站设置");
+      setRetentionDays(String(result.data.retentionDays));
     } catch (error) {
       toast.danger("无法加载回收站设置", { description: error instanceof Error ? error.message : "请稍后重试" });
     } finally { setSettingsLoading(false); }
@@ -134,9 +116,7 @@ function RecycleBinContent() {
     if (!Number.isInteger(value) || value < 1 || value > 3650) return toast.danger("请输入 1 至 3650 的整数天数");
     setSettingsSaving(true);
     try {
-      const response = await fetch("/api/settings/recycle-bin", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ retentionDays: value }) });
-      const body = await response.json() as Envelope<RecycleBinSettings>;
-      if (!response.ok || body.code !== 0) throw new Error(body.message || "无法保存回收站设置");
+      await mutations.saveSettings.mutateAsync(value);
       setSettingsOpen(false);
       toast.success("回收站设置已保存");
     } catch (error) {

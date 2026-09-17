@@ -11,7 +11,7 @@ import {
   ProgressBar,
   Select,
 } from "@heroui/react";
-import { MySurface } from "@/app/components/my-fields/MySurface";
+import { MySurface } from "@shared/ui/MySurface";
 
 export type ImportWorkbookState = {
   fileName: string;

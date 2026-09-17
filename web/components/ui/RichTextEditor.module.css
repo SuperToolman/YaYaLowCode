@@ -1,0 +1,23 @@
+.rich-text-editor__content p:global(.is-editor-empty):first-child::before {
+  color: var(--color-text-disabled);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+.rich-text-editor__content :is(h1, h2, h3) {
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0.6em 0 0.35em;
+}
+
+.rich-text-editor__content h1 { font-size: 1.5rem; }
+.rich-text-editor__content h2 { font-size: 1.25rem; }
+.rich-text-editor__content h3 { font-size: 1.1rem; }
+.rich-text-editor__content :is(ul, ol) { margin: 0.5em 0; padding-left: 1.5em; }
+.rich-text-editor__content blockquote { border-left: 3px solid var(--color-border); color: var(--color-text-secondary); margin: 0.75em 0; padding-left: 0.8em; }
+.rich-text-editor__content img { height: auto; max-width: 100%; }
+.rich-text-editor__content table { border-collapse: collapse; margin: 0.75em 0; table-layout: fixed; width: 100%; }
+.rich-text-editor__content :is(th, td) { border: 1px solid var(--color-border); min-width: 64px; padding: 0.4rem 0.55rem; vertical-align: top; }
+.rich-text-editor__content th { background: var(--color-bg-subtle); font-weight: 600; }

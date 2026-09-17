@@ -11,6 +11,7 @@ import {
   writeAuthStorage,
 } from "../lib/auth";
 import { clearAppResourceCache } from "../lib/app-resources";
+import { getAuthorizationGrants, getAuthSession } from "@features/auth/api";
 
 type AuthContextValue = {
   isAuthenticated: boolean;
@@ -68,14 +69,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/auth/session", { cache: "no-store" })
-      .then(async (response) => {
-        const payload = (await response.json()) as SessionResponse;
-        if (!response.ok || payload.code !== 0 || !payload.data || !isTokenUsable(payload.data.token)) {
+    void getAuthSession<{ token: string; user: AuthUser }>()
+      .then((payload) => {
+        if (!isTokenUsable(payload.token)) {
           throw new Error("未登录");
         }
-        writeAuthStorage(AUTH_TOKEN_STORAGE_KEY, payload.data.token);
-        writeAuthStorage(AUTH_USER_STORAGE_KEY, JSON.stringify(payload.data.user));
+        writeAuthStorage(AUTH_TOKEN_STORAGE_KEY, payload.token);
+        writeAuthStorage(AUTH_USER_STORAGE_KEY, JSON.stringify(payload.user));
         emitAuthChange();
       })
       .catch(() => {
@@ -100,14 +100,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const loadPermissions = async () => {
       try {
-        const response = await fetch("/api/authorization/grants", { cache: "no-store" });
-        const payload = (await response.json()) as { code: number; data: string[] | null; message?: string };
-        if (!response.ok || payload.code !== 0 || !Array.isArray(payload.data)) {
-          throw new Error(payload.message || `权限加载失败 (${response.status})`);
-        }
+        const grants = await getAuthorizationGrants();
         if (cancelled) return;
         attempt = 0;
-        setPermissions(payload.data);
+        setPermissions(grants);
         setPermissionsLoadedFor(token);
       } catch {
         if (cancelled) return;

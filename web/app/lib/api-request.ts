@@ -38,9 +38,29 @@ export async function fetchWithControl(input: RequestInfo | URL, init: ApiReques
   const signal = initSignal ?? (input instanceof Request ? input.signal : undefined);
   const timeoutController = new AbortController();
   const timeoutId = globalThis.setTimeout(() => timeoutController.abort("timeout"), timeoutMs);
-  const combinedSignal = signal
-    ? AbortSignal.any([signal, timeoutController.signal])
-    : timeoutController.signal;
+
+  // 兼容老版本浏览器，手动实现信号合并（AbortSignal.any 在 Chrome 116+ 才支持）
+  let combinedSignal: AbortSignal;
+  let externalAbortHandler: (() => void) | null = null;
+
+  if (signal) {
+    if (typeof AbortSignal.any === 'function') {
+      // 现代浏览器直接使用 AbortSignal.any
+      combinedSignal = AbortSignal.any([signal, timeoutController.signal]);
+    } else {
+      // 老版本浏览器：监听外部信号，触发超时控制器
+      combinedSignal = timeoutController.signal;
+      if (!signal.aborted) {
+        externalAbortHandler = () => timeoutController.abort(signal.reason);
+        signal.addEventListener('abort', externalAbortHandler, { once: true });
+      } else {
+        timeoutController.abort(signal.reason);
+      }
+    }
+  } else {
+    combinedSignal = timeoutController.signal;
+  }
+
   try {
     return await fetch(input, { ...requestInit, signal: combinedSignal });
   } catch (error) {
@@ -52,6 +72,9 @@ export async function fetchWithControl(input: RequestInfo | URL, init: ApiReques
     }
     throw new ApiRequestError("网络请求失败", 0, "network", undefined, { cause: error });
   } finally {
+    if (externalAbortHandler && signal) {
+      signal.removeEventListener('abort', externalAbortHandler);
+    }
     globalThis.clearTimeout(timeoutId);
   }
 }

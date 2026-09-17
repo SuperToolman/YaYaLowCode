@@ -12,19 +12,26 @@ import {
   SearchField,
   TextArea,
   toast,
+  ListBox,
+  Select,
 } from "@heroui/react";
+import { MySurface } from "@shared/ui/MySurface";
 import { AlertDialog } from "@heroui/react/alert-dialog";
 import { Modal } from "@heroui/react/modal";
 import { Plus, Rocket } from "@gravity-ui/icons";
 import {
   createApp,
+  deleteApp as deleteAppRequest,
   listApps,
+  submitAppToMarketplace,
+  syncMarketplaceApplications,
+  updateApp,
   type App as ApiApp,
 } from "@/features/application/api";
-import { FieldOutlineModal } from "../../../components/FieldOutlineModal";
-import { PageContentLayout } from "../../../components/PageContentLayout";
-import { useAuth } from "../../../components/AuthProvider";
-import { normalizeAppColorTone, type AppItem } from "../../../lib/apps";
+import { FieldOutlineModal } from "@components/FieldOutlineModal";
+import { PageContentLayout } from "@components/PageContentLayout";
+import { useAuth } from "@components/AuthProvider";
+import { normalizeAppColorTone, type AppItem } from "@lib/apps";
 import { AppCard } from "./AppCard";
 
 type MyAppPageClientProps = {
@@ -45,6 +52,11 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
   const [submittingAppId, setSubmittingAppId] = useState<string | null>(null);
   const [isFieldOutlineOpen, setIsFieldOutlineOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "notEnabled" | "enabled"
+  >("all");
+  const [sortBy, setSortBy] = useState<"createdAt" | "updatedAt">("createdAt");
+  const [scope, setScope] = useState<"all" | "mine">("all");
   const router = useRouter();
   const { hasPermission, user } = useAuth();
   const canManageApps = hasPermission("apps.manage");
@@ -56,7 +68,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
 
     startTransition(async () => {
       try {
-        await fetch("/api/market/applications/sync", { method: "POST" });
+        await syncMarketplaceApplications<unknown>();
         const { data, error } = await listApps({
           responseStyle: "fields",
         });
@@ -95,14 +107,18 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
     return () => window.removeEventListener("yaya-apps-updated", reload);
   }, []);
 
-  const filteredApps = sortApps(apps).filter((app) => {
+  const filteredApps = sortApps(apps, sortBy).filter((app) => {
     const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
     const matchesQuery =
       !normalizedQuery ||
       [app.name, app.owner, app.desc].some((value) =>
         value.toLocaleLowerCase("zh-CN").includes(normalizedQuery),
       );
-    return matchesQuery;
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "enabled" ? app.active === true : app.active !== true);
+    const matchesScope = scope === "all" || app.owner === user?.displayName;
+    return matchesQuery && matchesStatus && matchesScope;
   });
   const totalRecords = apps.reduce((total, app) => total + app.records, 0);
 
@@ -144,25 +160,13 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
     setBusyAppId(app.id);
 
     try {
-      const response = await fetch(`/api/apps/${app.id}`, {
-        method: "PATCH",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          name: nextName,
-          description: renameDescription.trim(),
-        }),
+      const { data: payload, error } = await updateApp({
+        path: { appId: app.id },
+        body: { name: nextName, description: renameDescription.trim() },
+        responseStyle: "fields",
       });
-      const payload = (await response.json()) as {
-        code: number;
-        data: ApiApp | null;
-        message: string;
-      };
-
-      if (payload.code !== 0 || !payload.data) {
-        throw new Error(payload.message);
-      }
+      if (error || payload?.code !== 0 || !payload.data)
+        throw new Error(payload?.message || "应用更新失败");
 
       const updatedApp = normalizeAppItem(toAppItem(payload.data));
       setApps((current) =>
@@ -184,17 +188,13 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
     setBusyAppId(app.id);
 
     try {
-      const response = await fetch(`/api/apps/${app.id}`, {
-        method: "DELETE",
+      const { data, error } = await deleteAppRequest({
+        path: { appId: app.id },
+        responseStyle: "fields",
       });
-      const payload = (await response.json()) as {
-        code: number;
-        message: string;
-      };
-
-      if (payload.code !== 0) {
-        throw new Error(payload.message);
-      }
+      const payload = data as { code?: number; message?: string } | undefined;
+      if (error || payload?.code !== 0)
+        throw new Error(payload?.message || "删除应用失败");
 
       setApps((current) => current.filter((item) => item.id !== app.id));
       setDeleteApp(null);
@@ -210,18 +210,9 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
   async function handleSubmitMarket(app: AppItem) {
     setSubmittingAppId(app.id);
     try {
-      const response = await fetch(
-        `/api/apps/${encodeURIComponent(app.id)}/market-submission`,
-        { method: "POST" },
-      );
-      const payload = (await response.json()) as {
-        code: number;
-        message: string;
-      };
-      if (!response.ok || payload.code !== 0)
-        throw new Error(payload.message || "上线申请失败");
+      await submitAppToMarketplace<unknown>(app.id);
       toast.success("上线申请已提交", {
-        description: payload.message || "申请已发送，等待运营中心审核。",
+        description: "申请已发送，等待运营中心审核。",
       });
     } catch (cause) {
       toast.danger("上线申请失败", {
@@ -265,26 +256,10 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
     >
       <main className="flex h-full min-h-0 flex-col gap-5">
         <section
-          aria-labelledby="application-summary-heading"
-          className="flex flex-wrap items-end justify-between gap-4"
-        >
-          <div>
-            <h2 id="application-summary-heading" className="page-section-title">
-              应用概览
-            </h2>
-            <p className="page-section-meta">全部可访问应用的数据统计</p>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <SummaryMetric label="应用" value={apps.length} />
-            <SummaryMetric label="可见应用" value={apps.length} />
-            <SummaryMetric label="数据记录" value={totalRecords} />
-          </div>
-        </section>
-        <section
           aria-labelledby="applications-heading"
           className="flex min-h-0 flex-1 flex-col"
         >
-          <div className="flex flex-wrap items-center justify-between gap-4">
+          <MySurface className="flex flex-wrap items-start justify-between gap-4 p-2">
             <div className="flex min-w-0 items-center gap-3">
               <h2 id="applications-heading" className="page-section-title">
                 全部应用
@@ -293,8 +268,90 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
                 {filteredApps.length} / {apps.length}
               </span>
             </div>
-            <p className="page-section-meta">按创建时间排序</p>
-          </div>
+
+            {/* soft */}
+            <div className="flex flex-wrap items-center gap-3">
+              <Select
+                className="w-[180px]"
+                selectedKey={statusFilter}
+                onSelectionChange={(key) =>
+                  setStatusFilter(String(key) as typeof statusFilter)
+                }
+              >
+                <Label>应用状态</Label>
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    <ListBox.Item id="all" textValue="全部状态">
+                      全部状态
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                    <ListBox.Item id="notEnabled" textValue="未启用">
+                      未启用
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                    <ListBox.Item id="enabled" textValue="已启用">
+                      已启用
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+              <Select
+                className="w-[180px]"
+                selectedKey={sortBy}
+                onSelectionChange={(key) =>
+                  setSortBy(String(key) as typeof sortBy)
+                }
+              >
+                <Label>时间排序</Label>
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    <ListBox.Item id="createdAt" textValue="按创建时间排序">
+                      按创建时间排序
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                    <ListBox.Item id="updatedAt" textValue="按更新时间排序">
+                      按更新时间排序
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+              <Select
+                className="w-[150px]"
+                selectedKey={scope}
+                onSelectionChange={(key) =>
+                  setScope(String(key) as typeof scope)
+                }
+              >
+                <Label>应用范围</Label>
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    <ListBox.Item id="all" textValue="全部应用">
+                      全部应用
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                    <ListBox.Item id="mine" textValue="我的应用">
+                      我的应用
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+            </div>
+          </MySurface>
           <div className="mt-4 grid min-h-0 flex-1 grid-cols-1 content-start gap-3 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {filteredApps.map((app) => (
               <AppCard
@@ -480,9 +537,22 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
   );
 }
 
-function sortApps(items: AppItem[]) {
+function sortApps(
+  items: AppItem[],
+  sortBy: "createdAt" | "updatedAt" = "createdAt",
+) {
   return [...items].sort((left, right) => {
-    return right.createdAt.localeCompare(left.createdAt);
+    const leftTime =
+      sortBy === "updatedAt"
+        ? ((left as AppItem & { updatedAt?: string }).updatedAt ??
+          left.createdAt)
+        : left.createdAt;
+    const rightTime =
+      sortBy === "updatedAt"
+        ? ((right as AppItem & { updatedAt?: string }).updatedAt ??
+          right.createdAt)
+        : right.createdAt;
+    return rightTime.localeCompare(leftTime);
   });
 }
 
@@ -497,17 +567,4 @@ function toAppItem(app: ApiApp): AppItem {
 
 function normalizeAppItem(app: AppItem): AppItem {
   return app;
-}
-
-function SummaryMetric({ label, value }: { label: string; value: number }) {
-  return (
-    <Card>
-      <Card.Header>
-        <Card.Title>{label}</Card.Title>
-      </Card.Header>
-      <Card.Content>
-        <output>{value}</output>
-      </Card.Content>
-    </Card>
-  );
 }

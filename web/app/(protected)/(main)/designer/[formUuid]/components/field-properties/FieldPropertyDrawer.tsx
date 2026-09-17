@@ -25,6 +25,7 @@ import {
   Tabs,
   Popover,
 } from "@heroui/react";
+import styles from "../DesignerTheme.module.css";
 import { Modal } from "@heroui/react/modal";
 import type { DesignerComponentType, DesignerFieldProps, SerialNumberRule } from "../CompTool";
 import { isChoiceFieldType } from "../../designer-options";
@@ -37,9 +38,9 @@ import {
   listApps,
   listRoles,
   listUsers,
-} from "@/features/form-designer/api";
-import { getAppForms } from "../../../../../../lib/app-resources";
-import { mapWithConcurrency } from "../../../../../../lib/async";
+} from "@features/form-designer";
+import { getAppForms } from "@lib/app-resources";
+import { mapWithConcurrency } from "@lib/async";
 import { DefaultValueEditor } from "./DefaultValueEditor";
 import { OptionsEditor } from "./OptionsEditor";
 import { CascaderDataSourceEditor } from "./CascaderDataSourceEditor";
@@ -2321,7 +2322,7 @@ function SerialNumberProperties({
         </div>
       </PropertyFold>
       <Modal isOpen={Boolean(editingRule)} onOpenChange={(open) => !open && setEditingRuleId(null)}>
-        <Modal.Backdrop className="designer-modal-backdrop"><Modal.Container placement="center" size="sm"><Modal.Dialog className="bg-[var(--designer-surface-solid)]"><Modal.Header><Modal.Heading>编辑规则</Modal.Heading></Modal.Header><Modal.Body>
+        <Modal.Backdrop className={styles["designer-theme__modal-backdrop"]}><Modal.Container placement="center" size="sm"><Modal.Dialog className="bg-[var(--designer-surface-solid)]"><Modal.Header><Modal.Heading>编辑规则</Modal.Heading></Modal.Header><Modal.Body>
           {editingRule?.type === "fixedText" ? <Input aria-label="固定字符内容" value={editingRule.value} onChange={(event) => updateRule(editingRule.id, { ...editingRule, value: event.currentTarget.value })} /> : null}
           {editingRule?.type === "submittedDate" ? <PropertySegmented value={editingRule.format} options={[{ label: "年", value: "year" }, { label: "年月", value: "yearMonth" }, { label: "年月日", value: "yearMonthDay" }, { label: "年月日时分", value: "yearMonthDayHourMinute" }, { label: "年月日时分秒", value: "yearMonthDayHourMinuteSecond" }]} onChange={(value) => updateRule(editingRule.id, { ...editingRule, format: value as typeof editingRule.format })} /> : null}
           {editingRule?.type === "formField" ? <div className="space-y-2"><select aria-label="表单字段" value={editingRule.fieldId} onChange={(event) => updateRule(editingRule.id, { ...editingRule, fieldId: event.currentTarget.value })} className="h-9 w-full rounded-md border border-[var(--designer-border)] bg-[var(--designer-surface-solid)] px-2 text-sm"><option value="">请选择字段</option>{selectableFields.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.label}</option>)}</select><Input aria-label="空值替代" placeholder="请输入（最多10个字符）" maxLength={10} value={editingRule.fallback} onChange={(event) => updateRule(editingRule.id, { ...editingRule, fallback: event.currentTarget.value })} /></div> : null}

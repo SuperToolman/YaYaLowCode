@@ -1,7 +1,7 @@
-import type { RuntimeSchemaField } from "../../../../components/RuntimeFormRenderer";
-import type { ViewConfig } from "./use-form-views";
-import { formatCountryCityValue, isCountryCityValue } from "../../../../lib/location-catalog";
-import { getFormComponentAgentCapability } from "../../../../lib/form-component-agent-capabilities";
+import type { RuntimeSchemaField } from "@features/form-runtime/components";
+import type { ViewConfig } from "./model/use-form-views";
+import { formatCountryCityValue, isCountryCityValue } from "@lib/location-catalog";
+import { getFormComponentAgentCapability } from "@lib/form-component-agent-capabilities";
 import type { FormRecord } from "@/features/records/types";
 
 type SchemaField = RuntimeSchemaField;

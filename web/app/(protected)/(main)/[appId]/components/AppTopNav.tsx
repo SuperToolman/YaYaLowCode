@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAuth } from "../../../../components/AuthProvider";
+import { useAuth } from "@components/AuthProvider";
 import { Tabs } from "@heroui/react";
 
 type AppTopNavProps = {

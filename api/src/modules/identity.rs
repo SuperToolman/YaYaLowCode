@@ -6,12 +6,16 @@ use argon2::{
 };
 use axum::Json;
 use axum::extract::{Path, State};
+use hmac::{Hmac, Mac};
+use reqwest::Client;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
+use sha1::Sha1;
+use tracing::error;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -126,6 +130,218 @@ pub(crate) struct DingTalkLoginUserResponse {
     id: String,
     username: String,
     display_name: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SendSmsCodeRequest {
+    pub mobile: String,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SendSmsCodeResponse {
+    pub expires_in: u64,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct VerifySmsCodeRequest {
+    pub mobile: String,
+    pub code: String,
+}
+
+const SMS_CODE_TTL: u64 = 300;
+const SMS_SEND_COOLDOWN: u64 = 60;
+
+pub(crate) async fn send_sms_code(
+    State(state): State<AppState>,
+    Json(payload): Json<SendSmsCodeRequest>,
+) -> Result<Json<ApiResponse<SendSmsCodeResponse>>, AppError> {
+    let mobile = normalize_mobile(&payload.mobile)?;
+    if state.valkey.is_none() {
+        return Err(AppError::Server(std::io::Error::other("验证码服务未配置")));
+    }
+    let _user = find_mobile_user(&state, &mobile).await?;
+
+    let cooldown_key = format!("yaya:sms:login:cooldown:{mobile}");
+    if state.cache_get_text(&cooldown_key).await.is_some() {
+        return Err(AppError::BadRequest(
+            "验证码发送过于频繁，请稍后再试".to_string(),
+        ));
+    }
+    let code = format!(
+        "{:06}",
+        u32::from_be_bytes(Uuid::new_v4().as_bytes()[..4].try_into().unwrap()) % 1_000_000
+    );
+    let code_key = format!("yaya:sms:login:code:{mobile}");
+    state
+        .cache_set_text(&code_key, code.clone(), SMS_CODE_TTL)
+        .await;
+    state
+        .cache_set_text(&cooldown_key, "1".to_string(), SMS_SEND_COOLDOWN)
+        .await;
+    if let Err(error) = send_aliyun_sms(&mobile, &code).await {
+        if let Some(mut connection) = state.valkey.clone() {
+            let _: Result<(), _> = redis::cmd("DEL")
+                .arg(&code_key)
+                .query_async(&mut connection)
+                .await;
+            let _: Result<(), _> = redis::cmd("DEL")
+                .arg(&cooldown_key)
+                .query_async(&mut connection)
+                .await;
+        }
+        return Err(error);
+    }
+    Ok(Json(success_response(
+        "验证码已发送",
+        SendSmsCodeResponse {
+            expires_in: SMS_CODE_TTL,
+        },
+    )))
+}
+
+pub(crate) async fn verify_sms_code(
+    State(state): State<AppState>,
+    Json(payload): Json<VerifySmsCodeRequest>,
+) -> Result<Json<ApiResponse<DingTalkLoginUserResponse>>, AppError> {
+    let mobile = normalize_mobile(&payload.mobile)?;
+    if payload.code.len() != 6 || !payload.code.chars().all(|c| c.is_ascii_digit()) {
+        return Err(AppError::BadRequest("验证码格式不正确".to_string()));
+    }
+    let key = format!("yaya:sms:login:code:{mobile}");
+    let stored = state.cache_get_text(&key).await;
+    if stored.as_deref() != Some(payload.code.trim()) {
+        return Err(AppError::BadRequest("验证码错误或已过期".to_string()));
+    }
+    let user = find_mobile_user(&state, &mobile).await?;
+    if let Some(mut connection) = state.valkey.clone() {
+        let _: Result<(), _> = redis::cmd("DEL")
+            .arg(&key)
+            .query_async(&mut connection)
+            .await;
+    }
+    let username = iam_local_credential_entity::Entity::find()
+        .filter(iam_local_credential_entity::Column::UserId.eq(user.id))
+        .one(&state.db)
+        .await?
+        .map(|credential| credential.username)
+        .unwrap_or_else(|| mobile.clone());
+    Ok(Json(success_response(
+        "登录验证成功",
+        DingTalkLoginUserResponse {
+            id: user.id.to_string(),
+            username,
+            display_name: user.display_name,
+        },
+    )))
+}
+
+async fn find_mobile_user(
+    state: &AppState,
+    mobile: &str,
+) -> Result<iam_user_entity::Model, AppError> {
+    let user = iam_user_entity::Entity::find()
+        .filter(iam_user_entity::Column::Mobile.eq(mobile))
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("当前系统用户不存在该手机号".to_string()))?;
+    if user.status != "active" {
+        return Err(AppError::BadRequest(
+            "当前手机号对应的系统用户已被禁用".to_string(),
+        ));
+    }
+    Ok(user)
+}
+
+fn normalize_mobile(value: &str) -> Result<String, AppError> {
+    let value = value.trim().replace([' ', '-'], "");
+    let value = value.strip_prefix("+86").unwrap_or(&value);
+    if value.len() != 11 || !value.chars().all(|c| c.is_ascii_digit()) || !value.starts_with('1') {
+        return Err(AppError::BadRequest("手机号格式不正确".to_string()));
+    }
+    Ok(value.to_string())
+}
+
+async fn send_aliyun_sms(mobile: &str, code: &str) -> Result<(), AppError> {
+    let access_key = std::env::var("ALIYUN_ACCESS_KEY_ID")
+        .map_err(|_| AppError::Server(std::io::Error::other("短信服务未配置")))?;
+    let access_secret = std::env::var("ALIYUN_ACCESS_KEY_SECRET")
+        .map_err(|_| AppError::Server(std::io::Error::other("短信服务未配置")))?;
+    let sign_name = std::env::var("ALIYUN_SMS_SIGN_NAME")
+        .map_err(|_| AppError::Server(std::io::Error::other("短信服务未配置")))?;
+    let template_code = std::env::var("ALIYUN_SMS_LOGIN_TEMPLATE_CODE")
+        .map_err(|_| AppError::Server(std::io::Error::other("短信服务未配置")))?;
+    let nonce = Uuid::new_v4().to_string();
+    let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let mut params = vec![
+        ("AccessKeyId", access_key.clone()),
+        ("Action", "SendSms".into()),
+        ("Format", "JSON".into()),
+        ("PhoneNumbers", mobile.into()),
+        (
+            "RegionId",
+            std::env::var("ALIYUN_SMS_REGION").unwrap_or_else(|_| "cn-hangzhou".into()),
+        ),
+        ("SignName", sign_name),
+        ("SignatureMethod", "HMAC-SHA1".into()),
+        ("SignatureNonce", nonce),
+        ("SignatureVersion", "1.0".into()),
+        ("TemplateCode", template_code),
+        ("TemplateParam", format!("{{\"code\":\"{code}\"}}")),
+        ("Timestamp", timestamp),
+        ("Version", "2017-05-25".into()),
+    ];
+    params.sort_by(|a, b| a.0.cmp(b.0));
+    let canonical = params
+        .iter()
+        .map(|(k, v)| format!("{}={}", percent_encode(k), percent_encode(v)))
+        .collect::<Vec<_>>()
+        .join("&");
+    let string_to_sign = format!("GET&%2F&{}", percent_encode(&canonical));
+    let mut mac = Hmac::<Sha1>::new_from_slice(format!("{}&", access_secret).as_bytes())
+        .map_err(|_| AppError::Server(std::io::Error::other("短信签名失败")))?;
+    mac.update(string_to_sign.as_bytes());
+    let signature = base64::Engine::encode(
+        &base64::engine::general_purpose::STANDARD,
+        mac.finalize().into_bytes(),
+    );
+    params.push(("Signature", signature));
+    let response = Client::new()
+        .get("https://dysmsapi.aliyuncs.com/")
+        .query(&params)
+        .send()
+        .await
+        .map_err(|error| {
+            error!(%error, "aliyun sms request failed");
+            AppError::Server(std::io::Error::other("短信服务请求失败"))
+        })?;
+    let body: serde_json::Value = response.json().await.map_err(|error| {
+        error!(%error, "aliyun sms response was invalid");
+        AppError::Server(std::io::Error::other("短信服务响应无效"))
+    })?;
+    if body.get("Code").and_then(|v| v.as_str()) != Some("OK") {
+        let code = body
+            .get("Code")
+            .and_then(|value| value.as_str())
+            .unwrap_or("Unknown");
+        let message = body
+            .get("Message")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown error");
+        error!(code, message, request_id = ?body.get("RequestId"), "aliyun sms rejected request");
+        return Err(AppError::Server(std::io::Error::other(format!(
+            "阿里云短信错误 [{code}]: {message}"
+        ))));
+    }
+    Ok(())
+}
+
+fn percent_encode(value: &str) -> String {
+    url::form_urlencoded::byte_serialize(value.as_bytes())
+        .collect::<String>()
+        .replace('+', "%20")
 }
 
 #[derive(Deserialize, ToSchema)]

@@ -1,6 +1,7 @@
 ﻿import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getFormsByRouteAppId, isRuntimeAppId } from "../../../lib/apps";
+import { getFormsByRouteAppId, isRuntimeAppId } from "@lib/apps";
+import { getRuntimeAppNavigation } from "@features/application/server-api";
 
 type NavigationItem = {
   itemType: string;
@@ -21,23 +22,14 @@ export default async function AppEntryPage({
 
   if (!defaultForm && isRuntimeAppId(routeAppId)) {
     try {
-      const backendBaseUrl =
-        process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8788";
-      const response = await fetch(
-        `${backendBaseUrl}/api/apps/${routeAppId}/navigation`,
-        { cache: "no-store" },
-      );
-      const payload = (await response.json()) as {
-        code: number;
-        data: NavigationItem[] | null;
-      };
-      if (payload.code === 0 && payload.data) {
-        const defaultEntry = payload.data.find((item) => item.isDefaultEntry);
+      const navigation = await getRuntimeAppNavigation<NavigationItem[]>(routeAppId);
+      if (navigation) {
+        const defaultEntry = navigation.find((item) => item.isDefaultEntry);
         defaultForm =
           (defaultEntry?.itemType === "form"
             ? defaultEntry.targetFormUuid
             : defaultEntry?.pathSlug) ??
-          payload.data.find((item) => item.itemType === "form")?.targetFormUuid ??
+          navigation.find((item) => item.itemType === "form")?.targetFormUuid ??
           "tasks";
       }
     } catch {

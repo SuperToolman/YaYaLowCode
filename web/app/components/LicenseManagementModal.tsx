@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button, Input, Modal, TextArea, toast } from "@heroui/react";
 import { useAuth } from "./AuthProvider";
+import { activateLicense, applyLatestLicense, getLicenseStatus } from "@features/settings/api";
 
 export const OPEN_LICENSE_MANAGEMENT_MODAL_EVENT = "yaya-open-license-management-modal";
 export const OPEN_LICENSE_UPDATE_PROMPT_EVENT = "yaya-open-license-update-prompt";
@@ -31,8 +32,6 @@ type LicenseStatus = {
   latestIssuedAt: number | null;
 };
 
-type Envelope<T> = { code: number; message: string; data: T | null };
-
 export function LicenseManagementModal({ open, blocked, updateOnly = false, onOpenChange }: { open: boolean; blocked: boolean; updateOnly?: boolean; onOpenChange: (open: boolean) => void }) {
   const { hasPermission } = useAuth();
   const [status, setStatus] = useState<LicenseStatus | null>(null);
@@ -44,11 +43,9 @@ export function LicenseManagementModal({ open, blocked, updateOnly = false, onOp
   async function load() {
     setLoading(true);
     try {
-      const response = await fetch("/api/settings/license", { cache: "no-store" });
-      const payload = await response.json() as Envelope<LicenseStatus>;
-      if (!response.ok || payload.code !== 0 || !payload.data) throw new Error(payload.message || "无法读取许可证状态");
-      setStatus(payload.data);
-      setLicenseCenterUrl(payload.data.licenseCenterUrl ?? "");
+      const payload = await getLicenseStatus<LicenseStatus>();
+      setStatus(payload);
+      setLicenseCenterUrl(payload.licenseCenterUrl ?? "");
     } catch (error) {
       toast.danger("无法读取许可证状态", { description: error instanceof Error ? error.message : "请检查 API 服务。" });
     } finally {
@@ -66,14 +63,8 @@ export function LicenseManagementModal({ open, blocked, updateOnly = false, onOp
     if (!licenseCenterUrl.trim() || !license.trim()) return;
     setSaving(true);
     try {
-      const response = await fetch("/api/settings/license", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ licenseCenterUrl: licenseCenterUrl.trim(), license: license.trim() }),
-      });
-      const payload = await response.json() as Envelope<LicenseStatus>;
-      if (!response.ok || payload.code !== 0 || !payload.data) throw new Error(payload.message || "更新失败");
-      setStatus(payload.data);
+      const payload = await activateLicense<LicenseStatus>({ licenseCenterUrl: licenseCenterUrl.trim(), license: license.trim() });
+      setStatus(payload);
       setLicense("");
       toast.success("平台许可证已更新");
       window.dispatchEvent(new Event("yaya-license-updated"));
@@ -88,10 +79,8 @@ export function LicenseManagementModal({ open, blocked, updateOnly = false, onOp
   async function applyLatest() {
     setSaving(true);
     try {
-      const response = await fetch("/api/settings/license/latest", { method: "POST" });
-      const payload = await response.json() as Envelope<LicenseStatus>;
-      if (!response.ok || payload.code !== 0 || !payload.data) throw new Error(payload.message || "更新失败");
-      setStatus(payload.data);
+      const payload = await applyLatestLicense<LicenseStatus>();
+      setStatus(payload);
       toast.success("平台签名已更新", { description: "新购买的模块和 AI 员工权益已经生效。" });
       window.dispatchEvent(new Event("yaya-license-updated"));
       onOpenChange(false);

@@ -25,6 +25,7 @@ ARG NEXT_PUBLIC_BACKEND_WS_URL
 ENV NEXT_PUBLIC_BACKEND_WS_URL=${NEXT_PUBLIC_BACKEND_WS_URL}
 WORKDIR /workspace/web
 RUN corepack enable
+RUN corepack prepare pnpm@11.1.2 --activate
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY web ./
@@ -35,6 +36,7 @@ RUN pnpm build
 FROM node:22-bookworm-slim AS agent-runtime
 WORKDIR /workspace/agent
 RUN corepack enable
+RUN corepack prepare pnpm@11.7.0 --activate
 COPY agent/deepseek-harness/package.json agent/deepseek-harness/pnpm-lock.yaml agent/deepseek-harness/pnpm-workspace.yaml ./
 COPY agent/deepseek-harness ./
 RUN pnpm install --frozen-lockfile
@@ -51,16 +53,17 @@ ENV NODE_ENV=production \
     PATH="/usr/lib/postgresql/15/bin:${PATH}"
 RUN sed -i "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g; s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
-    && apt-get install -y --no-install-recommends curl openssl postgresql postgresql-client supervisor util-linux \
+    && apt-get install -y --no-install-recommends curl openssl postgresql postgresql-client supervisor util-linux python3 python3-pip python3-venv \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --create-home --uid 10001 yaya
 WORKDIR /app
 RUN corepack enable
+RUN corepack prepare pnpm@11.1.2 --activate
 COPY --from=web-build /workspace/web/package.json /workspace/web/pnpm-lock.yaml /workspace/web/pnpm-workspace.yaml ./web/
 RUN chown yaya:yaya /app /app/web /home/yaya
 USER yaya
 RUN --mount=type=cache,id=yaya-pnpm-store,target=/home/yaya/.local/share/pnpm/store \
-    pnpm --dir /app/web install --prod --frozen-lockfile
+    corepack pnpm@11.1.2 --dir /app/web install --prod --frozen-lockfile
 USER root
 COPY --chown=yaya:yaya --from=web-runtime /workspace/web ./web
 COPY --chown=yaya:yaya --from=agent-runtime /workspace/agent ./agent/deepseek-harness

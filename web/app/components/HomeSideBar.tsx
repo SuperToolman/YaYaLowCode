@@ -16,7 +16,9 @@ import {
 import { Box } from "@gravity-ui/icons";
 import { AgentAssistantTrigger } from "./agent/AgentAssistantTrigger";
 import { useAuth } from "./AuthProvider";
+import { logoutSession } from "@features/auth/api";
 import { WorkflowNotificationItems } from "./WorkflowNotificationItems";
+import { getCommunicationAvailability } from "@features/communication/api";
 import { MyAvatar } from "./my-fields/MyAvatar";
 import {
   listApps,
@@ -119,10 +121,9 @@ export default function HomeSideBar() {
       return;
     }
     let cancelled = false;
-    void fetch("/api/communication/status", { cache: "no-store" })
-      .then(async (response) => {
-        const payload = await response.json() as { code: number; data: { enabled?: boolean } | null };
-        if (!cancelled) setCommunicationEnabled(response.ok && payload.code === 0 && payload.data?.enabled === true);
+    void getCommunicationAvailability<{ enabled?: boolean }>()
+      .then((status) => {
+        if (!cancelled) setCommunicationEnabled(status.enabled === true);
       })
       .catch(() => { if (!cancelled) setCommunicationEnabled(false); });
     return () => { cancelled = true; };
@@ -165,7 +166,7 @@ export default function HomeSideBar() {
     : secondaryNavItems;
 
   async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    await logoutSession().catch(() => undefined);
     logout();
     router.replace("/login");
   }

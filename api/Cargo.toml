@@ -38,6 +38,9 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 aes-gcm = "0.10"
 base64 = "0.22"
 sha2 = "0.10"
+hmac = "0.12"
+sha1 = "0.10"
+url = "2"
 
 [patch.crates-io]
 mime_guess = { path = "vendor/mime_guess" }

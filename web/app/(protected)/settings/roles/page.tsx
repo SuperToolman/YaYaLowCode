@@ -2,51 +2,522 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Input, Modal, Tabs } from "@heroui/react";
 import { Card } from "@heroui/react/card";
-import { createLocalRole, deleteLocalRole, listRoles, updateLocalRole } from "@/features/identity-access/api";
+import {
+  createLocalRole,
+  deleteLocalRole,
+  listRoles,
+  updateLocalRole,
+} from "@/features/identity-access/api";
 import { SettingsContentCard } from "../components/SettingsContentCard";
 
-type Role = { id: string; sourceType: string; externalId: string; name: string; status: string; memberCount: number };
+type Role = {
+  id: string;
+  sourceType: string;
+  externalId: string;
+  name: string;
+  status: string;
+  memberCount: number;
+};
 type RoleSourceFilter = "all" | "local" | "dingtalk";
 
 export default function RolesSettingsPage() {
-  const [roles, setRoles] = useState<Role[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [query, setQuery] = useState(""); const [sourceFilter, setSourceFilter] = useState<RoleSourceFilter>("all"); const [editing, setEditing] = useState<Role | null>(null); const [name, setName] = useState(""); const [open, setOpen] = useState(false); const [saving, setSaving] = useState(false); const [deleting, setDeleting] = useState<Role | null>(null); const [deletingRole, setDeletingRole] = useState(false);
-  const load = useCallback(async () => { setLoading(true); setError(""); try { const { data, error } = await listRoles({ responseStyle: "fields" }); if (error || !data || data.code !== 0 || !data.data) throw new Error(data?.message || "无法加载角色"); setRoles(data.data); } catch (reason) { setError(reason instanceof Error ? reason.message : "无法加载角色"); } finally { setLoading(false); } }, []);
-  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
-  const filteredRoles = useMemo(() => { const normalized = query.trim().toLocaleLowerCase("zh-CN"); return roles.filter((role) => (sourceFilter === "all" || role.sourceType === sourceFilter) && (!normalized || role.name.toLocaleLowerCase("zh-CN").includes(normalized))); }, [query, roles, sourceFilter]);
-  function edit(role?: Role) { setEditing(role ?? null); setName(role?.name ?? ""); setOpen(true); }
-  async function save() { if (!name.trim()) return; setSaving(true); try { const { data, error } = editing ? await updateLocalRole({ path: { roleId: editing.id }, body: { name }, responseStyle: "fields" }) : await createLocalRole({ body: { name }, responseStyle: "fields" }); if (error || !data || data.code !== 0 || !data.data) throw new Error(data?.message || "保存失败"); setOpen(false); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "保存失败"); } finally { setSaving(false); } }
-  async function status(role: Role) { await mutate(role, { status: role.status === "active" ? "inactive" : "active" }); }
-  async function remove(role: Role) { setDeletingRole(true); try { const { error } = await deleteLocalRole({ path: { roleId: role.id }, responseStyle: "fields" }); if (error) throw new Error("删除失败"); setDeleting(null); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "删除失败"); } finally { setDeletingRole(false); } }
-  async function mutate(role: Role, data: { name?: string; status?: string }) { try { const { data: response, error } = await updateLocalRole({ path: { roleId: role.id }, body: data, responseStyle: "fields" }); if (error || !response || response.code !== 0 || !response.data) throw new Error(response?.message || "更新失败"); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "更新失败"); } }
-  return <SettingsContentCard
-    title="角色管理"
-    subtitle={`管理平台角色与来源状态。共 ${roles.length} 个角色，其中 ${roles.filter((item) => item.status === "active").length} 个已启用。`}
-    headerActions={<div className="flex flex-wrap items-center justify-end gap-2"><Input aria-label="搜索角色" className="w-64" placeholder="搜索角色" value={query} onChange={(event) => setQuery(event.currentTarget.value)} /><Button variant="secondary" onPress={() => edit()}>添加角色</Button><Button variant="secondary" isDisabled={loading} onPress={() => void load()}><RefreshIcon />{loading ? "刷新中…" : "刷新"}</Button></div>}
-  >
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <SourceFilterTabs value={sourceFilter} onChange={setSourceFilter} />
-        <p className="text-xs text-[var(--color-text-secondary)]">平台 {roles.filter((item) => item.sourceType === "local").length} 个</p>
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<RoleSourceFilter>("all");
+  const [editing, setEditing] = useState<Role | null>(null);
+  const [name, setName] = useState("");
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState<Role | null>(null);
+  const [deletingRole, setDeletingRole] = useState(false);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const { data, error } = await listRoles({ responseStyle: "fields" });
+      if (error || !data || data.code !== 0 || !data.data)
+        throw new Error(data?.message || "无法加载角色");
+      setRoles(data.data);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "无法加载角色");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
+  const filteredRoles = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase("zh-CN");
+    return roles.filter(
+      (role) =>
+        (sourceFilter === "all" || role.sourceType === sourceFilter) &&
+        (!normalized ||
+          role.name.toLocaleLowerCase("zh-CN").includes(normalized)),
+    );
+  }, [query, roles, sourceFilter]);
+  function edit(role?: Role) {
+    setEditing(role ?? null);
+    setName(role?.name ?? "");
+    setOpen(true);
+  }
+  async function save() {
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      const { data, error } = editing
+        ? await updateLocalRole({
+            path: { roleId: editing.id },
+            body: { name },
+            responseStyle: "fields",
+          })
+        : await createLocalRole({ body: { name }, responseStyle: "fields" });
+      if (error || !data || data.code !== 0 || !data.data)
+        throw new Error(data?.message || "保存失败");
+      setOpen(false);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function status(role: Role) {
+    await mutate(role, {
+      status: role.status === "active" ? "inactive" : "active",
+    });
+  }
+  async function remove(role: Role) {
+    setDeletingRole(true);
+    try {
+      const { error } = await deleteLocalRole({
+        path: { roleId: role.id },
+        responseStyle: "fields",
+      });
+      if (error) throw new Error("删除失败");
+      setDeleting(null);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "删除失败");
+    } finally {
+      setDeletingRole(false);
+    }
+  }
+  async function mutate(role: Role, data: { name?: string; status?: string }) {
+    try {
+      const { data: response, error } = await updateLocalRole({
+        path: { roleId: role.id },
+        body: data,
+        responseStyle: "fields",
+      });
+      if (error || !response || response.code !== 0 || !response.data)
+        throw new Error(response?.message || "更新失败");
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "更新失败");
+    }
+  }
+  return (
+    <SettingsContentCard
+      title="角色管理"
+      subtitle={`管理平台角色与来源状态。共 ${roles.length} 个角色，其中 ${roles.filter((item) => item.status === "active").length} 个已启用。`}
+      headerActions={
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Input
+            aria-label="搜索角色"
+            className="w-64"
+            placeholder="搜索角色"
+            value={query}
+            onChange={(event) => setQuery(event.currentTarget.value)}
+          />
+          <Button variant="secondary" onPress={() => edit()}>
+            添加角色
+          </Button>
+          <Button
+            variant="secondary"
+            isDisabled={loading}
+            onPress={() => void load()}
+          >
+            <RefreshIcon />
+            {loading ? "刷新中…" : "刷新"}
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <SourceFilterTabs value={sourceFilter} onChange={setSourceFilter} />
+          <p className="text-xs text-[var(--color-text-secondary)]">
+            平台 {roles.filter((item) => item.sourceType === "local").length} 个
+          </p>
+        </div>
+        {error ? (
+          <p className="rounded-xl bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
+            {error}
+          </p>
+        ) : null}
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {filteredRoles.map((role) => (
+            <RoleCard
+              key={role.id}
+              role={role}
+              onEdit={edit}
+              onStatus={status}
+              onDelete={setDeleting}
+            />
+          ))}
+        </div>
+        {!loading && filteredRoles.length === 0 ? (
+          <div className="flex min-h-64 items-center justify-center text-sm text-[var(--color-text-secondary)]">
+            没有符合当前条件的角色。
+          </div>
+        ) : null}
       </div>
-      {error ? <p className="rounded-xl bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">{error}</p> : null}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-        {filteredRoles.map((role) => <RoleCard key={role.id} role={role} onEdit={edit} onStatus={status} onDelete={setDeleting} />)}
-      </div>
-      {!loading && filteredRoles.length === 0 ? <div className="flex min-h-64 items-center justify-center text-sm text-[var(--color-text-secondary)]">没有符合当前条件的角色。</div> : null}
-    </div>
-    <RoleModal open={open} editing={editing} name={name} saving={saving} onName={setName} onClose={() => setOpen(false)} onSave={save} />
-    <RoleDeleteModal role={deleting} deleting={deletingRole} onClose={() => setDeleting(null)} onConfirm={() => deleting && void remove(deleting)} />
-  </SettingsContentCard>;
+      <RoleModal
+        open={open}
+        editing={editing}
+        name={name}
+        saving={saving}
+        onName={setName}
+        onClose={() => setOpen(false)}
+        onSave={save}
+      />
+      <RoleDeleteModal
+        role={deleting}
+        deleting={deletingRole}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleting && void remove(deleting)}
+      />
+    </SettingsContentCard>
+  );
 }
-function RoleCard({ role, onEdit, onStatus, onDelete }: { role: Role; onEdit: (role: Role) => void; onStatus: (role: Role) => void; onDelete: (role: Role) => void }) { const editable = role.sourceType === "local" && role.externalId !== "system-administrator"; const reason = role.sourceType !== "local" ? "钉钉同步角色不可修改" : "系统管理员角色受保护"; return <Card className="flex min-h-48 flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-5 shadow-none"><div className="flex items-start justify-between gap-3"><div className="min-w-0 flex-1"><h3 className="break-words text-base font-semibold text-[var(--color-text-primary)]">{role.name}</h3><p className="mt-1 break-all text-xs leading-5 text-[var(--color-text-secondary)]">标识：{role.externalId}</p></div><span className="shrink-0"><StatusTag status={role.status} /></span></div><div className="mt-5 flex items-center gap-2"><SourceTag source={role.sourceType} /><span className="text-xs text-[var(--color-text-secondary)]">{role.memberCount} 名成员</span></div><div className="mt-auto flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-4"><span className="min-w-0 flex-1 break-words text-xs leading-5 text-[var(--color-text-secondary)]">{editable ? "平台自定义角色" : reason}</span><div className="flex shrink-0 gap-1"><IconAction title={editable ? "编辑角色" : reason} disabled={!editable} onPress={() => onEdit(role)}><EditIcon /></IconAction><IconAction title={editable ? role.status === "active" ? "禁用角色" : "启用角色" : reason} disabled={!editable} onPress={() => void onStatus(role)}>{role.status === "active" ? <DisableIcon /> : <EnableIcon />}</IconAction><IconAction title={editable ? "删除角色" : reason} disabled={!editable} danger onPress={() => onDelete(role)}><TrashIcon /></IconAction></div></div></Card>; }
-function SourceFilterTabs({ value, onChange }: { value: RoleSourceFilter; onChange: (value: RoleSourceFilter) => void }) { return <Tabs variant="secondary" selectedKey={value} onSelectionChange={(key) => onChange(key as RoleSourceFilter)}><Tabs.List aria-label="角色来源筛选"><Tabs.Tab id="all" className="px-3 py-1.5 text-xs">全部<Tabs.Indicator /></Tabs.Tab><Tabs.Tab id="local" className="px-3 py-1.5 text-xs">平台<Tabs.Indicator /></Tabs.Tab><Tabs.Tab id="dingtalk" className="px-3 py-1.5 text-xs">钉钉<Tabs.Indicator /></Tabs.Tab></Tabs.List></Tabs>; }
-function RoleModal({ open, editing, name, saving, onName, onClose, onSave }: { open: boolean; editing: Role | null; name: string; saving: boolean; onName: (value: string) => void; onClose: () => void; onSave: () => void }) { return <Modal isOpen={open} onOpenChange={(value) => !value && onClose()}><Modal.Backdrop className="theme-modal-backdrop" isDismissable><Modal.Container placement="center" size="sm"><Modal.Dialog className="rounded-2xl bg-[var(--color-bg-surface)]"><Modal.Header><Modal.Heading>{editing ? "编辑角色" : "新增角色"}</Modal.Heading><Modal.CloseTrigger aria-label="关闭" /></Modal.Header><Modal.Body><Input autoFocus fullWidth placeholder="请输入角色名称" value={name} onChange={(event) => onName(event.currentTarget.value)} />{!editing ? <p className="mt-3 text-xs text-[var(--color-text-secondary)]">新角色默认来源为平台、状态为停用，且不拥有权限。</p> : null}</Modal.Body><Modal.Footer><Button variant="ghost" onPress={onClose}>取消</Button><Button isDisabled={!name.trim() || saving} onPress={onSave}>{saving ? "正在保存…" : "确认"}</Button></Modal.Footer></Modal.Dialog></Modal.Container></Modal.Backdrop></Modal>; }
-function RoleDeleteModal({ role, deleting, onClose, onConfirm }: { role: Role | null; deleting: boolean; onClose: () => void; onConfirm: () => void }) { return <Modal isOpen={role !== null} onOpenChange={(open) => !open && !deleting && onClose()}><Modal.Backdrop className="theme-modal-backdrop" isDismissable={!deleting}><Modal.Container placement="center" size="sm"><Modal.Dialog className="rounded-2xl bg-[var(--color-bg-surface)]"><Modal.Header><Modal.Heading>删除角色</Modal.Heading><Modal.CloseTrigger aria-label="关闭" /></Modal.Header><Modal.Body><p className="">确认删除角色「{role?.name}」吗？删除后无法恢复。</p></Modal.Body><Modal.Footer><Button variant="ghost" isDisabled={deleting} onPress={onClose}>取消</Button><Button className="bg-[var(--color-danger)] text-white" isDisabled={deleting} onPress={onConfirm}>{deleting ? "正在删除…" : "确认删除"}</Button></Modal.Footer></Modal.Dialog></Modal.Container></Modal.Backdrop></Modal>; }
-function SourceTag({ source }: { source: string }) { const ding = source === "dingtalk"; return <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${ding ? "border-[#b7d4ff] bg-[#eaf2ff] text-[#1677ff]" : "border-[#d9d9d9] bg-[#f5f5f5] text-[#595959]"}`}>{ding ? "钉钉" : "平台"}</span>; }
-function StatusTag({ status }: { status: string }) { return <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${status === "active" ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]"}`}>{status === "active" ? "启用" : "停用"}</span>; }
-function RefreshIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M20 11a8 8 0 1 0 2 5.3" /><path d="M20 4v7h-7" /></svg>; }
-function IconAction({ title, disabled, danger = false, onPress, children }: { title: string; disabled: boolean; danger?: boolean; onPress: () => void; children: React.ReactNode }) { return <span className="group relative"><Button aria-label={title} variant="ghost" isDisabled={disabled} onPress={onPress} className={`h-8 min-w-8 p-1.5 ${danger ? "text-[var(--color-danger)]" : "text-[var(--color-text-secondary)]"}`}>{children}</Button><span className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-[var(--color-text-primary)] px-2 py-1 text-[11px] text-[var(--color-text-on-primary)] opacity-0 group-hover:opacity-100">{title}</span></span>; }
-function EditIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m4 16.5-.8 4.3 4.3-.8L18.7 8.8a2.3 2.3 0 0 0-3.3-3.3L4 16.5Z" /><path d="m13.8 7.2 3 3" /></svg>; }
-function EnableIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="8.5" /><path d="M12 7v10M7 12h10" /></svg>; }
-function DisableIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="8.5" /><path d="m6 6 12 12" /></svg>; }
-function TrashIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4.5 7h15M9 7V4.5h6V7m-8.5 0 .7 13h9.6l.7-13" /></svg>; }
+function RoleCard({
+  role,
+  onEdit,
+  onStatus,
+  onDelete,
+}: {
+  role: Role;
+  onEdit: (role: Role) => void;
+  onStatus: (role: Role) => void;
+  onDelete: (role: Role) => void;
+}) {
+  const editable =
+    role.sourceType === "local" && role.externalId !== "system-administrator";
+  const reason =
+    role.sourceType !== "local"
+      ? "钉钉同步角色不可修改"
+      : "系统管理员角色受保护";
+  return (
+    <Card className="flex min-h-48 flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-5 shadow-none">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 className="break-words text-base font-semibold text-[var(--color-text-primary)]">
+            {role.name}
+          </h3>
+          <p className="mt-1 break-all text-xs leading-5 text-[var(--color-text-secondary)]">
+            标识：{role.externalId}
+          </p>
+        </div>
+        <span className="shrink-0">
+          <StatusTag status={role.status} />
+        </span>
+      </div>
+      <div className="mt-5 flex items-center gap-2">
+        <SourceTag source={role.sourceType} />
+        <span className="text-xs text-[var(--color-text-secondary)]">
+          {role.memberCount} 名成员
+        </span>
+      </div>
+      <div className="mt-auto flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-4">
+        <span className="min-w-0 flex-1 break-words text-xs leading-5 text-[var(--color-text-secondary)]">
+          {editable ? "平台自定义角色" : reason}
+        </span>
+        <div className="flex shrink-0 gap-1">
+          <IconAction
+            title={editable ? "编辑角色" : reason}
+            disabled={!editable}
+            onPress={() => onEdit(role)}
+          >
+            <EditIcon />
+          </IconAction>
+          <IconAction
+            title={
+              editable
+                ? role.status === "active"
+                  ? "禁用角色"
+                  : "启用角色"
+                : reason
+            }
+            disabled={!editable}
+            onPress={() => void onStatus(role)}
+          >
+            {role.status === "active" ? <DisableIcon /> : <EnableIcon />}
+          </IconAction>
+          <IconAction
+            title={editable ? "删除角色" : reason}
+            disabled={!editable}
+            danger
+            onPress={() => onDelete(role)}
+          >
+            <TrashIcon />
+          </IconAction>
+        </div>
+      </div>
+    </Card>
+  );
+}
+function SourceFilterTabs({
+  value,
+  onChange,
+}: {
+  value: RoleSourceFilter;
+  onChange: (value: RoleSourceFilter) => void;
+}) {
+  return (
+    <Tabs
+      variant="secondary"
+      selectedKey={value}
+      onSelectionChange={(key) => onChange(key as RoleSourceFilter)}
+    >
+      <Tabs.List aria-label="角色来源筛选">
+        <Tabs.Tab id="all" className="px-3 py-1.5 text-xs">
+          全部
+          <Tabs.Indicator />
+        </Tabs.Tab>
+        <Tabs.Tab id="local" className="px-3 py-1.5 text-xs">
+          平台
+          <Tabs.Indicator />
+        </Tabs.Tab>
+        <Tabs.Tab id="dingtalk" className="px-3 py-1.5 text-xs">
+          钉钉
+          <Tabs.Indicator />
+        </Tabs.Tab>
+      </Tabs.List>
+    </Tabs>
+  );
+}
+function RoleModal({
+  open,
+  editing,
+  name,
+  saving,
+  onName,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  editing: Role | null;
+  name: string;
+  saving: boolean;
+  onName: (value: string) => void;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <Modal isOpen={open} onOpenChange={(value) => !value && onClose()}>
+      <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
+        <Modal.Container placement="center" size="sm">
+          <Modal.Dialog className="rounded-2xl bg-[var(--color-bg-surface)]">
+            <Modal.Header>
+              <Modal.Heading>{editing ? "编辑角色" : "新增角色"}</Modal.Heading>
+              <Modal.CloseTrigger aria-label="关闭" />
+            </Modal.Header>
+            <Modal.Body>
+              <Input
+                autoFocus
+                fullWidth
+                placeholder="请输入角色名称"
+                value={name}
+                onChange={(event) => onName(event.currentTarget.value)}
+              />
+              {!editing ? (
+                <p className="mt-3 text-xs text-[var(--color-text-secondary)]">
+                  新角色默认来源为平台、状态为停用，且不拥有权限。
+                </p>
+              ) : null}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button variant="ghost" onPress={onClose}>
+                取消
+              </Button>
+              <Button isDisabled={!name.trim() || saving} onPress={onSave}>
+                {saving ? "正在保存…" : "确认"}
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </Modal>
+  );
+}
+function RoleDeleteModal({
+  role,
+  deleting,
+  onClose,
+  onConfirm,
+}: {
+  role: Role | null;
+  deleting: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Modal
+      isOpen={role !== null}
+      onOpenChange={(open) => !open && !deleting && onClose()}
+    >
+      <Modal.Backdrop
+        className="theme-modal-backdrop"
+        isDismissable={!deleting}
+      >
+        <Modal.Container placement="center" size="sm">
+          <Modal.Dialog className="rounded-2xl bg-[var(--color-bg-surface)]">
+            <Modal.Header>
+              <Modal.Heading>删除角色</Modal.Heading>
+              <Modal.CloseTrigger aria-label="关闭" />
+            </Modal.Header>
+            <Modal.Body>
+              <p className="">
+                确认删除角色「{role?.name}」吗？删除后无法恢复。
+              </p>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button variant="ghost" isDisabled={deleting} onPress={onClose}>
+                取消
+              </Button>
+              <Button
+                className="bg-[var(--color-danger)] text-white"
+                isDisabled={deleting}
+                onPress={onConfirm}
+              >
+                {deleting ? "正在删除…" : "确认删除"}
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </Modal>
+  );
+}
+function SourceTag({ source }: { source: string }) {
+  const ding = source === "dingtalk";
+  return (
+    <span
+      className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${ding ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]" : "border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]"}`}
+    >
+      {ding ? "钉钉" : "平台"}
+    </span>
+  );
+}
+function StatusTag({ status }: { status: string }) {
+  return (
+    <span
+      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${status === "active" ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]"}`}
+    >
+      {status === "active" ? "启用" : "停用"}
+    </span>
+  );
+}
+function RefreshIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      <path d="M20 11a8 8 0 1 0 2 5.3" />
+      <path d="M20 4v7h-7" />
+    </svg>
+  );
+}
+function IconAction({
+  title,
+  disabled,
+  danger = false,
+  onPress,
+  children,
+}: {
+  title: string;
+  disabled: boolean;
+  danger?: boolean;
+  onPress: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <span className="group relative">
+      <Button
+        aria-label={title}
+        variant="ghost"
+        isDisabled={disabled}
+        onPress={onPress}
+        className={`h-8 min-w-8 p-1.5 ${danger ? "text-[var(--color-danger)]" : "text-[var(--color-text-secondary)]"}`}
+      >
+        {children}
+      </Button>
+      <span className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-[var(--color-text-primary)] px-2 py-1 text-[11px] text-[var(--color-text-on-primary)] opacity-0 group-hover:opacity-100">
+        {title}
+      </span>
+    </span>
+  );
+}
+function EditIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      <path d="m4 16.5-.8 4.3 4.3-.8L18.7 8.8a2.3 2.3 0 0 0-3.3-3.3L4 16.5Z" />
+      <path d="m13.8 7.2 3 3" />
+    </svg>
+  );
+}
+function EnableIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7v10M7 12h10" />
+    </svg>
+  );
+}
+function DisableIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+function TrashIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      <path d="M4.5 7h15M9 7V4.5h6V7m-8.5 0 .7 13h9.6l.7-13" />
+    </svg>
+  );
+}

@@ -5,12 +5,13 @@ import {
   getAppByRouteId,
   normalizeAppColorTone,
   type AppItem,
-} from "../../../lib/apps";
+} from "@lib/apps";
 import { AppMainContent, AppShell } from "./components/AppShell";
 import { AppSidebarToggle } from "./components/AppSidebarToggle";
 import { AppHeaderTitle } from "./components/AppHeaderTitle";
 import { AppTopNav } from "./components/AppTopNav";
 import { FormSidebar } from "./components/FormSidebar";
+import { getRuntimeApp } from "@features/application/server-api";
 import {
   Button,
   Card,
@@ -83,20 +84,9 @@ async function loadApp(routeAppId: string): Promise<AppItem | undefined> {
     return fallbackApp;
   }
 
-  const backendBaseUrl =
-    process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8788";
-
   try {
-    const response = await fetch(`${backendBaseUrl}/api/apps/${routeAppId}`, {
-      cache: "no-store",
-    });
-    const payload = (await response.json()) as {
-      code: number;
-      data: AppItem | null;
-    };
-    const runtimeApp = payload.data;
-
-    if (response.ok && payload.code === 0 && runtimeApp?.id === routeAppId) {
+    const runtimeApp = await getRuntimeApp<AppItem>(routeAppId);
+    if (runtimeApp?.id === routeAppId) {
       return {
         ...runtimeApp,
         color: normalizeAppColorTone(runtimeApp.color),

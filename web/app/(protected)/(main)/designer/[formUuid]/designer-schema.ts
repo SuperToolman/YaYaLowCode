@@ -5,7 +5,7 @@ import type { PageDesignerProps, PlacedField } from "./designer-types";
 import {
   getDefaultActionPanelCode,
   normalizeActionPanelCode,
-} from "../../../../lib/action-panel-code";
+} from "@lib/action-panel-code";
 
 export function getDefaultPageDesignerProps(): PageDesignerProps {
   return {

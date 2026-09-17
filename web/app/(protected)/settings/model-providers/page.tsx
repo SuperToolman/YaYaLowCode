@@ -27,6 +27,7 @@ import { Button, Input, ListBox, Modal, Select, Switch, Table, Tooltip, toast } 
 import { SettingsContentCard } from "../components/SettingsContentCard";
 import type { AgentModelProvider } from "../agent-types";
 import providerPresetsJson from "./provider-presets.json";
+import { createModelRoute, deleteModelRoute, listModelRoutes, updateModelRoute } from "@features/settings/api";
 
 type ProviderForm = Omit<AgentModelProvider, "id" | "apiKeyConfigured">;
 const emptyProvider: ProviderForm = { name: "OpenAI Compatible", kind: "compatible", enabled: true, isDefault: false, apiBaseUrl: "https://api.openai.com/v1", apiKey: "", defaultChatModel: "", models: [], websiteUrl: "https://platform.openai.com" };
@@ -80,13 +81,6 @@ function maskApiKey(configured: boolean) {
 type ModelRoute = Pick<AgentModelProvider, "id" | "name" | "apiBaseUrl" | "defaultChatModel" | "models" | "enabled" | "isDefault" | "apiKeyConfigured">;
 type ModelRoutePayload = Omit<ModelRoute, "id" | "apiKeyConfigured"> & { apiKey?: string };
 
-async function modelRouteRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, { ...init, cache: "no-store", headers: { "content-type": "application/json", ...init?.headers } });
-  const payload = await response.json() as { code?: number; data?: T; message?: string };
-  if (!response.ok || payload.code !== 0 || payload.data === undefined) throw new Error(payload.message || `请求失败 (${response.status})`);
-  return payload.data;
-}
-
 export default function ModelProvidersPage() {
   const [items, setItems] = useState<AgentModelProvider[]>([]);
   const [form, setForm] = useState<ProviderForm>(emptyProvider);
@@ -98,7 +92,7 @@ export default function ModelProvidersPage() {
   const selectedProviderType = providerTypeOptions.find((item) => item.value === form.kind);
 
   async function load() {
-    const routes = await modelRouteRequest<ModelRoute[]>("/api/settings/model-routes", { method: "GET" });
+    const routes = await listModelRoutes<ModelRoute[]>();
     setItems(routes.map((route) => ({ ...route, kind: findProviderPreset({ name: route.name, kind: "" })?.id ?? "compatible", apiKey: "", websiteUrl: "", apiKeyConfigured: route.apiKeyConfigured })));
   }
 
@@ -113,7 +107,8 @@ export default function ModelProvidersPage() {
     setSaving(true);
     try {
       const payload: ModelRoutePayload = { name: form.name, apiBaseUrl: form.apiBaseUrl, defaultChatModel: form.defaultChatModel, models: form.models, enabled: form.enabled, isDefault: form.isDefault, ...(form.apiKey.trim() ? { apiKey: form.apiKey } : {}) };
-      await modelRouteRequest<ModelRoute>(editing ? `/api/settings/model-routes/${encodeURIComponent(editing.id)}` : "/api/settings/model-routes", { method: editing ? "PUT" : "POST", body: JSON.stringify(payload) });
+      if (editing) await updateModelRoute<ModelRoute>(editing.id, payload);
+      else await createModelRoute<ModelRoute>(payload);
       toast.success(editing ? "模型提供商已更新" : "模型提供商已创建");
       setFormOpen(false);
       await load();
@@ -126,7 +121,7 @@ export default function ModelProvidersPage() {
 
   async function toggleProvider(item: AgentModelProvider) {
     try {
-      await modelRouteRequest<ModelRoute>(`/api/settings/model-routes/${encodeURIComponent(item.id)}`, { method: "PUT", body: JSON.stringify({ name: item.name, apiBaseUrl: item.apiBaseUrl, defaultChatModel: item.defaultChatModel, models: item.models, enabled: !item.enabled, isDefault: item.isDefault }) });
+      await updateModelRoute<ModelRoute>(item.id, { name: item.name, apiBaseUrl: item.apiBaseUrl, defaultChatModel: item.defaultChatModel, models: item.models, enabled: !item.enabled, isDefault: item.isDefault });
       toast.success(item.enabled ? "提供商已停用" : "提供商已启动");
       await load();
     } catch (error) {
@@ -138,7 +133,7 @@ export default function ModelProvidersPage() {
     if (!deleting) return;
     setDeletingProvider(true);
     try {
-      await modelRouteRequest<{ id: string }>(`/api/settings/model-routes/${encodeURIComponent(deleting.id)}`, { method: "DELETE" });
+      await deleteModelRoute<{ id: string }>(deleting.id);
       toast.success("模型提供商已删除");
       setDeleting(null);
       await load();

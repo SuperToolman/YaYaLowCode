@@ -10,7 +10,7 @@ import {
   type SurfaceVariant,
   type ThemeMode,
   type ThemePreset,
-} from "@/app/components/ThemeProvider";
+} from "@shared/ThemeProvider";
 import ColorPickerField from "@/app/components/my-fields/MyColorPicker";
 import InfoTooltip from "@/app/components/InfoTooltip";
 import OptionMenu, { type OptionMenuItem } from "@/app/components/OptionMenu";

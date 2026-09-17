@@ -29,6 +29,8 @@ export function AppShell({
   const pendingWidthRef = useRef(DEFAULT_SIDEBAR_WIDTH);
   const hideSidebar =
     /\/automations\/[^/]+$/.test(pathname) || /\/settings(?:\/|$)/.test(pathname);
+  // Hydrate persisted layout preferences after the browser storage is available.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { const width = Number.parseInt(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY) ?? "", 10); if (Number.isFinite(width)) setSidebarWidth(Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width))); setCollapsed(window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "true"); }, []);
   function toggleCollapsed() { setCollapsed((current) => { const next = !current; window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(next)); return next; }); }
 

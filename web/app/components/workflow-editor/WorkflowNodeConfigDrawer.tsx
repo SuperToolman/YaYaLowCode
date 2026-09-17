@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { Drawer } from "@heroui/react/drawer";
 import { TrashBin } from "@gravity-ui/icons";
+import styles from "./WorkflowNodeConfigDrawer.module.css";
 
 type WorkflowNodeConfigDrawerProps = {
   children: ReactNode;
@@ -27,11 +28,11 @@ export function WorkflowNodeConfigDrawer({
     <Drawer isOpen={isOpen} onOpenChange={onOpenChange}>
       <Drawer.Backdrop isDismissable>
         <Drawer.Content placement="right">
-          <Drawer.Dialog className="automation-property-panel w-[630px] max-w-[85vw] overflow-hidden p-0">
+          <Drawer.Dialog className={`${styles["workflow-node-config__panel"]} w-[630px] max-w-[85vw] overflow-hidden p-0`}>
             <Drawer.Header className="border-b border-[var(--color-border)] bg-[var(--color-control-soft)] px-3 py-2.5">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <Drawer.Heading className="automation-property-title font-semibold text-[var(--color-text-primary)]">
+                  <Drawer.Heading className={`${styles["workflow-node-config__title"]} font-semibold text-[var(--color-text-primary)]`}>
                     {title}
                   </Drawer.Heading>
                   <p className="mt-0.5 text-[var(--color-text-secondary)]">

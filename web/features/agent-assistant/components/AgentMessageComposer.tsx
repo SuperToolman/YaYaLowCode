@@ -3,7 +3,7 @@
 import { CircleXmark, File, Paperclip, PaperPlane } from "@gravity-ui/icons";
 import { Button, TextArea } from "@heroui/react";
 import { useLayoutEffect, useRef, useState } from "react";
-import { MySurface } from "@/app/components/my-fields/MySurface";
+import { MySurface } from "@shared/ui/MySurface";
 
 type ComposerFile = { file: File; key: string };
 

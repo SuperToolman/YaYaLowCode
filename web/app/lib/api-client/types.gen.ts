@@ -834,6 +834,15 @@ export type ApiResponseRoleResponse = {
     time: string;
 };
 
+export type ApiResponseSendSmsCodeResponse = {
+    code: number;
+    data?: {
+        expiresIn: number;
+    };
+    message: string;
+    time: string;
+};
+
 export type ApiResponseSystemAiStatusResponse = {
     code: number;
     data?: {
@@ -1808,6 +1817,14 @@ export type SendCommunicationMessageRequest = {
     messageType: string;
 };
 
+export type SendSmsCodeRequest = {
+    mobile: string;
+};
+
+export type SendSmsCodeResponse = {
+    expiresIn: number;
+};
+
 export type SetDefaultNavigationEntryRequest = {
     form_uuid?: string | null;
     system_page_slug?: string | null;
@@ -1969,6 +1986,11 @@ export type ValkeySettingsResponse = {
     password: string;
     port: number;
     username: string;
+};
+
+export type VerifySmsCodeRequest = {
+    code: string;
+    mobile: string;
 };
 
 export type WorkflowCommentRequest = {
@@ -3361,6 +3383,32 @@ export type UpdateLocalRoleResponses = {
 };
 
 export type UpdateLocalRoleResponse = UpdateLocalRoleResponses[keyof UpdateLocalRoleResponses];
+
+export type VerifySmsCodeData = {
+    body: VerifySmsCodeRequest;
+    path?: never;
+    query?: never;
+    url: '/api/identity/sms/login';
+};
+
+export type VerifySmsCodeResponses = {
+    200: ApiResponseDingTalkLoginUserResponse;
+};
+
+export type VerifySmsCodeResponse = VerifySmsCodeResponses[keyof VerifySmsCodeResponses];
+
+export type SendSmsCodeData = {
+    body: SendSmsCodeRequest;
+    path?: never;
+    query?: never;
+    url: '/api/identity/sms/send-code';
+};
+
+export type SendSmsCodeResponses = {
+    200: ApiResponseSendSmsCodeResponse;
+};
+
+export type SendSmsCodeResponse2 = SendSmsCodeResponses[keyof SendSmsCodeResponses];
 
 export type ListUsersData = {
     body?: never;

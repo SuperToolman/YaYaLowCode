@@ -1,0 +1,20 @@
+.automation-condition-rules__horizontal-scroll {
+  -ms-overflow-style: auto !important;
+  scrollbar-color: var(--color-border) var(--color-bg-subtle) !important;
+  scrollbar-width: thin !important;
+}
+
+.automation-condition-rules__horizontal-scroll::-webkit-scrollbar {
+  display: block !important;
+  width: 8px !important;
+  height: 8px !important;
+  background: var(--color-bg-subtle) !important;
+}
+
+.automation-condition-rules__horizontal-scroll::-webkit-scrollbar-thumb {
+  display: block !important;
+  min-width: 32px;
+  border: 2px solid var(--color-bg-subtle);
+  border-radius: 999px;
+  background: var(--color-border) !important;
+}

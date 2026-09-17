@@ -5,9 +5,9 @@ import { Pencil, TrashBin } from "@gravity-ui/icons";
 import { Button, Chip, Drawer, Input, Modal, Select, Switch, Table, TextArea, Tooltip, toast } from "@heroui/react";
 import { Field } from "./Field";
 import { SettingsContentCard } from "./SettingsContentCard";
-import type { ApiEnvelope } from "../agent-types";
+import { deleteAgentResource, listAgentResources, saveAgentResource, type AgentResourceKind } from "@features/agent-resources/api";
 
-type Kind = "plugin" | "knowledge";
+type Kind = AgentResourceKind;
 type Resource = {
   id: string;
   name: string;
@@ -26,13 +26,11 @@ const meta = {
   plugin: {
     title: "插件",
     description: "管理 AI 员工可以使用的外部扩展能力。",
-    endpoint: "/api/agent/plugins",
     createLabel: "新增插件",
   },
   knowledge: {
     title: "知识库",
     description: "管理 AI 员工可以检索的业务资料。",
-    endpoint: "/api/agent/knowledge-bases",
     createLabel: "新增知识库",
   },
 } as const;
@@ -70,10 +68,7 @@ export function AgentResourcePage({ kind }: { kind: Kind }) {
   }, [items, query]);
 
   async function load() {
-    const response = await fetch(config.endpoint, { cache: "no-store" });
-    const payload = await response.json() as ApiEnvelope<Resource[]>;
-    if (!response.ok || !payload.data) throw new Error(payload.message || `无法加载${config.title}`);
-    setItems(payload.data);
+    setItems(await listAgentResources<Resource[]>(kind));
   }
 
   useEffect(() => {
@@ -102,15 +97,8 @@ export function AgentResourcePage({ kind }: { kind: Kind }) {
     event.preventDefault();
     setSaving(true);
     try {
-      const url = editingId ? `${config.endpoint}/${encodeURIComponent(editingId)}` : config.endpoint;
       const body = kind === "knowledge" ? { ...form, retrievalMode: "keyword" } : form;
-      const response = await fetch(url, {
-        method: editingId ? "PUT" : "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const payload = await response.json() as ApiEnvelope<Resource>;
-      if (!response.ok || !payload.data) throw new Error(payload.message || "保存失败");
+      await saveAgentResource<Resource>(kind, editingId, body);
       toast.success(`${config.title}已保存`);
       setEditorOpen(false);
       await load();
@@ -127,9 +115,7 @@ export function AgentResourcePage({ kind }: { kind: Kind }) {
     if (!deleting) return;
     setDeletingResource(true);
     try {
-      const response = await fetch(`${config.endpoint}/${encodeURIComponent(deleting.id)}`, { method: "DELETE" });
-      const payload = await response.json() as ApiEnvelope<unknown>;
-      if (!response.ok) throw new Error(payload.message || "删除失败");
+      await deleteAgentResource<unknown>(kind, deleting.id);
       toast.success(`${config.title}已删除`);
       setDeleting(null);
       await load();

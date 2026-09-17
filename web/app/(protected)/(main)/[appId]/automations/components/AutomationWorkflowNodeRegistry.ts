@@ -2,7 +2,7 @@
   createWorkflowNodeRegistry,
   groupWorkflowNodeDefinitions,
   type WorkflowNodeConfigValidationIssue,
-} from "../../../../../components/workflow-editor/workflow-core";
+} from "@components/workflow-editor/workflow-core";
 
 function readConfigString(config: unknown, key: string) {
   if (typeof config !== "object" || config === null) return "";

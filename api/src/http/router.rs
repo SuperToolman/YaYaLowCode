@@ -183,8 +183,7 @@ pub(crate) fn build(state: AppState) -> Router {
         )
         .route(
             "/api/agent/providers/{id}",
-            axum::routing::put(agent_config::update_provider)
-                .delete(agent_config::delete_provider),
+            axum::routing::put(agent_config::update_provider).delete(agent_config::delete_provider),
         )
         .route(
             "/api/agent/plugins",
@@ -257,6 +256,8 @@ pub(crate) fn build(state: AppState) -> Router {
             post(identity::initialize_local_credentials),
         )
         .route("/api/identity/local-login", post(identity::local_login))
+        .route("/api/identity/sms/send-code", post(identity::send_sms_code))
+        .route("/api/identity/sms/login", post(identity::verify_sms_code))
         .route(
             "/api/identity/users/{user_id}",
             axum::routing::put(identity::update_user).delete(identity::delete_user),
@@ -548,6 +549,8 @@ async fn require_authenticated(
         (_, "/healthz")
         | (_, "/openapi.json")
         | (_, "/api/identity/local-login")
+        | (_, "/api/identity/sms/send-code")
+        | (_, "/api/identity/sms/login")
         | (_, "/api/identity/dingtalk/session")
         | (_, "/api/internal/identity-source") => {}
         (_, "/api/communication/ws") => {}
@@ -566,6 +569,8 @@ async fn require_authenticated(
         "/healthz"
             | "/openapi.json"
             | "/api/identity/local-login"
+            | "/api/identity/sms/send-code"
+            | "/api/identity/sms/login"
             | "/api/identity/dingtalk/session"
             | "/api/internal/identity-source"
             | "/api/authorization/grants"

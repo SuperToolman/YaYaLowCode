@@ -1,0 +1,115 @@
+.form-runtime-controls__subform-horizontal-scroll {
+  -ms-overflow-style: auto !important;
+  scrollbar-color: var(--color-border) transparent !important;
+  scrollbar-width: thin !important;
+}
+
+.form-runtime-controls__subform-horizontal-scroll::-webkit-scrollbar {
+  display: block !important;
+  width: 8px !important;
+  height: 8px !important;
+  background: var(--color-bg-subtle) !important;
+}
+
+.form-runtime-controls__subform-horizontal-scroll::-webkit-scrollbar-thumb {
+  display: block !important;
+  min-width: 32px;
+  border: 2px solid var(--color-bg-subtle);
+  border-radius: 999px;
+  background: var(--color-border) !important;
+}
+
+.form-runtime-controls__number-field {
+  display: block !important;
+  margin: 0 !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  line-height: normal !important;
+  width: 100% !important;
+}
+
+.form-runtime-controls__number-field :global(.number-field__group) {
+  align-items: stretch !important;
+  display: flex !important;
+  height: 40px !important;
+  margin: 0 !important;
+  max-width: 100% !important;
+  min-height: 40px !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  width: 100% !important;
+}
+
+.form-runtime-controls__number-field :global(.number-field__input),
+.form-runtime-controls__number-field :global(.number-field__decrement-button),
+.form-runtime-controls__number-field :global(.number-field__increment-button) {
+  align-items: center !important;
+  display: flex !important;
+  height: 100% !important;
+  margin: 0 !important;
+}
+
+.form-runtime-controls__number-field :global(.number-field__input) {
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  width: 0 !important;
+}
+
+.form-runtime-controls__number-field :global(.number-field__decrement-button),
+.form-runtime-controls__number-field :global(.number-field__increment-button) {
+  flex: 0 0 auto !important;
+}
+
+.form-runtime-controls__choice-field {
+  align-content: flex-start !important;
+  gap: 6px !important;
+  margin: 0 !important;
+  min-height: 24px !important;
+  overflow: visible !important;
+  padding: 0 !important;
+}
+
+.form-runtime-controls__choice-field > * {
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+.form-runtime-controls__choice-field--horizontal {
+  align-items: center !important;
+  column-gap: 12px !important;
+  display: flex !important;
+  flex-flow: row wrap !important;
+  overflow: visible !important;
+  row-gap: 6px !important;
+  white-space: normal !important;
+}
+
+.form-runtime-controls__choice-field--horizontal > * {
+  flex: 0 1 auto !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  overflow-wrap: anywhere !important;
+  white-space: normal !important;
+  width: auto !important;
+  word-break: normal !important;
+}
+
+.form-runtime-controls__choice-field--vertical {
+  align-items: flex-start !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.form-runtime-controls__select-field {
+  display: block !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.form-runtime-controls__date-range-picker {
+  max-width: 100% !important;
+}

@@ -3,7 +3,7 @@
 import { FaceRobot } from "@gravity-ui/icons";
 import { useState } from "react";
 import type { AgentOption } from "@/features/agent-assistant/types";
-import { MySurface } from "@/app/components/my-fields/MySurface";
+import { MySurface } from "@shared/ui/MySurface";
 
 export function AgentEmployeeCard({
   employee,

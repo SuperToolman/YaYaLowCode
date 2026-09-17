@@ -1,0 +1,7 @@
+import type { UserResponse } from "../api";
+
+export type EmailAddressItem = { label: string; email: string };
+export type RoleItem = { id: string; name: string; sourceType: string; status: string };
+export type UserItem = UserResponse & { username: string | null; email: string | null; mobile: string | null; title: string | null; jobNumber: string | null; telephone: string | null; workPlace: string | null; remark: string | null; avatarUrl: string | null; roleIds: string[]; tenureMonths: number | null };
+export function normalizeUser(user: UserResponse): UserItem { return { ...user, avatarUrl: user.avatarUrl ?? null, email: user.email ?? null, mobile: user.mobile ?? null, title: user.title ?? null, jobNumber: user.jobNumber ?? null, telephone: user.telephone ?? null, workPlace: user.workPlace ?? null, remark: user.remark ?? null, username: user.username ?? null, roleIds: user.roleIds ?? [], tenureMonths: user.tenureMonths ?? null }; }
+export function filterUsers(users: UserItem[], query: string, source: "all" | "local" | "dingtalk", status: "all" | "active" | "inactive") { const normalized = query.trim().toLocaleLowerCase("zh-CN"); return users.filter((user) => { if (source !== "all" && user.sourceType !== source) return false; if (status !== "all" && user.status !== status) return false; if (!normalized) return true; return [user.displayName, user.mobile, user.email, user.jobNumber, user.title, ...user.departments, ...user.roles].filter(Boolean).some((value) => value!.toLocaleLowerCase("zh-CN").includes(normalized)); }); }

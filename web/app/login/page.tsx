@@ -1,12 +1,13 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { Button, Card, Input } from "@heroui/react";
+import { Button, Card, Input, Tabs, toast } from "@heroui/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CompactThemeSwitcher } from "../components/ThemeSwitcherMenu";
 import { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY, type AuthUser, writeAuthStorage } from "../lib/auth";
+import { getAuthSession, loginWithPassword } from "@features/auth/api";
 
-type LoginMode = "password" | "dingtalk";
+type LoginMode = "password" | "sms" | "dingtalk";
 type LoginResponse = {
   code: number;
   message: string;
@@ -32,6 +33,10 @@ function LoginScreen() {
   const [mode, setMode] = useState<LoginMode>("password");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [mobile, setMobile] = useState("");
+  const [smsCode, setSmsCode] = useState("");
+  const [smsCountdown, setSmsCountdown] = useState(0);
+  const [sendingSms, setSendingSms] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -42,6 +47,12 @@ function LoginScreen() {
   const activeMode: LoginMode = dingtalkError ? "dingtalk" : mode;
   const visibleError = dingtalkError || error;
 
+  useEffect(() => {
+    if (smsCountdown <= 0) return;
+    const timer = window.setInterval(() => setSmsCountdown((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [smsCountdown]);
+
   const completeLogin = useCallback((token: string, user: AuthUser) => {
     writeAuthStorage(AUTH_TOKEN_STORAGE_KEY, token);
     writeAuthStorage(AUTH_USER_STORAGE_KEY, JSON.stringify(user));
@@ -49,18 +60,37 @@ function LoginScreen() {
   }, []);
 
   async function login(nextUsername: string, nextPassword: string, shouldRememberPassword: boolean, shouldAutoLogin: boolean) {
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ username: nextUsername, password: nextPassword }),
-    });
-    const payload = (await response.json()) as LoginResponse;
-    if (!response.ok || payload.code !== 0 || !payload.data) {
-      throw new Error(payload.message || "登录失败，请稍后重试");
-    }
+    const payload = await loginWithPassword<NonNullable<LoginResponse["data"]>>(nextUsername, nextPassword);
     saveRememberedCredentials(nextUsername, nextPassword, shouldRememberPassword, shouldAutoLogin);
-    completeLogin(payload.data.token, payload.data.user);
+    completeLogin(payload.token, payload.user);
     router.replace(getSafeRedirect());
+  }
+
+  async function sendSmsCode() {
+    const normalized = mobile.trim();
+    if (!/^1\d{10}$/.test(normalized)) { toast.danger("请输入正确的手机号"); return; }
+    if (smsCountdown > 0 || sendingSms) return;
+    setSendingSms(true); setError("");
+    try {
+      const response = await fetch("/api/auth/sms/send-code", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mobile: normalized }) });
+      const payload = await response.json() as { code: number; message: string };
+      if (!response.ok || payload.code !== 0) throw new Error(payload.message || "验证码发送失败");
+      setSmsCountdown(60);
+    } catch (reason) { toast.danger(reason instanceof Error ? reason.message : "验证码发送失败"); }
+    finally { setSendingSms(false); }
+  }
+
+  async function smsLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (submitting) return;
+    setSubmitting(true); setError("");
+    try {
+      const response = await fetch("/api/auth/sms/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mobile: mobile.trim(), code: smsCode.trim() }) });
+      const payload = await response.json() as LoginResponse;
+      if (!response.ok || payload.code !== 0 || !payload.data) throw new Error(payload.message || "登录失败，请稍后重试");
+      completeLogin(payload.data.token, payload.data.user); router.replace(getSafeRedirect());
+    } catch (reason) { toast.danger(reason instanceof Error ? reason.message : "登录失败，请稍后重试"); }
+    finally { setSubmitting(false); }
   }
 
   useEffect(() => {
@@ -69,11 +99,9 @@ function LoginScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/auth/session", { cache: "no-store" })
-      .then(async (response) => {
-        const payload = await response.json() as LoginResponse;
-        if (!response.ok || payload.code !== 0 || !payload.data) return;
-        if (!cancelled) completeLogin(payload.data.token, payload.data.user);
+    void getAuthSession<NonNullable<LoginResponse["data"]>>()
+      .then((payload) => {
+        if (!cancelled) completeLogin(payload.token, payload.user);
       })
       .catch(() => undefined)
       .finally(() => { if (!cancelled) setIsReady(true); });
@@ -87,6 +115,8 @@ function LoginScreen() {
     if (!isReady || isAuthenticated) return;
     const remembered = readRememberedCredentials();
     if (!remembered) return;
+    // Reconcile credentials restored by the WebView password manager.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUsername((current) => current || remembered.username);
     setPassword((current) => current || remembered.password);
     setRememberPassword(true);
@@ -95,11 +125,9 @@ function LoginScreen() {
 
   useEffect(() => {
     if (isAuthenticated || searchParams.get("dingtalkComplete") !== "1") return;
-    void fetch("/api/auth/session", { cache: "no-store" })
-      .then(async (response) => {
-        const payload = (await response.json()) as LoginResponse;
-        if (!response.ok || payload.code !== 0 || !payload.data) throw new Error(payload.message || "无法恢复钉钉登录会话");
-        completeLogin(payload.data.token, payload.data.user);
+    void getAuthSession<NonNullable<LoginResponse["data"]>>()
+      .then((payload) => {
+        completeLogin(payload.token, payload.user);
         router.replace(getSafeRedirect());
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "无法恢复钉钉登录会话"));
@@ -172,7 +200,7 @@ function LoginScreen() {
           </div>
 
           <div className="flex flex-1 items-center justify-center py-6">
-            <Card className="w-full max-w-[430px] rounded-[26px] border border-[var(--color-border-card-glass)] bg-[var(--color-bg-card-glass)] p-6 shadow-[var(--shadow-card-glass)] backdrop-blur-xl sm:p-8">
+            <Card className="w-full max-w-[430px] min-h-[560px] rounded-[26px] border border-[var(--color-border-card-glass)] bg-[var(--color-bg-card-glass)] p-6 shadow-[var(--shadow-card-glass)] backdrop-blur-xl sm:p-8">
               <div>
                 <p className="text-sm font-medium text-[var(--color-primary)]">欢迎回来</p>
                 <h2 className="mt-2 text-3xl font-semibold text-[var(--color-text-primary)]">登录丫丫 LowCode</h2>
@@ -181,13 +209,19 @@ function LoginScreen() {
                 </p>
               </div>
 
-              <div className="mt-7 grid grid-cols-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-1" aria-label="登录方式">
-                <ModeButton active={activeMode === "password"} onPress={() => { setMode("password"); setError(""); if (dingtalkError) router.replace("/login"); }}>账号密码</ModeButton>
-                <ModeButton active={activeMode === "dingtalk"} onPress={() => { setMode("dingtalk"); setError(""); }}>钉钉扫码</ModeButton>
-              </div>
+              <Tabs selectedKey={activeMode} onSelectionChange={(key) => { setMode(String(key) as LoginMode); setError(""); if (dingtalkError) router.replace("/login"); }} className="mt-7">
+                <Tabs.ListContainer>
+                  <Tabs.List aria-label="登录方式" className="grid w-full grid-cols-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-1">
+                    <Tabs.Tab id="password" className="py-2 text-sm">账号密码<Tabs.Indicator /></Tabs.Tab>
+                    <Tabs.Tab id="sms" className="py-2 text-sm">短信登录<Tabs.Indicator /></Tabs.Tab>
+                    <Tabs.Tab id="dingtalk" className="py-2 text-sm">钉钉扫码<Tabs.Indicator /></Tabs.Tab>
+                  </Tabs.List>
+                </Tabs.ListContainer>
+              </Tabs>
 
+              <div className="mt-6 min-h-[390px]">
               {activeMode === "password" ? (
-                <form className="mt-6 space-y-5" onSubmit={handleSubmit}>
+                <form className="space-y-5" onSubmit={handleSubmit}>
                   <label className="block">
                     <span className="mb-2 block text-sm font-medium text-[var(--color-text-primary)]">账号</span>
                     <Input
@@ -268,8 +302,28 @@ function LoginScreen() {
                     </p>
                   ) : null}
                 </form>
+              ) : activeMode === "sms" ? (
+                <form className="space-y-5" onSubmit={smsLogin}>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-[var(--color-text-primary)]">手机号</span>
+                    <Input autoComplete="tel" autoFocus fullWidth inputMode="tel" maxLength={11} placeholder="请输入手机号" value={mobile} onChange={(event) => setMobile(event.currentTarget.value.replace(/\D/g, ""))} />
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-[var(--color-text-primary)]">短信验证码</span>
+                    <div className="flex gap-2">
+                      <Input className="min-w-0 flex-1" autoComplete="one-time-code" inputMode="numeric" maxLength={6} placeholder="请输入 6 位验证码" value={smsCode} onChange={(event) => setSmsCode(event.currentTarget.value.replace(/\D/g, ""))} />
+                      <Button type="button" variant="secondary" className="h-11 min-w-[112px] shrink-0" isDisabled={sendingSms || smsCountdown > 0 || !/^1\d{10}$/.test(mobile)} onPress={() => void sendSmsCode()}>
+                        {sendingSms ? "发送中…" : smsCountdown > 0 ? `${smsCountdown} 秒后重试` : "获取验证码"}
+                      </Button>
+                    </div>
+                  </label>
+                  <Button fullWidth type="submit" variant="primary" isDisabled={submitting || !/^1\d{10}$/.test(mobile) || !/^\d{6}$/.test(smsCode)} className="h-11 shadow-[var(--shadow-primary)]">
+                    {submitting ? "正在登录…" : "登录"}
+                  </Button>
+                  <p className="text-center text-xs text-[var(--color-text-secondary)]">未绑定手机号的用户无法使用短信登录</p>
+                </form>
               ) : (
-                <div className="mt-6 flex min-h-[300px] flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-panel-soft)] px-6 text-center">
+                <div className="flex min-h-[390px] flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-panel-soft)] px-6 text-center">
                   <div className="grid h-32 w-32 place-items-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] shadow-[var(--shadow-sm)]">
                     <QrPlaceholder />
                   </div>
@@ -294,6 +348,7 @@ function LoginScreen() {
                   </Button>
                 </div>
               )}
+              </div>
             </Card>
           </div>
 
@@ -349,18 +404,6 @@ function Brand() {
         <span className="block text-xs text-[var(--color-text-secondary)]">业务应用构建平台</span>
       </span>
     </div>
-  );
-}
-
-function ModeButton({ active, children, onPress }: { active: boolean; children: React.ReactNode; onPress: () => void }) {
-  return (
-    <Button
-      variant="ghost"
-      onPress={onPress}
-      className={active ? "bg-[var(--color-bg-surface)] text-[var(--color-primary)] shadow-[var(--shadow-xs)]" : "text-[var(--color-text-secondary)]"}
-    >
-      {children}
-    </Button>
   );
 }
 

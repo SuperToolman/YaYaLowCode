@@ -3,6 +3,7 @@
 import { memo, useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { Monaco } from "@monaco-editor/react";
+import styles from "./DesignerTheme.module.css";
 import dynamic from "next/dynamic";
 import { Button, Card, Checkbox, CheckboxGroup, Input, ListBox, Modal, Select, Switch, TextArea, Tooltip, toast } from "@heroui/react";
 import { Plus as AddIcon, Code as CodeIcon, Gear as GearMiniIcon, LayoutCellsLarge as GridIcon, CircleInfo as InfoIcon, ListUl as ListIcon, Comment as MessageIcon, ArrowRightArrowLeft as SwapIcon, TrashBin as TrashIcon, Wrench as ToolIcon } from "@gravity-ui/icons";
@@ -14,15 +15,15 @@ import type {
   PageDesignerProps,
   PlacedField,
 } from "../designer-types";
-import type { RuntimeDebugEvent } from "../../../../../components/RuntimeFormRenderer";
-import { AgentMarkdown } from "../../../../../components/agent/AgentMarkdown";
+import type { RuntimeDebugEvent } from "@features/form-runtime/components";
+import { AgentMarkdown } from "@features/agent-assistant/components";
 import { AgentPanel } from "./AgentPanel";
-import { fetchAvailableAgents } from "../../../../../../features/agent-assistant/api";
-import type { AgentOption } from "../../../../../../features/agent-assistant/types";
+import { fetchAvailableAgents } from "@features/agent-assistant/api";
+import type { AgentOption } from "@features/agent-assistant/types";
 import {
   getDefaultActionPanelCode,
   validateActionPanelCode,
-} from "../../../../../lib/action-panel-code";
+} from "@lib/action-panel-code";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
@@ -585,7 +586,7 @@ function ActionPanel({
             </Button>
           </div>
         </div>
-        <div className={isFullscreen ? "min-h-0 flex-1" : ""}>
+        <div className={`${styles["designer-theme__monaco-container"]} ${isFullscreen ? "min-h-0 flex-1" : ""}`}>
           <MonacoEditor
             height={isFullscreen ? "100%" : "360px"}
             value={editorValue}
@@ -650,7 +651,7 @@ function ActionContextDialog({
     <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
       <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
         <Modal.Container placement="center" scroll="inside" size="lg">
-          <Modal.Dialog className="designer-theme-surface rounded-3xl bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]">
+          <Modal.Dialog className={`${styles["designer-theme__surface"]} rounded-3xl bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]`}>
             <Modal.Header className="border-b border-[var(--color-border)]">
               <div className="flex items-center gap-3">
                 <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">

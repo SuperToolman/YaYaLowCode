@@ -4,6 +4,8 @@ import {
   requestApi,
 } from "@/app/lib/api-request";
 import { readAuthStorage, AUTH_TOKEN_STORAGE_KEY } from "@/app/lib/auth";
+import { getSystemAiStatus } from "@lib/api-client";
+import { ApiRequestError, type ApiEnvelope } from "@lib/api-request";
 import type {
   AgentMessage,
   AgentOption,
@@ -40,6 +42,14 @@ export function fetchAvailableAgents(context: AgentPageContext) {
   return requestApi<AgentOption[]>(`/api/agent/available-agents${query}`, {
     cache: "no-store",
   });
+}
+
+export async function fetchSystemAiStatus<T>() {
+  const { data, error } = await getSystemAiStatus({ responseStyle: "fields" });
+  if (error || data?.code !== 0 || data.data === null) {
+    throw new ApiRequestError(data?.message || "无法加载系统 AI 状态", 0, "business", data?.code, { cause: error });
+  }
+  return data.data as T;
 }
 
 export async function fetchAgentMessages(sessionId: string) {

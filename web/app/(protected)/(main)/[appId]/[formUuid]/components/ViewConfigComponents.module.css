@@ -1,0 +1,31 @@
+.records-view-config__field-type-tag {
+  justify-self: start;
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  min-height: 20px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.records-view-config__field-type-tag--text { background: #d9f4f2; color: #056d70; }
+.records-view-config__field-type-tag--number { background: #dcecff; color: #125bb1; }
+.records-view-config__field-type-tag--choice { background: #f7e1f4; color: #9c2e86; }
+.records-view-config__field-type-tag--date { background: #ece4ff; color: #6940ae; }
+.records-view-config__field-type-tag--person { background: #ffead4; color: #a64a00; }
+.records-view-config__field-type-tag--relation { background: #daf2df; color: #23743b; }
+.records-view-config__field-type-tag--media { background: #ffe0e5; color: #b2314b; }
+.records-view-config__field-type-tag--builtin { background: #e5e8ed; color: #4e5868; }
+
+:global(html[data-resolved-theme="dark"]) .records-view-config__field-type-tag--text { background: #123e40; color: #6ce8df; }
+:global(html[data-resolved-theme="dark"]) .records-view-config__field-type-tag--number { background: #173b6b; color: #91c5ff; }
+:global(html[data-resolved-theme="dark"]) .records-view-config__field-type-tag--choice { background: #54204d; color: #f4a8e7; }
+:global(html[data-resolved-theme="dark"]) .records-view-config__field-type-tag--date { background: #39255f; color: #c9afff; }
+:global(html[data-resolved-theme="dark"]) .records-view-config__field-type-tag--person { background: #5a3218; color: #ffc08a; }
+:global(html[data-resolved-theme="dark"]) .records-view-config__field-type-tag--relation { background: #1d4b2a; color: #9ee8ae; }
+:global(html[data-resolved-theme="dark"]) .records-view-config__field-type-tag--media { background: #56202c; color: #ffb0bf; }
+:global(html[data-resolved-theme="dark"]) .records-view-config__field-type-tag--builtin { background: #303842; color: #c7d0dc; }

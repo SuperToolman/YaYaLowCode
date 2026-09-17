@@ -4,11 +4,11 @@ use crate::{
     shared::success_response,
 };
 use axum::{
+    Json,
     body::Body,
     extract::{Multipart, Path, State},
-    http::{header, HeaderMap, HeaderValue},
+    http::{HeaderMap, HeaderValue, header},
     response::Response,
-    Json,
 };
 use chrono::Utc;
 use sea_orm::{ConnectionTrait, DbBackend, Statement, Value as SeaValue};
@@ -218,7 +218,7 @@ pub(crate) async fn list(
             values,
         ))
         .await?;
-      let data: Vec<_> = rows.into_iter().map(|r| serde_json::json!({"id":r.try_get::<Uuid>("","id").unwrap_or_default(),"name":r.try_get::<String>("","original_name").unwrap_or_default(),"storageKey":r.try_get::<String>("","storage_key").unwrap_or_default(),"mimeType":r.try_get::<String>("","mime_type").unwrap_or_default(),"size":r.try_get::<i64>("","byte_size").unwrap_or_default(),"kind":r.try_get::<String>("","kind").unwrap_or_default(),"checksum":r.try_get::<String>("","checksum").unwrap_or_default(),"createdAt":r.try_get::<chrono::DateTime<Utc>>("","created_at").map(|v| v.to_rfc3339()).unwrap_or_default()})).collect();
+    let data: Vec<_> = rows.into_iter().map(|r| serde_json::json!({"id":r.try_get::<Uuid>("","id").unwrap_or_default(),"name":r.try_get::<String>("","original_name").unwrap_or_default(),"storageKey":r.try_get::<String>("","storage_key").unwrap_or_default(),"mimeType":r.try_get::<String>("","mime_type").unwrap_or_default(),"size":r.try_get::<i64>("","byte_size").unwrap_or_default(),"kind":r.try_get::<String>("","kind").unwrap_or_default(),"checksum":r.try_get::<String>("","checksum").unwrap_or_default(),"createdAt":r.try_get::<chrono::DateTime<Utc>>("","created_at").map(|v| v.to_rfc3339()).unwrap_or_default()})).collect();
     Ok(Json(success_response("agent files loaded", data)))
 }
 

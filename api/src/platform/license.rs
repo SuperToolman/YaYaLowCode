@@ -24,12 +24,8 @@ pub struct PlatformAiEmployeeSkill {
     pub version: String,
     #[serde(default)]
     pub package_path: String,
-    #[serde(default)]
-    pub is_system: bool,
     pub description: String,
     pub instructions: String,
-    #[serde(default)]
-    pub requires_confirmation: bool,
     /// Canonical DSH Plugin manifest emitted by the operation center/package
     /// installer. Kept on the signed entitlement so Host can build its
     /// employee-scoped plugin registry without reading the database directly.

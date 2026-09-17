@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { Avatar, Button, Chip, Table, ButtonGroup, } from "@heroui/react";
-import type { FormColumn, FormRow } from "../../../../lib/apps";
+import type { FormColumn, FormRow } from "@lib/apps";
 import {
   Ellipsis,
   Picture,

@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { Button, ListBox, Select, TextArea, Tooltip } from "@heroui/react";
 import { CircleInfo as InfoIcon } from "@gravity-ui/icons";
-import { fetchAvailableAgents } from "../../../../../../features/agent-assistant/api";
-import type { AgentOption } from "../../../../../../features/agent-assistant/types";
+import { fetchAvailableAgents, fetchSystemAiStatus } from "@features/agent-assistant/api";
+import { listModelRoutes } from "@features/settings/api";
+import type { AgentOption } from "@features/agent-assistant/types";
 import type { PageDesignerProps } from "../designer-types";
 
 type SystemAiStatus = {
@@ -35,18 +36,8 @@ export function AgentPanel({ value, onChange }: AgentPanelProps) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const statusRequest = fetch("/api/agent/system-ai/status", { cache: "no-store" })
-        .then(async (response) => {
-          const payload = (await response.json()) as { code: number; message: string; data: SystemAiStatus | null };
-          if (!response.ok || !payload.data) throw new Error(payload.message || "无法加载系统 AI 状态");
-          return payload.data;
-        });
-      const routesRequest = fetch("/api/settings/model-routes", { cache: "no-store" })
-        .then(async (response) => {
-          const payload = (await response.json()) as { code?: number; data?: ModelRouteStatus[]; message?: string };
-          if (!response.ok || payload.code !== 0 || !Array.isArray(payload.data)) throw new Error(payload.message || "无法加载模型供应商");
-          return payload.data;
-        });
+      const statusRequest = fetchSystemAiStatus<SystemAiStatus>();
+      const routesRequest = listModelRoutes<ModelRouteStatus[]>();
 
       const [statusResult, routesResult] = await Promise.allSettled([statusRequest, routesRequest]);
       if (cancelled) return;

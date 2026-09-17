@@ -16,7 +16,8 @@ import {
 } from "@heroui/react";
 import { ArrowUpArrowDown, Pin, PinSlash, Xmark } from "@gravity-ui/icons";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import type { ViewConfig } from "../use-form-views";
+import type { ViewConfig } from "../model/use-form-views";
+import styles from "./ViewConfigComponents.module.css";
 
 export type DetailDisplayFieldOption = { id: string; label: string };
 export type ViewFieldOption = {
@@ -37,9 +38,9 @@ function getFieldTypeTagClass(type: string) {
       "tsx",
     ].includes(type)
   )
-    return "field-type-tag--text";
+    return styles["records-view-config__field-type-tag--text"];
   if (["number", "serialNumber", "formula"].includes(type))
-    return "field-type-tag--number";
+    return styles["records-view-config__field-type-tag--number"];
   if (
     [
       "radio",
@@ -50,14 +51,14 @@ function getFieldTypeTagClass(type: string) {
       "countryCity",
     ].includes(type)
   )
-    return "field-type-tag--choice";
-  if (["date", "dateRange"].includes(type)) return "field-type-tag--date";
-  if (["member", "department"].includes(type)) return "field-type-tag--person";
+    return styles["records-view-config__field-type-tag--choice"];
+  if (["date", "dateRange"].includes(type)) return styles["records-view-config__field-type-tag--date"];
+  if (["member", "department"].includes(type)) return styles["records-view-config__field-type-tag--person"];
   if (["subform", "associationFormField"].includes(type))
-    return "field-type-tag--relation";
+    return styles["records-view-config__field-type-tag--relation"];
   if (["attachment", "imageUpload"].includes(type))
-    return "field-type-tag--media";
-  return "field-type-tag--builtin";
+    return styles["records-view-config__field-type-tag--media"];
+  return styles["records-view-config__field-type-tag--builtin"];
 }
 
 export function ReorderableViewFieldRow({
@@ -110,7 +111,7 @@ export function ReorderableViewFieldRow({
         </span>
       </Table.Cell>
       <Table.Cell>
-        <span className={`field-type-tag ${getFieldTypeTagClass(field.type)}`}>
+        <span className={`${styles["records-view-config__field-type-tag"]} ${getFieldTypeTagClass(field.type)}`}>
           {field.typeLabel}
         </span>
       </Table.Cell>

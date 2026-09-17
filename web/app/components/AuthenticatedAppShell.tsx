@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import HomeSideBar from "./HomeSideBar";
 import { LicenseManagementModal, OPEN_LICENSE_MANAGEMENT_MODAL_EVENT, OPEN_LICENSE_UPDATE_PROMPT_EVENT } from "./LicenseManagementModal";
+import { getLicenseStatus } from "@features/settings/api";
 
 export function AuthenticatedAppShell({ children }: { children: React.ReactNode }) {
   return <AuthBoundary>{children}</AuthBoundary>;
@@ -17,12 +18,11 @@ function AuthBoundary({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     const refreshLicense = () => {
-      void fetch("/api/settings/license", { cache: "no-store" })
-        .then(async (response) => {
-            const payload = await response.json() as { code: number; data: { valid?: boolean; updateAvailable?: boolean } | null };
+      void getLicenseStatus<{ valid?: boolean; updateAvailable?: boolean }>()
+        .then((payload) => {
             if (!cancelled) {
-              setLicenseValid(response.ok && payload.code === 0 && payload.data?.valid === true);
-              if (payload.data?.updateAvailable) {
+              setLicenseValid(payload.valid === true);
+              if (payload.updateAvailable) {
                 setLicenseUpdatePrompt(true);
                 setLicenseModalOpen(true);
               }

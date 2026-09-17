@@ -2,7 +2,7 @@
 
 面向表单设计、数据录入、流程审批、集成自动化和 AI 员工的低代码平台。
 
-当前版本：**1.11b**（内部包版本：`0.2.0-alpha.0`）
+当前版本：**1.12a**（内部包版本：`0.2.0-alpha.0`）
 
 平台面向客户部署；商品、订单、许可证、AI 员工和未来的插件包由独立运营端 `E:\yaya-operation-center` 管理。客户平台负责验证授权、安装已购内容并执行受控业务能力，不向客户暴露 Agent 核心插件或运营侧模型密钥。
 
@@ -121,12 +121,25 @@ Web 启动前会生成 OpenAPI 客户端。修改 Rust 路由、DTO 或 OpenAPI 
 
 ```text
 web/                    Next.js 前端、BFF、Tauri 壳
+  app/                  路由、布局及页面专属组件
+  components/           跨页面共享 UI、主题与基础样式能力
+  features/             按业务领域组织的组件、模型和 API 适配层
+  styles/               主题 token 与受控通用样式
+  scripts/              OpenAPI 兼容处理与前端规范检查
 api/                    Rust/Axum 平台 API、领域模块、迁移与 OpenAPI
 agent/deepseek-harness/ DSH Harness 与 YaYa plugin
 deploy/                 Compose、镜像、发布与数据库迁移脚本
 docs/                   系统与架构文档
 scripts/                本地开发启动脚本
 ```
+
+## 前端规范
+
+- `app/layout.tsx` 是唯一允许导入全局样式的入口；页面和 Feature 使用 CSS Module 管理局部样式。
+- 主题变量统一在 `web/styles/tokens.css` 声明，受控通用样式位于 `web/styles/utilities.css`；业务模块不得重复定义全局主题 token。
+- 领域代码放在 `web/features/<domain>/`，页面专属实现放在对应路由目录；跨领域共享 UI 放在 `web/components/`。
+- CSS Module 类名采用 `<domain>-<component>__<element>--<state>` 形式，Feature 不得直接引用其他 Feature 的 CSS Module。
+- 执行 `pnpm --dir web lint` 可同时运行 ESLint 与样式边界检查；执行 `pnpm --dir web test` 可验证前端规则测试。
 
 ## 已落地与待落地边界
 

@@ -21,21 +21,22 @@ import type {
   PlacedField,
 } from "../../designer-types";
 import { FormulaEditor } from "./FormulaEditor";
-import { useTheme } from "../../../../../../components/ThemeProvider";
+import { useTheme } from "@shared/ThemeProvider";
 import { FORMULA_FUNCTION_ITEMS } from "./formula-definitions";
 import { NumberWithActions } from "./PropertyLayout";
 import {
   findDuplicateFormulaLabels,
   formulaToDisplay,
   formulaToStored,
-} from "../../../../../../lib/form-formula";
+} from "@lib/form-formula";
 import {
   getLocationLabel,
   listLocationChildren,
   normalizeCountryCityValue,
   toStoredLocationItem,
   type LocationCatalogItem,
-} from "../../../../../../lib/location-catalog";
+} from "@lib/location-catalog";
+import styles from "../DesignerTheme.module.css";
 
 const DEFAULT_VALUE_TYPE_OPTIONS: Array<{
   label: string;
@@ -384,11 +385,11 @@ function FormulaEditorModal({
 
   return (
     <Modal isOpen={isOpen} onOpenChange={handleOpenChange}>
-      <Modal.Backdrop className="designer-modal-backdrop" isDismissable>
+      <Modal.Backdrop className={styles["designer-theme__modal-backdrop"]} isDismissable>
         <Modal.Container placement="center" scroll="inside" size="cover">
           <Modal.Dialog
             data-theme={resolvedTheme}
-            className="designer-theme-surface flex h-[84vh] w-[min(1240px,92vw)] max-w-[92vw] flex-col overflow-hidden rounded-2xl bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]"
+            className={`${styles["designer-theme__surface"]} flex h-[84vh] w-[min(1240px,92vw)] max-w-[92vw] flex-col overflow-hidden rounded-2xl bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]`}
           >
             <Modal.Header className="border-b border-[var(--designer-border)] bg-[var(--designer-surface-solid)]">
               <div className="flex min-w-0 flex-1 items-center justify-between gap-4">

@@ -2,7 +2,7 @@
 
 import { Dropdown } from "@heroui/react";
 import { ChevronDown, Display, Moon, Sun } from "@gravity-ui/icons";
-import { type ThemeMode, useTheme } from "./ThemeProvider";
+import { type ThemeMode, useTheme } from "@shared/ThemeProvider";
 
 export default function ThemeSwitcherMenu() {
   const { resolvedTheme, setTheme, theme } = useTheme();
@@ -34,7 +34,7 @@ export default function ThemeSwitcherMenu() {
       <Dropdown.Popover className="border border-[var(--color-border)] bg-transparent shadow-none">
         <Dropdown.Menu
           aria-label="选择主题"
-          className="min-w-[180px] rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-menu)] p-1.5 text-[var(--color-text-primary)] shadow-[var(--shadow-floating)] backdrop-blur-2xl"
+          className="bg-[var(--color-bg-menu)]"
           selectedKeys={[theme]}
           selectionMode="single"
           onAction={(key) => setTheme(key as ThemeMode)}

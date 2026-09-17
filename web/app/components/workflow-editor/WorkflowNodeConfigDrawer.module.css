@@ -1,0 +1,37 @@
+.workflow-node-config__panel {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.workflow-node-config__panel :where(*) {
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+}
+
+.workflow-node-config__panel :is(input, textarea) {
+  padding: 0.25rem 0.5rem;
+}
+
+.workflow-node-config__panel [data-slot="input-wrapper"],
+.workflow-node-config__panel [data-slot="select-trigger"] {
+  min-height: 2.25rem;
+}
+
+.workflow-node-config__panel input,
+.workflow-node-config__panel [data-slot="select-trigger"],
+.workflow-node-config__panel [data-slot="select-value"] {
+  min-width: 0;
+  white-space: nowrap !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workflow-node-config__panel [data-slot="select-value"] {
+  display: block;
+}
+
+.workflow-node-config__title,
+.workflow-node-config__panel :global(.automation-property-title) {
+  font-size: 14px !important;
+  line-height: 1.35 !important;
+}

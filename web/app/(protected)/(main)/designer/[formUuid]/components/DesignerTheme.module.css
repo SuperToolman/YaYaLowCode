@@ -1,0 +1,57 @@
+.designer-theme__root,
+.designer-theme__surface,
+.designer-theme__modal-backdrop {
+  color: var(--color-text-primary);
+}
+
+:global(html[data-resolved-theme="light"]) .designer-theme__root,
+:global(html[data-resolved-theme="light"]) .designer-theme__surface,
+:global(html[data-resolved-theme="light"]) .designer-theme__modal-backdrop {
+  --designer-background: radial-gradient(circle at top left, #eaf3ff 0, var(--color-bg-canvas) 34%, var(--color-bg-subtle) 100%);
+  --designer-surface: rgba(255, 255, 255, 0.9);
+  --designer-surface-solid: var(--color-bg-surface);
+  --designer-surface-soft: var(--color-bg-subtle);
+  --designer-surface-muted: var(--color-bg-canvas);
+  --designer-border: var(--color-border);
+}
+
+:global(html[data-resolved-theme="dark"]) .designer-theme__root,
+:global(html[data-resolved-theme="dark"]) .designer-theme__surface,
+:global(html[data-resolved-theme="dark"]) .designer-theme__modal-backdrop {
+  --designer-background: radial-gradient(circle at top left, var(--color-bg-subtle) 0, var(--color-bg-surface) 38%, var(--color-bg-canvas) 100%);
+  --designer-surface: rgba(22, 16, 35, 0.9);
+  --designer-surface-solid: var(--color-bg-surface);
+  --designer-surface-soft: var(--color-bg-subtle);
+  --designer-surface-muted: var(--color-bg-canvas);
+  --designer-border: var(--color-border);
+}
+
+.designer-theme__root--interacting :is(:global(.backdrop-blur), :global(.backdrop-blur-xl), :global(.backdrop-blur-2xl)) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+.designer-theme__modal-backdrop {
+  background: color-mix(in srgb, var(--backdrop) 88%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+:global(html[data-resolved-theme="dark"]) .designer-theme__modal-backdrop {
+  background: var(--backdrop);
+}
+
+.designer-theme__monaco-container :global(.monaco-editor .monaco-scrollable-element > .scrollbar),
+.designer-theme__monaco-container :global(.monaco-scrollable-element > .scrollbar) {
+  display: none !important;
+  height: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+  width: 0 !important;
+}
+
+.designer-theme__monaco-container :global(.monaco-scrollable-element > .scrollbar > .slider) {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}

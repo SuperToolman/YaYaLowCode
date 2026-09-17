@@ -5,6 +5,7 @@ import { ArrowRotateRight, Eye, TrashBin } from "@gravity-ui/icons";
 import { Alert, Button, Chip, EmptyState, Modal, Table, Tabs, Tooltip } from "@heroui/react";
 import { SettingsContentCard } from "../components/SettingsContentCard";
 import styles from "./logs.module.css";
+import { clearPlatformLogs, listPlatformLogs } from "@features/settings/api";
 
 type LogLevel = "all" | "debug" | "info" | "warn" | "error";
 type PlatformLog = {
@@ -15,7 +16,6 @@ type PlatformLog = {
   message: string;
   fields: Record<string, unknown>;
 };
-type Envelope<T> = { code: number; data: T | null; message: string };
 type PlatformLogList = { records: PlatformLog[]; totalCount: number; totalSizeBytes: number };
 
 const levelLabels: Record<Exclude<LogLevel, "all">, string> = {
@@ -69,12 +69,7 @@ export default function PlatformLogsPage() {
     if (append) setLoadingMore(true); else setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
-      if (nextLevel !== "all") params.set("level", nextLevel);
-      const response = await fetch(`/api/settings/logs?${params}`, { cache: "no-store" });
-      const payload = await response.json() as Envelope<PlatformLogList>;
-      const data = payload.data;
-      if (!response.ok || payload.code !== 0 || !data) throw new Error(payload.message || "无法加载平台日志");
+      const data = await listPlatformLogs<PlatformLogList>({ limit: PAGE_SIZE, offset, level: nextLevel === "all" ? undefined : nextLevel });
       const records = uniqueLogs(data.records);
       setLogs((current) => append ? uniqueLogs([...current, ...records]) : records);
       setHasMore(data.records.length === PAGE_SIZE);
@@ -101,9 +96,7 @@ export default function PlatformLogsPage() {
     setClearing(true);
     setError("");
     try {
-      const response = await fetch("/api/settings/logs", { method: "DELETE" });
-      const payload = await response.json() as Envelope<{ clearedSizeBytes: number }>;
-      if (!response.ok || payload.code !== 0) throw new Error(payload.message || "无法清空平台日志");
+      await clearPlatformLogs<{ clearedSizeBytes: number }>();
       setClearConfirmOpen(false);
       await loadLogs(level);
     } catch (clearError) {
@@ -148,4 +141,3 @@ export default function PlatformLogsPage() {
 function LogDetail({ label, children }: { label: string; children: React.ReactNode }) {
   return <div className={styles.detail}><p className={styles.detailLabel}>{label}</p><div className={styles.detailValue}>{children}</div></div>;
 }
-

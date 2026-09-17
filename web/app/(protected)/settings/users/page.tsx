@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Avatar,
   Button,
@@ -12,54 +12,14 @@ import {
   Tooltip,
 } from "@heroui/react";
 import {
-  createLocalUser,
-  deleteUser,
-  listRoles,
-  listUsers,
-  updateUser,
   type UpdateUserRequest,
-  type UserResponse,
-} from "@/features/identity-access/api";
+  initializeUserCredentials,
+  useUserManagement,
+} from "@features/identity-access";
 import { SettingsContentCard } from "../components/SettingsContentCard";
 import { CircleInfo } from "@gravity-ui/icons";
-import type { ApiEnvelope } from "@/app/lib/api-request";
+import { filterUsers, type EmailAddressItem, type RoleItem, type UserItem } from "@features/identity-access";
 
-type EmailAddressItem = { label: string; email: string };
-type RoleItem = {
-  id: string;
-  name: string;
-  sourceType: string;
-  status: string;
-};
-type UserItem = {
-  id: string;
-  username: string | null;
-  displayName: string;
-  mobile: string | null;
-  stateCode: string | null;
-  telephone: string | null;
-  email: string | null;
-  emailAddresses: EmailAddressItem[];
-  avatarUrl: string | null;
-  jobNumber: string | null;
-  title: string | null;
-  workPlace: string | null;
-  remark: string | null;
-  hiredAt: string | null;
-  tenureMonths: number | null;
-  managerName: string | null;
-  primaryDepartment: string | null;
-  senior: boolean;
-  isAdmin: boolean;
-  isBoss: boolean;
-  realAuthed: boolean;
-  extensionJson: unknown;
-  status: string;
-  sourceType: string;
-  departments: string[];
-  roles: string[];
-  roleIds: string[];
-};
 type SourceFilter = "all" | "local" | "dingtalk";
 type StatusFilter = "all" | "active" | "inactive";
 type CredentialInitializationResult = {
@@ -68,30 +28,9 @@ type CredentialInitializationResult = {
   skipped: Array<{ userId: string; displayName: string; reason: string }>;
 };
 
-function normalizeUser(user: UserResponse): UserItem {
-  return {
-    ...user,
-    avatarUrl: user.avatarUrl ?? null,
-    email: user.email ?? null,
-    hiredAt: user.hiredAt ?? null,
-    jobNumber: user.jobNumber ?? null,
-    managerName: user.managerName ?? null,
-    mobile: user.mobile ?? null,
-    primaryDepartment: user.primaryDepartment ?? null,
-    remark: user.remark ?? null,
-    stateCode: user.stateCode ?? null,
-    telephone: user.telephone ?? null,
-    tenureMonths: user.tenureMonths ?? null,
-    title: user.title ?? null,
-    username: user.username ?? null,
-    workPlace: user.workPlace ?? null,
-  };
-}
-
 export default function UsersSettingsPage() {
-  const [users, setUsers] = useState<UserItem[]>([]);
-  const [roles, setRoles] = useState<RoleItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const userManagement = useUserManagement();
+  const { users, roles, loading, error: remoteError, reload: loadUsers } = userManagement;
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
@@ -120,73 +59,8 @@ export default function UsersSettingsPage() {
   const [credentialInitializationResult, setCredentialInitializationResult] =
     useState<CredentialInitializationResult | null>(null);
 
-  const loadUsers = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const [usersResult, rolesResult] = await Promise.all([
-        listUsers({ responseStyle: "fields" }),
-        listRoles({ responseStyle: "fields" }),
-      ]);
-      const usersData = usersResult.data;
-      const rolesData = rolesResult.data;
-      if (
-        usersResult.error ||
-        !usersData ||
-        usersData.code !== 0 ||
-        !usersData.data
-      )
-        throw new Error(usersData?.message || "无法加载用户");
-      if (
-        rolesResult.error ||
-        !rolesData ||
-        rolesData.code !== 0 ||
-        !rolesData.data
-      )
-        throw new Error(rolesData?.message || "无法加载角色");
-      const nextUsers = usersData.data.map(normalizeUser);
-      setUsers(nextUsers);
-      setRoles(rolesData.data.filter((role) => role.status === "active"));
-      setSelectedId((current) =>
-        current && nextUsers.some((user) => user.id === current)
-          ? current
-          : nextUsers[0]?.id || null,
-      );
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "无法加载用户");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => void loadUsers(), 0);
-    return () => window.clearTimeout(timer);
-  }, [loadUsers]);
-
-  const filteredUsers = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase("zh-CN");
-    return users.filter((user) => {
-      if (sourceFilter !== "all" && user.sourceType !== sourceFilter)
-        return false;
-      if (statusFilter !== "all" && user.status !== statusFilter) return false;
-      if (!normalized) return true;
-      return [
-        user.displayName,
-        user.mobile,
-        user.email,
-        user.jobNumber,
-        user.title,
-        ...user.departments,
-        ...user.roles,
-      ]
-        .filter(Boolean)
-        .some((value) =>
-          value!.toLocaleLowerCase("zh-CN").includes(normalized),
-        );
-    });
-  }, [query, sourceFilter, statusFilter, users]);
-  const selectedUser = users.find((user) => user.id === selectedId) || null;
+  const filteredUsers = useMemo(() => filterUsers(users, query, sourceFilter, statusFilter), [query, sourceFilter, statusFilter, users]);
+  const selectedUser = users.find((user) => user.id === selectedId) ?? users[0] ?? null;
   function openEdit(user: UserItem) {
     setEditing(user);
     setEditName(user.displayName);
@@ -208,14 +82,7 @@ export default function UsersSettingsPage() {
   }
   async function update(user: UserItem, payload: UpdateUserRequest) {
     try {
-      const { data, error } = await updateUser({
-        path: { userId: user.id },
-        body: payload,
-        responseStyle: "fields",
-      });
-      if (error || !data || data.code !== 0)
-        throw new Error(data?.message || "更新用户失败");
-      await loadUsers();
+      await userManagement.update(user.id, payload);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "更新用户失败");
     }
@@ -245,12 +112,7 @@ export default function UsersSettingsPage() {
   }
   async function remove(user: UserItem) {
     try {
-      const { error } = await deleteUser({
-        path: { userId: user.id },
-        responseStyle: "fields",
-      });
-      if (error) throw new Error("删除用户失败");
-      await loadUsers();
+      await userManagement.remove(user.id);
       setDeleting(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "删除用户失败");
@@ -262,17 +124,7 @@ export default function UsersSettingsPage() {
       return;
     }
     try {
-      const { data, error } = await createLocalUser({
-        body: {
-          username: newUsername,
-          password: newPassword,
-          displayName: newName,
-          roleIds: newRoleIds,
-        },
-        responseStyle: "fields",
-      });
-      if (error || !data || data.code !== 0)
-        throw new Error(data?.message || "创建用户失败");
+      await userManagement.create({ username: newUsername, password: newPassword, displayName: newName, roleIds: newRoleIds });
       setCreating(false);
       setNewUsername("");
       setNewPassword("");
@@ -283,20 +135,12 @@ export default function UsersSettingsPage() {
       setError(reason instanceof Error ? reason.message : "创建用户失败");
     }
   }
-  async function initializeCredentials() {
+async function initializeCredentials() {
     setInitializingCredentials(true);
     setError("");
     try {
-      const response = await fetch(
-        "/api/identity/users/initialize-local-credentials",
-        { method: "POST" },
-      );
-      const payload =
-        (await response.json()) as ApiEnvelope<CredentialInitializationResult>;
-      if (!response.ok || payload.code !== 0 || !payload.data) {
-        throw new Error(payload.message || "初始化账号密码失败");
-      }
-      setCredentialInitializationResult(payload.data);
+      const result = await initializeUserCredentials();
+      setCredentialInitializationResult(result);
       await loadUsers();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "初始化账号密码失败");
@@ -399,9 +243,9 @@ export default function UsersSettingsPage() {
         </div>
       </div>
 
-      {error ? (
+      {(error || remoteError) ? (
         <p className="mx-5 mt-4 rounded-xl bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
-          {error}
+          {error || remoteError}
         </p>
       ) : null}
 
@@ -1327,11 +1171,11 @@ function TagList({ values, empty }: { values: string[]; empty: string }) {
 }
 function SourceTag({ source }: { source: string }) {
   return source === "dingtalk" ? (
-    <span className="shrink-0 rounded-full bg-[#eaf2ff] px-2 py-0.5 text-[10px] font-semibold text-[#1677ff]">
+    <span className="shrink-0 rounded-full bg-[var(--color-primary-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-primary)]">
       钉钉
     </span>
   ) : (
-    <span className="shrink-0 rounded-full bg-[#f5f5f5] px-2 py-0.5 text-[10px] font-semibold text-[#595959]">
+    <span className="shrink-0 rounded-full bg-[var(--color-bg-subtle)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-text-secondary)]">
       平台
     </span>
   );

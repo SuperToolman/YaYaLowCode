@@ -16,9 +16,16 @@ import {
   Tooltip,
   toast,
 } from "@heroui/react";
-import { openLicenseUpdatePrompt } from "../../../components/LicenseManagementModal";
-import { PaymentModal } from "../../../components/PaymentModal";
+import { MySurface } from "@shared/ui/MySurface";
+import { openLicenseUpdatePrompt } from "@components/LicenseManagementModal";
+import { PaymentModal } from "@components/PaymentModal";
 import { SettingsContentCard } from "../components/SettingsContentCard";
+import {
+  getAiEmployees,
+  installMarketAiEmployee,
+  testMarketAiEmployeePurchase,
+  uninstallMarketAiEmployee,
+} from "@features/settings/api";
 
 type MarketEmployee = {
   id: string;
@@ -35,8 +42,6 @@ type MarketEmployee = {
   installed: boolean;
   expiresAt: number | null;
 };
-
-type Envelope<T> = { code: number; message: string; data: T | null };
 
 const billingText = {
   month: "按月授权",
@@ -60,13 +65,7 @@ export default function AiEmployeeMarketPage() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/settings/ai-employee-market", {
-        cache: "no-store",
-      });
-      const payload = (await response.json()) as Envelope<MarketEmployee[]>;
-      if (!response.ok || payload.code !== 0 || !payload.data)
-        throw new Error(payload.message || "无法读取 AI 员工市场");
-      setEmployees(payload.data);
+      setEmployees(await getAiEmployees<MarketEmployee[]>());
       setCurrentTimestamp(Math.floor(Date.now() / 1000));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "无法读取 AI 员工市场");
@@ -122,13 +121,7 @@ export default function AiEmployeeMarketPage() {
   async function install(employee: MarketEmployee) {
     setInstallingId(employee.id);
     try {
-      const response = await fetch(
-        `/api/settings/ai-employee-market/${encodeURIComponent(employee.id)}/install`,
-        { method: "POST" },
-      );
-      const payload = (await response.json()) as Envelope<unknown>;
-      if (!response.ok || payload.code !== 0)
-        throw new Error(payload.message || "安装失败");
+      await installMarketAiEmployee<unknown>(employee.id);
       toast.success("AI 员工已安装", { description: employee.title });
       await load();
     } catch (cause) {
@@ -143,13 +136,7 @@ export default function AiEmployeeMarketPage() {
   async function sync(employee: MarketEmployee) {
     setSyncingId(employee.id);
     try {
-      const response = await fetch(
-        `/api/settings/ai-employee-market/${encodeURIComponent(employee.id)}/install`,
-        { method: "POST" },
-      );
-      const payload = (await response.json()) as Envelope<unknown>;
-      if (!response.ok || payload.code !== 0)
-        throw new Error(payload.message || "更新失败");
+      await installMarketAiEmployee<unknown>(employee.id);
       toast.success("AI 员工已更新", { description: employee.title });
       await load();
     } catch (cause) {
@@ -164,13 +151,7 @@ export default function AiEmployeeMarketPage() {
   async function remove(employee: MarketEmployee) {
     setRemovingId(employee.id);
     try {
-      const response = await fetch(
-        `/api/settings/ai-employee-market/${encodeURIComponent(employee.id)}/uninstall`,
-        { method: "POST" },
-      );
-      const payload = (await response.json()) as Envelope<unknown>;
-      if (!response.ok || payload.code !== 0)
-        throw new Error(payload.message || "移除失败");
+      await uninstallMarketAiEmployee<unknown>(employee.id);
       toast.success("AI 员工已移除", { description: employee.title });
       await load();
     } catch (cause) {
@@ -185,31 +166,12 @@ export default function AiEmployeeMarketPage() {
   async function completeTestPayment() {
     if (!purchase) return false;
     try {
-      const response = await fetch(
-        `/api/settings/ai-employee-market/${encodeURIComponent(purchase.id)}/test-purchase`,
-        { method: "POST" },
-      );
-      const responseText = await response.text();
-      let payload: Envelope<{ orderNo: string; licenseId: string }> | null =
-        null;
-      if (responseText.trim()) {
-        try {
-          payload = JSON.parse(responseText) as Envelope<{
-            orderNo: string;
-            licenseId: string;
-          }>;
-        } catch {
-          throw new Error(
-            `测试支付接口返回了非 JSON 响应（HTTP ${response.status}）`,
-          );
-        }
-      }
-      if (!payload)
-        throw new Error(`测试支付接口返回了空响应（HTTP ${response.status}）`);
-      if (!response.ok || payload.code !== 0 || !payload.data)
-        throw new Error(payload.message || "测试支付失败");
+      const payload = await testMarketAiEmployeePurchase<{
+        orderNo: string;
+        licenseId: string;
+      }>(purchase.id);
       toast.success("测试支付完成", {
-        description: `订单 ${payload.data.orderNo} 已回款并签发新许可证`,
+        description: `订单 ${payload.orderNo} 已回款并签发新许可证`,
       });
       window.setTimeout(openLicenseUpdatePrompt, 0);
       return true;
@@ -297,7 +259,7 @@ export default function AiEmployeeMarketPage() {
             <Summary label="运行中" value={runningCount} />
             <Summary label="已过期" value={expiredCount} />
           </div>
-          <div className="flex flex-col gap-3 border-b border-[var(--color-border)] pb-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex justify-between">
             <Input
               className="w-full xl:max-w-md"
               aria-label="搜索 AI 员工"
@@ -337,10 +299,7 @@ export default function AiEmployeeMarketPage() {
           {!error && filtered.length ? (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">
               {filtered.map((employee) => (
-                <Card
-                  className="flex min-w-0 flex-col border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-4 shadow-none transition-colors hover:border-[var(--color-primary)]"
-                  key={employee.id}
-                >
+                <MySurface className="p-3" key={employee.id}>
                   <div className="flex min-w-0 items-start gap-3">
                     <MarketEmployeeAvatar employee={employee} />
                     <div className="min-w-0 flex-1">
@@ -352,8 +311,8 @@ export default function AiEmployeeMarketPage() {
                           {employee.category}
                         </Chip>
                       </div>
-                      <p className="mt-1 truncate font-mono text-xs text-[var(--color-text-secondary)]">
-                        {employee.id} · v{employee.version}
+                      <p className="truncate font-mono text-xs text-[var(--color-text-secondary)]">
+                        v{employee.version}
                       </p>
                     </div>
                     <OwnershipChip employee={employee} />
@@ -439,7 +398,7 @@ export default function AiEmployeeMarketPage() {
                       </div>
                     </>
                   )}
-                </Card>
+                </MySurface>
               ))}
             </div>
           ) : !error ? (
@@ -492,10 +451,10 @@ function CategoryFilter({
 
 function Summary({ label, value }: { label: string; value: number }) {
   return (
-    <Card>
+    <MySurface className="p-2">
       <p className="text-xs text-[var(--color-text-secondary)]">{label}</p>
       <p className="mt-1 text-lg font-semibold">{value}</p>
-    </Card>
+    </MySurface>
   );
 }
 

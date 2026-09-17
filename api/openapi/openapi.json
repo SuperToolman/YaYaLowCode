@@ -2949,6 +2949,62 @@
         }
       }
     },
+    "/api/identity/sms/login": {
+      "post": {
+        "tags": [],
+        "operationId": "verifySmsCode",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifySmsCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DingTalkLoginUserResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/identity/sms/send-code": {
+      "post": {
+        "tags": [],
+        "operationId": "sendSmsCode",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendSmsCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SendSmsCodeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/identity/users": {
       "get": {
         "tags": [],
@@ -7272,6 +7328,39 @@
           }
         }
       },
+      "ApiResponse_SendSmsCodeResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "expiresIn"
+            ],
+            "properties": {
+              "expiresIn": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
       "ApiResponse_SystemAiStatusResponse": {
         "type": "object",
         "required": [
@@ -11088,6 +11177,30 @@
           }
         }
       },
+      "SendSmsCodeRequest": {
+        "type": "object",
+        "required": [
+          "mobile"
+        ],
+        "properties": {
+          "mobile": {
+            "type": "string"
+          }
+        }
+      },
+      "SendSmsCodeResponse": {
+        "type": "object",
+        "required": [
+          "expiresIn"
+        ],
+        "properties": {
+          "expiresIn": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
       "SetDefaultNavigationEntryRequest": {
         "type": "object",
         "properties": {
@@ -11774,6 +11887,21 @@
             "minimum": 0
           },
           "username": {
+            "type": "string"
+          }
+        }
+      },
+      "VerifySmsCodeRequest": {
+        "type": "object",
+        "required": [
+          "mobile",
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "mobile": {
             "type": "string"
           }
         }

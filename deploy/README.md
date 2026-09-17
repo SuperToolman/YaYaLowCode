@@ -47,6 +47,8 @@ For frontend-only changes, use the fast publish script. It builds only the Next.
 
 Use `publish.ps1` when API, Agent runtime, dependencies, Docker configuration, or native packages have changed.
 
+The full publish image includes Python 3, pip, and venv. The remote publish step reports whether the existing container already has Python and verifies it after the new image starts. Frontend-only publishing does not rebuild the image, so use `publish.ps1` once to add Python to an older installation.
+
 For each additional instance on the same server, use a different container name and set unique `WEB_PORT` and `API_PORT` values in its initial `.env`. Use `-SshPort` or `-RemoteDir` when the server uses a non-default SSH port or deployment directory.
 
 Cargo downloads and release build artifacts are retained in Docker BuildKit caches between publishes. The first Rust build can take several minutes; later builds reuse unchanged dependencies. During compilation, the publish output reports progress at least every 30 seconds.

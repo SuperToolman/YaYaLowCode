@@ -1,0 +1,28 @@
+.my-table__horizontal-scroll {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+.my-table__horizontal-scroll::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.my-table__horizontal-scroll::-webkit-scrollbar-thumb {
+  display: none !important;
+}
+
+.my-table__horizontal-scroll::-webkit-scrollbar-corner {
+  display: none !important;
+}
+
+.my-table__content th,
+.my-table__content td {
+  background-clip: padding-box;
+}
+
+.my-table__content th:global(.sticky),
+.my-table__content td:global(.sticky) {
+  isolation: isolate;
+}

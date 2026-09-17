@@ -66,7 +66,40 @@ impl MigratorTrait for Migrator {
             Box::new(m20260904_000057_drop_agent_transactions::Migration),
             Box::new(m20260904_000057_repair_form_current_schema_version::Migration),
             Box::new(m20260904_000058_remove_legacy_agent_pending_actions::Migration),
+            Box::new(m20260916_000059_allow_duplicate_agent_resource_names::Migration),
         ]
+    }
+}
+
+mod m20260916_000059_allow_duplicate_agent_resource_names {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260916_000059_allow_duplicate_agent_resource_names"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            // Resource IDs are the stable references used by profiles and
+            // agents. Names are display labels and may legitimately repeat
+            // when a market package replaces a skill with a new ID.
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "ALTER TABLE agent_resources DROP CONSTRAINT IF EXISTS agent_resources_kind_name_key;",
+                )
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
     }
 }
 

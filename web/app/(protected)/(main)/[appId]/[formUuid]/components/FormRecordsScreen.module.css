@@ -1,0 +1,11 @@
+.records-screen__view-column-config-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content max-content max-content 112px max-content;
+  column-gap: 12px;
+}
+
+.records-screen__view-column-config-header {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}

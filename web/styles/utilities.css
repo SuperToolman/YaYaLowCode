@@ -1,0 +1,70 @@
+/* Shared page and overlay surfaces. Business-specific selectors do not belong here. */
+.theme-page-shell {
+  min-height: 100%;
+  color: var(--color-text-primary);
+}
+
+.theme-panel,
+.theme-panel-strong,
+.theme-panel-soft {
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-card);
+}
+
+.theme-card-glass {
+  border: 1px solid var(--color-border-card-glass);
+  background: var(--color-bg-card-glass);
+  box-shadow: var(--shadow-card-glass);
+  color: var(--color-text-primary);
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+}
+
+.theme-search-surface {
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-input);
+  color: var(--color-text-primary);
+}
+
+.theme-menu-surface {
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-menu);
+  color: var(--color-text-primary);
+  backdrop-filter: blur(18px);
+}
+
+.theme-modal-backdrop {
+  background: var(--backdrop);
+  backdrop-filter: blur(4px);
+}
+
+/* Shared page hierarchy stays independent from HeroUI heading defaults. */
+.page-content-layout__title,
+.page-section-title,
+.page-card-title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.page-content-layout__title { font-size: 1.5rem; }
+.page-content-layout__subtitle,
+.page-section-meta,
+.page-card-description {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+.page-content-layout__subtitle { font-size: .8125rem; line-height: 1.4; }
+.page-section-title { font-size: 1.125rem; }
+.page-section-meta { font-size: .75rem; }
+.page-card-title { font-size: .9375rem; }
+.page-card-description { font-size: .75rem; line-height: 1.4; }
+.page-surface { min-height: 0; }
+
+.page-quick-item,
+.page-app-item { color: var(--color-text-primary); }
+.page-quick-item { display: block; padding: .75rem 0; }
+.page-app-item { padding: .25rem 0 .75rem; }

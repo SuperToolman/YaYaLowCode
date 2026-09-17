@@ -17,12 +17,12 @@ import {
 } from "@heroui/react";
 import { TrashBin } from "@gravity-ui/icons";
 import type { Dispatch, SetStateAction } from "react";
-import { MySurface } from "../../../../../components/my-fields/MySurface";
+import { MySurface } from "@shared/ui/MySurface";
 import {
   ReorderableViewFieldRow,
   type ViewFieldOption,
 } from "./ViewConfigComponents";
-import type { ViewConfig, ViewConfigMode } from "../use-form-views";
+import type { ViewConfig, ViewConfigMode } from "../model/use-form-views";
 
 type Props = {
   isOpen: boolean;

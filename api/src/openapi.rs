@@ -652,6 +652,24 @@ typed_endpoint!(
     ApiResponse<DingTalkLoginUserResponse>
 );
 typed_endpoint!(
+    send_sms_code,
+    post,
+    "/api/identity/sms/send-code",
+    "sendSmsCode",
+    (),
+    crate::modules::identity::SendSmsCodeRequest,
+    ApiResponse<crate::modules::identity::SendSmsCodeResponse>
+);
+typed_endpoint!(
+    verify_sms_code,
+    post,
+    "/api/identity/sms/login",
+    "verifySmsCode",
+    (),
+    crate::modules::identity::VerifySmsCodeRequest,
+    ApiResponse<DingTalkLoginUserResponse>
+);
+typed_endpoint!(
     update_user,
     put,
     "/api/identity/users/{userId}",
@@ -1267,6 +1285,8 @@ endpoint!(
         create_local_user,
         initialize_local_credentials,
         local_login,
+        send_sms_code,
+        verify_sms_code,
         update_user,
         delete_user,
         resolve_dingtalk_login,

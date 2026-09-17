@@ -44,7 +44,7 @@ import {
   ArrowRotateLeft,
 } from "@gravity-ui/icons";
 import { statusMeta, type AutomationStatus } from "./AutomationShared";
-import { MySurface } from "@/app/components/my-fields/MySurface";
+import { MySurface } from "@shared/ui/MySurface";
 
 type AutomationsPageClientProps = {
   appId: string;

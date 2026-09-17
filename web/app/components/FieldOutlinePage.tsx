@@ -18,9 +18,9 @@ import {
   listApps,
   type ApiFieldOutlineForm,
   type App,
-} from "@/features/form-designer/api";
+} from "@features/form-designer";
 import { appColorToneClass, normalizeAppColorTone } from "../lib/apps";
-import { MySurface } from "./my-fields/MySurface";
+import { MySurface } from "@shared/ui/MySurface";
 
 type OutlineApp = App & { forms: ApiFieldOutlineForm[] };
 

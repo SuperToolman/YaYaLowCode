@@ -204,6 +204,9 @@ if (Test-Path -LiteralPath $developmentEnvFile) {
     if ([string]::IsNullOrWhiteSpace($env:VALKEY_URL) -and $developmentValues.ContainsKey("VALKEY_PASSWORD")) {
         $env:VALKEY_URL = "redis://:$($developmentValues.VALKEY_PASSWORD)@127.0.0.1:6379/0"
     }
+    if ($developmentValues.ContainsKey("VALKEY_URL")) {
+        $env:VALKEY_URL = $developmentValues.VALKEY_URL
+    }
     # Local development must use one stable signing key for both Next.js
     # (token issuer) and Rust (token verifier). In this script's development
     # mode the checked-in local value is authoritative; this also prevents a
@@ -214,6 +217,17 @@ if (Test-Path -LiteralPath $developmentEnvFile) {
     }
     if ([string]::IsNullOrWhiteSpace($env:BACKEND_INTERNAL_TOKEN) -and $developmentValues.ContainsKey("BACKEND_INTERNAL_TOKEN")) {
         $env:BACKEND_INTERNAL_TOKEN = $developmentValues.BACKEND_INTERNAL_TOKEN
+    }
+    foreach ($name in @(
+        "ALIYUN_ACCESS_KEY_ID",
+        "ALIYUN_ACCESS_KEY_SECRET",
+        "ALIYUN_SMS_SIGN_NAME",
+        "ALIYUN_SMS_LOGIN_TEMPLATE_CODE",
+        "ALIYUN_SMS_REGION"
+    )) {
+        if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name)) -and $developmentValues.ContainsKey($name)) {
+            Set-Item -Path "Env:$name" -Value $developmentValues[$name]
+        }
     }
 }
 # Development-only defaults. Production must inject both values from its secret

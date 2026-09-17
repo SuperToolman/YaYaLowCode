@@ -18,12 +18,13 @@ import {
   RangeCalendar,
   Select,
 } from "@heroui/react";
-import { MySurface } from "../../../../../components/my-fields/MySurface";
+import { MySurface } from "@shared/ui/MySurface";
 import { DateInputGroup } from "@heroui/react/date-input-group";
 import { Description } from "@heroui/react/description";
 import { parseDate } from "@internationalized/date";
 import { FileText as FormIcon, Folder as FolderIcon, LayoutCellsLarge as GridIcon, Link as AppLinkIcon, Comment as MessageIcon } from "@gravity-ui/icons";
-import type { CountryCityValue } from "../../../../../lib/location-catalog";
+import type { CountryCityValue } from "@lib/location-catalog";
+import runtimeStyles from "@features/form-runtime/components/RuntimeFormControls.module.css";
 import {
   DEFAULT_CASCADER_DATA_SOURCE,
   getCascaderLabel,
@@ -32,7 +33,7 @@ import {
   serializeCascaderLabel,
   serializeCascaderValue,
   type CascaderOption,
-} from "../../../../../lib/cascader-data-source";
+} from "@lib/cascader-data-source";
 
 export const COMPONENT_GROUPS = [
   { key: "basic", label: "基础" },
@@ -915,7 +916,7 @@ export function FieldPreview({
       {type === "number" ? (
         <NumberField
           aria-label={label}
-          className="low-code-number-field"
+          className={runtimeStyles["form-runtime-controls__number-field"]}
           defaultValue={numberDefaultValue}
           isDisabled={fieldProps.isDisabled}
           isReadOnly={fieldProps.isReadOnly}
@@ -936,10 +937,10 @@ export function FieldPreview({
         <RadioGroup
           aria-label={label}
           className={[
-            "low-code-choice-field",
+            runtimeStyles["form-runtime-controls__choice-field"],
             orientation === "horizontal"
-              ? "low-code-choice-horizontal"
-              : "low-code-choice-vertical",
+              ? runtimeStyles["form-runtime-controls__choice-field--horizontal"]
+              : runtimeStyles["form-runtime-controls__choice-field--vertical"],
           ].join(" ")}
           defaultValue={choiceDefaultValue}
           isDisabled={fieldProps.isDisabled}
@@ -962,10 +963,10 @@ export function FieldPreview({
         <CheckboxGroup
           aria-label={label}
           className={[
-            "low-code-choice-field",
+            runtimeStyles["form-runtime-controls__choice-field"],
             orientation === "horizontal"
-              ? "low-code-choice-horizontal"
-              : "low-code-choice-vertical",
+              ? runtimeStyles["form-runtime-controls__choice-field--horizontal"]
+              : runtimeStyles["form-runtime-controls__choice-field--vertical"],
           ].join(" ")}
           defaultValue={multiDefaultValue}
           isDisabled={fieldProps.isDisabled}
@@ -1128,7 +1129,7 @@ function SelectPreview({
   return (
     <Select
       aria-label={label}
-      className="low-code-select-field"
+      className={runtimeStyles["form-runtime-controls__select-field"]}
       selectedKey={selectedValue || null}
       onSelectionChange={(key: Key | null) =>
         setSelectedValue(key === null ? "" : String(key))
@@ -1183,7 +1184,7 @@ function MultiSelectPreview({
     .filter(Boolean);
 
   return (
-    <div className="relative low-code-select-field">
+    <div className={`relative ${runtimeStyles["form-runtime-controls__select-field"]}`}>
       <button
         type="button"
         aria-label={label}
@@ -1266,7 +1267,7 @@ function DateRangePickerPreview({
   return (
     <DateRangePicker
       aria-label={label}
-      className="low-code-date-range-picker w-full"
+      className={`${runtimeStyles["form-runtime-controls__date-range-picker"]} w-full`}
       defaultValue={defaultValue as never}
       isDisabled={isDisabled}
       isReadOnly={isReadOnly}

@@ -22,6 +22,7 @@ export function AppCard({ app, actions, onOpen }: AppCardProps) {
 
   return (
     <Card
+      className="border-l-3 border-[var(--color-primary)]"
       role="link"
       tabIndex={0}
       aria-label={`打开 ${app.name}`}
@@ -37,7 +38,10 @@ export function AppCard({ app, actions, onOpen }: AppCardProps) {
         </div>
       </Card.Header>
       <Card.Content className="flex flex-col gap-2">
-        <Typography type="body-sm" className="line-clamp-2 leading-6 h-12 min-h-12 max-h-12">
+        <Typography
+          type="body-sm"
+          className="line-clamp-2 leading-6 h-12 min-h-12 max-h-12"
+        >
           {app.desc || "暂无说明"}
         </Typography>
 

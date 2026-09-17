@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useState } from "react";
-import { getAppResource } from "../../../../lib/app-resources";
+import { getAppResource } from "@lib/app-resources";
 
 export function AppHeaderTitle({
   appId,

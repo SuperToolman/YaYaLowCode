@@ -17,7 +17,9 @@ import {
   updateRolePermissions,
 } from "@/features/identity-access/api";
 import { listAppNavigation, listApps } from "@/features/application/api";
-import { mapWithConcurrency } from "../../../lib/async";
+import { listFormViews } from "@/features/form-runtime/api";
+import { getAiEmployees } from "@features/settings/api";
+import { mapWithConcurrency } from "@lib/async";
 import { SettingsContentCard } from "../components/SettingsContentCard";
 
 type Role = {
@@ -47,15 +49,12 @@ async function listAiEmployeePermissionAgents(): Promise<{
   error?: unknown;
 }> {
   try {
-    const response = await fetch("/api/settings/ai-employee-market", { cache: "no-store" });
-    const payload = await response.json() as ApiEnvelope<AiEmployeeMarketItem[]>;
-    if (!response.ok || payload.code !== 0 || !payload.data) {
-      return { error: new Error(payload.message || "无法加载 AI 员工") };
-    }
+    const employees = await getAiEmployees<AiEmployeeMarketItem[]>();
     return {
       data: {
-        ...payload,
-        data: payload.data
+        code: 0,
+        message: "",
+        data: employees
           .filter((item) => item.installed)
           .map((item) => ({ id: item.id, name: item.title, description: "AI 员工使用权限", enabled: !item.expiresAt || item.expiresAt >= Math.floor(Date.now() / 1000) })),
       },
@@ -968,16 +967,11 @@ function ViewScopePanel({
     .map((grant) => grant.slice(`${prefix}:view:`.length));
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void fetch(`/api/forms/${encodeURIComponent(formId)}/views`, {
-        cache: "no-store",
-      }).then(async (response) => {
-        const payload = (await response.json()) as {
-          data: Array<{ viewUuid: string; name: string }> | null;
-        };
-        if (response.ok && payload.data)
+      void listFormViews({ path: { formUuid: formId }, responseStyle: "fields" }).then(({ data, error }) => {
+        if (!error && data?.code === 0 && data.data)
           setViews([
             { id: "default", name: "全部视图（默认视图）" },
-            ...payload.data.map((view) => ({
+            ...data.data.map((view) => ({
               id: view.viewUuid,
               name: view.name,
             })),
@@ -1187,7 +1181,7 @@ function SourceTag({ source }: { source: string }) {
   const isDingTalk = source === "dingtalk";
   return (
     <span
-      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${isDingTalk ? "border-[#b7d4ff] bg-[#eaf2ff] text-[#1677ff]" : "border-[#d9d9d9] bg-[#f5f5f5] text-[#595959]"}`}
+      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${isDingTalk ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]" : "border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]"}`}
     >
       {sourceLabel(source)}
     </span>

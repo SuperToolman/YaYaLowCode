@@ -3,7 +3,7 @@
 import { CircleCheck, CircleExclamation, FaceRobot, GearPlay } from "@gravity-ui/icons";
 import { Spinner } from "@heroui/react";
 import { AgentMarkdown } from "./AgentMarkdown";
-import { MySurface } from "@/app/components/my-fields/MySurface";
+import { MySurface } from "@shared/ui/MySurface";
 import type { AgentMessage as Message, AgentRunStatus, AgentTimelineItem } from "@/features/agent-assistant/types";
 import { agentFileDownloadUrl } from "@/features/agent-assistant/api";
 import { ThinkBlock } from "./AgentThinkBlock";

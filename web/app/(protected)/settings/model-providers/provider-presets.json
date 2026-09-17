@@ -1,23 +1,170 @@
 [
-  { "id": "openai", "name": "OpenAI", "kind": "openai", "apiBaseUrl": "https://api.openai.com/v1", "websiteUrl": "https://platform.openai.com", "icon": "openai" },
-  { "id": "anthropic", "name": "Anthropic", "kind": "openai-compatible", "apiBaseUrl": "https://api.anthropic.com/v1", "websiteUrl": "https://console.anthropic.com", "icon": "anthropic" },
-  { "id": "google", "name": "Google AI", "kind": "openai-compatible", "apiBaseUrl": "https://generativelanguage.googleapis.com/v1beta/openai", "websiteUrl": "https://aistudio.google.com", "icon": "google" },
-  { "id": "deepseek", "name": "DeepSeek", "kind": "deepseek", "apiBaseUrl": "https://api.deepseek.com/v1", "websiteUrl": "https://platform.deepseek.com", "icon": "deepseek" },
-  { "id": "groq", "name": "Groq", "kind": "openai-compatible", "apiBaseUrl": "https://api.groq.com/openai/v1", "websiteUrl": "https://console.groq.com", "icon": "groq" },
-  { "id": "mistral", "name": "Mistral AI", "kind": "openai-compatible", "apiBaseUrl": "https://api.mistral.ai/v1", "websiteUrl": "https://console.mistral.ai", "icon": "mistral" },
-  { "id": "openrouter", "name": "OpenRouter", "kind": "openai-compatible", "apiBaseUrl": "https://openrouter.ai/api/v1", "websiteUrl": "https://openrouter.ai", "icon": "openrouter" },
-  { "id": "together", "name": "Together AI", "kind": "openai-compatible", "apiBaseUrl": "https://api.together.xyz/v1", "websiteUrl": "https://api.together.ai", "icon": "together" },
-  { "id": "fireworks", "name": "Fireworks AI", "kind": "openai-compatible", "apiBaseUrl": "https://api.fireworks.ai/inference/v1", "websiteUrl": "https://fireworks.ai", "icon": "fireworks" },
-  { "id": "cohere", "name": "Cohere", "kind": "openai-compatible", "apiBaseUrl": "https://api.cohere.com/compatibility/v1", "websiteUrl": "https://dashboard.cohere.com", "icon": "cohere" },
-  { "id": "xai", "name": "xAI", "kind": "openai-compatible", "apiBaseUrl": "https://api.x.ai/v1", "websiteUrl": "https://console.x.ai", "icon": "xai" },
-  { "id": "qwen", "name": "通义千问", "kind": "openai-compatible", "apiBaseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1", "websiteUrl": "https://dashscope.aliyun.com", "icon": "qwen" },
-  { "id": "zhipu", "name": "智谱 AI", "kind": "openai-compatible", "apiBaseUrl": "https://open.bigmodel.cn/api/paas/v4", "websiteUrl": "https://open.bigmodel.cn", "icon": "zhipu" },
-  { "id": "moonshot", "name": "Moonshot AI", "kind": "openai-compatible", "apiBaseUrl": "https://api.moonshot.cn/v1", "websiteUrl": "https://platform.moonshot.cn", "icon": "moonshot" },
-  { "id": "minimax", "name": "MiniMax", "kind": "openai-compatible", "apiBaseUrl": "https://api.minimaxi.com/v1", "websiteUrl": "https://platform.minimaxi.com", "icon": "minimax" },
-  { "id": "doubao", "name": "豆包", "kind": "openai-compatible", "apiBaseUrl": "https://ark.cn-beijing.volces.com/api/v3", "websiteUrl": "https://console.volcengine.com/ark", "icon": "doubao" },
-  { "id": "volcengine", "name": "火山引擎", "kind": "openai-compatible", "apiBaseUrl": "https://ark.cn-beijing.volces.com/api/v3", "websiteUrl": "https://console.volcengine.com/ark", "icon": "volcengine" },
-  { "id": "siliconcloud", "name": "硅基流动", "kind": "openai-compatible", "apiBaseUrl": "https://api.siliconflow.cn/v1", "websiteUrl": "https://cloud.siliconflow.cn", "icon": "siliconcloud" },
-  { "id": "azure", "name": "Azure OpenAI", "kind": "openai-compatible", "apiBaseUrl": "https://YOUR_RESOURCE_NAME.openai.azure.com/openai/v1", "websiteUrl": "https://portal.azure.com", "icon": "azure" },
-  { "id": "ollama", "name": "Ollama", "kind": "local", "apiBaseUrl": "http://localhost:11434/v1", "websiteUrl": "https://ollama.com", "icon": "ollama" },
-  { "id": "compatible", "name": "OpenAI Compatible", "kind": "openai-compatible", "apiBaseUrl": "https://api.openai.com/v1", "websiteUrl": "https://platform.openai.com", "icon": "openai" }
+  {
+    "id": "openai",
+    "name": "OpenAI",
+    "kind": "openai",
+    "apiBaseUrl": "https://api.openai.com/v1",
+    "websiteUrl": "https://platform.openai.com",
+    "icon": "openai"
+  },
+  {
+    "id": "anthropic",
+    "name": "Anthropic",
+    "kind": "openai-compatible",
+    "apiBaseUrl": "https://api.anthropic.com/v1",
+    "websiteUrl": "https://console.anthropic.com",
+    "icon": "anthropic"
+  },
+  {
+    "id": "google",
+    "name": "Google AI",
+    "kind": "openai-compatible",
+    "apiBaseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "websiteUrl": "https://aistudio.google.com",
+    "icon": "google"
+  },
+  {
+    "id": "deepseek",
+    "name": "DeepSeek",
+    "kind": "deepseek",
+    "apiBaseUrl": "https://api.deepseek.com/v1",
+    "websiteUrl": "https://platform.deepseek.com",
+    "icon": "deepseek"
+  },
+  {
+    "id": "groq",
+    "name": "Groq",
+    "kind": "openai-compatible",
+    "apiBaseUrl": "https://api.groq.com/openai/v1",
+    "websiteUrl": "https://console.groq.com",
+    "icon": "groq"
+  },
+  {
+    "id": "mistral",
+    "name": "Mistral AI",
+    "kind": "openai-compatible",
+    "apiBaseUrl": "https://api.mistral.ai/v1",
+    "websiteUrl": "https://console.mistral.ai",
+    "icon": "mistral"
+  },
+  {
+    "id": "openrouter",
+    "name": "OpenRouter",
+    "kind": "openai-compatible",
+    "apiBaseUrl": "https://openrouter.ai/api/v1",
+    "websiteUrl": "https://openrouter.ai",
+    "icon": "openrouter"
+  },
+  {
+    "id": "together",
+    "name": "Together AI",
+    "kind": "openai-compatible",
+    "apiBaseUrl": "https://api.together.xyz/v1",
+    "websiteUrl": "https://api.together.ai",
+    "icon": "together"
+  },
+  {
+    "id": "fireworks",
+    "name": "Fireworks AI",
+    "kind": "openai-compatible",
+    "apiBaseUrl": "https://api.fireworks.ai/inference/v1",
+    "websiteUrl": "https://fireworks.ai",
+    "icon": "fireworks"
+  },
+  {
+    "id": "cohere",
+    "name": "Cohere",
+    "kind": "openai-compatible",
+    "apiBaseUrl": "https://api.cohere.com/compatibility/v1",
+    "websiteUrl": "https://dashboard.cohere.com",
+    "icon": "cohere"
+  },
+  {
+    "id": "xai",
+    "name": "xAI",
+    "kind": "openai-compatible",
+    "apiBaseUrl": "https://api.x.ai/v1",
+    "websiteUrl": "https://console.x.ai",
+    "icon": "xai"
+  },
+  {
+    "id": "qwen",
+    "name": "通义千问",
+    "kind": "openai-compatible",
+    "apiBaseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "websiteUrl": "https://dashscope.aliyun.com",
+    "icon": "qwen"
+  },
+  {
+    "id": "zhipu",
+    "name": "智谱 AI",
+    "kind": "openai-compatible",
+    "apiBaseUrl": "https://open.bigmodel.cn/api/paas/v4",
+    "websiteUrl": "https://open.bigmodel.cn",
+    "icon": "zhipu"
+  },
+  {
+    "id": "moonshot",
+    "name": "Moonshot AI",
+    "kind": "openai-compatible",
+    "apiBaseUrl": "https://api.moonshot.cn/v1",
+    "websiteUrl": "https://platform.moonshot.cn",
+    "icon": "moonshot"
+  },
+  {
+    "id": "minimax",
+    "name": "MiniMax",
+    "kind": "openai-compatible",
+    "apiBaseUrl": "https://api.minimaxi.com/v1",
+    "websiteUrl": "https://platform.minimaxi.com",
+    "icon": "minimax"
+  },
+  {
+    "id": "doubao",
+    "name": "豆包",
+    "kind": "openai-compatible",
+    "apiBaseUrl": "https://ark.cn-beijing.volces.com/api/v3",
+    "websiteUrl": "https://console.volcengine.com/ark",
+    "icon": "doubao"
+  },
+  {
+    "id": "volcengine",
+    "name": "火山引擎",
+    "kind": "openai-compatible",
+    "apiBaseUrl": "https://ark.cn-beijing.volces.com/api/v3",
+    "websiteUrl": "https://console.volcengine.com/ark",
+    "icon": "volcengine"
+  },
+  {
+    "id": "siliconcloud",
+    "name": "硅基流动",
+    "kind": "openai-compatible",
+    "apiBaseUrl": "https://api.siliconflow.cn/v1",
+    "websiteUrl": "https://cloud.siliconflow.cn",
+    "icon": "siliconcloud"
+  },
+  {
+    "id": "azure",
+    "name": "Azure OpenAI",
+    "kind": "openai-compatible",
+    "apiBaseUrl": "https://YOUR_RESOURCE_NAME.openai.azure.com/openai/v1",
+    "websiteUrl": "https://portal.azure.com",
+    "icon": "azure"
+  },
+  {
+    "id": "ollama",
+    "name": "Ollama",
+    "kind": "local",
+    "apiBaseUrl": "http://localhost:11434/v1",
+    "websiteUrl": "https://ollama.com",
+    "icon": "ollama"
+  },
+  {
+    "id": "compatible",
+    "name": "OpenAI Compatible",
+    "kind": "openai-compatible",
+    "apiBaseUrl": "https://api.openai.com/v1",
+    "websiteUrl": "https://platform.openai.com",
+    "icon": "openai"
+  }
 ]

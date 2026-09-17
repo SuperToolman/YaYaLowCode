@@ -200,7 +200,7 @@ pub(crate) async fn delete_agent_session(
 ) -> Result<StatusCode, AppError> {
     let user = authorization::current_user(&headers, &state).await?;
     let session = find_owned_session(&state.db, &session_uuid, user.id).await?;
-    
+
     // Mark as archived in database
     let mut active: agent_session_entity::ActiveModel = session.clone().into();
     active.status = Set("archived".to_string());
@@ -208,7 +208,7 @@ pub(crate) async fn delete_agent_session(
     active.is_pinned = Set(false);
     active.updated_at = Set(Utc::now().into());
     active.update(&state.db).await?;
-    
+
     // Immediately clean up workspace to free disk space
     if let Some(user_id) = session.owner_user_id {
         let settings = crate::platform::config::agent_workspace_settings();
@@ -217,12 +217,12 @@ pub(crate) async fn delete_agent_session(
             .join(safe_segment(&user_id.to_string()))
             .join(safe_segment(&session.agent_id))
             .join(safe_segment(&session.session_uuid));
-        
+
         if workspace.exists() && is_within(&root, &workspace) {
             let _ = std::fs::remove_dir_all(&workspace);
         }
     }
-    
+
     Ok(StatusCode::NO_CONTENT)
 }
 

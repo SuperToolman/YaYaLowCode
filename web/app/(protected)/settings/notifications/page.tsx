@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button, Input, Surface, Switch, toast } from "@heroui/react";
-import { isRequestAborted, jsonRequest, requestApi } from "../../../lib/api-request";
+import { isRequestAborted, jsonRequest, requestApi } from "@lib/api-request";
 import { Field } from "../components/Field";
 import { SettingsContentCard } from "../components/SettingsContentCard";
 import styles from "./notifications.module.css";
@@ -95,4 +95,3 @@ export default function NotificationSettingsPage() {
     </SettingsContentCard>
   </section>;
 }
-

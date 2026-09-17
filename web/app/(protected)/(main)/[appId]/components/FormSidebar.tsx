@@ -43,8 +43,8 @@ import {
   getAppNavigation,
   getAppForms,
   invalidateAppResources,
-} from "../../../../lib/app-resources";
-import { useAuth } from "../../../../components/AuthProvider";
+} from "@lib/app-resources";
+import { useAuth } from "@components/AuthProvider";
 import {
   APP_NAVIGATION_CHANGED_EVENT,
   type AppNavigationChangedDetail,

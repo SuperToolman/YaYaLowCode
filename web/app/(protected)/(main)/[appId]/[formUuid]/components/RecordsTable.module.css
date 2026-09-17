@@ -1,0 +1,4 @@
+.records-table__detail-backdrop {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}

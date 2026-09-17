@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-table";
 import { Checkbox, Table, type Selection, type SortDescriptor } from "@heroui/react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import styles from "./MyTable.module.css";
 
 export type MyTableColumnMeta = {
   /** Pin the column to the left or right edge of the scroll viewport. */
@@ -154,7 +155,7 @@ export function MyTable<TData>({
       <Table className="my-table-root flex h-full min-h-0 min-w-0 flex-col">
         <Table.ResizableContainer
           ref={resizableContainerRef}
-          className="my-table-scroll data-table-horizontal-scroll min-h-0 min-w-0 flex-1 basis-0 overflow-auto"
+          className={`my-table-scroll ${styles["my-table__horizontal-scroll"]} min-h-0 min-w-0 flex-1 basis-0 overflow-auto`}
           onResize={(widths) => setLiveColumnWidths(recordColumnSizing(widths))}
           onResizeEnd={(widths) => {
             const nextSizing = recordColumnSizing(widths);
@@ -164,7 +165,7 @@ export function MyTable<TData>({
         >
         <Table.Content
           aria-label={ariaLabel}
-          className={`my-table-content h-auto w-max ${tableClassName ?? ""}`}
+          className={`${styles["my-table__content"]} h-auto w-max ${tableClassName ?? ""}`}
           style={{ width: tableWidth, minWidth: tableWidth }}
           selectionMode={onSelectedRowIdsChange ? "multiple" : "none"}
           selectedKeys={selectedRowIds}

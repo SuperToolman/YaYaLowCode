@@ -2,7 +2,7 @@ export type {
   RuntimeDataSource,
   RuntimeFormSchema,
   RuntimeSchemaField,
-} from "@/app/components/runtime-form-types";
+} from "./components/runtime-form-types";
 
 export type AssociationRecord = {
   id: string;

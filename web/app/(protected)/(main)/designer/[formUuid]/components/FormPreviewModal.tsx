@@ -2,13 +2,14 @@
 
 import { Drawer } from "@heroui/react/drawer";
 import type { FormDesignerSchema } from "../designer-schema";
-import { useTheme } from "../../../../../components/ThemeProvider";
+import { useTheme } from "@shared/ThemeProvider";
 import {
   RuntimeFormRenderer,
   RuntimeFormSurface,
   type RuntimeDebugEvent,
   type RuntimeFormSchema,
-} from "../../../../../components/RuntimeFormRenderer";
+} from "@features/form-runtime/components";
+import styles from "./DesignerTheme.module.css";
 
 type FormPreviewModalProps = {
   isOpen: boolean;
@@ -32,7 +33,7 @@ export function FormPreviewModal({
 
   return (
     <Drawer isOpen={isOpen} onOpenChange={onOpenChange}>
-      <Drawer.Backdrop className="designer-modal-backdrop" isDismissable>
+      <Drawer.Backdrop className={styles["designer-theme__modal-backdrop"]} isDismissable>
         <Drawer.Content placement="right">
           <Drawer.Dialog
             data-theme={resolvedTheme}
