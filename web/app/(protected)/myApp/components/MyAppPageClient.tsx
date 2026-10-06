@@ -1,4 +1,5 @@
 "use client";
+import { notify } from "@lib/notify";
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -11,20 +12,19 @@ import {
   Label,
   SearchField,
   TextArea,
-  toast,
   ListBox,
   Select,
 } from "@heroui/react";
 import { MySurface } from "@shared/ui/MySurface";
 import { AlertDialog } from "@heroui/react/alert-dialog";
 import { Modal } from "@heroui/react/modal";
-import { Plus, Rocket } from "@gravity-ui/icons";
+import { ListUl, Plus, Rocket } from "@gravity-ui/icons";
 import {
   createApp,
   deleteApp as deleteAppRequest,
   listApps,
-  submitAppToMarketplace,
   syncMarketplaceApplications,
+  submitAppToMarketplace,
   updateApp,
   type App as ApiApp,
 } from "@/features/application/api";
@@ -68,6 +68,8 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
 
     startTransition(async () => {
       try {
+        // A source application is promoted in place after its publisher's release is approved.
+        // Sync before reading the list so the online version is visible immediately.
         await syncMarketplaceApplications<unknown>();
         const { data, error } = await listApps({
           responseStyle: "fields",
@@ -82,7 +84,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
         }
       } catch (cause) {
         if (!cancelled)
-          toast.danger("应用列表加载失败", {
+          notify.error("应用列表加载失败", {
             description:
               cause instanceof Error ? cause.message : "请刷新后重试",
           });
@@ -141,6 +143,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
         setApps((current) =>
           sortApps([normalizeAppItem(createdApp), ...current]),
         );
+        window.dispatchEvent(new Event("yaya-apps-updated"));
         setCreateOpen(false);
         setCreateName("");
         setCreateDescription("");
@@ -174,9 +177,10 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
           current.map((item) => (item.id === app.id ? updatedApp : item)),
         ),
       );
+      window.dispatchEvent(new Event("yaya-apps-updated"));
       setRenameApp(null);
     } catch (cause) {
-      toast.danger("应用更新失败", {
+      notify.error("应用更新失败", {
         description: cause instanceof Error ? cause.message : "请稍后重试",
       });
     } finally {
@@ -197,9 +201,12 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
         throw new Error(payload?.message || "删除应用失败");
 
       setApps((current) => current.filter((item) => item.id !== app.id));
+      window.dispatchEvent(new CustomEvent("yaya-apps-updated", {
+        detail: { deletedAppId: app.id },
+      }));
       setDeleteApp(null);
     } catch (cause) {
-      toast.danger("删除应用失败", {
+      notify.error("删除应用失败", {
         description: cause instanceof Error ? cause.message : "请稍后重试",
       });
     } finally {
@@ -211,11 +218,11 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
     setSubmittingAppId(app.id);
     try {
       await submitAppToMarketplace<unknown>(app.id);
-      toast.success("上线申请已提交", {
+      notify.success("上线申请已提交", {
         description: "申请已发送，等待运营中心审核。",
       });
     } catch (cause) {
-      toast.danger("上线申请失败", {
+      notify.error("上线申请失败", {
         description: cause instanceof Error ? cause.message : "请稍后重试。",
       });
     } finally {
@@ -238,7 +245,10 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
       }
       actions={
         <>
-          <Button onPress={() => setIsFieldOutlineOpen(true)}>字段大纲</Button>
+          <Button onPress={() => setIsFieldOutlineOpen(true)}>
+            <ListUl />
+            字段大纲
+          </Button>
           {canManageApps ? (
             <Button onClick={() => setCreateOpen(true)} isDisabled={isPending}>
               <Plus />
@@ -246,9 +256,9 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
             </Button>
           ) : null}
           {canImportApps ? (
-            <Button>
+            <Button onPress={() => router.push("/market")}>
               <Rocket />
-              导入应用
+              应用市场
             </Button>
           ) : null}
         </>

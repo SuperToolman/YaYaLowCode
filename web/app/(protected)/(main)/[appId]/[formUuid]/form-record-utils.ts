@@ -239,7 +239,7 @@ export function workflowApprovalStatusLabel(value: unknown) {
 }
 
 export function workflowInstanceStatusLabel(value: unknown) {
-  return ({ in_progress: "进行中", running: "进行中", paused: "已暂停", completed: "已完成", failed: "失败" } as Record<string, string>)[String(value)] ?? "进行中";
+  return ({ not_started: "未开始", in_progress: "未开始", running: "进行中", paused: "已暂停", completed: "已完成", failed: "失败" } as Record<string, string>)[String(value)] ?? "未开始";
 }
 
 export function formatDateTime(value: string) {

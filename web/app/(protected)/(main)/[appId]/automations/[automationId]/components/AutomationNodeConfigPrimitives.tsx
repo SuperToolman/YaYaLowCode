@@ -7,6 +7,8 @@ import type { ApiFormSummary } from "@/features/automation-editor/api";
 import { AutomationFormulaEditorModal, type AutomationFormulaField } from "../../components/AutomationFormulaEditorModal";
 import { extractExpressionTokens, type FormFieldDescriptor } from "../automation-editor-model";
 
+export { WorkflowConfigGroup as PropertyPanelSection } from "@components/workflow-editor/WorkflowConfigGroup";
+
 export function IconActionButton({
   ariaLabel,
   children,
@@ -36,28 +38,6 @@ export function IconActionButton({
     >
       {children}
     </Button>
-  );
-}
-
-export function PropertyPanelSection({
-  children,
-  description,
-  title,
-}: {
-  children?: ReactNode;
-  description?: string;
-  title: string;
-}) {
-  return (
-    <section className="rounded-md border border-[var(--color-border)] bg-[var(--color-control-soft)]">
-      <div className="border-b border-[var(--color-border)] bg-[var(--color-control-soft)] px-3 py-2">
-        <div className="automation-property-title font-semibold text-[var(--color-text-primary)]">{title}</div>
-        {description ? (
-          <div className="mt-0.5 text-[var(--color-text-secondary)]">{description}</div>
-        ) : null}
-      </div>
-      <div className="space-y-2 px-3 py-2.5">{children}</div>
-    </section>
   );
 }
 

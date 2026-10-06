@@ -4,7 +4,7 @@ use std::path::Path;
 use utoipa::OpenApi;
 
 use crate::modules::agent_config::{
-    KnowledgeBaseRequest, PluginRequest, ProviderRequest, ProviderResponse, SystemAiStatusResponse,
+    PluginRequest, ProviderRequest, ProviderResponse, SystemAiStatusResponse,
 };
 use crate::modules::agents::{
     ApiAgentSession, CreateAgentSessionRequest, UpdateAgentSessionRequest,
@@ -52,13 +52,13 @@ use crate::modules::settings::{
     ValkeySettingsResponse,
 };
 use crate::modules::workflows::{
-    WorkflowCommentRequest, WorkflowPauseRequest, WorkflowTaskActionRequest,
+    WorkflowCommentRequest, WorkflowExecutionRequest, WorkflowPauseRequest,
+    WorkflowTaskActionRequest,
 };
 use crate::platform::api::ApiResponse;
 use crate::platform::config::IdentitySourceSettings;
 use crate::platform::config::{
-    AgentKnowledgeBaseDefinition, AgentPluginDefinition, CommunicationModuleSettings,
-    RecycleBinSettings,
+    AgentPluginDefinition, CommunicationModuleSettings, RecycleBinSettings,
 };
 use crate::platform::license::PlatformLicenseStatus;
 
@@ -493,40 +493,6 @@ endpoint!(
     "deletePlugin",
     ("id" = String, Path)
 );
-typed_endpoint!(
-    list_knowledge_bases,
-    get,
-    "/api/agent/knowledge-bases",
-    "listKnowledgeBases",
-    (),
-    ApiResponse<Vec<AgentKnowledgeBaseDefinition>>
-);
-typed_endpoint!(
-    create_knowledge_base,
-    post,
-    "/api/agent/knowledge-bases",
-    "createKnowledgeBase",
-    (),
-    KnowledgeBaseRequest,
-    ApiResponse<AgentKnowledgeBaseDefinition>
-);
-typed_endpoint!(
-    update_knowledge_base,
-    put,
-    "/api/agent/knowledge-bases/{id}",
-    "updateKnowledgeBase",
-    (("id" = String, Path)),
-    KnowledgeBaseRequest,
-    ApiResponse<AgentKnowledgeBaseDefinition>
-);
-endpoint!(
-    delete_knowledge_base,
-    delete,
-    "/api/agent/knowledge-bases/{id}",
-    "deleteKnowledgeBase",
-    ("id" = String, Path)
-);
-
 typed_endpoint!(
     get_identity_source_settings,
     get,
@@ -964,6 +930,15 @@ typed_endpoint!(
     ApiResponse<Value>
 );
 typed_endpoint!(
+    complete_workflow_execution,
+    post,
+    "/api/workflow/tasks/{taskUuid}/complete",
+    "completeWorkflowExecution",
+    (("taskUuid" = String, Path)),
+    WorkflowExecutionRequest,
+    ApiResponse<Value>
+);
+typed_endpoint!(
     reject_workflow_task,
     post,
     "/api/workflow/tasks/{taskUuid}/reject",
@@ -1266,10 +1241,6 @@ endpoint!(
         create_plugin,
         update_plugin,
         delete_plugin,
-        list_knowledge_bases,
-        create_knowledge_base,
-        update_knowledge_base,
-        delete_knowledge_base,
         get_identity_source_settings,
         update_identity_source_settings,
         get_internal_identity_source_settings,
@@ -1322,6 +1293,7 @@ endpoint!(
         pause_workflow_record,
         resume_workflow_record,
         approve_workflow_task,
+        complete_workflow_execution,
         reject_workflow_task,
         list_workflow_notifications,
         read_workflow_notification,

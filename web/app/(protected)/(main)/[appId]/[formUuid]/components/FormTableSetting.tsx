@@ -63,9 +63,9 @@ export function FormTableSetting({
           <Drawer.Dialog className="w-[min(1000px,100vw)] overflow-hidden">
             <Drawer.Header className="">
               <Drawer.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
-                表格设置
+                视图设置
               </Drawer.Heading>
-              <Drawer.CloseTrigger aria-label="关闭表格设置" />
+              <Drawer.CloseTrigger aria-label="关闭视图设置" />
             </Drawer.Header>
             <Tabs
               selectedKey={section}
@@ -73,20 +73,26 @@ export function FormTableSetting({
                 onSectionChange(String(key) as ViewConfigMode)
               }
             >
-              <Tabs.List aria-label="表格设置分组">
-                <Tabs.Tab id="filters">
-                  筛选
-                  <Tabs.Indicator />
-                </Tabs.Tab>
-                <Tabs.Tab id="sorts">
-                  排序
-                  <Tabs.Indicator />
-                </Tabs.Tab>
-                <Tabs.Tab id="fields">
-                  显示列
-                  <Tabs.Indicator />
-                </Tabs.Tab>
-              </Tabs.List>
+              <Tabs.ListContainer>
+                <Tabs.List aria-label="视图设置分组">
+                  <Tabs.Tab id="filters">
+                    筛选
+                    <Tabs.Indicator />
+                  </Tabs.Tab>
+                  <Tabs.Tab id="sorts">
+                    排序
+                    <Tabs.Indicator />
+                  </Tabs.Tab>
+                  <Tabs.Tab id="fields">
+                    显示列
+                    <Tabs.Indicator />
+                  </Tabs.Tab>
+                  <Tabs.Tab id="customButtons">
+                    自定义按钮
+                    <Tabs.Indicator />
+                  </Tabs.Tab>
+                </Tabs.List>
+              </Tabs.ListContainer>
             </Tabs>
             <Drawer.Body className="min-h-0 flex-1 overflow-y-auto">
               <MySurface className="min-h-full p-1">

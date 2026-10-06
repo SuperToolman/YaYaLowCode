@@ -5,7 +5,7 @@ use aes_gcm::{
     Aes256Gcm, KeyInit, Nonce,
     aead::{Aead, OsRng, rand_core::RngCore},
 };
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::{Json, http::StatusCode};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -54,6 +54,10 @@ pub(crate) struct RuntimeModelRoute {
     pub api_key: String,
     pub chat_model: String,
 }
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RuntimeModelRouteQuery { pub route_id: Option<String>, pub model: Option<String> }
 
 fn default_enabled() -> bool {
     true
@@ -165,6 +169,7 @@ pub(crate) async fn delete_model_route(
 pub(crate) async fn runtime_model_route(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(query): Query<RuntimeModelRouteQuery>,
 ) -> Result<Json<ApiResponse<RuntimeModelRoute>>, AppError> {
     let expected = std::env::var("AGENT_RUNTIME_SHARED_SECRET").map_err(|_| {
         AppError::Forbidden("Agent Runtime internal credential is not configured".to_string())
@@ -186,18 +191,20 @@ pub(crate) async fn runtime_model_route(
         .get("x-agent-user-id")
         .and_then(|value| value.to_str().ok())
         .ok_or_else(|| AppError::Forbidden("Agent user scope is required".to_string()))?;
-    let route = list_raw(&state, tenant, user_id)
-        .await?
+    let routes = list_raw(&state, tenant, user_id).await?;
+    let route = routes
         .into_iter()
-        .find(|item| item.enabled && item.is_default)
+        .find(|item| item.enabled && query.route_id.as_deref().map_or(item.is_default, |id| item.id == id))
         .ok_or_else(|| AppError::BadRequest("请先在自有模型中配置并启用默认模型".to_string()))?;
+    let chat_model = query.model.unwrap_or_else(|| route.default_chat_model.clone());
+    if !route.models.iter().any(|item| item == &chat_model) { return Err(AppError::BadRequest("所选模型不属于该模型路由".to_string())); }
     Ok(Json(success_response(
         "runtime model route loaded",
         RuntimeModelRoute {
             id: route.id,
             api_base_url: route.api_base_url,
             api_key: decrypt(&route.encrypted_api_key)?,
-            chat_model: route.default_chat_model,
+            chat_model,
         },
     )))
 }
@@ -358,7 +365,7 @@ fn encrypt(plain: &str) -> Result<String, AppError> {
         STANDARD.encode(encrypted)
     ))
 }
-fn decrypt(encoded: &str) -> Result<String, AppError> {
+pub(crate) fn decrypt(encoded: &str) -> Result<String, AppError> {
     let (version, payload) = encoded
         .split_once(':')
         .ok_or_else(|| AppError::BadRequest("保存的模型密钥格式无效".to_string()))?;

@@ -1735,7 +1735,7 @@ fn initialize_workflow_record(data: &mut Value, submitter: &str) {
         return;
     };
     values.insert("workflowApprovalStatus".to_string(), json!("saved"));
-    values.insert("workflowInstanceStatus".to_string(), json!("in_progress"));
+    values.insert("workflowInstanceStatus".to_string(), json!("not_started"));
     values.insert("workflowCurrentApprovalNode".to_string(), json!("待提交"));
     values.insert("workflowSubmitter".to_string(), json!(submitter));
 }
@@ -2200,6 +2200,15 @@ fn normalize_detail_schema(mut schema: Value) -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn new_workflow_record_has_not_started_instance() {
+        let mut data = json!({"name": "申请"});
+        initialize_workflow_record(&mut data, "提交人");
+        assert_eq!(data["workflowApprovalStatus"], "saved");
+        assert_eq!(data["workflowInstanceStatus"], "not_started");
+        assert_eq!(data["workflowCurrentApprovalNode"], "待提交");
+    }
 
     #[test]
     fn custom_page_components_are_rejected_for_non_defined_forms() {

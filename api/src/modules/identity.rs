@@ -535,6 +535,16 @@ pub(crate) async fn create_local_user(
     }
     let roles = validate_role_ids(&payload.role_ids)?;
     ensure_roles_match_source(&state.db, &roles, "local").await?;
+    // Every local account belongs to the platform's local tenant from its
+    // first request. Without both fields runtime identity resolution rejects
+    // a newly created user before it can access any tenant-scoped feature.
+    let tenant = organization_unit_entity::Entity::find()
+        .filter(organization_unit_entity::Column::SourceType.eq("local"))
+        .filter(organization_unit_entity::Column::Status.eq("active"))
+        .order_by_asc(organization_unit_entity::Column::SortOrder)
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("没有可用的本地租户".to_string()))?;
     let tx = state.db.begin().await?;
     let now = chrono::Utc::now();
     let id = Uuid::new_v4();
@@ -552,7 +562,7 @@ pub(crate) async fn create_local_user(
         remark: Set(None),
         hired_at: Set(None),
         manager_external_user_id: Set(None),
-        primary_organization_unit_id: Set(None),
+        primary_organization_unit_id: Set(Some(tenant.id)),
         senior: Set(false),
         is_admin: Set(false),
         is_boss: Set(false),
@@ -561,6 +571,15 @@ pub(crate) async fn create_local_user(
         status: Set("active".to_string()),
         created_at: Set(now.into()),
         updated_at: Set(now.into()),
+    }
+    .insert(&tx)
+    .await?;
+    iam_organization_membership_entity::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        user_id: Set(id),
+        organization_unit_id: Set(tenant.id),
+        is_primary: Set(true),
+        created_at: Set(now.into()),
     }
     .insert(&tx)
     .await?;

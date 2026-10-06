@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState, type Key } from "react";
+import { notify } from "@lib/notify";
 import { Avatar, Button, Input, ListBox, Modal, Select } from "@heroui/react";
 import {
   createLocalOrganizationUnit,
@@ -142,8 +143,9 @@ export function OrganizationArchitectureSection({
         );
         if (parent) setExpanded((current) => new Set(current).add(parent.id));
       }
+      notify.success("组织已创建");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "创建组织失败");
+      notify.error("创建组织失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
     } finally {
       setCreating(false);
     }

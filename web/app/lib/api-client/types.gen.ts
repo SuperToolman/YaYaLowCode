@@ -15,16 +15,6 @@ export type ActivatePlatformLicenseRequest = {
     licenseCenterUrl: string;
 };
 
-export type AgentKnowledgeBaseDefinition = {
-    content?: string;
-    description?: string;
-    enabled: boolean;
-    id: string;
-    name: string;
-    retrievalMode: string;
-    sourceIds?: Array<string>;
-};
-
 export type AgentPageContext = {
     appId?: string | null;
     automationId?: string | null;
@@ -65,11 +55,13 @@ export type AiEmployeeMarketItem = {
 export type ApiAgentSession = {
     agentId: string;
     appId?: string | null;
+    archivedAt?: string | null;
     context: unknown;
     createdAt: string;
     id: string;
     isPinned: boolean;
     modelProvider?: string | null;
+    parentSessionId?: string | null;
     source: string;
     status: string;
     title: string;
@@ -140,7 +132,6 @@ export type ApiAutomationFlowDetail = {
 };
 
 export type ApiAutomationFlowList = {
-    draft: number;
     enabled: number;
     items: Array<ApiAutomationFlow>;
     paused: number;
@@ -274,21 +265,6 @@ export type ApiResponseAccessTokenResponse = {
     time: string;
 };
 
-export type ApiResponseAgentKnowledgeBaseDefinition = {
-    code: number;
-    data?: {
-        content?: string;
-        description?: string;
-        enabled: boolean;
-        id: string;
-        name: string;
-        retrievalMode: string;
-        sourceIds?: Array<string>;
-    };
-    message: string;
-    time: string;
-};
-
 export type ApiResponseAgentPluginDefinition = {
     code: number;
     data?: {
@@ -310,11 +286,13 @@ export type ApiResponseApiAgentSession = {
     data?: {
         agentId: string;
         appId?: string | null;
+        archivedAt?: string | null;
         context: unknown;
         createdAt: string;
         id: string;
         isPinned: boolean;
         modelProvider?: string | null;
+        parentSessionId?: string | null;
         source: string;
         status: string;
         title: string;
@@ -410,7 +388,6 @@ export type ApiResponseApiAutomationFlowDetail = {
 export type ApiResponseApiAutomationFlowList = {
     code: number;
     data?: {
-        draft: number;
         enabled: number;
         items: Array<ApiAutomationFlow>;
         paused: number;
@@ -577,7 +554,10 @@ export type ApiResponseCommunicationMessageResponse = {
         emailSubject?: string | null;
         fileIds: Array<string>;
         id: string;
+        localId?: string | null;
+        mailboxSeq?: number | null;
         messageType: string;
+        payload: unknown;
         replacesMessageId?: string | null;
         senderUserId: string;
         sequence: number;
@@ -931,21 +911,6 @@ export type ApiResponseValue = {
     time: string;
 };
 
-export type ApiResponseVecAgentKnowledgeBaseDefinition = {
-    code: number;
-    data?: Array<{
-        content?: string;
-        description?: string;
-        enabled: boolean;
-        id: string;
-        name: string;
-        retrievalMode: string;
-        sourceIds?: Array<string>;
-    }>;
-    message: string;
-    time: string;
-};
-
 export type ApiResponseVecAgentPluginDefinition = {
     code: number;
     data?: Array<{
@@ -989,11 +954,13 @@ export type ApiResponseVecApiAgentSession = {
     data?: Array<{
         agentId: string;
         appId?: string | null;
+        archivedAt?: string | null;
         context: unknown;
         createdAt: string;
         id: string;
         isPinned: boolean;
         modelProvider?: string | null;
+        parentSessionId?: string | null;
         source: string;
         status: string;
         title: string;
@@ -1290,7 +1257,7 @@ export type ApiSchemaPayload = {
 
 export type AutomationFlowType = 'trigger' | 'process';
 
-export type AutomationStatus = 'enabled' | 'paused' | 'draft';
+export type AutomationStatus = 'enabled' | 'paused';
 
 export type AutomationTriggerEvent = 'before_create' | 'after_create' | 'before_update' | 'after_update' | 'before_delete' | 'after_delete' | 'form_submit';
 
@@ -1349,7 +1316,10 @@ export type CommunicationMessageResponse = {
     emailSubject?: string | null;
     fileIds: Array<string>;
     id: string;
+    localId?: string | null;
+    mailboxSeq?: number | null;
     messageType: string;
+    payload: unknown;
     replacesMessageId?: string | null;
     senderUserId: string;
     sequence: number;
@@ -1555,15 +1525,6 @@ export type InitializeLocalCredentialsResponse = {
     skipped: Array<InitializeLocalCredentialSkip>;
 };
 
-export type KnowledgeBaseRequest = {
-    content?: string;
-    description: string;
-    enabled: boolean;
-    name: string;
-    retrievalMode: string;
-    sourceIds: Array<string>;
-};
-
 export type LocalLoginRequest = {
     password: string;
     username: string;
@@ -1646,7 +1607,6 @@ export type PlatformAiEmployeeSkill = {
     description: string;
     id: string;
     instructions: string;
-    isSystem?: boolean;
     packageName?: string;
     packagePath?: string;
     /**
@@ -1655,7 +1615,6 @@ export type PlatformAiEmployeeSkill = {
      * employee-scoped plugin registry without reading the database directly.
      */
     pluginManifestJson?: string;
-    requiresConfirmation?: boolean;
     source?: string;
     title: string;
     version?: string;
@@ -1772,6 +1731,7 @@ export type ReeditCommunicationMessageRequest = {
     content: string;
     emailSubject?: string | null;
     fileIds?: Array<string>;
+    localId?: string | null;
 };
 
 export type ReorderNavigationRequest = {
@@ -1814,6 +1774,7 @@ export type SendCommunicationMessageRequest = {
     content?: string;
     emailSubject?: string | null;
     fileIds?: Array<string>;
+    localId?: string | null;
     messageType: string;
 };
 
@@ -1997,70 +1958,20 @@ export type WorkflowCommentRequest = {
     content: string;
 };
 
+export type WorkflowExecutionRequest = {
+    comment?: string | null;
+    data: unknown;
+};
+
 export type WorkflowPauseRequest = {
     reason?: string | null;
 };
 
 export type WorkflowTaskActionRequest = {
+    cardVersion?: number | null;
     comment?: string | null;
+    messageId?: string | null;
 };
-
-export type ListKnowledgeBasesData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/agent/knowledge-bases';
-};
-
-export type ListKnowledgeBasesResponses = {
-    200: ApiResponseVecAgentKnowledgeBaseDefinition;
-};
-
-export type ListKnowledgeBasesResponse = ListKnowledgeBasesResponses[keyof ListKnowledgeBasesResponses];
-
-export type CreateKnowledgeBaseData = {
-    body: KnowledgeBaseRequest;
-    path?: never;
-    query?: never;
-    url: '/api/agent/knowledge-bases';
-};
-
-export type CreateKnowledgeBaseResponses = {
-    200: ApiResponseAgentKnowledgeBaseDefinition;
-};
-
-export type CreateKnowledgeBaseResponse = CreateKnowledgeBaseResponses[keyof CreateKnowledgeBaseResponses];
-
-export type DeleteKnowledgeBaseData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/agent/knowledge-bases/{id}';
-};
-
-export type DeleteKnowledgeBaseResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
-};
-
-export type UpdateKnowledgeBaseData = {
-    body: KnowledgeBaseRequest;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/agent/knowledge-bases/{id}';
-};
-
-export type UpdateKnowledgeBaseResponses = {
-    200: ApiResponseAgentKnowledgeBaseDefinition;
-};
-
-export type UpdateKnowledgeBaseResponse = UpdateKnowledgeBaseResponses[keyof UpdateKnowledgeBaseResponses];
 
 export type ListPluginsData = {
     body?: never;
@@ -3989,6 +3900,21 @@ export type ApproveWorkflowTaskResponses = {
 };
 
 export type ApproveWorkflowTaskResponse = ApproveWorkflowTaskResponses[keyof ApproveWorkflowTaskResponses];
+
+export type CompleteWorkflowExecutionData = {
+    body: WorkflowExecutionRequest;
+    path: {
+        taskUuid: string;
+    };
+    query?: never;
+    url: '/api/workflow/tasks/{taskUuid}/complete';
+};
+
+export type CompleteWorkflowExecutionResponses = {
+    200: ApiResponseValue;
+};
+
+export type CompleteWorkflowExecutionResponse = CompleteWorkflowExecutionResponses[keyof CompleteWorkflowExecutionResponses];
 
 export type RejectWorkflowTaskData = {
     body: WorkflowTaskActionRequest;

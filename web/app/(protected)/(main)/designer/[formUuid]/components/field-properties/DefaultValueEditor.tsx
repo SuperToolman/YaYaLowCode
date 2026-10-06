@@ -326,7 +326,7 @@ function FormulaDefaultValueEditor({
   );
 }
 
-function FormulaEditorModal({
+export function FormulaEditorModal({
   currentFieldId,
   fieldLabel,
   fields,

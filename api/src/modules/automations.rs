@@ -8,6 +8,7 @@ use crate::platform::prelude::*;
 use crate::platform::records::{RecordRepository, StoredFormRecord};
 use crate::shared::*;
 use axum::http::StatusCode;
+use sea_orm::{QuerySelect, sea_query::LockType};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
 
@@ -24,7 +25,6 @@ pub(crate) async fn list_automation_flows(
     let total = flows.len() as i64;
     let enabled = flows.iter().filter(|flow| flow.status == "enabled").count() as i64;
     let paused = flows.iter().filter(|flow| flow.status == "paused").count() as i64;
-    let draft = flows.iter().filter(|flow| flow.status == "draft").count() as i64;
 
     Ok(Json(success_response(
         "获取集成自动化列表成功",
@@ -33,7 +33,6 @@ pub(crate) async fn list_automation_flows(
             total,
             enabled,
             paused,
-            draft,
         },
     )))
 }
@@ -102,7 +101,7 @@ pub(crate) async fn create_automation_definition(
         name: Set(normalize_optional_text(payload.name)
             .unwrap_or_else(|| format!("未命名自动化 {}", now.format("%m%d%H%M")))),
         description: Set(normalize_optional_text(payload.description)),
-        status: Set("draft".to_string()),
+        status: Set("paused".to_string()),
         current_version: Set(1),
         flow_type: Set("trigger".to_string()),
         trigger_form_uuid: Set(trigger_form_uuid),
@@ -148,7 +147,7 @@ where
         app_route_app_id: Set(app_id.to_string()),
         name: Set(format!("{}审批流程", form_name)),
         description: Set(Some("流程表单内置审批流程".to_string())),
-        status: Set("draft".to_string()),
+        status: Set("paused".to_string()),
         current_version: Set(1),
         flow_type: Set("process".to_string()),
         trigger_form_uuid: Set(Some(form_uuid.to_string())),
@@ -233,46 +232,40 @@ pub(crate) async fn list_automation_flow_versions(
 pub(crate) async fn restore_automation_flow_version(
     State(state): State<AppState>,
     Path((flow_uuid, version)): Path<(String, i32)>,
-    payload: Option<Json<RestoreVersionRequest>>,
+    _payload: Option<Json<RestoreVersionRequest>>,
 ) -> Result<Json<ApiResponse<ApiAutomationFlowDetail>>, AppError> {
+    let txn = state.db.begin().await?;
     let flow = AutomationFlowEntity::find()
         .filter(automation_flow_entity::Column::FlowUuid.eq(flow_uuid))
-        .one(&state.db)
+        .lock(LockType::Update)
+        .one(&txn)
         .await?
         .ok_or_else(|| AppError::NotFound("automation flow not found".to_string()))?;
     let snapshot = AutomationFlowVersionEntity::find()
         .filter(automation_flow_version_entity::Column::FlowId.eq(flow.id))
         .filter(automation_flow_version_entity::Column::Version.eq(version))
-        .one(&state.db)
+        .one(&txn)
         .await?
         .ok_or_else(|| AppError::NotFound("automation flow version not found".to_string()))?;
 
     let now = Utc::now();
-    let next_version = flow.current_version + 1;
-    let change_summary = payload
-        .and_then(|Json(value)| value.change_log)
-        .unwrap_or_else(|| format!("restored from v{version}"));
 
     let mut active_model: automation_flow_entity::ActiveModel = flow.into();
     active_model.name = Set(snapshot.name.clone());
     active_model.description = Set(snapshot.description.clone());
-    active_model.status = Set(snapshot.status.clone());
-    active_model.current_version = Set(next_version);
+    active_model.current_version = Set(version);
     active_model.trigger_form_uuid = Set(snapshot.trigger_form_uuid.clone());
     active_model.trigger_event = Set(snapshot.trigger_event.clone());
     active_model.trigger_config = Set(snapshot.trigger_config.clone());
     active_model.nodes_json = Set(snapshot.nodes_json.clone());
     active_model.edges_json = Set(snapshot.edges_json.clone());
-    active_model.updated_by = Set(snapshot.created_by.clone());
     active_model.updated_at = Set(now.into());
 
-    let txn = state.db.begin().await?;
     let updated = active_model.update(&txn).await?;
-    create_automation_snapshot(&txn, &updated, Some(change_summary)).await?;
     txn.commit().await?;
 
     Ok(Json(success_response(
-        "恢复自动化版本成功",
+        "切换自动化版本成功",
         ApiAutomationFlowDetail::from(updated),
     )))
 }
@@ -371,24 +364,23 @@ pub(crate) async fn update_automation_definition(
     flow_uuid: &str,
     payload: UpdateAutomationFlowRequest,
 ) -> Result<automation_flow_entity::Model, AppError> {
+    let txn = state.db.begin().await?;
     let flow = AutomationFlowEntity::find()
         .filter(automation_flow_entity::Column::FlowUuid.eq(flow_uuid.to_string()))
-        .one(&state.db)
+        .lock(LockType::Update)
+        .one(&txn)
         .await?
         .ok_or_else(|| AppError::NotFound("automation flow not found".to_string()))?;
     let now = Utc::now();
     let app_id = flow.app_route_app_id.clone();
     let is_process_flow = flow.flow_type == "process";
     let process_form_uuid = flow.trigger_form_uuid.clone();
-    let flow_id = flow.id;
-    let next_version = flow.current_version + 1;
     let existing_nodes_json = flow.nodes_json.clone();
     let existing_edges_json = flow.edges_json.clone();
     let existing_trigger_events =
         automation_trigger_events(&flow.trigger_event, &flow.trigger_config);
     let existing_trigger_event = flow.trigger_event.clone();
-    let mut active_model: automation_flow_entity::ActiveModel = flow.into();
-    let mut should_create_version = false;
+    let mut active_model: automation_flow_entity::ActiveModel = flow.clone().into();
     let mut next_nodes_json = existing_nodes_json.clone();
     let mut next_edges_json = existing_edges_json.clone();
     let mut nodes_updated = false;
@@ -398,18 +390,15 @@ pub(crate) async fn update_automation_definition(
         let next_name = name.trim();
         if !next_name.is_empty() {
             active_model.name = Set(next_name.to_string());
-            should_create_version = true;
         }
     }
 
     if payload.description.is_some() {
         active_model.description = Set(normalize_optional_text(payload.description));
-        should_create_version = true;
     }
 
     if let Some(status) = payload.status {
         active_model.status = Set(normalize_automation_status(&status)?);
-        should_create_version = true;
     }
 
     let requested_trigger_events = payload
@@ -430,7 +419,6 @@ pub(crate) async fn update_automation_definition(
             .first()
             .cloned()
             .unwrap_or_else(|| existing_trigger_event.clone()));
-        should_create_version = true;
     } else if let Some(trigger_event) = requested_trigger_event.as_ref() {
         if is_process_flow && trigger_event != "form_submit" {
             return Err(AppError::BadRequest(
@@ -438,7 +426,6 @@ pub(crate) async fn update_automation_definition(
             ));
         }
         active_model.trigger_event = Set(trigger_event.clone());
-        should_create_version = true;
     }
 
     if payload.trigger_form_uuid.is_some() {
@@ -452,12 +439,10 @@ pub(crate) async fn update_automation_definition(
             ensure_form_belongs_to_app(&state.db, &app_id, form_uuid).await?;
         }
         active_model.trigger_form_uuid = Set(trigger_form_uuid);
-        should_create_version = true;
     }
 
     if let Some(trigger_config) = payload.trigger_config {
         active_model.trigger_config = Set(normalize_json_object(trigger_config));
-        should_create_version = true;
     }
 
     let effective_trigger_events = if let Some(trigger_events) = requested_trigger_events.as_ref() {
@@ -488,17 +473,17 @@ pub(crate) async fn update_automation_definition(
 
     if let Some(nodes) = payload.nodes {
         next_nodes_json = normalize_automation_nodes(nodes)?;
-        should_create_version = true;
         nodes_updated = true;
     }
 
     if let Some(edges) = payload.edges {
         next_edges_json = normalize_automation_edges(edges)?;
-        should_create_version = true;
         edges_updated = true;
     }
 
-    validate_automation_graph(&next_nodes_json, &next_edges_json)?;
+    if nodes_updated || edges_updated {
+        validate_automation_graph(&next_nodes_json, &next_edges_json)?;
+    }
     validate_flow_node_kinds(
         &next_nodes_json,
         if is_process_flow {
@@ -522,26 +507,51 @@ pub(crate) async fn update_automation_definition(
     }
 
     active_model.updated_at = Set(now.into());
+    let should_create_version = automation_schema(&flow)
+        != json!({
+            "name": active_model.name.clone().unwrap(),
+            "description": active_model.description.clone().unwrap(),
+            "triggerFormUuid": active_model.trigger_form_uuid.clone().unwrap(),
+            "triggerEvent": active_model.trigger_event.clone().unwrap(),
+            "triggerConfig": active_model.trigger_config.clone().unwrap(),
+            "nodes": active_model.nodes_json.clone().unwrap(),
+            "edges": active_model.edges_json.clone().unwrap(),
+        });
     if should_create_version {
+        // The selected version can be older than the newest historical version.
+        let latest = AutomationFlowVersionEntity::find()
+            .filter(automation_flow_version_entity::Column::FlowId.eq(flow.id))
+            .order_by_desc(automation_flow_version_entity::Column::Version)
+            .one(&txn)
+            .await?;
+        let next_version = latest.map_or(flow.current_version, |v| v.version)
+            .checked_add(1)
+            .ok_or_else(|| AppError::BadRequest("automation version limit reached".to_string()))?;
         active_model.current_version = Set(next_version);
     }
-    let txn = state.db.begin().await?;
     let updated = active_model.update(&txn).await?;
     if should_create_version {
         create_automation_snapshot(&txn, &updated, payload.change_summary).await?;
-    } else {
-        sync_automation_graph_tables(
-            &txn,
-            flow_id,
-            updated.current_version,
-            &updated.nodes_json,
-            &updated.edges_json,
-        )
-        .await?;
     }
     txn.commit().await?;
 
     Ok(updated)
+}
+
+#[cfg(test)]
+#[path = "automations/version_tests.rs"]
+mod version_tests;
+
+fn automation_schema(flow: &automation_flow_entity::Model) -> Value {
+    json!({
+        "name": flow.name,
+        "description": flow.description,
+        "triggerFormUuid": flow.trigger_form_uuid,
+        "triggerEvent": flow.trigger_event,
+        "triggerConfig": flow.trigger_config,
+        "nodes": flow.nodes_json,
+        "edges": flow.edges_json,
+    })
 }
 
 pub(crate) async fn delete_automation_flow(
@@ -1383,6 +1393,7 @@ fn normalize_automation_node_config(kind: &str, config: Value) -> Result<Value, 
         "approval" | "executor" => json!({
             "assigneeIds": object.get("assigneeIds").or_else(|| object.get("assignees")).and_then(Value::as_array).map(|items| items.iter().filter_map(Value::as_str).map(str::trim).filter(|value| !value.is_empty()).collect::<Vec<_>>()).unwrap_or_default(),
             "approvalMode": if object.get("approvalMode").and_then(Value::as_str) == Some("any") { "any" } else { "all" },
+            "requiredFieldIds": object.get("requiredFieldIds").and_then(Value::as_array).map(|items| items.iter().filter_map(Value::as_str).map(str::trim).filter(|value| !value.is_empty()).collect::<Vec<_>>()).unwrap_or_default(),
         }),
         "copy" => json!({
             "recipientIds": object.get("recipientIds").or_else(|| object.get("recipients")).and_then(Value::as_array).map(|items| items.iter().filter_map(Value::as_str).map(str::trim).filter(|value| !value.is_empty()).collect::<Vec<_>>()).unwrap_or_default(),
@@ -2303,7 +2314,19 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{flow_matches_changed_fields, validate_public_http_address};
+    use super::{
+        flow_matches_changed_fields, normalize_automation_node_config, validate_public_http_address,
+    };
+
+    #[test]
+    fn executor_keeps_stage_required_fields() {
+        let config = normalize_automation_node_config(
+            "executor",
+            json!({"assigneeIds": ["user-1"], "requiredFieldIds": ["second", "  "]}),
+        )
+        .unwrap();
+        assert_eq!(config["requiredFieldIds"], json!(["second"]));
+    }
 
     #[test]
     fn blocks_private_http_targets() {

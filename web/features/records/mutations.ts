@@ -17,6 +17,13 @@ export function runWorkflowRecordAction(
   );
 }
 
+export function completeWorkflowExecutionTask(taskUuid: string, changes: Record<string, unknown>) {
+  return requestApi<unknown>(
+    `/api/workflow/tasks/${encodeURIComponent(taskUuid)}/complete`,
+    jsonRequest({ data: changes }, { method: "POST" }),
+  );
+}
+
 export function useRecordMutations(formUuid: string) {
   const queryClient = useQueryClient();
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["form-records", formUuid] });

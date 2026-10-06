@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { notify } from "@lib/notify";
 import { Button, Input, Modal, Switch, Tabs } from "@heroui/react";
 import { Field } from "../components/Field";
 import { SettingsContentCard } from "../components/SettingsContentCard";
@@ -65,7 +66,6 @@ export default function IdentitySourceSettingsPage() {
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [syncConfigOpen, setSyncConfigOpen] = useState(false);
   const [clearingDingTalk, setClearingDingTalk] = useState(false);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   const canFetchAccessToken = [
@@ -110,15 +110,13 @@ export default function IdentitySourceSettingsPage() {
 
   async function saveSettings() {
     setSaving(true);
-    setMessage("");
     setError("");
     try {
       const payload = await saveIdentitySettings<IdentitySourceSettings>(form);
       setForm(payload);
-      setMessage("身份源配置已保存并立即生效，无需重启服务。");
       return true;
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "保存身份源配置失败");
+      notify.error("保存身份源配置失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
       return false;
     } finally {
       setSaving(false);
@@ -127,7 +125,6 @@ export default function IdentitySourceSettingsPage() {
 
   async function fetchAccessToken() {
     setFetchingToken(true);
-    setMessage("");
     setError("");
     try {
       const saved = await saveSettings();
@@ -145,13 +142,11 @@ export default function IdentitySourceSettingsPage() {
           accessTokenExpiresAt: payload.expiresAt,
         },
       }));
-      setMessage(
-        `AccessToken 已获取并保存，有效期至 ${new Date(payload.expiresAt).toLocaleString("zh-CN")}`,
-      );
+      notify.success("AccessToken 已获取并保存", {
+        description: `有效期至 ${new Date(payload.expiresAt).toLocaleString("zh-CN")}`,
+      });
     } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : "获取 AccessToken 失败",
-      );
+      notify.error("获取 AccessToken 失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
     } finally {
       setFetchingToken(false);
     }
@@ -159,7 +154,6 @@ export default function IdentitySourceSettingsPage() {
 
   async function syncDingTalk(): Promise<boolean> {
     setSyncingDingTalk(true);
-    setMessage("");
     setError("");
     try {
       const saved = await saveSettings();
@@ -182,12 +176,12 @@ export default function IdentitySourceSettingsPage() {
         roleBindings: number;
         synchronizedAt: string;
       }>();
-      setMessage(
-        `钉钉同步完成：部门 ${departmentPayload.total} 个（新增 ${departmentPayload.created} 个，更新 ${departmentPayload.updated} 个），用户 ${userPayload.total} 人（新增 ${userPayload.created} 人，更新 ${userPayload.updated} 人），角色 ${userPayload.roles} 个。`,
-      );
+      notify.success("钉钉同步完成", {
+        description: `部门 ${departmentPayload.total} 个，用户 ${userPayload.total} 人，角色 ${userPayload.roles} 个。`,
+      });
       return true;
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "同步钉钉数据失败");
+      notify.error("同步钉钉数据失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
       return false;
     } finally {
       setSyncingDingTalk(false);
@@ -196,7 +190,6 @@ export default function IdentitySourceSettingsPage() {
 
   async function clearDingTalkData() {
     setClearingDingTalk(true);
-    setMessage("");
     setError("");
     try {
       const payload = await clearDingTalkIdentityData<{
@@ -206,11 +199,11 @@ export default function IdentitySourceSettingsPage() {
         deletedRolePermissions: number;
       }>();
       setClearConfirmOpen(false);
-      setMessage(
-        `已清除钉钉数据：${payload.deletedOrganizationUnits} 个组织、${payload.deletedUsers} 个用户、${payload.deletedRoles} 个角色，以及 ${payload.deletedRolePermissions} 项角色权限配置。`,
-      );
+      notify.success("钉钉数据已清除", {
+        description: `${payload.deletedOrganizationUnits} 个组织、${payload.deletedUsers} 个用户、${payload.deletedRoles} 个角色、${payload.deletedRolePermissions} 项权限配置。`,
+      });
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "清除钉钉数据失败");
+      notify.error("清除钉钉数据失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
     } finally {
       setClearingDingTalk(false);
     }
@@ -279,11 +272,6 @@ export default function IdentitySourceSettingsPage() {
           <ProviderPlaceholder name="飞书" />
         </Tabs.Panel>
       </Tabs>
-      {message ? (
-        <p className="mt-5 rounded-xl bg-[var(--color-info-soft)] px-4 py-3 text-sm text-[var(--color-info)]">
-          {message}
-        </p>
-      ) : null}
       {error ? (
         <p className="mt-5 rounded-xl bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
           {error}

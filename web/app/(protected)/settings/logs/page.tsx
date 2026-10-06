@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { notify } from "@lib/notify";
 import { ArrowRotateRight, Eye, TrashBin } from "@gravity-ui/icons";
 import { Alert, Button, Chip, EmptyState, Modal, Table, Tabs, Tooltip } from "@heroui/react";
 import { SettingsContentCard } from "../components/SettingsContentCard";
@@ -98,9 +99,10 @@ export default function PlatformLogsPage() {
     try {
       await clearPlatformLogs<{ clearedSizeBytes: number }>();
       setClearConfirmOpen(false);
+      notify.success("平台日志已清空");
       await loadLogs(level);
     } catch (clearError) {
-      setError(clearError instanceof Error ? clearError.message : "无法清空平台日志");
+      notify.error("无法清空平台日志", { description: clearError instanceof Error ? clearError.message : "请稍后重试" });
     } finally {
       setClearing(false);
     }

@@ -18,6 +18,7 @@ export function FlowNodeConfig({
   node,
   onBasicChange,
   onProcessMemberIdsChange,
+  onProcessRequiredFieldIdsChange,
   triggerEvents,
   triggerFieldOptions,
 }: {
@@ -25,10 +26,31 @@ export function FlowNodeConfig({
   node: WorkflowNode;
   onBasicChange: (key: string, value: string) => void;
   onProcessMemberIdsChange: (key: "assigneeIds" | "recipientIds", ids: string[]) => void;
+  onProcessRequiredFieldIdsChange: (ids: string[]) => void;
   triggerEvents: TriggerEvent[];
   triggerFieldOptions: FormFieldDescriptor[];
 }) {
-if (node.data.kind === "approval" || node.data.kind === "executor") {
+if (node.data.kind === "executor") {
+  const config = normalizeAssigneeConfig(node.data.config);
+  const fields = triggerFieldOptions.filter((field) => !["description", "button", "html", "tsx", "groupContainer"].includes(field.type));
+  return (
+    <PropertyPanelSection title="执行配置" description="执行人补填表单后完成任务并流转。">
+      <PropertyField label="执行人">
+        <Select selectionMode="multiple" value={config.assigneeIds ?? []} onChange={(keys) => onProcessMemberIdsChange("assigneeIds", keys.map(String))} shouldCloseOnSelect={false}>
+          <Select.Trigger><Select.Value /></Select.Trigger>
+          <Select.Popover><ListBox>{members.map((member) => <ListBox.Item key={member.id} id={member.id} textValue={member.displayName}>{member.displayName}</ListBox.Item>)}</ListBox></Select.Popover>
+        </Select>
+      </PropertyField>
+      <PropertyField label="完成本节点前必填">
+        <Select selectionMode="multiple" value={config.requiredFieldIds ?? []} onChange={(keys) => onProcessRequiredFieldIdsChange(keys.map(String))} shouldCloseOnSelect={false}>
+          <Select.Trigger><Select.Value /></Select.Trigger>
+          <Select.Popover><ListBox>{fields.map((field) => <ListBox.Item key={field.id} id={field.id} textValue={field.label}>{field.label}</ListBox.Item>)}</ListBox></Select.Popover>
+        </Select>
+      </PropertyField>
+    </PropertyPanelSection>
+  );
+}
+if (node.data.kind === "approval") {
   const config = normalizeAssigneeConfig(node.data.config);
   return <PropertyPanelSection title={node.data.kind === "approval" ? "审批配置" : "执行配置"} description="选择系统成员，配置保存为稳定用户 ID。"><PropertyField label={node.data.kind === "approval" ? "审批人" : "执行人"}><Select selectionMode="multiple" value={config.assigneeIds ?? config.assignees ?? []} onChange={(keys) => onProcessMemberIdsChange("assigneeIds", keys.map(String))} shouldCloseOnSelect={false}><Select.Trigger><Select.Value /></Select.Trigger><Select.Popover><ListBox>{members.map((member) => <ListBox.Item key={member.id} id={member.id} textValue={member.displayName}>{member.displayName}</ListBox.Item>)}</ListBox></Select.Popover></Select></PropertyField>{node.data.kind === "approval" ? <PropertyField label="多人处理"><Select selectedKey={config.approvalMode ?? "all"} onSelectionChange={(key) => onBasicChange("approvalMode", String(key))}><Select.Trigger><Select.Value /></Select.Trigger><Select.Popover><ListBox><ListBox.Item id="all" textValue="全部同意">全部同意</ListBox.Item><ListBox.Item id="any" textValue="任一同意">任一同意</ListBox.Item></ListBox></Select.Popover></Select></PropertyField> : null}</PropertyPanelSection>;
 }

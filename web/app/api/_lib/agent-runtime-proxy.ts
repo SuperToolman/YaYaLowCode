@@ -57,10 +57,12 @@ export async function proxyAgentRuntimeStream(request: Request, path: string) {
     return NextResponse.json({ code: 503, data: null, message: "agent runtime is not configured" }, { status: 503 });
   }
   try {
+    const hasBody = request.method !== "GET" && request.method !== "HEAD" && request.method !== "DELETE";
+    const body = hasBody ? await request.text() : undefined;
     const response = await fetch(`${agentRuntimeBaseUrl}${path}`, {
       method: request.method,
       headers: { "content-type": "application/json", accept: "text/event-stream", ...authorizationHeaders(request), ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie") as string } : {}) },
-      body: await request.text(),
+      body: body?.trim() ? body : undefined,
       cache: "no-store",
     });
     if (!response.body) return NextResponse.json({ code: 502, data: null, message: "empty agent stream" }, { status: 502 });

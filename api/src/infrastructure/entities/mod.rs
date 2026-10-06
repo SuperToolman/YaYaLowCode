@@ -1,12 +1,11 @@
 //! SeaORM persistence mappings. Business modules depend on these mappings only at their
 //! repository boundary.
 
-pub mod agent_config_profile_entity;
-pub mod agent_definition_entity;
 pub mod agent_model_provider_entity;
 pub mod agent_provider_model_entity;
 pub mod agent_resource_entity;
 pub mod agent_session_entity;
+pub mod agent_session_runtime_summary_entity;
 pub mod agent_transaction_entity;
 pub mod app_entity;
 pub mod app_navigation_entity;
@@ -19,6 +18,10 @@ pub mod automation_run_node_entity;
 pub mod communication_conversation_entity;
 pub mod communication_conversation_member_entity;
 pub mod communication_message_entity;
+pub mod im_conversation_entity;
+pub mod im_conversation_member_entity;
+pub mod im_message_entity;
+pub mod im_message_attachment_entity;
 pub mod form_definition_entity;
 pub mod form_detail_definition_entity;
 pub mod form_schema_entity;

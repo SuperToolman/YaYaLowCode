@@ -9,7 +9,10 @@ import {
   type BranchRuleOperator,
   type SourceFieldChoice,
 } from "../automation-editor-model";
-import { IconActionButton, SourceFieldSelect } from "./AutomationNodeConfigPrimitives";
+import {
+  IconActionButton,
+  SourceFieldSelect,
+} from "./AutomationNodeConfigPrimitives";
 import styles from "./AutomationConditionRuleEditor.module.css";
 
 export function BranchRulesEditor({
@@ -23,8 +26,16 @@ export function BranchRulesEditor({
   allowFieldValues?: boolean;
   rules: BranchRule[];
   sourceFieldChoices: SourceFieldChoice[];
-  onAddConditionRule: (parentId?: string, siblingOfId?: string, count?: number) => void;
-  onConditionRuleChange: (ruleId: string, key: keyof BranchRule, value: string) => void;
+  onAddConditionRule: (
+    parentId?: string,
+    siblingOfId?: string,
+    count?: number,
+  ) => void;
+  onConditionRuleChange: (
+    ruleId: string,
+    key: keyof BranchRule,
+    value: string,
+  ) => void;
   onRemoveConditionRule: (ruleId: string) => void;
 }) {
   const rootRules = rules.filter((rule) => !rule.parentId);
@@ -33,8 +44,12 @@ export function BranchRulesEditor({
     <div className="space-y-2 border-t border-[var(--color-border)] pt-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-xs font-semibold text-[var(--color-text-primary)]">条件规则</div>
-          <div className="mt-0.5 text-[11px] text-[var(--color-text-secondary)]">同级条件通过“且 / 或”连接；子级条件作为当前条件的嵌套条件组。</div>
+          <div className="text-xs font-semibold text-[var(--color-text-primary)]">
+            条件规则
+          </div>
+          <div className="mt-0.5 text-[11px] text-[var(--color-text-secondary)]">
+            同级条件通过“且 / 或”连接；子级条件作为当前条件的嵌套条件组。
+          </div>
         </div>
         <Button
           variant="secondary"
@@ -45,7 +60,9 @@ export function BranchRulesEditor({
           添加根条件
         </Button>
       </div>
-      <div className={`${styles["automation-condition-rules__horizontal-scroll"]} w-full max-w-full overflow-x-auto pb-2`}>
+      <div
+        className={`${styles["automation-condition-rules__horizontal-scroll"]} w-full max-w-full overflow-x-auto pb-2`}
+      >
         <div className="w-max min-w-[590px] space-y-4">
           {rootRules.length > 0 ? (
             <div
@@ -69,13 +86,19 @@ export function BranchRulesEditor({
                   }
                 >
                   <Select.Trigger>
-                    <Select.Value>{rootRules[0]?.logicalOperator === "or" ? "或" : "且"}</Select.Value>
+                    <Select.Value>
+                      {rootRules[0]?.logicalOperator === "or" ? "或" : "且"}
+                    </Select.Value>
                     <Select.Indicator />
                   </Select.Trigger>
                   <Select.Popover>
                     <ListBox>
-                      <ListBox.Item id="and" textValue="且">且</ListBox.Item>
-                      <ListBox.Item id="or" textValue="或">或</ListBox.Item>
+                      <ListBox.Item id="and" textValue="且">
+                        且
+                      </ListBox.Item>
+                      <ListBox.Item id="or" textValue="或">
+                        或
+                      </ListBox.Item>
                     </ListBox>
                   </Select.Popover>
                 </Select>
@@ -126,11 +149,21 @@ function BranchRuleItem({
   rule: BranchRule;
   rules: BranchRule[];
   sourceFieldChoices: SourceFieldChoice[];
-  onAddConditionRule: (parentId?: string, siblingOfId?: string, count?: number) => void;
-  onConditionRuleChange: (ruleId: string, key: keyof BranchRule, value: string) => void;
+  onAddConditionRule: (
+    parentId?: string,
+    siblingOfId?: string,
+    count?: number,
+  ) => void;
+  onConditionRuleChange: (
+    ruleId: string,
+    key: keyof BranchRule,
+    value: string,
+  ) => void;
   onRemoveConditionRule: (ruleId: string) => void;
 }) {
-  const selectedField = sourceFieldChoices.find((item) => item.key === rule.fieldKey);
+  const selectedField = sourceFieldChoices.find(
+    (item) => item.key === rule.fieldKey,
+  );
   const childRules = rules.filter((item) => item.parentId === rule.id);
   // Structural groups are invisible in the editor and must not make a level
   // eligible for nesting on their own.
@@ -143,22 +176,21 @@ function BranchRuleItem({
 
   return (
     <div className="w-max min-w-full space-y-4">
-      {!rule.isGroup ? <div className="relative flex w-max min-w-full items-center gap-2">
-        <div className="grid min-w-[520px] shrink-0 grid-cols-[140px_80px_72px_130px_28px_28px] items-center gap-2">
+      {!rule.isGroup ? (
+        <div className="relative flex w-max min-w-full items-center gap-2">
+          <div className="grid min-w-[520px] shrink-0 grid-cols-[140px_80px_72px_130px_28px_28px] items-center gap-2">
             <SourceFieldSelect
               options={sourceFieldChoices}
               value={rule.fieldKey ?? ""}
-              onChange={(value) => onConditionRuleChange(rule.id, "fieldKey", value)}
+              onChange={(value) =>
+                onConditionRuleChange(rule.id, "fieldKey", value)
+              }
             />
             <Select
               aria-label="条件运算符"
               selectedKey={operator}
               onSelectionChange={(key) =>
-                onConditionRuleChange(
-                  rule.id,
-                  "operator",
-                  String(key ?? "eq"),
-                )
+                onConditionRuleChange(rule.id, "operator", String(key ?? "eq"))
               }
             >
               <Select.Trigger>
@@ -168,7 +200,11 @@ function BranchRuleItem({
               <Select.Popover>
                 <ListBox>
                   {branchOperators.map((item) => (
-                    <ListBox.Item key={item.id} id={item.id} textValue={item.label}>
+                    <ListBox.Item
+                      key={item.id}
+                      id={item.id}
+                      textValue={item.label}
+                    >
                       {item.label}
                     </ListBox.Item>
                   ))}
@@ -177,8 +213,12 @@ function BranchRuleItem({
             </Select>
             {hideValue ? (
               <>
-                <div className="flex h-9 items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2 text-xs text-[var(--color-text-secondary)]">无需值</div>
-                <div className="flex h-9 items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2 text-xs text-[var(--color-text-secondary)]">—</div>
+                <div className="flex h-9 items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2 text-xs text-[var(--color-text-secondary)]">
+                  无需值
+                </div>
+                <div className="flex h-9 items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2 text-xs text-[var(--color-text-secondary)]">
+                  —
+                </div>
               </>
             ) : (
               <>
@@ -187,17 +227,27 @@ function BranchRuleItem({
                     aria-label="条件值类型"
                     selectedKey={valueType}
                     onSelectionChange={(key) =>
-                      onConditionRuleChange(rule.id, "valueType", String(key ?? "value"))
+                      onConditionRuleChange(
+                        rule.id,
+                        "valueType",
+                        String(key ?? "value"),
+                      )
                     }
                   >
                     <Select.Trigger>
-                      <Select.Value>{valueType === "field" ? "字段" : "值"}</Select.Value>
+                      <Select.Value>
+                        {valueType === "field" ? "字段" : "值"}
+                      </Select.Value>
                       <Select.Indicator />
                     </Select.Trigger>
                     <Select.Popover>
                       <ListBox>
-                        <ListBox.Item id="value" textValue="值">值</ListBox.Item>
-                        <ListBox.Item id="field" textValue="字段">字段</ListBox.Item>
+                        <ListBox.Item id="value" textValue="值">
+                          值
+                        </ListBox.Item>
+                        <ListBox.Item id="field" textValue="字段">
+                          字段
+                        </ListBox.Item>
                       </ListBox>
                     </Select.Popover>
                   </Select>
@@ -219,7 +269,9 @@ function BranchRuleItem({
                     field={selectedField}
                     operator={operator}
                     value={rule.rawValue ?? ""}
-                    onChange={(value) => onConditionRuleChange(rule.id, "rawValue", value)}
+                    onChange={(value) =>
+                      onConditionRuleChange(rule.id, "rawValue", value)
+                    }
                   />
                 )}
               </>
@@ -260,11 +312,14 @@ function BranchRuleItem({
                 </Dropdown.Menu>
               </Dropdown.Popover>
             </Dropdown>
+          </div>
         </div>
-      </div> : null}
+      ) : null}
 
       {childRules.length > 0 ? (
-        <div className={`relative ml-8 w-max min-w-[568px] rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 py-4 pl-8 ${rule.isGroup ? "mt-0" : "mt-5"}`}>
+        <div
+          className={`relative ml-8 w-max min-w-[568px] rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 py-4 pl-8 ${rule.isGroup ? "mt-0" : "mt-5"}`}
+        >
           <Select
             aria-label="父级与子级条件组的逻辑关系"
             className="absolute -left-8 top-1/2 z-10 w-16 -translate-y-1/2"
@@ -285,8 +340,12 @@ function BranchRuleItem({
             </Select.Trigger>
             <Select.Popover>
               <ListBox>
-                <ListBox.Item id="and" textValue="且">且</ListBox.Item>
-                <ListBox.Item id="or" textValue="或">或</ListBox.Item>
+                <ListBox.Item id="and" textValue="且">
+                  且
+                </ListBox.Item>
+                <ListBox.Item id="or" textValue="或">
+                  或
+                </ListBox.Item>
               </ListBox>
             </Select.Popover>
           </Select>
@@ -322,7 +381,10 @@ function BranchRuleValueInput({
   value: string;
   onChange: (value: string) => void;
 }) {
-  if (field?.options.length && (field.fieldType === "select" || field.fieldType === "radio")) {
+  if (
+    field?.options.length &&
+    (field.fieldType === "select" || field.fieldType === "radio")
+  ) {
     if (operator === "inAny" || operator === "notInAny") {
       return (
         <Input
@@ -339,11 +401,14 @@ function BranchRuleValueInput({
       <Select
         aria-label="匹配值"
         selectedKey={value || "none"}
-        onSelectionChange={(key) => onChange(String(key === "none" ? "" : key ?? ""))}
+        onSelectionChange={(key) =>
+          onChange(String(key === "none" ? "" : (key ?? "")))
+        }
       >
         <Select.Trigger>
           <Select.Value>
-            {field.options.find((option) => option.value === value)?.label ?? "选择匹配值"}
+            {field.options.find((option) => option.value === value)?.label ??
+              "选择匹配值"}
           </Select.Value>
           <Select.Indicator />
         </Select.Trigger>
@@ -353,7 +418,11 @@ function BranchRuleValueInput({
               未配置
             </ListBox.Item>
             {field.options.map((option) => (
-              <ListBox.Item key={option.value} id={option.value} textValue={option.label}>
+              <ListBox.Item
+                key={option.value}
+                id={option.value}
+                textValue={option.label}
+              >
                 {option.label}
               </ListBox.Item>
             ))}
@@ -363,11 +432,18 @@ function BranchRuleValueInput({
     );
   }
 
-  if (field?.fieldType === "multiLineText" || field?.fieldType === "description") {
+  if (
+    field?.fieldType === "multiLineText" ||
+    field?.fieldType === "description"
+  ) {
     return (
       <textarea
         className="min-h-[84px] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition-colors focus:border-[var(--color-primary)]"
-        placeholder={operator === "inAny" || operator === "notInAny" ? "多个值用逗号分隔" : "输入匹配值"}
+        placeholder={
+          operator === "inAny" || operator === "notInAny"
+            ? "多个值用逗号分隔"
+            : "输入匹配值"
+        }
         value={value}
         onChange={(event) => onChange(event.currentTarget.value)}
       />
@@ -378,7 +454,11 @@ function BranchRuleValueInput({
     <Input
       aria-label="匹配值"
       className="h-9 min-h-9"
-      placeholder={operator === "inAny" || operator === "notInAny" ? "多个值用逗号分隔" : "输入匹配值"}
+      placeholder={
+        operator === "inAny" || operator === "notInAny"
+          ? "多个值用逗号分隔"
+          : "输入匹配值"
+      }
       value={value}
       onChange={(event) => onChange(event.currentTarget.value)}
     />

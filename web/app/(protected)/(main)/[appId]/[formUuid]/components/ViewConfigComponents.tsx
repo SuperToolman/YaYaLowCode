@@ -25,6 +25,7 @@ export type ViewFieldOption = {
   label: string;
   type: string;
   typeLabel: string;
+  linkedFieldIds?: string[];
 };
 
 function getFieldTypeTagClass(type: string) {
@@ -78,7 +79,7 @@ export function ReorderableViewFieldRow({
     transform,
     isDragging,
   } = useDraggable({ id });
-  const { setNodeRef: setDropRef, isOver } = useDroppable({ id });
+  const { setNodeRef: setDropRef } = useDroppable({ id });
   const setNodeRef = useCallback(
     (node: HTMLDivElement | null) => {
       setDragRef(node);
@@ -88,9 +89,13 @@ export function ReorderableViewFieldRow({
   );
   const sortableFieldIds = config.sortableFieldIds ?? config.columnOrder ?? [];
   const frozenFieldIds = config.frozenFieldIds ?? [];
+  const linkedFieldIds = field.linkedFieldIds ?? [field.id];
+  const fieldIdLabel = linkedFieldIds.join("、");
   const configuredWidth = config.columnWidths?.[field.id];
-  const isFrozen = frozenFieldIds.includes(field.id);
-  const isVisible = config.visibleFieldIds.includes(field.id);
+  const isFrozen = linkedFieldIds.every((id) => frozenFieldIds.includes(id));
+  const isVisible = linkedFieldIds.every((id) =>
+    config.visibleFieldIds.includes(id),
+  );
   return (
     <Table.Row
       ref={setNodeRef}
@@ -100,14 +105,17 @@ export function ReorderableViewFieldRow({
           ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
           : undefined
       }
-      className={
-        isDragging ? "opacity-60" : isOver ? "bg-accent-soft" : undefined
-      }
+      className={`${styles["records-view-config__row"]} ${
+        isDragging ? "opacity-60" : ""
+      }`}
     >
       <Table.Cell>
         <span className="block truncate text-sm">{field.label}</span>
-        <span className="mt-0.5 block truncate font-mono text-xs text-muted">
-          {field.id}
+        <span
+          className="mt-0.5 block truncate font-mono text-xs text-muted"
+          title={fieldIdLabel}
+        >
+          {fieldIdLabel}
         </span>
       </Table.Cell>
       <Table.Cell>
@@ -123,14 +131,18 @@ export function ReorderableViewFieldRow({
             onConfigChange({
               ...config,
               visibleFieldIds: selected
-                ? [...new Set([...config.visibleFieldIds, field.id])]
-                : config.visibleFieldIds.filter((id) => id !== field.id),
+                ? [...new Set([...config.visibleFieldIds, ...linkedFieldIds])]
+                : config.visibleFieldIds.filter(
+                    (id) => !linkedFieldIds.includes(id),
+                  ),
               sortableFieldIds: selected
                 ? sortableFieldIds
-                : sortableFieldIds.filter((id) => id !== field.id),
+                : sortableFieldIds.filter(
+                    (id) => !linkedFieldIds.includes(id),
+                  ),
               frozenFieldIds: selected
                 ? frozenFieldIds
-                : frozenFieldIds.filter((id) => id !== field.id),
+                : frozenFieldIds.filter((id) => !linkedFieldIds.includes(id)),
             })
           }
         >
@@ -210,8 +222,8 @@ export function ReorderableViewFieldRow({
               onConfigChange({
                 ...config,
                 frozenFieldIds: isFrozen
-                  ? frozenFieldIds.filter((id) => id !== field.id)
-                  : [...frozenFieldIds, field.id],
+                  ? frozenFieldIds.filter((id) => !linkedFieldIds.includes(id))
+                  : [...new Set([...frozenFieldIds, ...linkedFieldIds])],
               })
             }
           >

@@ -1,4 +1,5 @@
 "use client";
+import { notify } from "@lib/notify";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -10,7 +11,6 @@ import {
   Table,
   Tabs,
   TextArea,
-  toast,
 } from "@heroui/react";
 import {
   approveWorkflowTask,
@@ -66,7 +66,7 @@ export function SystemPageView({
   const [query, setQuery] = useState("");
   const [action, setAction] = useState<{
     item: Item;
-    kind: "approve" | "reject" | "complete";
+    kind: "approve" | "reject";
   } | null>(null);
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -111,7 +111,7 @@ export function SystemPageView({
   async function submitAction() {
     if (!action) return;
     if (action.kind === "reject" && !comment.trim())
-      return toast.danger("请填写拒绝意见");
+      return notify.error("请填写拒绝意见");
     setSubmitting(true);
     try {
       const request = {
@@ -130,11 +130,11 @@ export function SystemPageView({
           (result.data as ApiEnvelope<unknown> | undefined)?.message ||
             "任务处理失败",
         );
-      toast.success("任务已处理");
+      notify.success("任务已处理");
       setAction(null);
       await load(scope);
     } catch (cause) {
-      toast.danger("任务处理失败", {
+      notify.error("任务处理失败", {
         description: cause instanceof Error ? cause.message : "请稍后重试",
       });
     } finally {
@@ -164,14 +164,16 @@ export function SystemPageView({
               onSelectionChange={(key) => setScope(String(key) as Scope)}
               aria-label="任务分类"
             >
-              <Tabs.List>
-                {tabs.map((tab) => (
-                  <Tabs.Tab key={tab.id} id={tab.id}>
-                    {tab.label}
-                    <Tabs.Indicator />
-                  </Tabs.Tab>
-                ))}
-              </Tabs.List>
+              <Tabs.ListContainer>
+                <Tabs.List>
+                  {tabs.map((tab) => (
+                    <Tabs.Tab key={tab.id} id={tab.id}>
+                      {tab.label}
+                      <Tabs.Indicator />
+                    </Tabs.Tab>
+                  ))}
+                </Tabs.List>
+              </Tabs.ListContainer>
             </Tabs>
           </nav>
         </header>
@@ -203,7 +205,7 @@ export function SystemPageView({
                             className={styles.taskButton}
                             onPress={() =>
                               router.push(
-                                `/${row.appId || appId}/${row.formUuid}?record=${encodeURIComponent(row.recordUuid)}`,
+                                `/${row.appId || appId}/${row.formUuid}?record=${encodeURIComponent(row.recordUuid)}${scope === "todo" && row.taskType === "execution" ? `&task=${encodeURIComponent(row.id)}` : ""}`,
                               )
                             }
                           >
@@ -253,6 +255,10 @@ export function SystemPageView({
                                 拒绝
                               </Button>
                             </div>
+                          ) : scope === "todo" && row.status === "pending" && row.taskType === "execution" ? (
+                            <Button size="sm" onPress={() => router.push(`/${row.appId || appId}/${row.formUuid}?record=${encodeURIComponent(row.recordUuid)}&task=${encodeURIComponent(row.id)}`)}>
+                              填写并完成
+                            </Button>
                           ) : (
                             <Chip
                               size="sm"

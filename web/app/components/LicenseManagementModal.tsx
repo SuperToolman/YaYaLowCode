@@ -1,7 +1,8 @@
 "use client";
+import { notify } from "@lib/notify";
 
 import { useEffect, useState } from "react";
-import { Button, Input, Modal, TextArea, toast } from "@heroui/react";
+import { Button, Input, Modal, TextArea } from "@heroui/react";
 import { useAuth } from "./AuthProvider";
 import { activateLicense, applyLatestLicense, getLicenseStatus } from "@features/settings/api";
 
@@ -47,7 +48,7 @@ export function LicenseManagementModal({ open, blocked, updateOnly = false, onOp
       setStatus(payload);
       setLicenseCenterUrl(payload.licenseCenterUrl ?? "");
     } catch (error) {
-      toast.danger("无法读取许可证状态", { description: error instanceof Error ? error.message : "请检查 API 服务。" });
+      notify.error("无法读取许可证状态", { description: error instanceof Error ? error.message : "请检查 API 服务。" });
     } finally {
       setLoading(false);
     }
@@ -66,11 +67,11 @@ export function LicenseManagementModal({ open, blocked, updateOnly = false, onOp
       const payload = await activateLicense<LicenseStatus>({ licenseCenterUrl: licenseCenterUrl.trim(), license: license.trim() });
       setStatus(payload);
       setLicense("");
-      toast.success("平台许可证已更新");
+      notify.success("平台许可证已更新");
       window.dispatchEvent(new Event("yaya-license-updated"));
       onOpenChange(false);
     } catch (error) {
-      toast.danger("无法更新许可证", { description: error instanceof Error ? error.message : "请检查许可中心地址和许可证。" });
+      notify.error("无法更新许可证", { description: error instanceof Error ? error.message : "请检查许可中心地址和许可证。" });
     } finally {
       setSaving(false);
     }
@@ -81,11 +82,11 @@ export function LicenseManagementModal({ open, blocked, updateOnly = false, onOp
     try {
       const payload = await applyLatestLicense<LicenseStatus>();
       setStatus(payload);
-      toast.success("平台签名已更新", { description: "新购买的模块和 AI 员工权益已经生效。" });
+      notify.success("平台签名已更新", { description: "新购买的模块和 AI 员工权益已经生效。" });
       window.dispatchEvent(new Event("yaya-license-updated"));
       onOpenChange(false);
     } catch (error) {
-      toast.danger("无法更新平台签名", { description: error instanceof Error ? error.message : "请稍后重试。" });
+      notify.error("无法更新平台签名", { description: error instanceof Error ? error.message : "请稍后重试。" });
     } finally {
       setSaving(false);
     }

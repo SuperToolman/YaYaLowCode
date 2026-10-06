@@ -184,6 +184,8 @@ export type RuntimePageProps = {
 export type RuntimeFormSchema = {
   formUuid: string;
   formName?: string;
+  manifestVersion?: number;
+  agentContractVersion?: number;
   columns: number;
   rows: number;
   fields: RuntimeSchemaField[];

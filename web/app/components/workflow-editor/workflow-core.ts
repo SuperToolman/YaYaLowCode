@@ -21,7 +21,9 @@ export type WorkflowNodeDefinition<Kind extends string> = {
   description: string;
   group: string;
   isRoot?: boolean;
-  validateConfig?: (config: unknown) => readonly WorkflowNodeConfigValidationIssue[];
+  validateConfig?: (
+    config: unknown,
+  ) => readonly WorkflowNodeConfigValidationIssue[];
 };
 
 export type WorkflowNodeConfigValidationIssue = {
@@ -31,15 +33,20 @@ export type WorkflowNodeConfigValidationIssue = {
 };
 
 export type WorkflowGraphValidationIssue = {
-  code: "missing-root" | "duplicate-root" | "dangling-edge" | "cycle" | "isolated-node";
+  code:
+    | "missing-root"
+    | "duplicate-root"
+    | "dangling-edge"
+    | "cycle"
+    | "isolated-node";
   edgeId?: string;
   nodeId?: string;
   severity: "error" | "warning";
 };
 
-export function createWorkflowNodeRegistry<const Definition extends WorkflowNodeDefinition<string>>(
-  definitions: readonly Definition[],
-) {
+export function createWorkflowNodeRegistry<
+  const Definition extends WorkflowNodeDefinition<string>,
+>(definitions: readonly Definition[]) {
   return definitions;
 }
 
@@ -96,7 +103,9 @@ export function validateWorkflowGraph<
 ): WorkflowGraphValidationIssue[] {
   const issues: WorkflowGraphValidationIssue[] = [];
   const nodeIds = new Set(nodes.map((node) => node.id));
-  const rootNodes = nodes.filter((node) => options.rootKinds.includes(node.data.kind));
+  const rootNodes = nodes.filter((node) =>
+    options.rootKinds.includes(node.data.kind),
+  );
 
   if (rootNodes.length === 0) {
     issues.push({ code: "missing-root", severity: "error" });
@@ -108,7 +117,11 @@ export function validateWorkflowGraph<
   const connectedNodeIds = new Set<string>();
   for (const edge of edges) {
     if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
-      issues.push({ code: "dangling-edge", edgeId: edge.id, severity: "error" });
+      issues.push({
+        code: "dangling-edge",
+        edgeId: edge.id,
+        severity: "error",
+      });
       continue;
     }
     connectedNodeIds.add(edge.source);
@@ -140,8 +153,15 @@ export function validateWorkflowGraph<
   }
 
   for (const node of nodes) {
-    if (!options.rootKinds.includes(node.data.kind) && !connectedNodeIds.has(node.id)) {
-      issues.push({ code: "isolated-node", nodeId: node.id, severity: "warning" });
+    if (
+      !options.rootKinds.includes(node.data.kind) &&
+      !connectedNodeIds.has(node.id)
+    ) {
+      issues.push({
+        code: "isolated-node",
+        nodeId: node.id,
+        severity: "warning",
+      });
     }
   }
 
@@ -157,8 +177,10 @@ export function validateWorkflowNodeConfigs<Kind extends string, Config>(
   );
 
   return nodes.flatMap((node) =>
-    (definitionsByKind.get(node.data.kind)?.validateConfig?.(node.data.config) ?? []).map(
-      (issue) => ({ ...issue, nodeId: node.id }),
-    ),
+    (
+      definitionsByKind
+        .get(node.data.kind)
+        ?.validateConfig?.(node.data.config) ?? []
+    ).map((issue) => ({ ...issue, nodeId: node.id })),
   );
 }

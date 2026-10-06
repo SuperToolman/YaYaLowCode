@@ -17,8 +17,6 @@ import {
 } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { Card } from "@heroui/react";
-import { TrashBin as TrashIcon } from "@gravity-ui/icons";
-import { RichTextEditor } from "@shared/ui/RichTextEditor";
 import {
   CELL_MIN_HEIGHT,
   COLUMN_COUNT,
@@ -40,6 +38,10 @@ import type {
   PlacedField,
   ResizeDirection,
 } from "../designer-types";
+import {
+  RuntimeFieldNode,
+  type RuntimeSchemaField,
+} from "@features/form-runtime/components/RuntimeFormRenderer";
 import { MySurface } from "@shared/ui/MySurface";
 import runtimeStyles from "@features/form-runtime/components/RuntimeFormControls.module.css";
 
@@ -319,6 +321,14 @@ function PlacedDesignerField({
     },
   });
   const resizeCapabilities = getComponentResizeCapabilities(field.type);
+  const runtimeFields = allFields as unknown as RuntimeSchemaField[];
+  const childFieldsByParent = new Map<string, RuntimeSchemaField[]>();
+  for (const candidate of runtimeFields) {
+    if (!candidate.parentGroupId) continue;
+    const children = childFieldsByParent.get(candidate.parentGroupId) ?? [];
+    children.push(candidate);
+    childFieldsByParent.set(candidate.parentGroupId, children);
+  }
 
   return (
     <div
@@ -329,7 +339,7 @@ function PlacedDesignerField({
       onDoubleClick={(event) => event.stopPropagation()}
       data-designer-field-id={field.id}
       className={[
-        "relative flex cursor-grab p-0 transition active:cursor-grabbing",
+        "relative flex cursor-grab select-none p-0 transition active:cursor-grabbing [&_input]:caret-transparent [&_input]:select-none [&_textarea]:caret-transparent [&_textarea]:select-none",
         isDragging ? "opacity-35" : "",
         field.rowSpan > 1 ||
         field.type === "multiLineText" ||
@@ -382,175 +392,22 @@ function PlacedDesignerField({
         </>
       ) : null}
       {field.type === "subform" ? (
-        <SubformFieldCanvas
-          allFields={allFields}
-          field={field}
-          selectedFieldId={selectedFieldId}
-          onFieldSelect={onSelect}
-          onResizePointerDown={onResizePointerDown}
-          onResizePointerMove={onResizePointerMove}
-          onResizePointerUp={onResizePointerUp}
-        />
+        <SubformFieldCanvas allFields={allFields} field={field} selectedFieldId={selectedFieldId} onFieldSelect={onSelect} onResizePointerDown={onResizePointerDown} onResizePointerMove={onResizePointerMove} onResizePointerUp={onResizePointerUp} />
       ) : field.type === "groupContainer" ? (
-        <GroupedFieldCanvas
-          allFields={allFields}
-          field={field}
-          isSelected={isSelected}
-          selectedFieldId={selectedFieldId}
-          onFieldSelect={onSelect}
-          onResizePointerDown={onResizePointerDown}
-          onResizePointerMove={onResizePointerMove}
-          onResizePointerUp={onResizePointerUp}
-        />
+        <GroupedFieldCanvas allFields={allFields} field={field} isSelected={isSelected} selectedFieldId={selectedFieldId} onFieldSelect={onSelect} onResizePointerDown={onResizePointerDown} onResizePointerMove={onResizePointerMove} onResizePointerUp={onResizePointerUp} />
       ) : (
-        <DesignerFieldPreview field={field} />
+        <RuntimeFieldNode
+          childFieldsByParent={childFieldsByParent}
+          definedAssets={[]}
+          definedComponentWritableFieldIds={[]}
+          field={field as unknown as RuntimeSchemaField}
+          mode="designer"
+          value={undefined}
+          values={{}}
+        />
       )}
     </div>
   );
-}
-
-function DesignerFieldPreview({ field }: { field: PlacedField }) {
-  const props = field.props;
-  const placeholder = props.placeholder || "请输入";
-  const options = props.options ?? [];
-  const description = props.description?.trim();
-  const isChoice = field.type === "radio" || field.type === "checkbox";
-  const isMultiline = field.type === "multiLineText";
-  const isUpload = field.type === "attachment" || field.type === "imageUpload";
-  const titlePosition = getCanvasTitlePosition(field.type, props.titlePosition);
-  const isLeftTitle = titlePosition === "left";
-  const showTitle = titlePosition !== "inside";
-  const isInsideTitle = titlePosition === "inside";
-
-  if (field.type === "description") {
-    return (
-      <p className="w-full rounded-md bg-[var(--color-bg-subtle)] px-3 py-2 text-sm text-[var(--color-text-secondary)]">
-        {String(props.defaultValue || placeholder)}
-      </p>
-    );
-  }
-
-  if (field.type === "richText") {
-    return (
-      <div className="flex h-full min-h-0 w-full flex-col">
-        <div className="mb-2 text-sm font-medium text-[var(--color-text-primary)]">
-          {field.label}
-        </div>
-        <div className="min-h-0 flex-1">
-          <RichTextEditor
-            ariaLabel={field.label}
-            preview
-            readOnly
-            value={{ type: "doc", content: [] }}
-            onChange={() => undefined}
-          />
-        </div>
-        {description ? (
-          <div className="mt-2 text-xs text-[var(--color-text-secondary)]">
-            {description}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-
-  if (field.type === "button") {
-    return (
-      <div className="inline-flex h-9 items-center rounded-md bg-[var(--color-primary)] px-3 text-sm font-medium text-[var(--color-text-on-primary)]">
-        {props.buttonText || field.label}
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className={
-        isLeftTitle
-          ? "grid h-full w-full min-w-0 grid-cols-[minmax(0,max-content)_minmax(0,1fr)] items-start gap-3 pt-7"
-          : isMultiline
-            ? "flex h-full min-h-0 w-full min-w-0 flex-col"
-            : "w-full min-w-0"
-      }
-    >
-      {showTitle ? (
-        <div
-          className={
-            isLeftTitle
-              ? "max-w-24 truncate pt-2 text-sm font-medium text-[var(--color-text-primary)]"
-              : "mb-2 text-sm font-medium text-[var(--color-text-primary)]"
-          }
-        >
-          {field.label}
-        </div>
-      ) : null}
-      <div
-        className={
-          isMultiline
-            ? "flex h-full min-h-0 w-full min-w-0 flex-1 flex-col gap-2"
-            : "w-full min-w-0 space-y-2"
-        }
-      >
-        {isChoice ? (
-          <div className="flex flex-wrap gap-3 text-sm text-[var(--color-text-secondary)]">
-            {(options.length > 0
-              ? options
-              : [{ label: "选项一" }, { label: "选项二" }]
-            ).map((option, index) => (
-              <span
-                key={`${option.label}-${index}`}
-                className="inline-flex items-center gap-1.5"
-              >
-                <span
-                  className={
-                    field.type === "radio"
-                      ? "h-3.5 w-3.5 rounded-full border border-[var(--color-border)]"
-                      : "h-3.5 w-3.5 rounded border border-[var(--color-border)]"
-                  }
-                />
-                {option.label}
-              </span>
-            ))}
-          </div>
-        ) : isUpload ? (
-          <div className="flex min-h-12 items-center justify-center rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-xs text-[var(--color-text-secondary)]">
-            {props.buttonText ||
-              (field.type === "imageUpload" ? "上传图片" : "上传附件")}
-          </div>
-        ) : (
-          <div
-            className={[
-              "flex w-full items-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 text-sm text-[var(--color-text-disabled)]",
-              isMultiline ? "min-h-0 flex-1 items-start py-2" : "h-10",
-              isInsideTitle ? "gap-2" : "",
-            ].join(" ")}
-          >
-            {isInsideTitle ? (
-              <span className="max-w-24 shrink-0 truncate font-medium text-[var(--color-text-primary)]">
-                {field.label}
-              </span>
-            ) : null}
-            <span className="min-w-0 truncate">{placeholder}</span>
-          </div>
-        )}
-        {description ? (
-          <div className="text-xs text-[var(--color-text-secondary)]">
-            {description}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function getCanvasTitlePosition(
-  type: PlacedField["type"],
-  position: PlacedField["props"]["titlePosition"],
-) {
-  if (position === "inside" && type !== "singleLineText") {
-    return "top";
-  }
-
-  return position ?? "top";
 }
 
 function SubformFieldCanvas({
@@ -566,109 +423,33 @@ function SubformFieldCanvas({
   field: PlacedField;
   selectedFieldId: string | null;
   onFieldSelect: (event: MouseEvent<HTMLDivElement>, fieldId: string) => void;
-  onResizePointerDown: (
-    event: PointerEvent<HTMLButtonElement>,
-    field: PlacedField,
-    direction: ResizeDirection,
-  ) => void;
+  onResizePointerDown: (event: PointerEvent<HTMLButtonElement>, field: PlacedField, direction: ResizeDirection) => void;
   onResizePointerMove: (event: PointerEvent<HTMLButtonElement>) => void;
   onResizePointerUp: () => void;
 }) {
-  const childFields = getChildFields(allFields, field.id).sort(
-    (left, right) => left.column - right.column,
-  );
-  const occupiedColumnCount = childFields.reduce(
-    (maximum, child) => Math.max(maximum, child.column + child.colSpan),
-    0,
-  );
-  const columnCount = Math.max(1, occupiedColumnCount + 1);
-  const columns = Array.from({ length: columnCount }, (_, index) => ({
-    row: field.row,
-    column: index,
-  }));
-
+  const childFields = getChildFields(allFields, field.id).sort((left, right) => left.column - right.column);
+  const columnCount = Math.max(1, childFields.reduce((max, child) => Math.max(max, child.column + child.colSpan), 0) + 1);
   return (
-    <div className="flex w-full min-w-0 flex-col overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)]">
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2">
-        <div className="min-w-0 truncate text-sm font-semibold">
-          {field.label}
-        </div>
-        <span className="text-[10px] text-[var(--color-text-secondary)]">
-          {childFields.length} 个字段 · 可继续添加
-        </span>
+    <div className="flex w-full min-w-0 flex-col overflow-hidden">
+      <div className="flex items-center justify-between gap-3 px-3 py-2">
+        <div className="min-w-0 truncate">{field.label}</div>
+        <span>{childFields.length} 个字段</span>
       </div>
-      <div className="flex min-w-0">
-        <div className={`${runtimeStyles["form-runtime-controls__subform-horizontal-scroll"]} min-w-0 flex-1 overflow-x-auto`}>
-          <div
-            className="grid min-h-[68px] divide-x divide-[var(--color-border)]"
-            style={{
-              gridTemplateColumns: `repeat(${columnCount}, minmax(160px, 1fr))`,
-              minWidth: `${columnCount * 160}px`,
-            }}
-          >
-            {columns.map(({ row, column }) => {
-              const nestedField = getFieldAt(childFields, row, column);
-              const isCovered = isCellCovered(childFields, row, column);
-              if (!nestedField && isCovered) return null;
-              return (
-                <DesignerDropCell
-                  key={`${field.id}-${column}`}
-                  id={`subform-cell:${field.id}:${row}:${column}`}
-                  data={{ kind: "cell", row, column, parentGroupId: field.id }}
-                  allowInsertionZones={Boolean(nestedField)}
-                  allowRowInsertion={false}
-                  occupiedFieldId={nestedField?.id}
-                  showMatrix
-                  className={
-                    nestedField
-                      ? "min-w-0 bg-[var(--color-bg-surface)] p-1"
-                      : "min-w-0 bg-[var(--color-bg-subtle)] p-1"
-                  }
-                  style={{
-                    gridColumn: nestedField
-                      ? `${nestedField.column + 1} / span ${nestedField.colSpan}`
-                      : column + 1,
-                    gridRow: 1,
-                  }}
-                >
-                  {nestedField ? (
-                    <PlacedDesignerField
-                      allFields={allFields}
-                      field={nestedField}
-                      isSelected={selectedFieldId === nestedField.id}
-                      selectedFieldId={selectedFieldId}
-                      isTopAligned
-                      onResizePointerDown={onResizePointerDown}
-                      onResizePointerMove={onResizePointerMove}
-                      onResizePointerUp={onResizePointerUp}
-                      onSelect={onFieldSelect}
-                    />
-                  ) : (
-                    <div className="flex h-full min-h-[68px] items-center justify-center text-[10px] text-[var(--color-text-disabled)]">
-                      拖入字段
-                    </div>
-                  )}
-                </DesignerDropCell>
-              );
-            })}
-          </div>
-        </div>
-        <div className="relative z-20 flex w-20 shrink-0 flex-col items-center justify-center gap-2 border-l border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2 text-[10px] text-[var(--color-text-secondary)] shadow-[-6px_0_12px_-10px_rgba(15,23,42,0.7)]">
-          <span>操作</span>
-          {field.props.subformShowDeleteButton !== false ? (
-            <span
-              aria-label={field.props.subformDeleteButtonText ?? "删除"}
-              className="text-[var(--color-danger)]"
-              role="img"
-            >
-              <TrashIcon />
-            </span>
-          ) : null}
+      <div className={`${runtimeStyles["form-runtime-controls__subform-horizontal-scroll"]} min-w-0 flex-1 overflow-x-auto`}>
+        <div className="grid min-h-[68px]" style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(160px, 1fr))`, minWidth: `${columnCount * 160}px` }}>
+          {Array.from({ length: columnCount }, (_, column) => {
+            const nestedField = getFieldAt(childFields, field.row, column);
+            const isCovered = isCellCovered(childFields, field.row, column);
+            if (!nestedField && isCovered) return null;
+            return (
+              <DesignerDropCell key={`${field.id}-${column}`} id={`subform-cell:${field.id}:${field.row}:${column}`} data={{ kind: "cell", row: field.row, column, parentGroupId: field.id }} allowInsertionZones={Boolean(nestedField)} allowRowInsertion={false} occupiedFieldId={nestedField?.id} showMatrix className="min-w-0 p-1" style={{ gridColumn: nestedField ? `${nestedField.column + 1} / span ${nestedField.colSpan}` : column + 1, gridRow: 1 }}>
+                {nestedField ? <PlacedDesignerField allFields={allFields} field={nestedField} isSelected={selectedFieldId === nestedField.id} selectedFieldId={selectedFieldId} isTopAligned onResizePointerDown={onResizePointerDown} onResizePointerMove={onResizePointerMove} onResizePointerUp={onResizePointerUp} onSelect={onFieldSelect} /> : <div className="flex h-full min-h-[68px] items-center justify-center">拖入字段</div>}
+              </DesignerDropCell>
+            );
+          })}
         </div>
       </div>
-      <div className="flex justify-end border-t border-[var(--color-border)] px-3 py-2 text-[10px] text-[var(--color-text-secondary)]">
-        {field.props.subformAddButtonText ?? "新增一项"}
-      </div>
+      <div className="flex justify-end px-3 py-2">{field.props.subformAddButtonText ?? "新增一项"}</div>
     </div>
   );
 }
@@ -688,94 +469,20 @@ function GroupedFieldCanvas({
   isSelected: boolean;
   selectedFieldId: string | null;
   onFieldSelect: (event: MouseEvent<HTMLDivElement>, fieldId: string) => void;
-  onResizePointerDown: (
-    event: PointerEvent<HTMLButtonElement>,
-    field: PlacedField,
-    direction: ResizeDirection,
-  ) => void;
+  onResizePointerDown: (event: PointerEvent<HTMLButtonElement>, field: PlacedField, direction: ResizeDirection) => void;
   onResizePointerMove: (event: PointerEvent<HTMLButtonElement>) => void;
   onResizePointerUp: () => void;
 }) {
   const childFields = getChildFields(allFields, field.id);
-  const nestedCells = Array.from(
-    { length: field.rowSpan * field.colSpan },
-    (_, index) => ({
-      row: field.row + Math.floor(index / field.colSpan),
-      column: field.column + (index % field.colSpan),
-    }),
-  );
-
+  const nestedCells = Array.from({ length: field.rowSpan * field.colSpan }, (_, index) => ({ row: field.row + Math.floor(index / field.colSpan), column: field.column + index % field.colSpan }));
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-col rounded-lg bg-[var(--color-bg-subtle)] p-1">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="min-w-0 truncate text-sm font-semibold text-[var(--color-text-primary)]">
-          {field.label}
-        </div>
-        {isSelected ? (
-          <span className="rounded-full bg-[var(--color-primary-soft)] px-2 py-1 text-[11px] font-medium text-[var(--color-primary)]">
-            已选中
-          </span>
-        ) : null}
-      </div>
-
-      <MySurface
-        className="grid min-h-0 flex-1 content-start "
-        style={{
-          gridTemplateColumns: `repeat(${field.colSpan}, minmax(0, 1fr))`,
-          gridAutoRows: `minmax(${CELL_MIN_HEIGHT}px, auto)`,
-          columnGap: GRID_COLUMN_GAP,
-          rowGap: GRID_ROW_GAP,
-        }}
-      >
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col p-1">
+      <div className="mb-2 flex items-center justify-between gap-2"><div className="min-w-0 truncate">{field.label}</div>{isSelected ? <span>已选中</span> : null}</div>
+      <MySurface className="grid min-h-0 flex-1 content-start" style={{ gridTemplateColumns: `repeat(${field.colSpan}, minmax(0, 1fr))`, gridAutoRows: `minmax(${CELL_MIN_HEIGHT}px, auto)`, columnGap: GRID_COLUMN_GAP, rowGap: GRID_ROW_GAP }}>
         {nestedCells.map(({ row, column }) => {
           const nestedField = getFieldAt(childFields, row, column);
-          const isCovered = isCellCovered(childFields, row, column);
-
-          if (!nestedField && isCovered) {
-            return null;
-          }
-
-          return (
-            <DesignerDropCell
-              key={`${field.id}-${row}-${column}`}
-              id={`group-cell:${field.id}:${row}:${column}`}
-              data={{ kind: "cell", row, column, parentGroupId: field.id }}
-              allowInsertionZones={Boolean(nestedField)}
-              occupiedFieldId={nestedField?.id}
-              showMatrix
-              className={[
-                "rounded-md transition",
-                nestedField
-                  ? "bg-[var(--color-bg-surface)] p-1"
-                  : "border border-[var(--color-border)] bg-[var(--color-bg-subtle)]",
-              ].join(" ")}
-              style={{
-                gridColumn: nestedField
-                  ? `${nestedField.column - field.column + 1} / span ${nestedField.colSpan}`
-                  : column - field.column + 1,
-                gridRow: nestedField
-                  ? `${nestedField.row - field.row + 1} / span ${nestedField.rowSpan}`
-                  : row - field.row + 1,
-              }}
-            >
-              {nestedField ? (
-                <PlacedDesignerField
-                  allFields={allFields}
-                  field={nestedField}
-                  isSelected={selectedFieldId === nestedField.id}
-                  selectedFieldId={selectedFieldId}
-                  isTopAligned={
-                    isTopAlignedField(nestedField.type) ||
-                    nestedField.rowSpan > 1
-                  }
-                  onResizePointerDown={onResizePointerDown}
-                  onResizePointerMove={onResizePointerMove}
-                  onResizePointerUp={onResizePointerUp}
-                  onSelect={onFieldSelect}
-                />
-              ) : null}
-            </DesignerDropCell>
-          );
+          if (!nestedField && isCellCovered(childFields, row, column)) return null;
+          return <DesignerDropCell key={`${field.id}-${row}-${column}`} id={`group-cell:${field.id}:${row}:${column}`} data={{ kind: "cell", row, column, parentGroupId: field.id }} allowInsertionZones={Boolean(nestedField)} occupiedFieldId={nestedField?.id} showMatrix className="p-1" style={{ gridColumn: nestedField ? `${nestedField.column - field.column + 1} / span ${nestedField.colSpan}` : column - field.column + 1, gridRow: nestedField ? `${nestedField.row - field.row + 1} / span ${nestedField.rowSpan}` : row - field.row + 1 }}>{nestedField ? <PlacedDesignerField allFields={allFields} field={nestedField} isSelected={selectedFieldId === nestedField.id} selectedFieldId={selectedFieldId} isTopAligned={isTopAlignedField(nestedField.type) || nestedField.rowSpan > 1} onResizePointerDown={onResizePointerDown} onResizePointerMove={onResizePointerMove} onResizePointerUp={onResizePointerUp} onSelect={onFieldSelect} /> : null}</DesignerDropCell>;
         })}
       </MySurface>
     </div>

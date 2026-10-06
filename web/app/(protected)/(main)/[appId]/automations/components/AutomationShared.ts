@@ -18,18 +18,13 @@ export const statusMeta: Record<
   { label: string; className: string; dotClassName: string }
 > = {
   enabled: {
-    label: "已启用",
+    label: "已启动",
     className: "bg-[var(--color-success-soft)] text-[var(--color-success)]",
     dotClassName: "bg-[var(--color-success)]",
   },
   paused: {
-    label: "已停用",
+    label: "已停止",
     className: "bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]",
     dotClassName: "bg-[var(--color-text-disabled)]",
-  },
-  draft: {
-    label: "草稿",
-    className: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
-    dotClassName: "bg-[var(--color-warning)]",
   },
 };

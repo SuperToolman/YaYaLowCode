@@ -245,6 +245,16 @@ $env:YAYA_AGENT_WORKSPACE_ROOT = Join-Path $repositoryRoot "agent\runtime\worksp
 $env:YAYA_API_RUNTIME_ROOT = Join-Path $repositoryRoot "api\runtime"
 $env:YAYA_UPLOAD_DIR = Join-Path $repositoryRoot "api\runtime\uploads"
 $env:YAYA_LOG_DIRECTORY = Join-Path $repositoryRoot "api\runtime\logs"
+# The three local services share these derived endpoints. Keep them aligned
+# with the script parameters; the Host otherwise falls back to 8788/8789.
+$env:YAYA_PLATFORM_API_URL = "http://127.0.0.1:$BackendPort"
+$env:DSH_HOST = "127.0.0.1"
+$env:DSH_PORT = "$AgentPort"
+$env:AGENT_RUNTIME_BASE_URL = "http://127.0.0.1:$AgentPort"
+# Next Route Handlers can proxy SSE but cannot forward a WebSocket upgrade.
+# Local development therefore connects the browser mux directly to DSH; the
+# production reverse proxy should expose the same origin through this variable.
+$env:NEXT_PUBLIC_AGENT_RUNTIME_WS_URL = "ws://127.0.0.1:$AgentPort"
 if ([string]::IsNullOrWhiteSpace($LicensePublicKeyPath)) {
     $LicensePublicKeyPath = $defaultLicensePublicKeyPath
 }
@@ -254,6 +264,45 @@ if (-not (Test-PostgresReady)) {
     if (-not (Test-PostgresReady)) {
         throw "PostgreSQL is not accepting connections on 127.0.0.1:5432. The service and local pg_ctl fallback both failed."
     }
+}
+
+# A database connection can succeed while the application role still cannot
+# use the target schema. Check this before compiling/starting the API so the
+# failure explains the required administrator action instead of surfacing as a
+# generic migration error (3F000 / 42501).
+function Assert-DatabaseSchemaPrivileges {
+    param([hashtable]$Values)
+
+    if (-not $Values.ContainsKey("POSTGRES_USER") -or -not $Values.ContainsKey("POSTGRES_PASSWORD") -or -not $Values.ContainsKey("POSTGRES_DB")) {
+        return
+    }
+    $psqlCandidates = @(
+        (Join-Path ${env:ProgramFiles} "PostgreSQL\18\bin\psql.exe"),
+        "E:\Soft\PostgreSQL\18\bin\psql.exe",
+        "psql"
+    )
+    $psql = $psqlCandidates | Where-Object { $_ -eq "psql" -or (Test-Path -LiteralPath $_) } | Select-Object -First 1
+    if (-not $psql) {
+        return
+    }
+    $previousPassword = $env:PGPASSWORD
+    try {
+        $env:PGPASSWORD = $Values.POSTGRES_PASSWORD
+        $result = & $psql -h 127.0.0.1 -p 5432 -U $Values.POSTGRES_USER -d $Values.POSTGRES_DB -Atc "SELECT has_schema_privilege(current_user, 'public', 'USAGE')::text || '|' || has_schema_privilege(current_user, 'public', 'CREATE')::text;" 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            return
+        }
+        $privileges = (($result | Select-Object -Last 1) -as [string]).Trim()
+        if ($privileges -notmatch "^(t|true)\|(t|true)$") {
+            throw "Database role '$($Values.POSTGRES_USER)' can connect to '$($Values.POSTGRES_DB)' but lacks USAGE/CREATE on schema public. Ask a PostgreSQL administrator to run: GRANT USAGE, CREATE ON SCHEMA public TO $($Values.POSTGRES_USER);"
+        }
+    } finally {
+        if ($null -eq $previousPassword) { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue } else { $env:PGPASSWORD = $previousPassword }
+    }
+}
+
+if ($null -ne $developmentValues) {
+    Assert-DatabaseSchemaPrivileges -Values $developmentValues
 }
 Stop-RunningService -Port $BackendPort -ServiceName "backend"
 Stop-RunningService -Port $FrontendPort -ServiceName "frontend"
@@ -368,7 +417,6 @@ try {
     }
     Write-Host "YaYa Agent Host is ready: $agentHealthUrl"
 
-    $env:AGENT_RUNTIME_BASE_URL = "http://127.0.0.1:$AgentPort"
     Write-Host "Starting frontend: http://127.0.0.1:$FrontendPort"
     & pnpm --dir $webRoot dev --hostname 127.0.0.1 --port $FrontendPort
     if ($LASTEXITCODE -ne 0) {

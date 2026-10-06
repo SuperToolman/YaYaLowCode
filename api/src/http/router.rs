@@ -3,7 +3,7 @@ use axum::extract::{Request, State};
 use axum::http::{HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::Response;
-use axum::routing::{get, patch, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use serde::Serialize;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -206,15 +206,6 @@ pub(crate) fn build(state: AppState) -> Router {
             axum::routing::put(byom::update_model_route).delete(byom::delete_model_route),
         )
         .route(
-            "/api/agent/knowledge-bases",
-            get(agent_config::list_knowledge_bases).post(agent_config::create_knowledge_base),
-        )
-        .route(
-            "/api/agent/knowledge-bases/{id}",
-            axum::routing::put(agent_config::update_knowledge_base)
-                .delete(agent_config::delete_knowledge_base),
-        )
-        .route(
             "/api/settings/identity-source",
             get(settings::get_identity_source_settings)
                 .put(settings::update_identity_source_settings),
@@ -279,8 +270,20 @@ pub(crate) fn build(state: AppState) -> Router {
             get(agents::list_agent_sessions).post(agents::create_agent_session),
         )
         .route(
+            "/api/agent/workbench/sessions",
+            get(agents::list_agent_workbench_sessions),
+        )
+        .route(
+            "/api/agent/archived-sessions",
+            get(agents::list_archived_agent_sessions),
+        )
+        .route(
             "/api/agent/runtime-identity",
             get(authorization::get_runtime_identity),
+        )
+        .route(
+            "/api/agent/runtime/reconcile-session",
+            post(agents::reconcile_agent_session),
         )
         .route(
             "/api/agent/runtime-employees",
@@ -289,6 +292,14 @@ pub(crate) fn build(state: AppState) -> Router {
         .route(
             "/api/agent/sessions/{session_uuid}",
             axum::routing::patch(agents::update_agent_session).delete(agents::delete_agent_session),
+        )
+        .route(
+            "/api/agent/sessions/{session_uuid}/restore",
+            post(agents::restore_agent_session),
+        )
+        .route(
+            "/api/agent/sessions/{session_uuid}/purge",
+            axum::routing::delete(agents::purge_archived_agent_session),
         )
         .route(
             "/api/agent/sessions/{session_uuid}/files",
@@ -319,6 +330,10 @@ pub(crate) fn build(state: AppState) -> Router {
             get(agents::runtime_session_access),
         )
         .route(
+            "/api/agent/sessions/{session_uuid}/runtime-summary",
+            post(agents::upsert_agent_runtime_summary),
+        )
+        .route(
             "/api/agent/sessions/{session_uuid}/transactions",
             get(agents::list_transactions).post(agents::create_transaction),
         )
@@ -347,6 +362,46 @@ pub(crate) fn build(state: AppState) -> Router {
             get(app_market::get).post(app_market::submit),
         )
         .route("/api/market/applications", get(app_market::list_market))
+        .route(
+            "/api/market/applications/{product_id}",
+            get(app_market::get_market_application),
+        )
+        .route(
+            "/api/market/applications/{product_id}/installations",
+            post(app_market::install_market_application),
+        )
+        .route(
+            "/api/market/applications/{product_id}/preflight",
+            get(app_market::preflight_market_application),
+        )
+        .route(
+            "/api/market/installations",
+            get(app_market::list_market_installations),
+        )
+        .route(
+            "/api/market/installations/{installation_id}/preflight",
+            get(app_market::preflight_installation),
+        )
+        .route(
+            "/api/market/installations/{installation_id}/upgrade",
+            post(app_market::upgrade_installation),
+        )
+        .route(
+            "/api/market/installations/{installation_id}/rollback",
+            post(app_market::rollback_installation),
+        )
+        .route(
+            "/api/market/installations/{installation_id}",
+            delete(app_market::archive_installation),
+        )
+        .route(
+            "/api/market/installations/{installation_id}/restore",
+            post(app_market::restore_installation),
+        )
+        .route(
+            "/api/market/installations/{installation_id}/purge",
+            delete(app_market::purge_installation),
+        )
         .route(
             "/api/market/applications/sync",
             post(app_market::sync_approved),
@@ -449,6 +504,10 @@ pub(crate) fn build(state: AppState) -> Router {
         .route(
             "/api/workflow/tasks/{task_uuid}/approve",
             post(workflows::approve_workflow_task),
+        )
+        .route(
+            "/api/workflow/tasks/{task_uuid}/complete",
+            post(workflows::complete_workflow_execution),
         )
         .route("/api/workflow/tasks", get(workflows::list_workflow_tasks))
         .route(
@@ -662,8 +721,7 @@ fn cache_category(path: &str) -> Option<(&'static str, u64)> {
             || path.starts_with("/api/agent/profiles")
             || path.starts_with("/api/agent/agents")
             || path.starts_with("/api/agent/plugins")
-            || path.starts_with("/api/agent/skills")
-            || path.starts_with("/api/agent/knowledge-bases") =>
+            || path.starts_with("/api/agent/skills") =>
         {
             Some(("agent-config", 300))
         }

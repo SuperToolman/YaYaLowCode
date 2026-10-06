@@ -1,0 +1,14 @@
+{
+  "version": "0.1.0-rc.8",
+  "rpc": {
+    "request": { "type": "client-request", "rpcId": "fixture-rpc", "method": "session.history", "payload": { "sessionId": "fixture-session", "maxMessages": 40 } },
+    "response": { "type": "server-response", "rpcId": "fixture-rpc", "result": { "ok": true, "value": { "events": [] } } }
+  },
+  "mux": [
+    { "type": "session/subscribed", "sessionId": "fixture-session", "generation": "g1", "lastSeq": 4 },
+    { "type": "session/event", "sessionId": "fixture-session", "event": { "type": "turn/start", "seq": 5, "time": 0, "data": {} } },
+    { "type": "session/queue", "sessionId": "fixture-session", "items": [] },
+    { "type": "approval/requested", "sessionId": "fixture-session", "items": [{ "id": "approval-1" }] },
+    { "type": "subagent/progress", "sessionId": "fixture-session", "items": [{ "id": "subagent-1", "status": "running" }] }
+  ]
+}

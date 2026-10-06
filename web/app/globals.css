@@ -119,6 +119,18 @@ button.button--icon-only.button--sm,
 button.button--icon-only.button--lg {
   border-radius: var(--radius, 0.5rem) !important;
 }
+
+/* ButtonGroup owns the radii between its direct buttons. The platform-wide
+   button radius above must not split a group into individually rounded items. */
+.button-group > .button:not(:first-child) {
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+}
+
+.button-group > .button:not(:last-child) {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
 .surface--transparent { border: 1px solid var(--border) !important; background: transparent !important; }
 html[data-surface-variant="secondary"] .surface--default { background: var(--surface-secondary) !important; color: var(--surface-secondary-foreground) !important; }
 html[data-surface-variant="tertiary"] .surface--default { background: var(--surface-tertiary) !important; color: var(--surface-tertiary-foreground) !important; }

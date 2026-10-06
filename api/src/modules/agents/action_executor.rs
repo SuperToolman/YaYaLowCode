@@ -1,5 +1,63 @@
 use super::*;
 
+fn patch_path(path: &str) -> Result<Vec<String>, AppError> {
+    if !path.starts_with('/') {
+        return Err(AppError::BadRequest("patch path must be a JSON pointer".to_string()));
+    }
+    Ok(path[1..]
+        .split('/')
+        .map(|part| part.replace("~1", "/").replace("~0", "~"))
+        .collect())
+}
+
+fn apply_design_patch(target: &mut Value, operations: &[Value]) -> Result<(), AppError> {
+    for operation in operations {
+        let op = operation.get("op").and_then(Value::as_str).unwrap_or_default();
+        let path = operation
+            .get("path")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AppError::BadRequest("patch operation path is required".to_string()))?;
+        let parts = patch_path(path)?;
+        if parts.is_empty() {
+            return Err(AppError::BadRequest("root patch is not supported".to_string()));
+        }
+        let (parents, key) = parts.split_at(parts.len() - 1);
+        let mut cursor = &mut *target;
+        for part in parents {
+            cursor = cursor
+                .get_mut(part)
+                .ok_or_else(|| AppError::BadRequest(format!("patch parent not found: {path}")))?;
+        }
+        let key = &key[0];
+        match op {
+            "add" | "replace" => {
+                let value = operation
+                    .get("value")
+                    .cloned()
+                    .ok_or_else(|| AppError::BadRequest(format!("patch value is required: {path}")))?;
+                if let Some(object) = cursor.as_object_mut() {
+                    object.insert(key.clone(), value);
+                } else if let Some(array) = cursor.as_array_mut() {
+                    let index = key.parse::<usize>().map_err(|_| AppError::BadRequest(format!("invalid array patch index: {path}")))?;
+                    if op == "add" && index == array.len() { array.push(value); }
+                    else if let Some(slot) = array.get_mut(index) { *slot = value; }
+                    else { return Err(AppError::BadRequest(format!("patch index out of bounds: {path}"))); }
+                } else { return Err(AppError::BadRequest(format!("patch parent is not writable: {path}"))); }
+            }
+            "remove" => {
+                if let Some(object) = cursor.as_object_mut() { object.remove(key); }
+                else if let Some(array) = cursor.as_array_mut() {
+                    let index = key.parse::<usize>().map_err(|_| AppError::BadRequest(format!("invalid array patch index: {path}")))?;
+                    if index >= array.len() { return Err(AppError::BadRequest(format!("patch index out of bounds: {path}"))); }
+                    array.remove(index);
+                } else { return Err(AppError::BadRequest(format!("patch parent is not writable: {path}"))); }
+            }
+            _ => return Err(AppError::BadRequest(format!("unsupported patch operation: {op}"))),
+        }
+    }
+    Ok(())
+}
+
 pub(crate) async fn execute_action(
     state: AppState,
     headers: HeaderMap,
@@ -444,6 +502,54 @@ pub(crate) async fn execute_action(
             )
             .await?;
             json!({"formUuid": saved.form_uuid, "version": saved.version})
+        }
+        "yaya_apply_design_patch" => {
+            let form_uuid = action
+                .payload_json
+                .get("formUuid")
+                .and_then(Value::as_str)
+                .ok_or_else(|| AppError::BadRequest("invalid design patch: formUuid is required".to_string()))?;
+            let patch = action
+                .payload_json
+                .get("patch")
+                .and_then(Value::as_array)
+                .ok_or_else(|| AppError::BadRequest("invalid design patch: patch is required".to_string()))?;
+            let definition = FormDefinitionEntity::find()
+                .filter(form_definition_entity::Column::FormUuid.eq(form_uuid))
+                .one(&state.db)
+                .await?
+                .ok_or_else(|| AppError::NotFound("form not found".to_string()))?;
+            access
+                .require_app_access(&definition.app_route_app_id)
+                .map_err(AppError::Forbidden)?;
+            if !access.can_edit_form(&definition.app_route_app_id) {
+                return Err(AppError::Forbidden("form edit permission denied".to_string()));
+            }
+            let base_version = action
+                .payload_json
+                .get("baseVersion")
+                .and_then(Value::as_i64)
+                .and_then(|value| i32::try_from(value).ok())
+                .ok_or_else(|| AppError::BadRequest("baseVersion is required".to_string()))?;
+            let current = crate::modules::forms::load_schema_version(&state.db, form_uuid, base_version).await?;
+            let mut schema = current.schema_json;
+            apply_design_patch(&mut schema, patch)?;
+            if let Some(object) = schema.as_object_mut() {
+                object.insert("manifestVersion".to_string(), json!(1));
+                object.insert("agentContractVersion".to_string(), json!(1));
+            }
+            crate::modules::forms::validate_schema_for_form_type(&definition.form_type, &schema)?;
+            let (_, saved) = crate::modules::forms::save_form_schema_definition(
+                &state,
+                form_uuid,
+                SaveSchemaRequest {
+                    schema,
+                    change_log: Some("Agent confirmed design patch".to_string()),
+                    base_version: Some(base_version),
+                },
+            )
+            .await?;
+            json!({"formUuid": saved.form_uuid, "version": saved.version, "appliedOperations": patch.len()})
         }
         "delete_form" => {
             let app_id = action

@@ -1,7 +1,8 @@
-﻿"use client";
+"use client";
+import { notify } from "@lib/notify";
 
 import { useState } from "react";
-import { Button, Tabs, TextArea, toast } from "@heroui/react";
+import { Button, Tabs, TextArea } from "@heroui/react";
 import { formatDateTime } from "../form-record-utils";
 import type { FormRecord } from "@/features/records/types";
 import {
@@ -70,7 +71,7 @@ export function DetailAuxiliaryPanel({
       await postCommentMutation.mutateAsync(content);
       setCommentContent("");
     } catch (error) {
-      toast.danger("评论发布失败", {
+      notify.error("评论发布失败", {
         description: error instanceof Error ? error.message : "请稍后重试",
       });
     }
@@ -176,7 +177,7 @@ export function DetailAuxiliaryPanel({
 function workflowActionLabel(action: string) {
   return (
     (
-      { submit: "提交流程", approve: "同意", reject: "拒绝" } as Record<
+      { submit: "提交流程", approve: "同意", reject: "拒绝", complete: "完成填报" } as Record<
         string,
         string
       >

@@ -1,11 +1,12 @@
 "use client";
+import { notify } from "@lib/notify";
 
 import { memo, useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { Monaco } from "@monaco-editor/react";
 import styles from "./DesignerTheme.module.css";
 import dynamic from "next/dynamic";
-import { Button, Card, Checkbox, CheckboxGroup, Input, ListBox, Modal, Select, Switch, TextArea, Tooltip, toast } from "@heroui/react";
+import { Button, Card, Checkbox, CheckboxGroup, Input, ListBox, Modal, Select, Switch, TextArea, Tooltip } from "@heroui/react";
 import { Plus as AddIcon, Code as CodeIcon, Gear as GearMiniIcon, LayoutCellsLarge as GridIcon, CircleInfo as InfoIcon, ListUl as ListIcon, Comment as MessageIcon, ArrowRightArrowLeft as SwapIcon, TrashBin as TrashIcon, Wrench as ToolIcon } from "@gravity-ui/icons";
 import { CompTool } from "./CompTool";
 import type { FormDesignerSchema } from "../designer-schema";
@@ -18,7 +19,7 @@ import type {
 import type { RuntimeDebugEvent } from "@features/form-runtime/components";
 import { AgentMarkdown } from "@features/agent-assistant/components";
 import { AgentPanel } from "./AgentPanel";
-import { fetchAvailableAgents } from "@features/agent-assistant/api";
+import { fetchAvailableAgents } from "@features/agent-workbench/platform-api";
 import type { AgentOption } from "@features/agent-assistant/types";
 import {
   getDefaultActionPanelCode,
@@ -503,7 +504,7 @@ function ActionPanel({
 
     if (validationMessage) {
       setParseError(validationMessage);
-      toast.danger("动作脚本校验失败", {
+      notify.error("动作脚本校验失败", {
         description: validationMessage,
       });
       return false;
@@ -520,7 +521,7 @@ function ActionPanel({
       });
       onChange(nextValue);
       if (showSuccessToast) {
-        toast.success("动作面板已更新", {
+        notify.success("动作面板已更新", {
           description: "编辑器内容已同步到当前 schema",
         });
       }
@@ -528,7 +529,7 @@ function ActionPanel({
     } catch (error) {
       const message = error instanceof Error ? error.message : "动作面板解析失败";
       setParseError(message);
-      toast.danger("动作面板解析失败", {
+      notify.error("动作面板解析失败", {
         description: message,
       });
       return false;

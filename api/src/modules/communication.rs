@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::ws::{Message as WebSocketMessage, WebSocketUpgrade},
+    extract::ws::{Message as WebSocketMessage, WebSocket, WebSocketUpgrade},
     extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue},
     response::Response,
@@ -8,7 +8,8 @@ use axum::{
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect, Statement, TransactionTrait, Value as SeaValue,
+    QueryFilter, QueryOrder, QuerySelect, Statement, TransactionTrait,
+    Value as SeaValue,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -20,9 +21,9 @@ use uuid::Uuid;
 
 use crate::{
     infrastructure::entities::{
-        communication_conversation_entity as conversation,
-        communication_conversation_member_entity as member,
-        communication_message_entity as message, iam_user_entity,
+        im_conversation_entity as conversation,
+        im_conversation_member_entity as member,
+        im_message_entity as message, iam_user_entity,
     },
     platform::{
         api::ApiResponse,
@@ -47,6 +48,68 @@ pub(crate) async fn communication_status() -> Json<ApiResponse<CommunicationAvai
             enabled: communication_module_enabled(),
         },
     ))
+}
+
+/// Delivers committed mailbox events to online connections. PostgreSQL remains
+/// authoritative; this worker only reduces realtime latency and can be rebuilt
+/// or replaced by a Valkey-backed EventBus later.
+pub(crate) fn start_delivery_worker(state: AppState) {
+    tokio::spawn(async move {
+        let mut shutdown = state.shutdown_receiver();
+        loop {
+            tokio::select! {
+                changed = shutdown.changed() => {
+                    if changed.is_err() || *shutdown.borrow() { break; }
+                }
+                _ = tokio::time::sleep(Duration::from_millis(500)) => {
+                    if let Err(error) = deliver_outbox_batch(&state).await {
+                        tracing::warn!(?error, "IM delivery outbox batch failed");
+                    }
+                }
+            }
+        }
+    });
+}
+
+async fn deliver_outbox_batch(state: &AppState) -> Result<(), AppError> {
+    let txn = state.db.begin().await?;
+    let rows = txn.query_all_raw(Statement::from_string(
+        DbBackend::Postgres,
+        "SELECT o.id,o.event_id,o.event_type,o.payload_json,e.user_id FROM im_delivery_outbox o JOIN im_mailbox_events e ON e.id=o.event_id WHERE o.status='pending' AND o.next_retry_at<=NOW() ORDER BY o.created_at LIMIT 100 FOR UPDATE OF o SKIP LOCKED".to_string(),
+    )).await?;
+    if !rows.is_empty() { state.im_metrics.inc("im_delivery_outbox_pending"); }
+    for row in &rows {
+        let id: Uuid = row.try_get("", "id")?;
+        txn.execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "UPDATE im_delivery_outbox SET status='processing',updated_at=NOW() WHERE id=$1",
+            vec![SeaValue::Uuid(Some(id))],
+        )).await.ok();
+    }
+    txn.commit().await?;
+    for row in rows {
+        let id: Uuid = row.try_get("", "id")?;
+        let event_type: String = row.try_get("", "event_type")?;
+        let payload: Value = row.try_get("", "payload_json")?;
+        let user_id: Uuid = row.try_get("", "user_id")?;
+        let mut data = payload;
+        if let Some(object) = data.as_object_mut() {
+            object.insert("userId".into(), json!(user_id.to_string()));
+        }
+        state.publish_communication_event(&event_type, &data);
+        tracing::debug!(userId=%user_id, event=%event_type, outboxId=%id, "IM outbox event published");
+    state.db.execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "UPDATE im_delivery_outbox SET status='delivered',delivered_at=NOW() WHERE id=$1",
+            vec![SeaValue::Uuid(Some(id))],
+        )).await?;
+    }
+    // Recover rows left in processing by a crashed worker with bounded backoff.
+    state.db.execute_raw(Statement::from_string(
+        DbBackend::Postgres,
+        "UPDATE im_delivery_outbox SET status=CASE WHEN retry_count >= 10 THEN 'failed' ELSE 'pending' END,retry_count=retry_count+1,next_retry_at=NOW() + ((LEAST(retry_count,8) * 500)::text || ' milliseconds')::interval,last_error='worker interrupted' WHERE status='processing' AND created_at < NOW() - INTERVAL '1 minute'".to_string(),
+    )).await.ok();
+    Ok(())
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -82,6 +145,8 @@ pub(crate) struct SendCommunicationMessageRequest {
     #[serde(default)]
     pub(crate) content: String,
     pub(crate) client_message_id: Option<String>,
+    #[serde(rename = "localId")]
+    pub(crate) local_id: Option<String>,
     #[serde(default)]
     pub(crate) file_ids: Vec<String>,
     pub(crate) email_subject: Option<String>,
@@ -98,6 +163,8 @@ pub(crate) struct RecallCommunicationMessageRequest {
 pub(crate) struct ReeditCommunicationMessageRequest {
     pub(crate) content: String,
     pub(crate) client_message_id: Option<String>,
+    #[serde(rename = "localId")]
+    pub(crate) local_id: Option<String>,
     #[serde(default)]
     pub(crate) file_ids: Vec<String>,
     pub(crate) email_subject: Option<String>,
@@ -158,8 +225,11 @@ pub(crate) struct CommunicationMessageResponse {
     pub(crate) conversation_id: String,
     pub(crate) sender_user_id: String,
     pub(crate) sequence: i64,
+    pub(crate) local_id: Option<String>,
+    pub(crate) mailbox_seq: Option<i64>,
     pub(crate) message_type: String,
     pub(crate) content: String,
+    pub(crate) payload: Value,
     pub(crate) email_subject: Option<String>,
     pub(crate) file_ids: Vec<String>,
     pub(crate) attachments: Vec<CommunicationAttachmentResponse>,
@@ -183,6 +253,14 @@ pub(crate) struct CommunicationAttachmentResponse {
 pub(crate) struct CommunicationMessagePageResponse {
     pub(crate) items: Vec<CommunicationMessageResponse>,
     pub(crate) next_before_sequence: Option<i64>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ImCommandAccepted {
+    pub(crate) request_id: String,
+    pub(crate) local_id: String,
+    pub(crate) accepted: bool,
 }
 
 pub(crate) async fn create_direct_conversation(
@@ -232,6 +310,7 @@ pub(crate) async fn create_direct_conversation(
             member_role: Set("member".into()),
             last_read_sequence: Set(0),
             joined_at: Set(now),
+            left_at: Set(None),
         }
         .insert(&txn)
         .await?;
@@ -297,6 +376,7 @@ pub(crate) async fn create_group_conversation(
             .into()),
             last_read_sequence: Set(0),
             joined_at: Set(now),
+            left_at: Set(None),
         }
         .insert(&txn)
         .await?;
@@ -368,6 +448,7 @@ pub(crate) async fn update_group_conversation(
             member_role: Set("member".into()),
             last_read_sequence: Set(0),
             joined_at: Set(Utc::now()),
+            left_at: Set(None),
         }
         .insert(&state.db)
         .await?;
@@ -394,6 +475,7 @@ pub(crate) async fn update_group_conversation(
             message_type: "system".into(),
             content: "群成员已更新".into(),
             client_message_id: None,
+            local_id: None,
             file_ids: Vec::new(),
             email_subject: None,
         },
@@ -446,6 +528,7 @@ pub(crate) async fn transfer_group_owner(
             message_type: "system".into(),
             content: "群主已转让".into(),
             client_message_id: None,
+            local_id: None,
             file_ids: Vec::new(),
             email_subject: None,
         },
@@ -503,6 +586,7 @@ pub(crate) async fn leave_group_conversation(
             message_type: "system".into(),
             content: "成员已退出群聊".into(),
             client_message_id: None,
+            local_id: None,
             file_ids: Vec::new(),
             email_subject: None,
         },
@@ -577,6 +661,7 @@ pub(crate) async fn list_conversations(
         .filter(conversation::Column::Id.is_in(conversation_ids.clone()))
         .all(&state.db)
         .await?;
+    let conversation_ids = conversations.iter().map(|item| item.id).collect::<Vec<_>>();
     let all_memberships = member::Entity::find()
         .filter(member::Column::ConversationId.is_in(conversation_ids.clone()))
         .all(&state.db)
@@ -603,7 +688,7 @@ pub(crate) async fn list_conversations(
         .copied()
         .map(|id| SeaValue::Uuid(Some(id)))
         .collect::<Vec<_>>();
-    let last_rows = state.db.query_all_raw(Statement::from_sql_and_values(DbBackend::Postgres, format!("SELECT DISTINCT ON (conversation_id) conversation_id, content, message_type, status, metadata_json FROM communication_messages WHERE conversation_id IN ({placeholders}) ORDER BY conversation_id, sequence DESC"), values)).await?;
+    let last_rows = state.db.query_all_raw(Statement::from_sql_and_values(DbBackend::Postgres, format!("SELECT DISTINCT ON (conversation_id) conversation_id, content, message_type, status, payload_json AS metadata_json FROM im_messages WHERE conversation_id IN ({placeholders}) ORDER BY conversation_id, conversation_seq DESC"), values)).await?;
     let mut previews = HashMap::new();
     for row in last_rows {
         let id: Uuid = row.try_get("", "conversation_id")?;
@@ -757,14 +842,17 @@ pub(crate) async fn send_message(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(conversation_uuid): Path<String>,
-    Json(payload): Json<SendCommunicationMessageRequest>,
-) -> Result<Json<ApiResponse<CommunicationMessageResponse>>, AppError> {
+    Json(mut payload): Json<SendCommunicationMessageRequest>,
+) -> Result<Json<ApiResponse<ImCommandAccepted>>, AppError> {
     require_enabled()?;
     let current = authorization::current_user(&headers, &state).await?;
     let conversation = member_conversation(&state, &conversation_uuid, current.id).await?;
+    let local_id = payload.local_id.clone().or(payload.client_message_id.clone()).unwrap_or_else(|| Uuid::new_v4().to_string());
+    payload.local_id = Some(local_id.clone());
     let response = persist_message(&state, &conversation, current.id, payload, None).await?;
-    state.publish_communication_event("message.created", &response);
-    Ok(Json(success_response("消息已发送", response)))
+    let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok()).filter(|v| !v.is_empty()).map(str::to_string).unwrap_or_else(|| Uuid::new_v4().to_string());
+    state.publish_communication_event("message.accepted", &json!({"requestId":request_id,"conversationId":conversation.conversation_uuid,"conversationSeq":response.sequence,"localId":local_id,"data":{"messageId":response.id}}));
+    Ok(Json(success_response("消息已受理", ImCommandAccepted { request_id, local_id, accepted: true })))
 }
 
 pub(crate) async fn recall_message(
@@ -817,6 +905,14 @@ pub(crate) async fn recall_message(
     active.metadata_json = Set(metadata);
     let updated = active.update(&state.db).await?;
     let response = message_response(&state, updated, &conversation_uuid).await?;
+    record_mailbox_event(
+        &state,
+        &conversation,
+        Some(parse_uuid(&response.id, "message id")?),
+        "message.recalled",
+        serde_json::to_value(&response).unwrap_or_else(|_| json!({})),
+    )
+    .await?;
     state.publish_communication_event("message.recalled", &response);
     Ok(Json(success_response("消息已撤回", response)))
 }
@@ -845,6 +941,7 @@ pub(crate) async fn reedit_message(
         message_type: original.message_type,
         content: payload.content,
         client_message_id: payload.client_message_id,
+        local_id: payload.local_id,
         file_ids: payload.file_ids,
         email_subject: payload.email_subject,
     };
@@ -877,7 +974,7 @@ pub(crate) async fn mark_read(
         .db
         .execute_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
-            "UPDATE communication_conversation_members SET last_read_sequence=GREATEST(last_read_sequence,$3) WHERE conversation_id=$1 AND user_id=$2",
+            "UPDATE im_conversation_members SET last_read_sequence=GREATEST(last_read_sequence,$3) WHERE conversation_id=$1 AND user_id=$2",
             vec![
                 SeaValue::Uuid(Some(conversation.id)),
                 SeaValue::Uuid(Some(current.id)),
@@ -920,16 +1017,91 @@ pub(crate) async fn communication_websocket(
     );
     authorization::authenticate(&auth_headers, &state).await?;
     let current = authorization::current_user(&auth_headers, &state).await?;
+    state.im_metrics.inc("im_ws_connections");
     let mut receiver = state.subscribe_communication_events();
     Ok(websocket
         .protocols(["yaya-chat"])
         .on_upgrade(move |mut socket| async move {
+            let mut last_sent_mailbox_seq = 0i64;
+            let mut device_id = "unknown".to_string();
             let mut transient_events = VecDeque::new();
             loop {
                 tokio::select! {
                 incoming = socket.recv() => {
                     let Some(Ok(WebSocketMessage::Text(text))) = incoming else { break; };
                     let Ok(value) = serde_json::from_str::<Value>(&text) else { continue; };
+                    let request_id = value.get("requestId").and_then(Value::as_str).unwrap_or_default();
+                    let action = value.get("action").and_then(Value::as_str).or_else(|| value.get("type").and_then(Value::as_str)).unwrap_or_default();
+                    let data = value.get("data").unwrap_or(&value);
+                    if action == "sync" || action == "authenticate" {
+                        device_id = data.get("deviceId").and_then(Value::as_str).unwrap_or("default").chars().take(160).collect();
+                        let requested = data.get("lastMailboxSeq").and_then(Value::as_i64).unwrap_or(0).max(0);
+                        let current_seq = mailbox_current_seq(&state, current.id).await;
+                        let oldest_seq = mailbox_oldest_seq(&state, current.id).await;
+                        if oldest_seq > 0 && requested < oldest_seq.saturating_sub(1) {
+                            state.im_metrics.inc("im_cursor_reset_count");
+                            let _ = socket.send(WebSocketMessage::Text(json!({"type":"event","event":"sync.reset_required","requestId":request_id,"data":{"reason":"cursor_expired","oldestMailboxSeq":oldest_seq}}).to_string().into())).await;
+                            last_sent_mailbox_seq = 0;
+                            continue;
+                        }
+                        // The watermark makes the initial snapshot race-safe: events created
+                        // while the first query is running are sent in the second pass below.
+                        let _ = socket.send(WebSocketMessage::Text(json!({"type":"event","event":"snapshot.started","requestId":request_id,"data":{"mailboxSeq":current_seq}}).to_string().into())).await;
+                        if let Ok(memberships) = member::Entity::find()
+                            .filter(member::Column::UserId.eq(current.id))
+                            .all(&state.db).await
+                        {
+                            let ids = memberships.iter().map(|item| item.conversation_id).collect::<Vec<_>>();
+                            if let Ok(models) = conversation::Entity::find()
+                                .filter(conversation::Column::Id.is_in(ids))
+                                .all(&state.db).await
+                            {
+                                let mut items = Vec::with_capacity(models.len());
+                                for model in models {
+                                    if let Ok(item) = conversation_response(&state, model, current.id).await {
+                                        items.push(item);
+                                    }
+                                }
+                                let _ = socket.send(WebSocketMessage::Text(json!({"type":"event","event":"conversation.snapshot","requestId":request_id,"data":{"items":items}}).to_string().into())).await;
+                            }
+                        }
+                        let sent = send_mailbox_events_until(&mut socket, &state, current.id, requested, current_seq, 1000).await.unwrap_or(requested);
+                        last_sent_mailbox_seq = sent.max(requested);
+                        if let Ok(after_snapshot) = send_mailbox_events(&mut socket, &state, current.id, last_sent_mailbox_seq, 1000).await {
+                            last_sent_mailbox_seq = after_snapshot.max(last_sent_mailbox_seq);
+                        }
+                        let _ = socket.send(WebSocketMessage::Text(json!({"type":"event","event":"snapshot.completed","requestId":request_id,"mailboxSeq":last_sent_mailbox_seq,"data":{"mailboxSeq":last_sent_mailbox_seq}}).to_string().into())).await;
+                        let _ = socket.send(WebSocketMessage::Text(json!({"type":"response","requestId":request_id,"ok":true,"data":{"mailboxSeq":last_sent_mailbox_seq}}).to_string().into())).await;
+                        continue;
+                    }
+                    if action == "ack" {
+                        let sequence = data.get("mailboxSeq").and_then(Value::as_i64).unwrap_or(0).max(0);
+                        let now = Utc::now();
+                        let _ = state.db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres, "INSERT INTO im_device_cursors(user_id,device_id,last_acked_mailbox_seq,last_seen_at,updated_at) VALUES($1,$2,$3,$4,$4) ON CONFLICT(user_id,device_id) DO UPDATE SET last_acked_mailbox_seq=GREATEST(im_device_cursors.last_acked_mailbox_seq,EXCLUDED.last_acked_mailbox_seq),last_seen_at=EXCLUDED.last_seen_at,updated_at=EXCLUDED.updated_at", vec![SeaValue::Uuid(Some(current.id)), SeaValue::String(Some(device_id.clone())), SeaValue::BigInt(Some(sequence)), SeaValue::ChronoDateTimeUtc(Some(now))])).await;
+                        let _ = socket.send(WebSocketMessage::Text(json!({"type":"response","requestId":request_id,"ok":true,"data":{"mailboxSeq":sequence}}).to_string().into())).await;
+                        continue;
+                    }
+                    if action == "history" {
+                        if let Some(conversation_id) = data.get("conversationId").and_then(Value::as_str) {
+                            if websocket_member(&state, conversation_id, current.id).await {
+                                let before = data.get("beforeConversationSeq").and_then(Value::as_i64);
+                                let limit = data.get("limit").and_then(Value::as_u64).unwrap_or(50).clamp(1, 100);
+                                let conversation = member_conversation(&state, conversation_id, current.id).await;
+                                if let Ok(conversation) = conversation {
+                                    let mut select = message::Entity::find().filter(message::Column::ConversationId.eq(conversation.id));
+                                    if let Some(before) = before { select = select.filter(message::Column::Sequence.lt(before)); }
+                                    let mut models = select.order_by_desc(message::Column::Sequence).limit(limit + 1).all(&state.db).await.unwrap_or_default();
+                                    let has_more = models.len() > limit as usize;
+                                    models.truncate(limit as usize);
+                                    let next = models.last().map(|item| item.sequence);
+                                    let attachments = load_message_attachments(&state, &models.iter().map(|item| item.id).collect::<Vec<_>>()).await.unwrap_or_default();
+                                    let items = models.into_iter().rev().map(|model| { let id = model.id; map_message_response(model, conversation_id, attachments.get(&id).cloned().unwrap_or_default()) }).collect::<Vec<_>>();
+                                    let _ = socket.send(WebSocketMessage::Text(json!({"type":"event","event":"history.page","requestId":request_id,"conversationId":conversation_id,"data":{"conversationId":conversation_id,"items":items,"nextBeforeConversationSeq":next,"hasMore":has_more}}).to_string().into())).await;
+                                }
+                            }
+                        }
+                        continue;
+                    }
                     let Some(conversation_id) = value.get("conversationId").and_then(Value::as_str) else { continue; };
                     let event_type = value.get("type").and_then(Value::as_str).unwrap_or_default();
                     let now = Instant::now();
@@ -943,9 +1115,15 @@ pub(crate) async fn communication_websocket(
                 }
                 received = receiver.recv() => {
                 let Ok(event) = received else { continue; };
+                let parsed = serde_json::to_value(&event).ok();
+                if event.event == "message.created" {
+                    if let Ok(sent) = send_mailbox_events(&mut socket, &state, current.id, last_sent_mailbox_seq, 1000).await {
+                        last_sent_mailbox_seq = sent.max(last_sent_mailbox_seq);
+                    }
+                    continue;
+                }
                 let conversation_id =
-                    serde_json::from_str::<Value>(&event)
-                        .ok()
+                    parsed
                         .and_then(|value| {
                             value
                                 .pointer("/data/conversationId")
@@ -958,8 +1136,21 @@ pub(crate) async fn communication_websocket(
                 if !websocket_member(&state, &conversation_id, current.id).await {
                     continue;
                 }
+                let request_id = event.data.get("requestId").cloned().unwrap_or(Value::Null);
+                let envelope = json!({
+                    "type":"event",
+                    "event":event.event,
+                    "requestId":event.request_id.or_else(|| request_id.as_str().map(str::to_string)),
+                    "userId":event.user_id,
+                    "conversationId":event.conversation_id,
+                    "conversationSeq":event.conversation_seq,
+                    "mailboxSeq":event.mailbox_seq,
+                    "localId":event.local_id,
+                    "messageId":event.message_id,
+                    "data":event.data
+                });
                 if socket
-                    .send(WebSocketMessage::Text(event.into()))
+                    .send(WebSocketMessage::Text(envelope.to_string().into()))
                     .await
                     .is_err()
                 {
@@ -969,6 +1160,183 @@ pub(crate) async fn communication_websocket(
                 }
             }
         }))
+}
+
+async fn send_mailbox_events(
+    socket: &mut WebSocket,
+    state: &AppState,
+    user_id: Uuid,
+    after_seq: i64,
+    limit: u64,
+) -> Result<i64, AppError> {
+    let through_seq = mailbox_current_seq(state, user_id).await;
+    send_mailbox_events_until(socket, state, user_id, after_seq, through_seq, limit).await
+}
+
+async fn send_mailbox_events_until(
+    socket: &mut WebSocket,
+    state: &AppState,
+    user_id: Uuid,
+    after_seq: i64,
+    through_seq: i64,
+    limit: u64,
+) -> Result<i64, AppError> {
+    let mut last = after_seq;
+    loop {
+    let rows = state.db.query_all_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT mailbox_seq,event_type,conversation_id,message_id,payload_json FROM im_mailbox_events WHERE user_id=$1 AND mailbox_seq>$2 AND mailbox_seq<=$3 ORDER BY mailbox_seq ASC LIMIT $4",
+        vec![SeaValue::Uuid(Some(user_id)), SeaValue::BigInt(Some(last)), SeaValue::BigInt(Some(through_seq)), SeaValue::BigInt(Some(limit as i64))],
+    )).await?;
+    let count = rows.len();
+    let message_ids = rows.iter().filter_map(|row| row.try_get::<Option<Uuid>>("", "message_id").ok().flatten()).collect::<Vec<_>>();
+    let models = if message_ids.is_empty() { Vec::new() } else {
+        message::Entity::find().filter(message::Column::Id.is_in(message_ids.clone())).all(&state.db).await?
+    };
+    let models = models.into_iter().map(|model| (model.id, model)).collect::<HashMap<_, _>>();
+    let attachments = load_message_attachments(state, &message_ids).await?;
+    for row in rows {
+        let seq: i64 = row.try_get("", "mailbox_seq")?;
+        let event_type: String = row.try_get("", "event_type")?;
+        let conversation_id: Option<Uuid> = row.try_get("", "conversation_id")?;
+        let message_id: Option<Uuid> = row.try_get("", "message_id")?;
+        let payload: Value = row.try_get("", "payload_json")?;
+        let data = if event_type == "message.created" {
+            if let Some(id) = message_id {
+                let model = models.get(&id).cloned()
+                    .ok_or_else(|| AppError::BadRequest("信箱消息不存在".into()))?;
+                let conversation_uuid = payload.get("conversationId").and_then(Value::as_str)
+                    .ok_or_else(|| AppError::BadRequest("信箱会话标识缺失".into()))?;
+                let mut data = serde_json::to_value(map_message_response(model, conversation_uuid, attachments.get(&id).cloned().unwrap_or_default()))
+                    .map_err(|_| AppError::BadRequest("无法编码信箱消息".into()))?;
+                data["mailboxSeq"] = json!(seq);
+                data
+            } else { payload.clone() }
+        } else { payload.clone() };
+        let envelope = json!({
+            "type": "event",
+            "event": event_type,
+            "mailboxSeq": seq,
+            "conversationId": payload.get("conversationId").cloned().or_else(|| conversation_id.map(|id| json!(id.to_string()))),
+            "messageId": message_id.map(|id| id.to_string()),
+            "data": data
+        });
+        socket.send(WebSocketMessage::Text(envelope.to_string().into())).await.map_err(|_| AppError::BadRequest("WebSocket 已断开".into()))?;
+        last = seq;
+    }
+    if count < limit as usize || last >= through_seq { break; }
+    }
+    Ok(last)
+}
+
+async fn mailbox_current_seq(state: &AppState, user_id: Uuid) -> i64 {
+    state.db.query_one_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT COALESCE(next_seq - 1, 0) AS current_seq FROM im_mailbox_counters WHERE user_id=$1",
+        vec![SeaValue::Uuid(Some(user_id))],
+    )).await.ok().flatten()
+        .and_then(|row| row.try_get::<i64>("", "current_seq").ok())
+        .unwrap_or(0)
+}
+
+async fn mailbox_oldest_seq(state: &AppState, user_id: Uuid) -> i64 {
+    state.db.query_one_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT COALESCE(MIN(mailbox_seq), 0) AS oldest_seq FROM im_mailbox_events WHERE user_id=$1",
+        vec![SeaValue::Uuid(Some(user_id))],
+    )).await.ok().flatten()
+        .and_then(|row| row.try_get::<i64>("", "oldest_seq").ok())
+        .unwrap_or(0)
+}
+
+async fn record_mailbox_event(
+    state: &AppState,
+    conversation: &conversation::Model,
+    message_id: Option<Uuid>,
+    event_type: &str,
+    payload: Value,
+) -> Result<(), AppError> {
+    let recipients = member::Entity::find()
+        .filter(member::Column::ConversationId.eq(conversation.id))
+        .all(&state.db)
+        .await?;
+    let txn = state.db.begin().await?;
+    let now = Utc::now();
+    for recipient in recipients {
+        let row = txn.query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "INSERT INTO im_mailbox_counters(user_id,next_seq,updated_at) VALUES($1,2,$2) ON CONFLICT(user_id) DO UPDATE SET next_seq=im_mailbox_counters.next_seq+1,updated_at=EXCLUDED.updated_at RETURNING next_seq-1 AS mailbox_seq",
+            vec![SeaValue::Uuid(Some(recipient.user_id)), SeaValue::ChronoDateTimeUtc(Some(now))],
+        )).await?.ok_or_else(|| AppError::BadRequest("无法分配信箱序号".into()))?;
+        let mailbox_seq: i64 = row.try_get("", "mailbox_seq")?;
+        let event_id = Uuid::new_v4();
+        txn.execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "INSERT INTO im_mailbox_events(id,user_id,mailbox_seq,conversation_id,message_id,event_type,payload_json,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
+            vec![SeaValue::Uuid(Some(event_id)), SeaValue::Uuid(Some(recipient.user_id)), SeaValue::BigInt(Some(mailbox_seq)), SeaValue::Uuid(Some(conversation.id)), message_id.map(|id| SeaValue::Uuid(Some(id))).unwrap_or(SeaValue::Uuid(None)), SeaValue::String(Some(event_type.to_string())), SeaValue::Json(Some(Box::new(payload.clone()))), SeaValue::ChronoDateTimeUtc(Some(now))],
+        )).await?;
+        txn.execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "INSERT INTO im_delivery_outbox(id,event_id,event_type,payload_json,status,retry_count,next_retry_at,created_at) VALUES($1,$2,$3,$4,'pending',0,$5,$5)",
+            vec![SeaValue::Uuid(Some(Uuid::new_v4())), SeaValue::Uuid(Some(event_id)), SeaValue::String(Some(event_type.to_string())), SeaValue::Json(Some(Box::new(payload.clone()))), SeaValue::ChronoDateTimeUtc(Some(now))],
+        )).await?;
+    }
+    txn.commit().await?;
+    Ok(())
+}
+
+pub(crate) async fn create_system_notification_message(
+    state: &AppState,
+    recipient_user_id: Uuid,
+    notification_id: Uuid,
+    notification_uuid: &str,
+    title: &str,
+    content: &str,
+    notification_type: &str,
+    task_id: Option<Uuid>,
+    task_uuid: Option<&str>,
+    instance_id: Uuid,
+    form_uuid: &str,
+    record_uuid: &str,
+) -> Result<(), AppError> {
+    let now = Utc::now();
+    let conversation_uuid = format!("system-{recipient_user_id}");
+    let txn = state.db.begin().await?;
+    let conversation_id = txn.query_one_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "INSERT INTO im_conversations(id,conversation_uuid,conversation_type,title,created_by_user_id,last_message_sequence,created_at,updated_at) VALUES($1,$2,'system','系统通知',$3,0,$4,$4) ON CONFLICT(conversation_uuid) DO UPDATE SET updated_at=EXCLUDED.updated_at RETURNING id",
+        vec![SeaValue::Uuid(Some(Uuid::new_v4())), SeaValue::String(Some(conversation_uuid.clone())), SeaValue::Uuid(Some(recipient_user_id)), SeaValue::ChronoDateTimeUtc(Some(now))],
+    )).await?.and_then(|row| row.try_get::<Uuid>("", "id").ok()).ok_or_else(|| AppError::BadRequest("无法创建系统会话".into()))?;
+    txn.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "INSERT INTO im_conversation_members(conversation_id,user_id,member_role,last_read_sequence,joined_at) VALUES($1,$2,'owner',0,$3) ON CONFLICT(conversation_id,user_id) DO NOTHING",
+        vec![SeaValue::Uuid(Some(conversation_id)), SeaValue::Uuid(Some(recipient_user_id)), SeaValue::ChronoDateTimeUtc(Some(now))],
+    )).await?;
+    let seq = txn.query_one_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "UPDATE im_conversations SET last_message_sequence=last_message_sequence+1,last_message_at=$2,updated_at=$2 WHERE id=$1 RETURNING last_message_sequence",
+        vec![SeaValue::Uuid(Some(conversation_id)), SeaValue::ChronoDateTimeUtc(Some(now))],
+    )).await?.and_then(|row| row.try_get::<i64>("", "last_message_sequence").ok()).ok_or_else(|| AppError::BadRequest("无法分配系统消息序号".into()))?;
+    let message_id = Uuid::new_v4();
+    let card_type = if task_id.is_some() && notification_type != "approval_result" { "approval" } else { "workflow" };
+    let public_business_id = task_uuid.map(str::to_string).unwrap_or_else(|| instance_id.to_string());
+    let payload = json!({"type":"yaya.system_card","cardType":card_type,"businessId":public_business_id,"taskUuid":task_uuid,"version":1,"title":title,"content":content,"notificationType":notification_type,"formUuid":form_uuid,"recordUuid":record_uuid,"actions":if card_type == "approval" {json!([{"id":"approve","label":"同意"},{"id":"reject","label":"拒绝"}])}else{json!([])}});
+    txn.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "INSERT INTO im_messages(id,message_uuid,conversation_id,sender_user_id,conversation_seq,local_id,message_type,content,payload_json,status,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,'system',$7,$8,'active',$9,$9)",
+        vec![SeaValue::Uuid(Some(message_id)), SeaValue::String(Some(notification_uuid.to_string())), SeaValue::Uuid(Some(conversation_id)), SeaValue::Uuid(Some(recipient_user_id)), SeaValue::BigInt(Some(seq)), SeaValue::String(Some(notification_id.to_string())), SeaValue::String(Some(content.to_string())), SeaValue::Json(Some(Box::new(payload.clone()))), SeaValue::ChronoDateTimeUtc(Some(now))],
+    )).await?;
+    txn.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "INSERT INTO im_business_message_bindings(message_id,business_type,business_id,card_type,action_schema_json,status) VALUES($1,$2,$3,$4,$5,'active') ON CONFLICT(message_id) DO NOTHING",
+        vec![SeaValue::Uuid(Some(message_id)), SeaValue::String(Some(if task_id.is_some(){"approval".into()}else{"workflow_notice".into()})), SeaValue::Uuid(Some(task_id.unwrap_or(instance_id))), SeaValue::String(Some(card_type.into())), SeaValue::Json(Some(Box::new(payload.get("actions").cloned().unwrap_or_else(|| json!([])))))],
+    )).await?;
+    let counter = txn.query_one_raw(Statement::from_sql_and_values(DbBackend::Postgres, "INSERT INTO im_mailbox_counters(user_id,next_seq,updated_at) VALUES($1,2,$2) ON CONFLICT(user_id) DO UPDATE SET next_seq=im_mailbox_counters.next_seq+1,updated_at=EXCLUDED.updated_at RETURNING next_seq-1 AS mailbox_seq", vec![SeaValue::Uuid(Some(recipient_user_id)), SeaValue::ChronoDateTimeUtc(Some(now))])).await?.and_then(|row| row.try_get::<i64>("", "mailbox_seq").ok()).ok_or_else(|| AppError::BadRequest("无法分配信箱序号".into()))?;
+    let event_id = Uuid::new_v4();
+    txn.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres, "INSERT INTO im_mailbox_events(id,user_id,mailbox_seq,conversation_id,message_id,event_type,payload_json,created_at) VALUES($1,$2,$3,$4,$5,'message.created',$6,$7)", vec![SeaValue::Uuid(Some(event_id)), SeaValue::Uuid(Some(recipient_user_id)), SeaValue::BigInt(Some(counter)), SeaValue::Uuid(Some(conversation_id)), SeaValue::Uuid(Some(message_id)), SeaValue::Json(Some(Box::new(payload.clone()))), SeaValue::ChronoDateTimeUtc(Some(now))])).await?;
+    txn.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres, "INSERT INTO im_delivery_outbox(id,event_id,event_type,payload_json,status,retry_count,next_retry_at,created_at) VALUES($1,$2,'message.created',$3,'pending',0,$4,$4)", vec![SeaValue::Uuid(Some(Uuid::new_v4())), SeaValue::Uuid(Some(event_id)), SeaValue::Json(Some(Box::new(json!({"messageId":notification_uuid,"conversationId":conversation_uuid,"conversationSeq":seq,"localId":notification_id,"messageType":"system","content":content,"createdAt":now,"payload":payload})))), SeaValue::ChronoDateTimeUtc(Some(now))])).await?;
+    txn.commit().await?;
+    Ok(())
 }
 
 fn require_enabled() -> Result<(), AppError> {
@@ -1120,13 +1488,21 @@ async fn persist_message(
         .client_message_id
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
-    if let Some(client_id) = &client_message_id {
+    let local_id = payload
+        .local_id
+        .or_else(|| client_message_id.clone())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let idempotency_id = local_id.clone().or(client_message_id.clone());
+    if let Some(client_id) = &idempotency_id {
         if let Some(existing) = message::Entity::find()
             .filter(message::Column::SenderUserId.eq(sender_user_id))
             .filter(message::Column::ClientMessageId.eq(client_id))
             .one(&state.db)
             .await?
         {
+            state.im_metrics.inc("im_duplicate_localid_count");
+            tracing::info!(userId=%sender_user_id, conversationId=%conversation.conversation_uuid, localId=%client_id, messageId=%existing.id, "IM message idempotency hit");
             return message_response(state, existing, &conversation.conversation_uuid).await;
         }
     }
@@ -1188,23 +1564,74 @@ async fn persist_message(
     let txn = state.db.begin().await?;
     let now = Utc::now();
     let row = txn.query_one_raw(Statement::from_sql_and_values(DbBackend::Postgres,
-        "UPDATE communication_conversations SET last_message_sequence=last_message_sequence+1,last_message_at=$2,updated_at=$2 WHERE id=$1 RETURNING last_message_sequence",
+        "UPDATE im_conversations SET last_message_sequence=last_message_sequence+1,last_message_at=$2,updated_at=$2 WHERE id=$1 RETURNING last_message_sequence",
         vec![SeaValue::Uuid(Some(conversation.id)), SeaValue::ChronoDateTimeUtc(Some(now))])).await?.ok_or_else(|| AppError::NotFound("会话不存在".into()))?;
     let sequence: i64 = row.try_get("", "last_message_sequence")?;
     let model = message::ActiveModel {
         id: Set(Uuid::new_v4()), message_uuid: Set(Uuid::new_v4().to_string()), conversation_id: Set(conversation.id), sender_user_id: Set(sender_user_id), sequence: Set(sequence),
-        client_message_id: Set(client_message_id), message_type: Set(message_type), content: Set(content),
+        client_message_id: Set(idempotency_id), message_type: Set(message_type), content: Set(content),
         metadata_json: Set(json!({ "emailSubject": payload.email_subject.map(|value| value.trim().to_string()).filter(|value| !value.is_empty()) })),
         status: Set("active".into()), recalled_at: Set(None), recalled_by_user_id: Set(None), replaces_message_id: Set(replaces_message_id), created_at: Set(now), updated_at: Set(now),
     }.insert(&txn).await?;
     for file_id in &file_ids {
         txn.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,
-            "INSERT INTO communication_message_attachments(message_id,file_id,created_at) VALUES($1,$2,$3)",
+            "INSERT INTO im_message_attachments(message_id,file_id,created_at) VALUES($1,$2,$3)",
             vec![SeaValue::Uuid(Some(model.id)), SeaValue::Uuid(Some(*file_id)), SeaValue::ChronoDateTimeUtc(Some(now))])).await?;
+    }
+    let recipients = member::Entity::find()
+        .filter(member::Column::ConversationId.eq(conversation.id))
+        .all(&txn)
+        .await?;
+    let event_payload = json!({
+        "messageId": model.message_uuid,
+        "conversationId": conversation.conversation_uuid,
+        "conversationSeq": sequence,
+        "localId": local_id,
+        "messageType": model.message_type,
+        "content": model.content,
+        "status": model.status,
+        "senderUserId": model.sender_user_id.to_string(),
+        "createdAt": format_datetime(model.created_at)
+    });
+    let mut sender_mailbox_seq = None;
+    for recipient in recipients {
+        let counter = txn.query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "INSERT INTO im_mailbox_counters(user_id,next_seq,updated_at) VALUES($1,2,$2) ON CONFLICT(user_id) DO UPDATE SET next_seq=im_mailbox_counters.next_seq+1,updated_at=EXCLUDED.updated_at RETURNING next_seq-1 AS mailbox_seq",
+            vec![SeaValue::Uuid(Some(recipient.user_id)), SeaValue::ChronoDateTimeUtc(Some(now))],
+        )).await?.ok_or_else(|| AppError::BadRequest("无法分配信箱序号".into()))?;
+        let mailbox_seq: i64 = counter.try_get("", "mailbox_seq")?;
+        if recipient.user_id == sender_user_id { sender_mailbox_seq = Some(mailbox_seq); }
+        let event_id = Uuid::new_v4();
+        txn.execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "INSERT INTO im_mailbox_events(id,user_id,mailbox_seq,conversation_id,message_id,event_type,payload_json,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
+            vec![
+                SeaValue::Uuid(Some(event_id)),
+                SeaValue::Uuid(Some(recipient.user_id)),
+                SeaValue::BigInt(Some(mailbox_seq)),
+                SeaValue::Uuid(Some(conversation.id)),
+                SeaValue::Uuid(Some(model.id)),
+                SeaValue::String(Some("message.created".into())),
+                SeaValue::Json(Some(Box::new(event_payload.clone()))),
+                SeaValue::ChronoDateTimeUtc(Some(now)),
+            ],
+        )).await?;
+        txn.execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "INSERT INTO im_delivery_outbox(id,event_id,event_type,payload_json,status,retry_count,next_retry_at,created_at) VALUES($1,$2,$3,$4,'pending',0,$5,$5)",
+            vec![
+                SeaValue::Uuid(Some(Uuid::new_v4())),
+                SeaValue::Uuid(Some(event_id)),
+                SeaValue::String(Some("message.created".into())),
+                SeaValue::Json(Some(Box::new(event_payload.clone()))),
+                SeaValue::ChronoDateTimeUtc(Some(now)),
+            ],
+        )).await?;
     }
     txn.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
-        "UPDATE communication_conversation_members SET last_read_sequence=GREATEST(last_read_sequence,$3) WHERE conversation_id=$1 AND user_id=$2",
+        "UPDATE im_conversation_members SET last_read_sequence=GREATEST(last_read_sequence,$3) WHERE conversation_id=$1 AND user_id=$2",
         vec![
             SeaValue::Uuid(Some(conversation.id)),
             SeaValue::Uuid(Some(sender_user_id)),
@@ -1212,7 +1639,9 @@ async fn persist_message(
         ],
     )).await?;
     txn.commit().await?;
-    message_response(state, model, &conversation.conversation_uuid).await
+    let mut response = message_response(state, model, &conversation.conversation_uuid).await?;
+    response.mailbox_seq = sender_mailbox_seq;
+    Ok(response)
 }
 
 async fn message_response(
@@ -1245,7 +1674,7 @@ async fn load_message_attachments(
         .db
         .query_all_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
-            format!("SELECT a.message_id, a.file_id, f.original_name, f.byte_size, f.mime_type FROM communication_message_attachments a JOIN uploaded_files f ON f.id=a.file_id WHERE a.message_id IN ({placeholders}) ORDER BY a.created_at"),
+            format!("SELECT a.message_id, a.file_id, f.original_name, f.byte_size, f.mime_type FROM im_message_attachments a JOIN uploaded_files f ON f.id=a.file_id WHERE a.message_id IN ({placeholders}) ORDER BY a.created_at"),
             values,
         ))
         .await?;
@@ -1284,8 +1713,11 @@ fn map_message_response(
         conversation_id: conversation_uuid.to_string(),
         sender_user_id: model.sender_user_id.to_string(),
         sequence: model.sequence,
+        local_id: model.client_message_id.clone(),
+        mailbox_seq: None,
         message_type: model.message_type,
         content: model.content,
+        payload: model.metadata_json.clone(),
         email_subject: model
             .metadata_json
             .get("emailSubject")

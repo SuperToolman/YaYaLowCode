@@ -1,8 +1,9 @@
 "use client";
+import { notify } from "@lib/notify";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Input, Switch, toast } from "@heroui/react";
+import { Button, Input, Switch } from "@heroui/react";
 import { Card } from "@heroui/react/card";
 import { Field } from "../components/Field";
 import { SettingsContentCard } from "../components/SettingsContentCard";
@@ -129,7 +130,7 @@ export default function DatabaseSettingsPage() {
         reason instanceof Error ? reason.message : "无法加载数据库配置";
       setConnectionStatus("disconnected");
       setConnectionError(message);
-      toast.danger("无法加载数据库配置", { description: message });
+      notify.error("无法加载数据库配置", { description: message });
     } finally {
       setLoading(false);
     }
@@ -188,11 +189,11 @@ export default function DatabaseSettingsPage() {
       setConnectionStatus(payload.connectionStatus ?? "connected");
       setConnectionError(payload.connectionError ?? null);
       await waitForBackend();
-      toast.success("数据库配置已保存", {
+      notify.success("数据库配置已保存", {
         description: "后端已重启，新的连接配置已生效。",
       });
     } catch (reason) {
-      toast.danger("保存失败", {
+      notify.error("保存失败", {
         description: reason instanceof Error ? reason.message : "请稍后重试。",
       });
     } finally {
@@ -210,11 +211,11 @@ export default function DatabaseSettingsPage() {
         username: form.username,
         password: form.password,
       });
-      toast.success("连接测试成功", {
+      notify.success("连接测试成功", {
         description: "当前输入的配置尚未保存。",
       });
     } catch (reason) {
-      toast.danger("连接测试失败", {
+      notify.error("连接测试失败", {
         description: reason instanceof Error ? reason.message : "请稍后重试。",
       });
     } finally {
@@ -241,11 +242,11 @@ export default function DatabaseSettingsPage() {
       );
       setValkeyError(payload.connectionError ?? null);
       await waitForBackend();
-      toast.success("Valkey 配置已保存", {
+      notify.success("Valkey 配置已保存", {
         description: "后端已重启，缓存连接已生效。",
       });
     } catch (reason) {
-      toast.danger("保存失败", {
+      notify.error("保存失败", {
         description: reason instanceof Error ? reason.message : "请稍后重试。",
       });
     } finally {
@@ -265,11 +266,11 @@ export default function DatabaseSettingsPage() {
         password: valkeyForm.password,
         cacheTtlHours: Number(valkeyForm.cacheTtlHours),
       });
-      toast.success("Valkey 连接测试成功", {
+      notify.success("Valkey 连接测试成功", {
         description: "当前输入的配置尚未保存。",
       });
     } catch (reason) {
-      toast.danger("连接测试失败", {
+      notify.error("连接测试失败", {
         description: reason instanceof Error ? reason.message : "请稍后重试。",
       });
     } finally {

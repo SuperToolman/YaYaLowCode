@@ -21,6 +21,13 @@
 .records-view-config__field-type-tag--media { background: #ffe0e5; color: #b2314b; }
 .records-view-config__field-type-tag--builtin { background: #e5e8ed; color: #4e5868; }
 
+/* Keep compact controls readable; HeroUI's table hover fill otherwise blends
+   into checkbox and input surfaces in the view-column configuration. */
+.records-view-config__row:hover :global(.table__cell),
+.records-view-config__row[data-hovered="true"] :global(.table__cell) {
+  background-color: var(--surface) !important;
+}
+
 :global(html[data-resolved-theme="dark"]) .records-view-config__field-type-tag--text { background: #123e40; color: #6ce8df; }
 :global(html[data-resolved-theme="dark"]) .records-view-config__field-type-tag--number { background: #173b6b; color: #91c5ff; }
 :global(html[data-resolved-theme="dark"]) .records-view-config__field-type-tag--choice { background: #54204d; color: #f4a8e7; }

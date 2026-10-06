@@ -1,4 +1,5 @@
-﻿"use client";
+"use client";
+import { notify } from "@lib/notify";
 
 import { useEffect, useState } from "react";
 import type { Key } from "react";
@@ -23,11 +24,24 @@ import TogetherIcon from "@lobehub/icons/es/Together/components/Color";
 import VolcengineIcon from "@lobehub/icons/es/Volcengine/components/Color";
 import XAIIcon from "@lobehub/icons/es/XAI/components/Mono";
 import ZhipuIcon from "@lobehub/icons/es/Zhipu/components/Color";
-import { Button, Input, ListBox, Modal, Select, Switch, Table, Tooltip, toast } from "@heroui/react";
+import { Button, Input, ListBox, Modal, Select, Switch, Table, Tooltip } from "@heroui/react";
 import { SettingsContentCard } from "../components/SettingsContentCard";
-import type { AgentModelProvider } from "../agent-types";
 import providerPresetsJson from "./provider-presets.json";
 import { createModelRoute, deleteModelRoute, listModelRoutes, updateModelRoute } from "@features/settings/api";
+
+type AgentModelProvider = {
+  id: string;
+  name: string;
+  kind: string;
+  enabled: boolean;
+  isDefault: boolean;
+  apiBaseUrl: string;
+  apiKey: string;
+  defaultChatModel: string;
+  models: string[];
+  websiteUrl: string;
+  apiKeyConfigured: boolean;
+};
 
 type ProviderForm = Omit<AgentModelProvider, "id" | "apiKeyConfigured">;
 const emptyProvider: ProviderForm = { name: "OpenAI Compatible", kind: "compatible", enabled: true, isDefault: false, apiBaseUrl: "https://api.openai.com/v1", apiKey: "", defaultChatModel: "", models: [], websiteUrl: "https://platform.openai.com" };
@@ -96,7 +110,7 @@ export default function ModelProvidersPage() {
     setItems(routes.map((route) => ({ ...route, kind: findProviderPreset({ name: route.name, kind: "" })?.id ?? "compatible", apiKey: "", websiteUrl: "", apiKeyConfigured: route.apiKeyConfigured })));
   }
 
-  useEffect(() => { const timer = window.setTimeout(() => void load().catch((error) => toast.danger("无法加载模型提供商", { description: String(error) })), 0); return () => window.clearTimeout(timer); }, []);
+  useEffect(() => { const timer = window.setTimeout(() => void load().catch((error) => notify.error("无法加载模型提供商", { description: String(error) })), 0); return () => window.clearTimeout(timer); }, []);
 
   function openCreate() { setEditing(null); setForm({ ...emptyProvider }); setFormOpen(true); }
   function openEdit(item: AgentModelProvider) { setEditing(item); setForm({ name: item.name, kind: item.kind, enabled: item.enabled, isDefault: item.isDefault, apiBaseUrl: item.apiBaseUrl, apiKey: item.apiKey, defaultChatModel: item.defaultChatModel, models: item.models, websiteUrl: item.websiteUrl }); setFormOpen(true); }
@@ -109,11 +123,11 @@ export default function ModelProvidersPage() {
       const payload: ModelRoutePayload = { name: form.name, apiBaseUrl: form.apiBaseUrl, defaultChatModel: form.defaultChatModel, models: form.models, enabled: form.enabled, isDefault: form.isDefault, ...(form.apiKey.trim() ? { apiKey: form.apiKey } : {}) };
       if (editing) await updateModelRoute<ModelRoute>(editing.id, payload);
       else await createModelRoute<ModelRoute>(payload);
-      toast.success(editing ? "模型提供商已更新" : "模型提供商已创建");
+      notify.success(editing ? "模型提供商已更新" : "模型提供商已创建");
       setFormOpen(false);
       await load();
     } catch (error) {
-      toast.danger("无法保存模型提供商", { description: error instanceof Error ? error.message : "请稍后重试。" });
+      notify.error("无法保存模型提供商", { description: error instanceof Error ? error.message : "请稍后重试。" });
     } finally {
       setSaving(false);
     }
@@ -122,10 +136,10 @@ export default function ModelProvidersPage() {
   async function toggleProvider(item: AgentModelProvider) {
     try {
       await updateModelRoute<ModelRoute>(item.id, { name: item.name, apiBaseUrl: item.apiBaseUrl, defaultChatModel: item.defaultChatModel, models: item.models, enabled: !item.enabled, isDefault: item.isDefault });
-      toast.success(item.enabled ? "提供商已停用" : "提供商已启动");
+      notify.success(item.enabled ? "提供商已停用" : "提供商已启动");
       await load();
     } catch (error) {
-      toast.danger("无法更新提供商", { description: error instanceof Error ? error.message : "请稍后重试。" });
+      notify.error("无法更新提供商", { description: error instanceof Error ? error.message : "请稍后重试。" });
     }
   }
 
@@ -134,11 +148,11 @@ export default function ModelProvidersPage() {
     setDeletingProvider(true);
     try {
       await deleteModelRoute<{ id: string }>(deleting.id);
-      toast.success("模型提供商已删除");
+      notify.success("模型提供商已删除");
       setDeleting(null);
       await load();
     } catch (error) {
-      toast.danger("无法删除模型提供商", { description: error instanceof Error ? error.message : "正在被配置文件使用的提供商无法删除。" });
+      notify.error("无法删除模型提供商", { description: error instanceof Error ? error.message : "正在被配置文件使用的提供商无法删除。" });
     } finally {
       setDeletingProvider(false);
     }

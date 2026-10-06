@@ -151,7 +151,7 @@ pub(crate) async fn ensure_automation_tables(db: &DatabaseConnection) -> Result<
           app_route_app_id varchar(32) NOT NULL,
           name varchar(120) NOT NULL,
           description varchar(255),
-          status varchar(24) NOT NULL DEFAULT 'draft',
+          status varchar(24) NOT NULL DEFAULT 'paused',
           current_version integer NOT NULL DEFAULT 1,
           trigger_form_uuid varchar(40),
           trigger_event varchar(32) NOT NULL DEFAULT 'after_create',
@@ -315,49 +315,30 @@ pub(crate) async fn ensure_agent_tables(db: &DatabaseConnection) -> Result<(), A
             ON agent_sessions (agent_id, updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_agent_sessions_owner_updated_at
             ON agent_sessions (owner_user_id, is_pinned DESC, updated_at DESC);
+        ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS parent_session_id UUID REFERENCES agent_sessions(id) ON DELETE SET NULL;
+        CREATE INDEX IF NOT EXISTS idx_agent_sessions_parent ON agent_sessions (parent_session_id);
 
-        CREATE TABLE IF NOT EXISTS agent_messages (
-            id UUID PRIMARY KEY,
-            message_uuid VARCHAR(64) NOT NULL UNIQUE,
-            session_id UUID NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
-            role VARCHAR(24) NOT NULL,
-            content TEXT NOT NULL,
-            metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-            created_at TIMESTAMPTZ NOT NULL
+        CREATE TABLE IF NOT EXISTS agent_session_runtime_summaries (
+            session_id UUID PRIMARY KEY REFERENCES agent_sessions(id) ON DELETE CASCADE,
+            event_generation VARCHAR(120) NOT NULL DEFAULT 'initial',
+            last_event_seq BIGINT NOT NULL DEFAULT -1,
+            run_status VARCHAR(32) NOT NULL DEFAULT 'idle',
+            phase VARCHAR(40),
+            last_tool_name VARCHAR(255),
+            last_error TEXT,
+            pending_approval_count INTEGER NOT NULL DEFAULT 0,
+            unread_activity_version BIGINT NOT NULL DEFAULT 0,
+            last_activity_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
-        CREATE INDEX IF NOT EXISTS idx_agent_messages_session_created
-            ON agent_messages (session_id, created_at ASC);
-
-        CREATE TABLE IF NOT EXISTS agent_runs (
-            id UUID PRIMARY KEY,
-            run_uuid VARCHAR(64) NOT NULL UNIQUE,
-            session_id UUID NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
-            status VARCHAR(24) NOT NULL,
-            model VARCHAR(160) NOT NULL,
-            prompt_tokens BIGINT NOT NULL DEFAULT 0,
-            completion_tokens BIGINT NOT NULL DEFAULT 0,
-            error_message TEXT,
-            started_at TIMESTAMPTZ NOT NULL,
-            completed_at TIMESTAMPTZ
-        );
-        CREATE INDEX IF NOT EXISTS idx_agent_runs_session_started
-            ON agent_runs (session_id, started_at DESC);
-
-        CREATE TABLE IF NOT EXISTS agent_run_steps (
-            id UUID PRIMARY KEY,
-            run_id UUID NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
-            step_index INTEGER NOT NULL,
-            step_type VARCHAR(32) NOT NULL,
-            name VARCHAR(160) NOT NULL,
-            input_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-            output_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-            status VARCHAR(24) NOT NULL,
-            error_message TEXT,
-            started_at TIMESTAMPTZ NOT NULL,
-            completed_at TIMESTAMPTZ
-        );
-        CREATE INDEX IF NOT EXISTS idx_agent_run_steps_run_index
-            ON agent_run_steps (run_id, step_index ASC);
+        INSERT INTO agent_session_runtime_summaries (session_id, last_activity_at, updated_at)
+        SELECT id, COALESCE(updated_at, created_at), COALESCE(updated_at, created_at)
+        FROM agent_sessions
+        ON CONFLICT (session_id) DO NOTHING;
+        CREATE INDEX IF NOT EXISTS idx_agent_session_runtime_summaries_activity
+            ON agent_session_runtime_summaries (last_activity_at DESC, session_id);
+        CREATE INDEX IF NOT EXISTS idx_agent_session_runtime_summaries_status_activity
+            ON agent_session_runtime_summaries (run_status, last_activity_at DESC, session_id);
 
         "#,
     )

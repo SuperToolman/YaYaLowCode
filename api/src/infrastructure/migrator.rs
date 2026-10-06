@@ -67,7 +67,652 @@ impl MigratorTrait for Migrator {
             Box::new(m20260904_000057_repair_form_current_schema_version::Migration),
             Box::new(m20260904_000058_remove_legacy_agent_pending_actions::Migration),
             Box::new(m20260916_000059_allow_duplicate_agent_resource_names::Migration),
+            Box::new(m20260918_000060_add_market_installations::Migration),
+            Box::new(m20260918_000061_add_market_installation_lifecycle::Migration),
+            Box::new(m20260918_000062_create_agent_session_runtime_summaries::Migration),
+            Box::new(m20260918_000063_add_agent_session_lineage::Migration),
+            Box::new(m20260918_000064_reset_legacy_agent_runtime::Migration),
+            // These retired migration identities remain registered so installations
+            // which applied the former YaYa knowledge system can start and advance
+            // to the cleanup migration below.
+            Box::new(m20260922_000065_create_knowledge_rag_tables::Migration),
+            Box::new(m20260922_000066_extend_knowledge_rag_metadata::Migration),
+            Box::new(m20260928_000067_create_agent_knowledge_bindings::Migration),
+            Box::new(m20260928_000068_drop_legacy_agent_registry::Migration),
+            Box::new(m20260928_000069_drop_yaya_knowledge_system::Migration),
+            Box::new(m20260929_000070_create_im_reliable_mailbox::Migration),
+            Box::new(m20260929_000071_migrate_to_im_authoritative_storage::Migration),
+            Box::new(m20260930_000072_remove_automation_draft::Migration),
         ]
+    }
+}
+
+mod m20260930_000072_remove_automation_draft {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260930_000072_remove_automation_draft"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(r#"
+                UPDATE automation_flows SET status = 'paused' WHERE status IN ('draft', 'disabled');
+                UPDATE automation_flow_versions SET status = 'paused' WHERE status IN ('draft', 'disabled');
+                ALTER TABLE automation_flows ALTER COLUMN status SET DEFAULT 'paused';
+            "#).await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(
+                "ALTER TABLE automation_flows ALTER COLUMN status SET DEFAULT 'draft'"
+            ).await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260929_000071_migrate_to_im_authoritative_storage {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str { "m20260929_000071_migrate_to_im_authoritative_storage" }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(r#"
+                CREATE EXTENSION IF NOT EXISTS pgcrypto;
+                -- Refuse to destructively migrate a legacy installation whose schema
+                -- does not match the source layout we know how to copy.
+                DO $$ DECLARE missing TEXT; BEGIN
+                    IF to_regclass('public.communication_conversations') IS NOT NULL THEN
+                        SELECT string_agg(x.name, ',') INTO missing FROM (VALUES
+                          ('id'),('conversation_uuid'),('conversation_type'),('direct_key'),('title'),
+                          ('created_by_user_id'),('last_message_sequence'),('last_message_at'),('created_at'),('updated_at')
+                        ) x(name) WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns c WHERE c.table_schema='public' AND c.table_name='communication_conversations' AND c.column_name=x.name);
+                        IF missing IS NOT NULL THEN RAISE EXCEPTION 'IM migration legacy conversation columns missing: %', missing; END IF;
+                    END IF;
+                    IF to_regclass('public.communication_conversation_members') IS NOT NULL THEN
+                        SELECT string_agg(x.name, ',') INTO missing FROM (VALUES
+                          ('conversation_id'),('user_id'),('member_role'),('last_read_sequence'),('joined_at')
+                        ) x(name) WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns c WHERE c.table_schema='public' AND c.table_name='communication_conversation_members' AND c.column_name=x.name);
+                        IF missing IS NOT NULL THEN RAISE EXCEPTION 'IM migration legacy member columns missing: %', missing; END IF;
+                    END IF;
+                    IF to_regclass('public.communication_messages') IS NOT NULL THEN
+                        SELECT string_agg(x.name, ',') INTO missing FROM (VALUES
+                          ('id'),('message_uuid'),('conversation_id'),('sender_user_id'),('sequence'),('client_message_id'),
+                          ('message_type'),('content'),('metadata_json'),('status'),('recalled_at'),('recalled_by_user_id'),
+                          ('replaces_message_id'),('created_at'),('updated_at')
+                        ) x(name) WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns c WHERE c.table_schema='public' AND c.table_name='communication_messages' AND c.column_name=x.name);
+                        IF missing IS NOT NULL THEN RAISE EXCEPTION 'IM migration legacy message columns missing: %', missing; END IF;
+                    END IF;
+                    IF to_regclass('public.communication_message_attachments') IS NOT NULL THEN
+                        SELECT string_agg(x.name, ',') INTO missing FROM (VALUES ('message_id'),('file_id'),('created_at')) x(name)
+                        WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns c WHERE c.table_schema='public' AND c.table_name='communication_message_attachments' AND c.column_name=x.name);
+                        IF missing IS NOT NULL THEN RAISE EXCEPTION 'IM migration legacy attachment columns missing: %', missing; END IF;
+                    END IF;
+                    SELECT string_agg(format('%s:%s/%s', c.table_name,c.column_name,c.udt_name), ',') INTO missing
+                    FROM information_schema.columns c
+                    JOIN (VALUES
+                      ('communication_conversations','id','uuid'),
+                      ('communication_conversations','created_by_user_id','uuid'),
+                      ('communication_conversations','last_message_sequence','int8'),
+                      ('communication_conversation_members','conversation_id','uuid'),
+                      ('communication_conversation_members','user_id','uuid'),
+                      ('communication_conversation_members','last_read_sequence','int8'),
+                      ('communication_messages','id','uuid'),
+                      ('communication_messages','conversation_id','uuid'),
+                      ('communication_messages','sender_user_id','uuid'),
+                      ('communication_messages','sequence','int8'),
+                      ('communication_message_attachments','message_id','uuid'),
+                      ('communication_message_attachments','file_id','uuid')
+                    ) expected(table_name,column_name,udt_name)
+                      ON expected.table_name=c.table_name AND expected.column_name=c.column_name
+                    WHERE c.table_schema='public' AND c.udt_name<>expected.udt_name;
+                    IF missing IS NOT NULL THEN RAISE EXCEPTION 'IM migration legacy column types incompatible: %', missing; END IF;
+                END $$;
+                CREATE TABLE IF NOT EXISTS im_conversations (
+                    id UUID PRIMARY KEY,
+                    conversation_uuid VARCHAR(96) NOT NULL UNIQUE,
+                    conversation_type VARCHAR(16) NOT NULL,
+                    direct_key VARCHAR(80) UNIQUE,
+                    title VARCHAR(160),
+                    created_by_user_id UUID NOT NULL REFERENCES iam_users(id) ON DELETE RESTRICT,
+                    last_message_sequence BIGINT NOT NULL DEFAULT 0,
+                    last_message_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS im_conversation_members (
+                    conversation_id UUID NOT NULL REFERENCES im_conversations(id) ON DELETE CASCADE,
+                    user_id UUID NOT NULL REFERENCES iam_users(id) ON DELETE CASCADE,
+                    member_role VARCHAR(16) NOT NULL DEFAULT 'member',
+                    last_read_sequence BIGINT NOT NULL DEFAULT 0,
+                    joined_at TIMESTAMPTZ NOT NULL,
+                    left_at TIMESTAMPTZ,
+                    PRIMARY KEY(conversation_id,user_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_im_conversation_members_user ON im_conversation_members(user_id,conversation_id);
+                CREATE TABLE IF NOT EXISTS im_messages (
+                    id UUID PRIMARY KEY,
+                    message_uuid VARCHAR(64) NOT NULL UNIQUE,
+                    conversation_id UUID NOT NULL REFERENCES im_conversations(id) ON DELETE CASCADE,
+                    sender_user_id UUID NOT NULL REFERENCES iam_users(id) ON DELETE RESTRICT,
+                    conversation_seq BIGINT NOT NULL,
+                    local_id VARCHAR(160),
+                    message_type VARCHAR(24) NOT NULL,
+                    content TEXT NOT NULL DEFAULT '',
+                    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    status VARCHAR(16) NOT NULL DEFAULT 'active',
+                    recalled_at TIMESTAMPTZ,
+                    recalled_by_user_id UUID REFERENCES iam_users(id) ON DELETE SET NULL,
+                    replaces_message_id UUID REFERENCES im_messages(id) ON DELETE SET NULL,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL,
+                    UNIQUE(conversation_id,conversation_seq),
+                    UNIQUE(sender_user_id,local_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_im_messages_conversation_seq ON im_messages(conversation_id,conversation_seq DESC);
+                CREATE TABLE IF NOT EXISTS im_message_attachments (
+                    message_id UUID NOT NULL REFERENCES im_messages(id) ON DELETE CASCADE,
+                    file_id UUID NOT NULL REFERENCES uploaded_files(id) ON DELETE RESTRICT,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    PRIMARY KEY(message_id,file_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_im_message_attachments_file ON im_message_attachments(file_id,message_id);
+                CREATE TABLE IF NOT EXISTS im_business_message_bindings (
+                    message_id UUID PRIMARY KEY REFERENCES im_messages(id) ON DELETE CASCADE,
+                    business_type VARCHAR(32) NOT NULL,
+                    business_id UUID NOT NULL,
+                    card_type VARCHAR(64) NOT NULL,
+                    action_schema_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    status VARCHAR(24) NOT NULL DEFAULT 'active',
+                    expires_at TIMESTAMPTZ
+                );
+
+                DO $$ BEGIN
+                    IF to_regclass('public.communication_conversations') IS NOT NULL THEN
+                        INSERT INTO im_conversations(id,conversation_uuid,conversation_type,direct_key,title,created_by_user_id,last_message_sequence,last_message_at,created_at,updated_at)
+                        SELECT cc.id,cc.conversation_uuid,cc.conversation_type,cc.direct_key,cc.title,cc.created_by_user_id,cc.last_message_sequence,cc.last_message_at,cc.created_at,cc.updated_at FROM communication_conversations cc
+                        ON CONFLICT(id) DO NOTHING;
+                    END IF;
+                    IF to_regclass('public.communication_conversation_members') IS NOT NULL THEN
+                        INSERT INTO im_conversation_members(conversation_id,user_id,member_role,last_read_sequence,joined_at)
+                        SELECT conversation_id,user_id,member_role,last_read_sequence,joined_at FROM communication_conversation_members
+                        ON CONFLICT(conversation_id,user_id) DO NOTHING;
+                    END IF;
+                    IF to_regclass('public.communication_messages') IS NOT NULL THEN
+                        INSERT INTO im_messages(id,message_uuid,conversation_id,sender_user_id,conversation_seq,local_id,message_type,content,payload_json,status,recalled_at,recalled_by_user_id,replaces_message_id,created_at,updated_at)
+                        SELECT cm.id,cm.message_uuid,cm.conversation_id,cm.sender_user_id,cm.sequence,cm.client_message_id,cm.message_type,cm.content,cm.metadata_json,cm.status,cm.recalled_at,cm.recalled_by_user_id,cm.replaces_message_id,cm.created_at,cm.updated_at FROM communication_messages cm
+                        ON CONFLICT(id) DO NOTHING;
+                    END IF;
+                    IF to_regclass('public.communication_message_attachments') IS NOT NULL THEN
+                        INSERT INTO im_message_attachments(message_id,file_id,created_at)
+                        SELECT cma.message_id,cma.file_id,cma.created_at FROM communication_message_attachments cma
+                        ON CONFLICT(message_id,file_id) DO NOTHING;
+                    END IF;
+                END $$;
+
+                -- A private system conversation per user gives existing workflow notices
+                -- normal conversation membership/read-cursor semantics.
+                INSERT INTO im_conversations(id,conversation_uuid,conversation_type,title,created_by_user_id,last_message_sequence,created_at,updated_at)
+                SELECT gen_random_uuid(),'system-'||u.id::text,'system','系统通知',u.id,0,NOW(),NOW()
+                FROM iam_users u
+                WHERE EXISTS (SELECT 1 FROM workflow_notifications n WHERE n.recipient_user_id=u.id)
+                ON CONFLICT(conversation_uuid) DO NOTHING;
+                INSERT INTO im_conversation_members(conversation_id,user_id,member_role,last_read_sequence,joined_at)
+                SELECT c.id,u.id,'owner',0,NOW() FROM im_conversations c JOIN iam_users u ON c.conversation_uuid='system-'||u.id::text
+                ON CONFLICT(conversation_id,user_id) DO NOTHING;
+
+                WITH notices AS (
+                    SELECT n.*, c.id AS conv_id,
+                           t.task_uuid,
+                           row_number() OVER(PARTITION BY n.recipient_user_id ORDER BY n.created_at,n.id) AS seq
+                    FROM workflow_notifications n
+                    JOIN im_conversations c ON c.conversation_uuid='system-'||n.recipient_user_id::text
+                    LEFT JOIN workflow_tasks t ON t.id=n.task_id
+                    WHERE n.recipient_user_id IS NOT NULL
+                ), inserted AS (
+                    INSERT INTO im_messages(id,message_uuid,conversation_id,sender_user_id,conversation_seq,local_id,message_type,content,payload_json,status,created_at,updated_at)
+                    SELECT gen_random_uuid(),n.notification_uuid,n.conv_id,n.recipient_user_id,n.seq,n.id::text,'system',n.content,
+                        jsonb_build_object('type','yaya.system_card','cardType',CASE WHEN n.task_id IS NULL THEN 'workflow' ELSE 'approval' END,'businessId',COALESCE(n.task_uuid,n.instance_id::text),'taskUuid',n.task_uuid,'version',1,'title',n.title,'content',n.content,'notificationType',n.notification_type,'formUuid',n.form_uuid,'recordUuid',n.record_uuid,'actions',CASE WHEN n.task_id IS NULL THEN '[]'::jsonb ELSE '[{"id":"approve","label":"同意"},{"id":"reject","label":"拒绝"}]'::jsonb END),
+                        'active',n.created_at,n.created_at
+                    FROM notices n ON CONFLICT(id) DO NOTHING RETURNING id,conversation_id,conversation_seq,sender_user_id,message_uuid,payload_json,created_at
+                )
+                INSERT INTO im_business_message_bindings(message_id,business_type,business_id,card_type,action_schema_json,status)
+                SELECT i.id,CASE WHEN i.payload_json->>'cardType'='approval' THEN 'approval' ELSE 'workflow_notice' END,
+                       COALESCE(n.task_id,n.instance_id),i.payload_json->>'cardType',i.payload_json->'actions','active'
+                FROM inserted i JOIN workflow_notifications n ON n.notification_uuid=i.message_uuid
+                ON CONFLICT(message_id) DO NOTHING;
+
+                -- Rebuild deterministic mailbox history for migrated messages, grouped per recipient.
+                WITH events AS (
+                    SELECT m.id AS message_id,m.conversation_id,m.message_uuid,m.message_type,m.content,m.payload_json,m.conversation_seq,m.sender_user_id,m.created_at,cm.user_id,
+                           row_number() OVER(PARTITION BY cm.user_id ORDER BY m.created_at,m.conversation_id,m.conversation_seq,m.id) AS mailbox_seq
+                    FROM im_messages m JOIN im_conversation_members cm ON cm.conversation_id=m.conversation_id
+                ), inserted_events AS (
+                    INSERT INTO im_mailbox_events(id,user_id,mailbox_seq,conversation_id,message_id,event_type,payload_json,created_at)
+                    SELECT gen_random_uuid(),e.user_id,e.mailbox_seq,e.conversation_id,e.message_id,'message.created',
+                        jsonb_build_object('id',e.message_uuid,'messageId',e.message_uuid,'conversationId',c.conversation_uuid,'conversationSeq',e.conversation_seq,'sequence',e.conversation_seq,'senderUserId',e.sender_user_id::text,'messageType',e.message_type,'content',e.content,'status','active','localId',NULL,'createdAt',e.created_at),e.created_at
+                    FROM events e JOIN im_conversations c ON c.id=e.conversation_id
+                    ON CONFLICT(user_id,mailbox_seq) DO NOTHING
+                    RETURNING id,user_id,mailbox_seq,event_type,payload_json,created_at
+                )
+                INSERT INTO im_delivery_outbox(id,event_id,event_type,payload_json,status,retry_count,next_retry_at,created_at)
+                SELECT gen_random_uuid(),id,event_type,payload_json,'pending',0,NOW(),created_at FROM inserted_events;
+                INSERT INTO im_mailbox_counters(user_id,next_seq,updated_at)
+                SELECT user_id,MAX(mailbox_seq)+1,NOW() FROM im_mailbox_events GROUP BY user_id
+                ON CONFLICT(user_id) DO UPDATE SET next_seq=GREATEST(im_mailbox_counters.next_seq,EXCLUDED.next_seq),updated_at=NOW();
+                UPDATE im_conversations c SET last_message_sequence=x.max_seq,last_message_at=x.max_at,updated_at=NOW()
+                FROM (SELECT conversation_id,MAX(conversation_seq) max_seq,MAX(created_at) max_at FROM im_messages GROUP BY conversation_id) x
+                WHERE c.id=x.conversation_id AND c.conversation_type='system';
+
+                DO $$ DECLARE old_messages BIGINT; new_messages BIGINT; old_members BIGINT; new_members BIGINT; old_attachments BIGINT; new_attachments BIGINT; bad_sequences BIGINT; bad_mailbox BIGINT; bad_bindings BIGINT;
+                BEGIN
+                    IF to_regclass('public.communication_messages') IS NOT NULL THEN
+                        EXECUTE 'SELECT COUNT(*) FROM communication_messages' INTO old_messages;
+                    SELECT COUNT(*) INTO new_messages FROM im_messages im WHERE im.id IN (SELECT cm.id FROM communication_messages cm);
+                        IF old_messages <> new_messages THEN RAISE EXCEPTION 'IM migration message count mismatch: % vs %',old_messages,new_messages; END IF;
+                    END IF;
+                    IF to_regclass('public.communication_conversation_members') IS NOT NULL THEN
+                        EXECUTE 'SELECT COUNT(*) FROM communication_conversation_members' INTO old_members;
+                    SELECT COUNT(*) INTO new_members FROM im_conversation_members imcm WHERE (imcm.conversation_id,imcm.user_id) IN (SELECT cm.conversation_id,cm.user_id FROM communication_conversation_members cm);
+                        IF old_members <> new_members THEN RAISE EXCEPTION 'IM migration member count mismatch: % vs %',old_members,new_members; END IF;
+                    END IF;
+                    IF to_regclass('public.communication_message_attachments') IS NOT NULL THEN
+                        EXECUTE 'SELECT COUNT(*) FROM communication_message_attachments' INTO old_attachments;
+                    SELECT COUNT(*) INTO new_attachments FROM im_message_attachments ima WHERE (ima.message_id,ima.file_id) IN (SELECT a.message_id,a.file_id FROM communication_message_attachments a);
+                        IF old_attachments <> new_attachments THEN RAISE EXCEPTION 'IM migration attachment count mismatch: % vs %',old_attachments,new_attachments; END IF;
+                    END IF;
+                    SELECT COUNT(*) INTO bad_sequences FROM (SELECT conversation_id FROM im_messages GROUP BY conversation_id HAVING MIN(conversation_seq) <> 1 OR COUNT(*) <> MAX(conversation_seq)) q;
+                    IF bad_sequences <> 0 THEN RAISE EXCEPTION 'IM migration conversation sequence gaps: %',bad_sequences; END IF;
+                    SELECT COUNT(*) INTO bad_mailbox FROM (SELECT user_id FROM im_mailbox_events GROUP BY user_id HAVING MIN(mailbox_seq) <> 1 OR COUNT(*) <> MAX(mailbox_seq)) q;
+                    IF bad_mailbox <> 0 THEN RAISE EXCEPTION 'IM migration mailbox sequence gaps: %',bad_mailbox; END IF;
+                    SELECT COUNT(*) INTO bad_bindings FROM im_business_message_bindings b LEFT JOIN workflow_tasks t ON t.id=b.business_id WHERE b.business_type='approval' AND t.id IS NULL;
+                    IF bad_bindings <> 0 THEN RAISE EXCEPTION 'IM migration orphan approval bindings: %',bad_bindings; END IF;
+                END $$;
+                DROP TABLE IF EXISTS communication_message_attachments;
+                DROP TABLE IF EXISTS communication_messages;
+                DROP TABLE IF EXISTS communication_conversation_members;
+                DROP TABLE IF EXISTS communication_conversations;
+            "#).await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("DROP TABLE IF EXISTS im_business_message_bindings; DROP TABLE IF EXISTS im_message_attachments; DROP TABLE IF EXISTS im_messages; DROP TABLE IF EXISTS im_conversation_members; DROP TABLE IF EXISTS im_conversations;").await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260929_000070_create_im_reliable_mailbox {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260929_000070_create_im_reliable_mailbox"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(r#"
+                CREATE TABLE IF NOT EXISTS im_mailbox_counters (
+                    user_id UUID PRIMARY KEY,
+                    next_seq BIGINT NOT NULL DEFAULT 1,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                CREATE TABLE IF NOT EXISTS im_mailbox_events (
+                    id UUID PRIMARY KEY,
+                    user_id UUID NOT NULL,
+                    mailbox_seq BIGINT NOT NULL,
+                    conversation_id UUID NULL,
+                    message_id UUID NULL,
+                    event_type VARCHAR(64) NOT NULL,
+                    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    UNIQUE(user_id, mailbox_seq)
+                );
+                CREATE INDEX IF NOT EXISTS idx_im_mailbox_events_user_seq
+                    ON im_mailbox_events(user_id, mailbox_seq);
+                CREATE INDEX IF NOT EXISTS idx_im_mailbox_events_created
+                    ON im_mailbox_events(created_at);
+                CREATE INDEX IF NOT EXISTS idx_im_mailbox_events_retention
+                    ON im_mailbox_events(created_at, user_id, mailbox_seq);
+                CREATE TABLE IF NOT EXISTS im_device_cursors (
+                    user_id UUID NOT NULL,
+                    device_id VARCHAR(160) NOT NULL,
+                    last_acked_mailbox_seq BIGINT NOT NULL DEFAULT 0,
+                    last_seen_at TIMESTAMPTZ NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL,
+                    PRIMARY KEY(user_id, device_id)
+                );
+                CREATE TABLE IF NOT EXISTS im_delivery_outbox (
+                    id UUID PRIMARY KEY,
+                    event_id UUID NOT NULL,
+                    event_type VARCHAR(64) NOT NULL,
+                    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    status VARCHAR(24) NOT NULL DEFAULT 'pending',
+                    retry_count INTEGER NOT NULL DEFAULT 0,
+                    next_retry_at TIMESTAMPTZ NOT NULL,
+                    last_error TEXT NULL,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    delivered_at TIMESTAMPTZ NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_im_delivery_outbox_pending
+                    ON im_delivery_outbox(status, next_retry_at);
+                ALTER TABLE im_delivery_outbox ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+            "#).await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(
+                "DROP TABLE IF EXISTS im_delivery_outbox; DROP TABLE IF EXISTS im_device_cursors; DROP TABLE IF EXISTS im_mailbox_events; DROP TABLE IF EXISTS im_mailbox_counters;"
+            ).await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260928_000068_drop_legacy_agent_registry {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260928_000068_drop_legacy_agent_registry"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(
+                "DROP TABLE IF EXISTS agent_definitions CASCADE;
+                 DROP TABLE IF EXISTS agent_config_profiles CASCADE;",
+            ).await?;
+            Ok(())
+        }
+
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            // This early-stage cleanup intentionally does not restore retired data.
+            Ok(())
+        }
+    }
+}
+
+mod m20260928_000069_drop_yaya_knowledge_system {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260928_000069_drop_yaya_knowledge_system"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(
+                "DROP TABLE IF EXISTS agent_knowledge_bindings;
+                 DROP TABLE IF EXISTS knowledge_index_jobs;
+                 DROP TABLE IF EXISTS knowledge_chunks;
+                 DROP TABLE IF EXISTS knowledge_documents;
+                 DELETE FROM agent_resources WHERE kind = 'knowledge_base';",
+            ).await?;
+            Ok(())
+        }
+
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
+    }
+}
+
+// Historical migration identities for the retired YaYa-owned RAG system.
+// Migration runners validate the complete applied history, so deleting these
+// definitions prevents existing installations from starting. Their former
+// schema work is deliberately a no-op for new installations; migration 69 is
+// the single destructive cleanup for installations that still have those tables.
+mod m20260922_000065_create_knowledge_rag_tables {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260922_000065_create_knowledge_rag_tables"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
+
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
+    }
+}
+
+mod m20260922_000066_extend_knowledge_rag_metadata {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260922_000066_extend_knowledge_rag_metadata"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
+
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
+    }
+}
+
+mod m20260928_000067_create_agent_knowledge_bindings {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260928_000067_create_agent_knowledge_bindings"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
+
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
+    }
+}
+
+mod m20260918_000064_reset_legacy_agent_runtime {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str { "m20260918_000064_reset_legacy_agent_runtime" }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(
+                "
+                CREATE TABLE IF NOT EXISTS agent_runtime_reset_markers (
+                    version VARCHAR(80) PRIMARY KEY,
+                    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    workspace_cleanup_completed BOOLEAN NOT NULL DEFAULT FALSE
+                );
+                INSERT INTO agent_runtime_reset_markers (version)
+                VALUES ('native-workbench-v1') ON CONFLICT (version) DO NOTHING;
+                TRUNCATE TABLE agent_sessions CASCADE;
+                DROP TABLE IF EXISTS agent_run_steps;
+                DROP TABLE IF EXISTS agent_runs;
+                DROP TABLE IF EXISTS agent_messages;
+                ",
+            ).await?;
+            Ok(())
+        }
+
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            // The native Workbench reset is intentionally irreversible.
+            Ok(())
+        }
+    }
+}
+
+mod m20260918_000063_add_agent_session_lineage {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str { "m20260918_000063_add_agent_session_lineage" }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(
+                "ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS parent_session_id UUID REFERENCES agent_sessions(id) ON DELETE SET NULL; CREATE INDEX IF NOT EXISTS idx_agent_sessions_parent ON agent_sessions (parent_session_id);",
+            ).await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(
+                "DROP INDEX IF EXISTS idx_agent_sessions_parent; ALTER TABLE agent_sessions DROP COLUMN IF EXISTS parent_session_id;",
+            ).await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260918_000062_create_agent_session_runtime_summaries {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260918_000062_create_agent_session_runtime_summaries"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "
+                    CREATE TABLE IF NOT EXISTS agent_session_runtime_summaries (
+                        session_id UUID PRIMARY KEY REFERENCES agent_sessions(id) ON DELETE CASCADE,
+                        event_generation VARCHAR(120) NOT NULL DEFAULT 'initial',
+                        last_event_seq BIGINT NOT NULL DEFAULT -1,
+                        run_status VARCHAR(32) NOT NULL DEFAULT 'idle',
+                        phase VARCHAR(40),
+                        last_tool_name VARCHAR(255),
+                        last_error TEXT,
+                        pending_approval_count INTEGER NOT NULL DEFAULT 0,
+                        unread_activity_version BIGINT NOT NULL DEFAULT 0,
+                        last_activity_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        CHECK (run_status IN ('idle', 'queued', 'running', 'waiting_approval', 'completed', 'stopped', 'failed', 'unknown'))
+                    );
+                    INSERT INTO agent_session_runtime_summaries (
+                        session_id, last_activity_at, updated_at
+                    )
+                    SELECT id, COALESCE(updated_at, created_at), COALESCE(updated_at, created_at)
+                    FROM agent_sessions
+                    ON CONFLICT (session_id) DO NOTHING;
+                    CREATE INDEX IF NOT EXISTS idx_agent_session_runtime_summaries_activity
+                        ON agent_session_runtime_summaries (last_activity_at DESC, session_id);
+                    CREATE INDEX IF NOT EXISTS idx_agent_session_runtime_summaries_status_activity
+                        ON agent_session_runtime_summaries (run_status, last_activity_at DESC, session_id);
+                    ",
+                )
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE IF EXISTS agent_session_runtime_summaries;")
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20260918_000061_add_market_installation_lifecycle {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration { fn name(&self) -> &str { "m20260918_000061_add_market_installation_lifecycle" } }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("ALTER TABLE market_installations ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ; ALTER TABLE market_installations ADD COLUMN IF NOT EXISTS legacy_mapping BOOLEAN NOT NULL DEFAULT FALSE; CREATE TABLE IF NOT EXISTS market_installation_versions (installation_id UUID NOT NULL, release_id VARCHAR(128) NOT NULL, version VARCHAR(64) NOT NULL, package_sha256 VARCHAR(128) NOT NULL, package_bytes BYTEA, snapshot_json JSONB NOT NULL DEFAULT '{}', applied_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(installation_id, release_id)); CREATE INDEX IF NOT EXISTS idx_market_installation_versions_applied ON market_installation_versions(installation_id, applied_at DESC);").await?;
+            Ok(())
+        }
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> { Ok(()) }
+    }
+}
+
+mod m20260918_000060_add_market_installations {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260918_000060_add_market_installations"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("CREATE TABLE IF NOT EXISTS market_installations (installation_id UUID PRIMARY KEY, product_id VARCHAR(128) NOT NULL, release_id VARCHAR(128) NOT NULL, local_app_id VARCHAR(128) NOT NULL, status VARCHAR(32) NOT NULL, installed_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL); CREATE UNIQUE INDEX IF NOT EXISTS idx_market_installation_product ON market_installations(product_id); CREATE TABLE IF NOT EXISTS market_installation_resources (installation_id UUID NOT NULL, resource_type VARCHAR(64) NOT NULL, source_id VARCHAR(128) NOT NULL, local_id VARCHAR(128) NOT NULL, PRIMARY KEY(installation_id, resource_type, source_id)); CREATE TABLE IF NOT EXISTS market_installation_events (id UUID PRIMARY KEY, installation_id UUID NOT NULL, event_type VARCHAR(64) NOT NULL, detail_json JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL);").await?;
+            Ok(())
+        }
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
     }
 }
 

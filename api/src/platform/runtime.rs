@@ -1,6 +1,6 @@
 //! Application-wide runtime state shared by HTTP handlers.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::{
     Arc, RwLock,
     atomic::{AtomicBool, Ordering},
@@ -21,8 +21,72 @@ pub(crate) struct AppState {
     cache_ttl_seconds: u64,
     shutdown: watch::Sender<bool>,
     restart_pending: Arc<AtomicBool>,
-    communication_events: broadcast::Sender<String>,
+    event_bus: LocalEventBus,
+    pub(crate) im_metrics: ImMetrics,
     communication_memberships: Arc<RwLock<HashSet<(String, Uuid)>>>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct ImDeliveryEvent {
+    pub(crate) event: String,
+    #[serde(rename = "requestId", skip_serializing_if = "Option::is_none")]
+    pub(crate) request_id: Option<String>,
+    #[serde(rename = "userId", skip_serializing_if = "Option::is_none")]
+    pub(crate) user_id: Option<String>,
+    #[serde(rename = "conversationId", skip_serializing_if = "Option::is_none")]
+    pub(crate) conversation_id: Option<String>,
+    #[serde(rename = "conversationSeq", skip_serializing_if = "Option::is_none")]
+    pub(crate) conversation_seq: Option<i64>,
+    #[serde(rename = "mailboxSeq", skip_serializing_if = "Option::is_none")]
+    pub(crate) mailbox_seq: Option<i64>,
+    #[serde(rename = "localId", skip_serializing_if = "Option::is_none")]
+    pub(crate) local_id: Option<String>,
+    #[serde(rename = "messageId", skip_serializing_if = "Option::is_none")]
+    pub(crate) message_id: Option<String>,
+    pub(crate) data: serde_json::Value,
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct ImMetrics {
+    counters: Arc<RwLock<BTreeMap<&'static str, u64>>>,
+}
+
+impl ImMetrics {
+    pub(crate) fn inc(&self, name: &'static str) {
+        if let Ok(mut counters) = self.counters.write() {
+            *counters.entry(name).or_default() += 1;
+        }
+    }
+
+    pub(crate) fn snapshot(&self) -> BTreeMap<&'static str, u64> {
+        self.counters.read().map(|value| value.clone()).unwrap_or_default()
+    }
+}
+
+pub(crate) trait EventBus: Send + Sync {
+    fn publish(&self, event: ImDeliveryEvent) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + '_>>;
+    fn subscribe(&self) -> broadcast::Receiver<ImDeliveryEvent>;
+}
+
+#[derive(Clone)]
+pub(crate) struct LocalEventBus {
+    sender: broadcast::Sender<ImDeliveryEvent>,
+}
+
+impl EventBus for LocalEventBus {
+    fn publish(&self, event: ImDeliveryEvent) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + '_>> {
+        Box::pin(async move { self.sender.send(event).map(|_| ()).map_err(|error| error.to_string()) })
+    }
+
+    fn subscribe(&self) -> broadcast::Receiver<ImDeliveryEvent> {
+        self.sender.subscribe()
+    }
+}
+
+impl LocalEventBus {
+    pub(crate) fn publish_now(&self, event: ImDeliveryEvent) {
+        let _ = self.sender.send(event);
+    }
 }
 
 impl AppState {
@@ -32,28 +96,43 @@ impl AppState {
         cache_ttl_seconds: u64,
         shutdown: watch::Sender<bool>,
     ) -> Self {
-        let (communication_events, _) = broadcast::channel(1024);
+        let (sender, _) = broadcast::channel(1024);
         Self {
             db,
             valkey,
             cache_ttl_seconds,
             shutdown,
             restart_pending: Arc::new(AtomicBool::new(false)),
-            communication_events,
+            event_bus: LocalEventBus { sender },
+            im_metrics: ImMetrics::default(),
             communication_memberships: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
     pub(crate) fn publish_communication_event<T: Serialize>(&self, event_type: &str, data: &T) {
-        if let Ok(value) =
-            serde_json::to_string(&serde_json::json!({ "type": event_type, "data": data }))
-        {
-            let _ = self.communication_events.send(value);
+        if let Ok(data) = serde_json::to_value(data) {
+            let string_field = |name: &str| data.get(name).and_then(serde_json::Value::as_str).map(str::to_string);
+            let number_field = |name: &str| data.get(name).and_then(serde_json::Value::as_i64);
+            self.event_bus.publish_now(ImDeliveryEvent {
+                event: event_type.to_string(),
+                request_id: string_field("requestId"),
+                user_id: string_field("userId"),
+                conversation_id: string_field("conversationId"),
+                conversation_seq: number_field("conversationSeq"),
+                mailbox_seq: number_field("mailboxSeq"),
+                local_id: string_field("localId"),
+                message_id: string_field("messageId"),
+                data,
+            });
         }
     }
 
-    pub(crate) fn subscribe_communication_events(&self) -> broadcast::Receiver<String> {
-        self.communication_events.subscribe()
+    pub(crate) fn subscribe_communication_events(&self) -> broadcast::Receiver<ImDeliveryEvent> {
+        self.event_bus.subscribe()
+    }
+
+    pub(crate) fn shutdown_receiver(&self) -> watch::Receiver<bool> {
+        self.shutdown.subscribe()
     }
 
     pub(crate) fn communication_membership_cached(

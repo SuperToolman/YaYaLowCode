@@ -1,5 +1,6 @@
 ﻿"use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { notify } from "@lib/notify";
 import { Button, Input, Modal, Tabs } from "@heroui/react";
 import { Card } from "@heroui/react/card";
 import {
@@ -67,6 +68,7 @@ export default function RolesSettingsPage() {
   async function save() {
     if (!name.trim()) return;
     setSaving(true);
+    setError("");
     try {
       const { data, error } = editing
         ? await updateLocalRole({
@@ -78,9 +80,10 @@ export default function RolesSettingsPage() {
       if (error || !data || data.code !== 0 || !data.data)
         throw new Error(data?.message || "保存失败");
       setOpen(false);
+      notify.success(editing ? "角色已更新" : "角色已创建");
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "保存失败");
+      notify.error("保存角色失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
     } finally {
       setSaving(false);
     }
@@ -92,6 +95,7 @@ export default function RolesSettingsPage() {
   }
   async function remove(role: Role) {
     setDeletingRole(true);
+    setError("");
     try {
       const { error } = await deleteLocalRole({
         path: { roleId: role.id },
@@ -99,14 +103,16 @@ export default function RolesSettingsPage() {
       });
       if (error) throw new Error("删除失败");
       setDeleting(null);
+      notify.success("角色已删除");
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "删除失败");
+      notify.error("删除角色失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
     } finally {
       setDeletingRole(false);
     }
   }
   async function mutate(role: Role, data: { name?: string; status?: string }) {
+    setError("");
     try {
       const { data: response, error } = await updateLocalRole({
         path: { roleId: role.id },
@@ -115,9 +121,10 @@ export default function RolesSettingsPage() {
       });
       if (error || !response || response.code !== 0 || !response.data)
         throw new Error(response?.message || "更新失败");
+      notify.success(data.status ? "角色状态已更新" : "角色已更新");
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "更新失败");
+      notify.error("更新角色失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
     }
   }
   return (

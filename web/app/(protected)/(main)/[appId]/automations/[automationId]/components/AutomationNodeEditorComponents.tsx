@@ -246,6 +246,7 @@ export function NodeConfigFields({
   onAddMappingRow,
   onBasicChange,
   onProcessMemberIdsChange,
+  onProcessRequiredFieldIdsChange,
   onConditionBranchChange,
   onConditionModeChange,
   onMoveConditionBranch,
@@ -302,6 +303,7 @@ export function NodeConfigFields({
     key: "assigneeIds" | "recipientIds",
     ids: string[],
   ) => void;
+  onProcessRequiredFieldIdsChange: (ids: string[]) => void;
   onConditionBranchChange: (
     branchId: string,
     key: "name" | "hitLabel" | "expression",
@@ -346,6 +348,7 @@ export function NodeConfigFields({
         node={node}
         onBasicChange={onBasicChange}
         onProcessMemberIdsChange={onProcessMemberIdsChange}
+        onProcessRequiredFieldIdsChange={onProcessRequiredFieldIdsChange}
         triggerEvents={triggerEvents}
         triggerFieldOptions={triggerFieldOptions}
       />

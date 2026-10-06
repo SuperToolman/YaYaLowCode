@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
+import { notify } from "@lib/notify";
 
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "@heroui/react";
 import {
   createFormView,
   deleteFormView,
@@ -22,7 +22,7 @@ export type ViewConfig = {
   frozenFieldIds?: string[];
 };
 export type FormView = { id: string; viewUuid?: string; name: string; isDefault: boolean; config: ViewConfig; updatedAt: string };
-export type ViewConfigMode = "filters" | "fields" | "sorts";
+export type ViewConfigMode = "filters" | "fields" | "sorts" | "customButtons";
 
 function cloneViewConfig(config: ViewConfig) {
   return JSON.parse(JSON.stringify(config)) as ViewConfig;
@@ -78,7 +78,7 @@ export function useFormViews({
         setIsReady(true);
       }).catch((reason: unknown) => {
         setIsReady(true);
-        toast.danger(reason instanceof Error ? reason.message : "无法加载表单视图");
+        notify.error(reason instanceof Error ? reason.message : "无法加载表单视图");
       });
     }, 0);
     return () => window.clearTimeout(timer);
@@ -109,14 +109,14 @@ export function useFormViews({
       responseStyle: "fields",
     });
     if (error || !data || data.code !== 0 || !data.data) {
-      toast.danger(data?.message || "保存视图失败");
+      notify.error(data?.message || "保存视图失败");
       return;
     }
     const updatedAt = data.data.updatedAt;
     setViews((current) => current.map((view) => view.id === activeFormView.id ? { ...view, config: pendingViewConfig, updatedAt } : view));
     setPendingViewConfig(null);
     setViewConfigDraft(null);
-    toast.success("视图配置已保存");
+    notify.success("视图配置已保存");
   }
 
   async function createTableView() {
@@ -126,7 +126,7 @@ export function useFormViews({
       responseStyle: "fields",
     });
     if (error || !data || data.code !== 0 || !data.data) {
-      toast.danger(data?.message || "创建视图失败");
+      notify.error(data?.message || "创建视图失败");
       return null;
     }
     const view: FormView = { id: `view-${data.data.viewUuid}`, viewUuid: data.data.viewUuid, name: data.data.name, isDefault: false, config: data.data.config as ViewConfig, updatedAt: data.data.updatedAt };
@@ -144,7 +144,7 @@ export function useFormViews({
     if (!viewDeleteTarget?.viewUuid) return null;
     const { error } = await deleteFormView({ path: { formUuid, viewUuid: viewDeleteTarget.viewUuid }, responseStyle: "fields" });
     if (error) {
-      toast.danger("删除视图失败");
+      notify.error("删除视图失败");
       return null;
     }
     const nextViews = views.filter((item) => item.id !== viewDeleteTarget.id);
@@ -162,7 +162,7 @@ export function useFormViews({
       responseStyle: "fields",
     });
     if (error || !data || data.code !== 0 || !data.data) {
-      toast.danger(data?.message || "复制视图失败");
+      notify.error(data?.message || "复制视图失败");
       return null;
     }
     const view: FormView = { id: `view-${data.data.viewUuid}`, viewUuid: data.data.viewUuid, name: data.data.name, isDefault: false, config: data.data.config as ViewConfig, updatedAt: data.data.updatedAt };

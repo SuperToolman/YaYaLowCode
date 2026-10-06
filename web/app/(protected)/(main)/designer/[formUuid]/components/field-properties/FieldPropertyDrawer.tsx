@@ -4,6 +4,8 @@
 
 "use client";
 
+import { MySurface } from "@shared/ui/MySurface";
+import { MyTabs } from "@shared/ui/MyTabs";
 import { useEffect, useMemo, useState } from "react";
 import type { Key } from "react";
 import {
@@ -23,11 +25,15 @@ import {
   Select,
   Switch,
   Tabs,
+  TextArea,
   Popover,
 } from "@heroui/react";
-import styles from "../DesignerTheme.module.css";
 import { Modal } from "@heroui/react/modal";
-import type { DesignerComponentType, DesignerFieldProps, SerialNumberRule } from "../CompTool";
+import type {
+  DesignerComponentType,
+  DesignerFieldProps,
+  SerialNumberRule,
+} from "../CompTool";
 import { isChoiceFieldType } from "../../designer-options";
 import type {
   FieldPropsChangeHandler,
@@ -131,234 +137,253 @@ export function FieldPropertyPanel({
     TITLE_POSITION_FIELD_TYPES.has(field.type) && !isSubformChild;
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden text-[11px] text-[var(--color-text-primary)]">
-      <header className="border-b border-[var(--designer-border)] p-1">
-        <h2 className="truncate text-xs font-medium text-[var(--color-text-primary)]">
-          {field.label}
+    <div className="flex flex-col gap-2 overflow-hidden">
+      <div className="text-[12px]">
+        <h2 className="truncate">
+          {field.label}（<span className="shrink-0">{field.type}</span>）
         </h2>
-        <div className="flex min-w-0 items-center gap-1 text-[10px] text-[var(--color-text-secondary)]">
-          <span className="shrink-0">{field.type}</span>
-          <span aria-hidden>·</span>
-          <span className="truncate font-mono">{field.id}</span>
+        <div className="flex min-w-0 items-center">
+          <span className="truncate text-gray-500">{field.id}</span>
         </div>
-      </header>
+      </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="py-0.5">
-          <PropertyFold title="基础属性">
-            <PropertyRow label="标题">
-              <TextWithActions
-                value={field.label}
-                onChange={(value) => onLabelChange(field.id, value)}
-              />
-            </PropertyRow>
-            {supportsTitlePosition ? (
-              <PropertyRow label="标题位置">
-                <TitlePositionSegmented
-                  allowInside={INSIDE_TITLE_FIELD_TYPES.has(field.type)}
-                  value={field.props.titlePosition ?? "top"}
-                  onChange={(titlePosition) =>
-                    onPropsChange(field.id, { titlePosition })
-                  }
-                />
-              </PropertyRow>
-            ) : null}
-            <PropertyRow label="描述">
-              <TextWithActions
-                value={field.props.description ?? ""}
-                onChange={(value) =>
-                  onPropsChange(field.id, { description: value })
+      <div className="flex flex-1 flex-col min-h-0 gap-2 overflow-y-auto">
+        <PropertyFold title="基础属性">
+          <PropertyRow label="标题">
+            <TextWithActions
+              value={field.label}
+              onChange={(value) => onLabelChange(field.id, value)}
+            />
+          </PropertyRow>
+          {supportsTitlePosition ? (
+            <PropertyRow label="标题位置">
+              <TitlePositionSegmented
+                allowInside={INSIDE_TITLE_FIELD_TYPES.has(field.type)}
+                value={field.props.titlePosition ?? "top"}
+                onChange={(titlePosition) =>
+                  onPropsChange(field.id, { titlePosition })
                 }
               />
             </PropertyRow>
-            {supportsPlaceholder ? (
-              <PropertyRow label="占位提示">
-                <TextWithActions
-                  value={field.props.placeholder ?? ""}
+          ) : null}
+          <PropertyRow label="描述">
+            <TextWithActions
+              value={field.props.description ?? ""}
+              onChange={(value) =>
+                onPropsChange(field.id, { description: value })
+              }
+            />
+          </PropertyRow>
+          {supportsPlaceholder ? (
+            <PropertyRow label="占位提示">
+              <TextWithActions
+                value={field.props.placeholder ?? ""}
+                onChange={(value) =>
+                  onPropsChange(field.id, { placeholder: value })
+                }
+              />
+            </PropertyRow>
+          ) : null}
+          <PropertyRow label="状态">
+            <StatusSegmented field={field} onPropsChange={onPropsChange} />
+            <IconAction label="表达式" icon={<CodeToken />} />
+          </PropertyRow>
+          {field.type !== "groupContainer" &&
+          field.type !== "member" &&
+          field.type !== "serialNumber" &&
+          field.type !== "richText" ? (
+            <PropertyRow label="默认值" align="start">
+              <DefaultValueEditor
+                fields={fields}
+                field={field}
+                onPropsChange={onPropsChange}
+              />
+            </PropertyRow>
+          ) : null}
+          {supportsOptions ? (
+            <PropertyRow label="选项" align="start">
+              <OptionsEditor
+                key={field.id}
+                field={field}
+                onPropsChange={onPropsChange}
+              />
+            </PropertyRow>
+          ) : null}
+          {field.type === "cascader" ? (
+            <PropertyRow label="数据源" align="start">
+              <CascaderDataSourceEditor
+                field={field}
+                onPropsChange={onPropsChange}
+              />
+            </PropertyRow>
+          ) : null}
+          <FieldSpecificProperties
+            field={field}
+            onPropsChange={onPropsChange}
+          />
+          {field.type === "html" || field.type === "tsx" ? (
+            <CustomCodeProperties field={field} onPropsChange={onPropsChange} />
+          ) : null}
+          {supportsCounter ? (
+            <>
+              <PropertyRow label="清除按钮">
+                <PanelSwitch
+                  isSelected={Boolean(field.props.showClearButton)}
                   onChange={(value) =>
-                    onPropsChange(field.id, { placeholder: value })
+                    onPropsChange(field.id, { showClearButton: value })
                   }
                 />
               </PropertyRow>
-            ) : null}
-            <PropertyRow label="状态">
-              <StatusSegmented field={field} onPropsChange={onPropsChange} />
-              <IconAction label="表达式" icon={<CodeToken />} />
+              <PropertyRow label="显示计数">
+                <PanelSwitch
+                  isSelected={Boolean(field.props.showCounter)}
+                  onChange={(value) =>
+                    onPropsChange(field.id, { showCounter: value })
+                  }
+                />
+              </PropertyRow>
+            </>
+          ) : null}
+        </PropertyFold>
+
+        {field.type === "associationFormField" ? (
+          <AssociationFormProperties
+            field={field}
+            fields={fields}
+            onPropsChange={onPropsChange}
+          />
+        ) : null}
+
+        {field.type === "subform" ? (
+          <SubformProperties field={field} onPropsChange={onPropsChange} />
+        ) : null}
+
+        {field.type === "serialNumber" ? (
+          <SerialNumberProperties
+            field={field}
+            fields={fields}
+            onPropsChange={onPropsChange}
+          />
+        ) : null}
+
+        {field.type !== "subform" && field.type !== "serialNumber" ? (
+          <PropertyFold title="校验">
+            <PropertyRow label="必填">
+              <PanelSwitch
+                isSelected={Boolean(field.props.isRequired)}
+                onChange={(value) =>
+                  onPropsChange(field.id, { isRequired: value })
+                }
+              />
             </PropertyRow>
-            {field.type !== "groupContainer" && field.type !== "member" && field.type !== "serialNumber" && field.type !== "richText" ? (
-              <PropertyRow label="默认值" align="start">
-                <DefaultValueEditor
-                  fields={fields}
-                  field={field}
-                  onPropsChange={onPropsChange}
-                />
-              </PropertyRow>
-            ) : null}
-            {supportsOptions ? (
-              <PropertyRow label="选项" align="start">
-                <OptionsEditor
-                  key={field.id}
-                  field={field}
-                  onPropsChange={onPropsChange}
-                />
-              </PropertyRow>
-            ) : null}
-            {field.type === "cascader" ? (
-              <PropertyRow label="数据源" align="start">
-                <CascaderDataSourceEditor field={field} onPropsChange={onPropsChange} />
-              </PropertyRow>
-            ) : null}
-            <FieldSpecificProperties
-              field={field}
-              onPropsChange={onPropsChange}
-            />
-            {field.type === "html" || field.type === "tsx" ? (
-              <CustomCodeProperties field={field} onPropsChange={onPropsChange} />
-            ) : null}
-            {supportsCounter ? (
+            {field.type === "number" ? (
               <>
-                <PropertyRow label="清除按钮">
-                  <PanelSwitch
-                    isSelected={Boolean(field.props.showClearButton)}
+                <PropertyRow label="最小值">
+                  <NumberWithActions
+                    value={field.props.minValue}
                     onChange={(value) =>
-                      onPropsChange(field.id, { showClearButton: value })
+                      onPropsChange(field.id, { minValue: value })
                     }
                   />
                 </PropertyRow>
-                <PropertyRow label="显示计数">
-                  <PanelSwitch
-                    isSelected={Boolean(field.props.showCounter)}
+                <PropertyRow label="最大值">
+                  <NumberWithActions
+                    value={field.props.maxValue}
                     onChange={(value) =>
-                      onPropsChange(field.id, { showCounter: value })
+                      onPropsChange(field.id, { maxValue: value })
                     }
                   />
                 </PropertyRow>
               </>
             ) : null}
           </PropertyFold>
+        ) : null}
 
-          {field.type === "associationFormField" ? (
-            <AssociationFormProperties
-              field={field}
-              fields={fields}
-              onPropsChange={onPropsChange}
-            />
-          ) : null}
-
-          {field.type === "subform" ? (
-            <SubformProperties field={field} onPropsChange={onPropsChange} />
-          ) : null}
-
-          {field.type === "serialNumber" ? (
-            <SerialNumberProperties field={field} fields={fields} onPropsChange={onPropsChange} />
-          ) : null}
-
-          {field.type !== "subform" && field.type !== "serialNumber" ? (
-            <PropertyFold title="校验">
-              <PropertyRow label="必填">
-                <PanelSwitch
-                  isSelected={Boolean(field.props.isRequired)}
-                  onChange={(value) =>
-                    onPropsChange(field.id, { isRequired: value })
-                  }
-                />
-              </PropertyRow>
-              {field.type === "number" ? (
-                <>
-                  <PropertyRow label="最小值">
-                    <NumberWithActions
-                      value={field.props.minValue}
-                      onChange={(value) =>
-                        onPropsChange(field.id, { minValue: value })
-                      }
-                    />
-                  </PropertyRow>
-                  <PropertyRow label="最大值">
-                    <NumberWithActions
-                      value={field.props.maxValue}
-                      onChange={(value) =>
-                        onPropsChange(field.id, { maxValue: value })
-                      }
-                    />
-                  </PropertyRow>
-                </>
-              ) : null}
-            </PropertyFold>
-          ) : null}
-
-          {field.type !== "groupContainer" && field.type !== "description" && field.type !== "button" && field.type !== "link" ? (
-            <PropertyFold title="Agent 数据访问">
-              <PropertyRow label="读取策略">
-                <Select
-                  aria-label="Agent 数据读取策略"
-                  className="min-w-0 flex-1"
-                  selectedKey={field.props.agentDataAccess ?? "allow"}
-                  onSelectionChange={(key) => onPropsChange(field.id, { agentDataAccess: String(key ?? "allow") as "allow" | "mask" | "deny" })}
-                >
-                  <Select.Trigger><Select.Value /><Select.Indicator /></Select.Trigger>
-                  <Select.Popover>
-                    <ListBox>
-                      <ListBox.Item id="allow">允许读取</ListBox.Item>
-                      <ListBox.Item id="mask">脱敏显示</ListBox.Item>
-                      <ListBox.Item id="deny">禁止读取</ListBox.Item>
-                    </ListBox>
-                  </Select.Popover>
-                </Select>
-              </PropertyRow>
-            </PropertyFold>
-          ) : null}
-
-          <PropertyFold title="HeroUI 组件属性" rightIcon={<CodeToken />}>
-            <PropertyRow label="禁用">
-              <PanelSwitch
-                isSelected={Boolean(field.props.isDisabled)}
-                onChange={(value) =>
-                  onPropsChange(field.id, { isDisabled: value })
+        {field.type !== "groupContainer" &&
+        field.type !== "description" &&
+        field.type !== "button" &&
+        field.type !== "link" ? (
+          <PropertyFold title="Agent 数据访问">
+            <PropertyRow label="读取策略">
+              <Select
+                aria-label="Agent 数据读取策略"
+                className="min-w-0 flex-1"
+                selectedKey={field.props.agentDataAccess ?? "allow"}
+                onSelectionChange={(key) =>
+                  onPropsChange(field.id, {
+                    agentDataAccess: String(key ?? "allow") as
+                      | "allow"
+                      | "mask"
+                      | "deny",
+                  })
                 }
-              />
+              >
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    <ListBox.Item id="allow">允许读取</ListBox.Item>
+                    <ListBox.Item id="mask">脱敏显示</ListBox.Item>
+                    <ListBox.Item id="deny">禁止读取</ListBox.Item>
+                  </ListBox>
+                </Select.Popover>
+              </Select>
             </PropertyRow>
-            <PropertyRow label="只读">
-              <PanelSwitch
-                isSelected={Boolean(field.props.isReadOnly)}
-                onChange={(value) =>
-                  onPropsChange(field.id, { isReadOnly: value })
-                }
-              />
-            </PropertyRow>
-            {field.type === "multiLineText" ? (
-              <PropertyRow label="rows">
-                <NumberWithActions
-                  min={1}
-                  value={field.props.rows}
-                  onChange={(value) =>
-                    onPropsChange(field.id, {
-                      rows: Math.max(1, value ?? 1),
-                    })
-                  }
-                />
-              </PropertyRow>
-            ) : null}
-            {field.type === "number" ? (
-              <PropertyRow label="step">
-                <NumberWithActions
-                  min={0}
-                  value={field.props.step}
-                  onChange={(value) =>
-                    onPropsChange(field.id, { step: value ?? 1 })
-                  }
-                />
-              </PropertyRow>
-            ) : null}
           </PropertyFold>
-        </div>
+        ) : null}
+
+        <PropertyFold title="HeroUI 组件属性" rightIcon={<CodeToken />}>
+          <PropertyRow label="禁用">
+            <PanelSwitch
+              isSelected={Boolean(field.props.isDisabled)}
+              onChange={(value) =>
+                onPropsChange(field.id, { isDisabled: value })
+              }
+            />
+          </PropertyRow>
+          <PropertyRow label="只读">
+            <PanelSwitch
+              isSelected={Boolean(field.props.isReadOnly)}
+              onChange={(value) =>
+                onPropsChange(field.id, { isReadOnly: value })
+              }
+            />
+          </PropertyRow>
+          {field.type === "multiLineText" ? (
+            <PropertyRow label="rows">
+              <NumberWithActions
+                min={1}
+                value={field.props.rows}
+                onChange={(value) =>
+                  onPropsChange(field.id, {
+                    rows: Math.max(1, value ?? 1),
+                  })
+                }
+              />
+            </PropertyRow>
+          ) : null}
+          {field.type === "number" ? (
+            <PropertyRow label="step">
+              <NumberWithActions
+                min={0}
+                value={field.props.step}
+                onChange={(value) =>
+                  onPropsChange(field.id, { step: value ?? 1 })
+                }
+              />
+            </PropertyRow>
+          ) : null}
+        </PropertyFold>
       </div>
 
-      <footer className="border-t border-[var(--designer-border)] bg-[var(--designer-surface-soft)] p-1">
+      <footer className="p-1">
         <Button
           fullWidth
           variant="ghost"
           onPress={() => onDelete(field.id)}
-          className="h-7 border border-transparent text-[11px] text-[var(--color-danger)] hover:border-[var(--designer-border)] hover:bg-[var(--color-danger-soft)]"
+          className="h-7"
         >
           删除组件
         </Button>
@@ -380,25 +405,29 @@ function CustomCodeProperties({
   return (
     <>
       <PropertyRow label={codeLabel} align="start">
-        <textarea
+        <TextArea
           aria-label={codeLabel}
-          className="min-h-44 w-full resize-y rounded-md border border-[var(--color-border)] bg-[var(--color-code-bg)] p-2 font-mono text-[11px] leading-5 text-[var(--color-code-text)] outline-none focus:border-[var(--color-primary)]"
+          className="min-h-44 w-full"
           value={field.props.code ?? ""}
-          onChange={(event) => onPropsChange(field.id, { code: event.currentTarget.value })}
+          onChange={(event) =>
+            onPropsChange(field.id, { code: event.currentTarget.value })
+          }
         />
       </PropertyRow>
       <PropertyRow label="外部资源来源" align="start">
-        <input
+        <Input
           aria-label="外部资源来源"
-          className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2 py-1.5 text-xs outline-none focus:border-[var(--color-primary)]"
+          className="w-full"
           placeholder="https://cdn.example.com, https://api.example.com"
           value={origins}
-          onChange={(event) => onPropsChange(field.id, {
-            allowedResourceOrigins: event.currentTarget.value
-              .split(",")
-              .map((value) => value.trim())
-              .filter(Boolean),
-          })}
+          onChange={(event) =>
+            onPropsChange(field.id, {
+              allowedResourceOrigins: event.currentTarget.value
+                .split(",")
+                .map((value) => value.trim())
+                .filter(Boolean),
+            })
+          }
         />
       </PropertyRow>
     </>
@@ -424,30 +453,13 @@ function TitlePositionSegmented({
   ];
 
   return (
-    <div
-      role="tablist"
-      aria-label="标题位置"
-      className="grid h-7 min-w-0 flex-1 overflow-hidden rounded-md bg-[var(--color-bg-subtle)] p-0.5"
-      style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
-    >
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          role="tab"
-          aria-selected={value === option.value}
-          onClick={() => onChange(option.value)}
-          className={[
-            "min-w-0 overflow-hidden truncate whitespace-nowrap rounded-sm px-1 text-[10px] transition",
-            value === option.value
-              ? "bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)]"
-              : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]",
-          ].join(" ")}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
+    <MyTabs
+      ariaLabel="标题位置"
+      className="min-w-0 flex-1 rounded-xl overflow-hidden"
+      items={options}
+      onValueChange={onChange}
+      value={value}
+    />
   );
 }
 
@@ -489,9 +501,11 @@ function FieldSpecificProperties({
             max={4}
             min={1}
             value={field.props.locationDepth ?? 3}
-            onChange={(value) => onPropsChange(field.id, {
-              locationDepth: Math.min(4, Math.max(1, Math.round(value ?? 3))),
-            })}
+            onChange={(value) =>
+              onPropsChange(field.id, {
+                locationDepth: Math.min(4, Math.max(1, Math.round(value ?? 3))),
+              })
+            }
           />
         </PropertyRow>
       ) : null}
@@ -522,7 +536,9 @@ function FieldSpecificProperties({
               value={String(field.props.maxFileSizeMb ?? 20)}
               onChange={(value) => {
                 const size = Number(value);
-                onPropsChange(field.id, { maxFileSizeMb: Number.isFinite(size) && size > 0 ? size : 20 });
+                onPropsChange(field.id, {
+                  maxFileSizeMb: Number.isFinite(size) && size > 0 ? size : 20,
+                });
               }}
             />
           </PropertyRow>
@@ -616,17 +632,23 @@ function AssociationFormProperties({
       void Promise.resolve().then(() => {
         if (!cancelled) setSchemaFields([]);
       });
-    } else void getFormSchema({ path: { formUuid: formId }, responseStyle: "fields" })
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        const schema = data?.data?.schema as
-          | { fields?: AssociationSchemaField[] }
-          | undefined;
-        setSchemaFields(!error && data?.code === 0 ? (schema?.fields ?? []) : []);
+    } else
+      void getFormSchema({
+        path: { formUuid: formId },
+        responseStyle: "fields",
       })
-      .catch(() => {
-        if (!cancelled) setSchemaFields([]);
-      });
+        .then(({ data, error }) => {
+          if (cancelled) return;
+          const schema = data?.data?.schema as
+            | { fields?: AssociationSchemaField[] }
+            | undefined;
+          setSchemaFields(
+            !error && data?.code === 0 ? (schema?.fields ?? []) : [],
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setSchemaFields([]);
+        });
     return () => {
       cancelled = true;
     };
@@ -705,7 +727,7 @@ function AssociationFormProperties({
           <Button
             variant="ghost"
             onPress={() => setFormPickerOpen(true)}
-            className="h-7 min-w-0 flex-1 justify-between border border-[var(--designer-border)] px-2 text-[11px]"
+            className="h-7 min-w-0 flex-1 justify-between px-2"
           >
             <span className="truncate">{formLabel}</span>
             <span>选择</span>
@@ -716,7 +738,7 @@ function AssociationFormProperties({
             variant="ghost"
             isDisabled={!field.props.associationFormId}
             onPress={() => setDisplayOpen(true)}
-            className="h-7 min-w-0 flex-1 justify-between border border-[var(--designer-border)] px-2 text-[11px]"
+            className="h-7 min-w-0 flex-1 justify-between px-2"
           >
             <span>
               {field.props.associationPrimaryFieldId ? "已配置" : "未配置"}
@@ -789,10 +811,10 @@ function AssociationFormProperties({
         />
       </PropertyFold>
       <Modal isOpen={isFormPickerOpen} onOpenChange={setFormPickerOpen}>
-        <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
+        <Modal.Backdrop isDismissable>
           <Modal.Container placement="center" size="sm">
-            <Modal.Dialog className="theme-menu-surface w-[min(560px,92vw)] rounded-xl shadow-[var(--shadow-dialog)]">
-              <Modal.Header className="border-b border-[var(--designer-border)]">
+            <Modal.Dialog className="w-[min(560px,92vw)]">
+              <Modal.Header>
                 <Modal.Heading>选择关联表单</Modal.Heading>
               </Modal.Header>
               <Modal.Body className="">
@@ -804,11 +826,11 @@ function AssociationFormProperties({
                   }
                 >
                   <Tabs.List aria-label="关联表单范围">
-                    <Tabs.Tab id="current" className="px-3 py-2 text-sm">
+                    <Tabs.Tab id="current" className="px-3 py-2">
                       当前应用
                       <Tabs.Indicator />
                     </Tabs.Tab>
-                    <Tabs.Tab id="cross" className="px-3 py-2 text-sm">
+                    <Tabs.Tab id="cross" className="px-3 py-2">
                       跨应用
                       <Tabs.Indicator />
                     </Tabs.Tab>
@@ -855,15 +877,13 @@ function FormList({
             variant="ghost"
             fullWidth
             onPress={() => onSelect(form)}
-            className="justify-start px-3 text-left"
+            className="justify-start px-3"
           >
             <span className="truncate">{form.name}</span>
           </Button>
         ))
       ) : (
-        <p className="py-6 text-center text-sm text-[var(--color-text-secondary)]">
-          暂无可关联表单
-        </p>
+        <p className="py-6">暂无可关联表单</p>
       )}
     </div>
   );
@@ -897,9 +917,7 @@ function CrossAppFormList({
     <div className="space-y-4">
       {apps.map((app) => (
         <section key={app.id}>
-          <h3 className="mb-1 text-xs font-medium text-[var(--color-text-secondary)]">
-            {app.name}
-          </h3>
+          <h3 className="mb-1">{app.name}</h3>
           <FormList
             forms={loaded[app.id] ?? []}
             onSelect={(form) => onSelect(form, app.id)}
@@ -935,10 +953,10 @@ function AssociationDisplaySettingsModal({
   const [tab, setTab] = useState<"dropdown" | "table">("dropdown");
   return (
     <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
-      <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
+      <Modal.Backdrop isDismissable>
         <Modal.Container placement="center" size="lg">
-          <Modal.Dialog className="theme-menu-surface w-[min(960px,96vw)] rounded-xl shadow-[var(--shadow-dialog)]">
-            <Modal.Header className="border-b border-[var(--designer-border)] px-6 py-4">
+          <Modal.Dialog className="w-[min(960px,96vw)]">
+            <Modal.Header className="px-6 py-4">
               <Modal.Heading>显示设置</Modal.Heading>
             </Modal.Header>
             <Modal.Body className="px-6 py-5">
@@ -948,11 +966,11 @@ function AssociationDisplaySettingsModal({
                 onSelectionChange={(key) => setTab(key as "dropdown" | "table")}
               >
                 <Tabs.List aria-label="关联表单显示设置">
-                  <Tabs.Tab id="dropdown" className="px-4 py-2 text-sm">
+                  <Tabs.Tab id="dropdown" className="px-4 py-2">
                     下拉菜单显示字段
                     <Tabs.Indicator />
                   </Tabs.Tab>
-                  <Tabs.Tab id="table" className="px-4 py-2 text-sm">
+                  <Tabs.Tab id="table" className="px-4 py-2">
                     数据表展示字段
                     <Tabs.Indicator />
                   </Tabs.Tab>
@@ -960,13 +978,13 @@ function AssociationDisplaySettingsModal({
               </Tabs>
               {tab === "dropdown" ? (
                 <div className="mt-5 grid gap-6 sm:grid-cols-2">
-                  <div className="rounded-lg bg-[var(--designer-surface-soft)] p-5 text-sm">
-                    <p className="font-medium">示例</p>
+                  <div className="p-5">
+                    <p>示例</p>
                     <p className="mt-8">
                       {fields.find((item) => item.id === primary)?.label ??
                         "主要信息"}
                     </p>
-                    <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                    <p className="mt-1">
                       {fields.find((item) => item.id === secondary)?.label ??
                         "次要信息"}
                     </p>
@@ -1011,7 +1029,7 @@ function AssociationDisplaySettingsModal({
                 </div>
               )}
             </Modal.Body>
-            <Modal.Footer className="flex justify-end gap-2 border-t border-[var(--designer-border)] px-6 py-3">
+            <Modal.Footer className="flex justify-end gap-2 px-6 py-3">
               <Button variant="secondary" onPress={() => onOpenChange(false)}>
                 取消
               </Button>
@@ -1048,7 +1066,7 @@ function AssociationSelect({
   value: string;
 }) {
   return (
-    <label className="block text-xs text-[var(--color-text-secondary)]">
+    <label className="block">
       {label}
       <AssociationInlineSelect
         ariaLabel={label}
@@ -1102,7 +1120,7 @@ function AssociationFilterControl({
           readOnly
           value={summary}
           onClick={() => setOpen(true)}
-          className="min-w-0 flex-1 text-[11px]"
+          className="min-w-0 flex-1"
         />
       ) : null}
       <AssociationFilterModal
@@ -1155,24 +1173,24 @@ function AssociationFilterModal({
     rules.every((rule) => rule.fieldId && rule.value.trim());
   return (
     <Modal isOpen={isOpen} onOpenChange={onChange}>
-      <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
+      <Modal.Backdrop isDismissable>
         <Modal.Container placement="center" size="lg">
-          <Modal.Dialog className="theme-menu-surface flex h-[min(640px,86vh)] w-[min(920px,96vw)] flex-col overflow-hidden rounded-xl shadow-[var(--shadow-dialog)]">
-            <Modal.Header className="border-b border-[var(--designer-border)] px-6 py-4">
+          <Modal.Dialog className="flex h-[min(640px,86vh)] w-[min(920px,96vw)] flex-col overflow-hidden">
+            <Modal.Header className="px-6 py-4">
               <Modal.Heading>数据筛选</Modal.Heading>
               <Modal.CloseTrigger aria-label="关闭" />
             </Modal.Header>
             <Modal.Body className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-              <p className="mb-6 text-sm text-[var(--color-text-secondary)]">
+              <p className="mb-6">
                 数据会按照如下条件进行筛选，前者为关联表单中的字段。
               </p>
-              <div className="relative space-y-4 pl-11 before:absolute before:bottom-5 before:left-5 before:top-5 before:border-l before:border-[var(--designer-border)]">
+              <div className="relative space-y-4 pl-11 before:absolute before:bottom-5 before:left-5 before:top-5">
                 {rules.map((rule, index) => (
                   <div
                     key={`${index}-${rule.fieldId}`}
                     className="relative flex flex-wrap items-center gap-2"
                   >
-                    <span className="absolute -left-11 top-1/2 flex h-7 w-10 -translate-y-1/2 items-center justify-center bg-[var(--color-bg-surface)] text-xs text-[var(--color-text-secondary)]">
+                    <span className="absolute -left-11 top-1/2 flex h-7 w-10 -translate-y-1/2 items-center justify-center">
                       {index === 0 ? "当" : "且"}
                     </span>
                     <AssociationInlineSelect
@@ -1208,7 +1226,7 @@ function AssociationFilterModal({
                       variant="ghost"
                       isDisabled={rules.length === 1}
                       onPress={() => removeRule(index)}
-                      className="h-8 w-8 text-[var(--color-text-secondary)]"
+                      className="h-8 w-8"
                     >
                       删除
                     </Button>
@@ -1217,7 +1235,7 @@ function AssociationFilterModal({
                       aria-label="添加条件"
                       variant="ghost"
                       onPress={addRule}
-                      className="h-8 w-8 text-[var(--color-primary)]"
+                      className="h-8 w-8"
                     >
                       +
                     </Button>
@@ -1225,7 +1243,7 @@ function AssociationFilterModal({
                 ))}
               </div>
             </Modal.Body>
-            <Modal.Footer className="flex justify-end gap-2 border-t border-[var(--designer-border)] px-6 py-3">
+            <Modal.Footer className="flex justify-end gap-2 px-6 py-3">
               <Button variant="secondary" onPress={() => onChange(false)}>
                 取消
               </Button>
@@ -1273,13 +1291,17 @@ function AssociationInlineSelect({
         onChange(key === null ? "" : String(key))
       }
     >
-      <Select.Trigger className="h-9 min-h-9 rounded-md border-[var(--designer-border)] bg-[var(--color-bg-input)] px-2 text-sm">
+      <Select.Trigger className="h-9 min-h-9 px-2">
         <Select.Value>{selected?.label ?? placeholder}</Select.Value>
         <Select.Indicator />
       </Select.Trigger>
       <Select.Popover>
         <ListBox>
-          {allowEmpty ? <ListBox.Item id="" textValue={placeholder}>{placeholder}</ListBox.Item> : null}
+          {allowEmpty ? (
+            <ListBox.Item id="" textValue={placeholder}>
+              {placeholder}
+            </ListBox.Item>
+          ) : null}
           {fields.map((item) => (
             <ListBox.Item key={item.id} id={item.id} textValue={item.label}>
               {item.label}
@@ -1300,7 +1322,9 @@ function AssociationSortControl({
 }: {
   enabled: boolean;
   fields: AssociationSchemaField[];
-  onChange: (rules: Array<{ fieldId: string; direction: "asc" | "desc" }>) => void;
+  onChange: (
+    rules: Array<{ fieldId: string; direction: "asc" | "desc" }>,
+  ) => void;
   onEnabledChange: (enabled: boolean) => void;
   summary: string;
 }) {
@@ -1327,13 +1351,13 @@ function AssociationSortControl({
           readOnly
           value={summary}
           onClick={() => setOpen(true)}
-          className="min-w-0 flex-1 text-[11px]"
+          className="min-w-0 flex-1"
         />
       ) : null}
       <Modal isOpen={open} onOpenChange={setOpen}>
-        <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
+        <Modal.Backdrop isDismissable>
           <Modal.Container placement="center" size="sm">
-            <Modal.Dialog className="theme-menu-surface w-[min(440px,92vw)] rounded-xl">
+            <Modal.Dialog className="w-[min(440px,92vw)]">
               <Modal.Header>
                 <Modal.Heading>数据排序</Modal.Heading>
               </Modal.Header>
@@ -1358,7 +1382,12 @@ function AssociationSortControl({
                 <Button
                   isDisabled={!fieldId}
                   onPress={() => {
-                    onChange([{ fieldId, direction: (value || "asc") as "asc" | "desc" }]);
+                    onChange([
+                      {
+                        fieldId,
+                        direction: (value || "asc") as "asc" | "desc",
+                      },
+                    ]);
                     setOpen(false);
                   }}
                 >
@@ -1430,7 +1459,7 @@ function AssociationFillControl({
           readOnly
           value={summary}
           onClick={() => setOpen(true)}
-          className="min-w-0 flex-1 text-[11px]"
+          className="min-w-0 flex-1"
         />
       ) : null}
       <AssociationFillModalV2
@@ -1541,15 +1570,15 @@ function AssociationFillModalV2({
     );
   return (
     <Modal isOpen={isOpen} onOpenChange={onChange}>
-      <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
+      <Modal.Backdrop isDismissable>
         <Modal.Container placement="center" size="cover">
-          <Modal.Dialog className="theme-menu-surface flex h-[min(720px,90vh)] w-[min(1080px,96vw)] flex-col overflow-hidden rounded-xl shadow-[var(--shadow-dialog)]">
-            <Modal.Header className="border-b border-[var(--designer-border)] px-6 py-4">
+          <Modal.Dialog className="flex h-[min(720px,90vh)] w-[min(1080px,96vw)] flex-col overflow-hidden">
+            <Modal.Header className="px-6 py-4">
               <Modal.Heading>数据填充</Modal.Heading>
               <Modal.CloseTrigger aria-label="关闭" />
             </Modal.Header>
             <Modal.Body className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-              <p className="mb-5 text-sm text-[var(--color-text-secondary)]">
+              <p className="mb-5">
                 {currentSubformId
                   ? "当前关联组件位于子表中，仅能填充该子表字段。"
                   : "主表字段填充主表字段；子表规则会按源子表行生成当前表单子表行。"}
@@ -1568,7 +1597,7 @@ function AssociationFillModalV2({
               targetSubforms.length > 0 ? (
                 <section className="mt-6">
                   <div className="mb-3 flex items-center justify-between">
-                    <h3 className="text-sm font-medium">子表填充规则</h3>
+                    <h3>子表填充规则</h3>
                     <Button
                       size="sm"
                       variant="secondary"
@@ -1578,9 +1607,7 @@ function AssociationFillModalV2({
                     </Button>
                   </div>
                   {childRules.length === 0 ? (
-                    <div className="rounded-lg border border-dashed border-[var(--designer-border)] px-4 py-8 text-center text-sm text-[var(--color-text-secondary)]">
-                      未配置子表填充规则
-                    </div>
+                    <div className="px-4 py-8">未配置子表填充规则</div>
                   ) : (
                     <div className="space-y-4">
                       {childRules.map((rule, index) => {
@@ -1601,7 +1628,7 @@ function AssociationFillModalV2({
                         return (
                           <div
                             key={`${rule.sourceSubformId}-${rule.targetSubformId}-${index}`}
-                            className="rounded-lg border border-[var(--designer-border)] p-4"
+                            className="p-4"
                           >
                             <div className="grid gap-3 md:grid-cols-2">
                               <AssociationInlineSelect
@@ -1641,7 +1668,7 @@ function AssociationFillModalV2({
                               title="字段映射"
                               sourceFields={sourceFields}
                               rules={rule.mappings}
-                                targetFields={targetChildFields}
+                              targetFields={targetChildFields}
                               onAdd={() =>
                                 updateChildRule(index, {
                                   mappings: [
@@ -1680,7 +1707,7 @@ function AssociationFillModalV2({
                 </section>
               ) : null}
             </Modal.Body>
-            <Modal.Footer className="flex justify-end gap-2 border-t border-[var(--designer-border)] px-6 py-3">
+            <Modal.Footer className="flex justify-end gap-2 px-6 py-3">
               <Button variant="secondary" onPress={() => onChange(false)}>
                 取消
               </Button>
@@ -1725,9 +1752,9 @@ function FillRuleSection({
   title: string;
 }) {
   return (
-    <section className="rounded-lg border border-[var(--designer-border)]">
-      <header className="flex items-center justify-between border-b border-[var(--designer-border)] bg-[var(--designer-surface-soft)] px-4 py-2">
-        <h3 className="text-sm font-medium">{title}</h3>
+    <section>
+      <header className="flex items-center justify-between px-4 py-2">
+        <h3>{title}</h3>
         <Button size="sm" variant="ghost" onPress={onAdd}>
           新增字段映射
         </Button>
@@ -1745,9 +1772,7 @@ function FillRuleSection({
               value={rule.sourceFieldId}
               onChange={(sourceFieldId) => onChange(index, { sourceFieldId })}
             />
-            <span className="text-center text-sm text-[var(--color-text-secondary)]">
-              填充到
-            </span>
+            <span>填充到</span>
             <AssociationInlineSelect
               ariaLabel="当前字段"
               className="w-full"
@@ -1909,12 +1934,10 @@ function MemberProperties({
           <Button
             variant="ghost"
             onPress={() => setSelectorOpen(true)}
-            className="h-7 min-w-0 flex-1 justify-between border border-[var(--designer-border)] px-2 text-[11px]"
+            className="h-7 min-w-0 flex-1 justify-between px-2"
           >
             <span>{scope === "roles" ? "设置角色" : "设置成员"}</span>
-            <span className="text-[10px] text-[var(--color-text-secondary)]">
-              已选 {selectedIds.length}
-            </span>
+            <span>已选 {selectedIds.length}</span>
           </Button>
         </PropertyRow>
       ) : null}
@@ -1952,27 +1975,25 @@ function MemberProperties({
         </Switch>
       </PropertyRow>
       <Modal isOpen={isSelectorOpen} onOpenChange={setSelectorOpen}>
-        <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
+        <Modal.Backdrop isDismissable>
           <Modal.Container placement="center" scroll="inside" size="sm">
-            <Modal.Dialog className="theme-menu-surface flex max-h-[72vh] w-[min(520px,92vw)] flex-col overflow-hidden rounded-xl shadow-[var(--shadow-dialog)]">
-              <Modal.Header className="border-b border-[var(--designer-border)]">
-                <Modal.Heading className="text-base font-semibold">
+            <Modal.Dialog className="flex max-h-[72vh] w-[min(520px,92vw)] flex-col overflow-hidden">
+              <Modal.Header>
+                <Modal.Heading>
                   选择{scope === "roles" ? "角色" : "成员"}
                 </Modal.Heading>
               </Modal.Header>
               <Modal.Body className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
-                <p className="mb-3 text-xs text-[var(--color-text-secondary)]">
+                <p className="mb-3">
                   来源：
-                  {MEMBER_SOURCES.find((item) => item.value === source)?.label}{" "}
+                  {
+                    MEMBER_SOURCES.find((item) => item.value === source)?.label
+                  }{" "}
                   · 可多选
                 </p>
-                {loading ? (
-                  <div className="py-8 text-center text-sm text-[var(--color-text-secondary)]">
-                    正在加载数据…
-                  </div>
-                ) : null}
+                {loading ? <div className="py-8">正在加载数据…</div> : null}
                 {!loading && candidates.length === 0 ? (
-                  <div className="py-8 text-center text-sm text-[var(--color-text-secondary)]">
+                  <div className="py-8">
                     该组织来源暂无可选{scope === "roles" ? "角色" : "成员"}。
                   </div>
                 ) : null}
@@ -1992,25 +2013,21 @@ function MemberProperties({
                         key={id}
                         isSelected={selectedIds.includes(id)}
                         onChange={(selected) => updateSelected(id, selected)}
-                        className="flex w-full items-center gap-3 rounded-lg px-3 py-2 hover:bg-[var(--designer-surface-soft)]"
+                        className="flex w-full items-center gap-3 px-3 py-2"
                       >
                         <Checkbox.Content className="min-w-0 flex-1">
                           <Checkbox.Control>
                             <Checkbox.Indicator />
                           </Checkbox.Control>
-                          <span className="block truncate text-sm">
-                            {label}
-                          </span>
-                          <span className="max-w-36 truncate text-[10px] text-[var(--color-text-secondary)]">
-                            {detail}
-                          </span>
+                          <span className="block truncate">{label}</span>
+                          <span className="max-w-36 truncate">{detail}</span>
                         </Checkbox.Content>
                       </Checkbox>
                     );
                   })}
                 </div>
               </Modal.Body>
-              <Modal.Footer className="flex justify-end border-t border-[var(--designer-border)] px-5 py-3">
+              <Modal.Footer className="flex justify-end px-5 py-3">
                 <Button onPress={() => setSelectorOpen(false)}>完成</Button>
               </Modal.Footer>
             </Modal.Dialog>
@@ -2036,13 +2053,13 @@ function MemberPropertySelect({
   return (
     <Select
       aria-label={ariaLabel}
-      className="min-w-0 flex-1 text-[11px]"
+      className="min-w-0 flex-1"
       selectedKey={value}
       onSelectionChange={(key: Key | null) =>
         onChange(key === null ? "" : String(key))
       }
     >
-      <Select.Trigger className="h-7 min-h-7 rounded-md border-[var(--designer-border)] bg-[var(--designer-surface-solid)] px-2">
+      <Select.Trigger className="h-7 min-h-7 px-2">
         <Select.Value>{selected?.label ?? "请选择"}</Select.Value>
         <Select.Indicator />
       </Select.Trigger>
@@ -2282,11 +2299,24 @@ function SerialNumberProperties({
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const rules = getSerialNumberRules(field.props);
   const editingRule = rules.find((rule) => rule.id === editingRuleId) ?? null;
-  const selectableFields = fields.filter((candidate) => candidate.id !== field.id && candidate.type !== "groupContainer" && candidate.type !== "subform" && candidate.type !== "description" && candidate.type !== "button");
-  const preview = rules.map((rule) => serialRulePreview(rule, selectableFields)).join("");
+  const selectableFields = fields.filter(
+    (candidate) =>
+      candidate.id !== field.id &&
+      candidate.type !== "groupContainer" &&
+      candidate.type !== "subform" &&
+      candidate.type !== "description" &&
+      candidate.type !== "button",
+  );
+  const preview = rules
+    .map((rule) => serialRulePreview(rule, selectableFields))
+    .join("");
 
   const updateRule = (ruleId: string, nextRule: SerialNumberRule) => {
-    update({ serialNumberRules: rules.map((rule) => rule.id === ruleId ? nextRule : rule) });
+    update({
+      serialNumberRules: rules.map((rule) =>
+        rule.id === ruleId ? nextRule : rule,
+      ),
+    });
   };
 
   const moveRule = (activeRuleId: string, targetRuleId: string) => {
@@ -2300,7 +2330,9 @@ function SerialNumberProperties({
     update({ serialNumberRules: nextRules });
   };
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
   const onDragEnd = (event: DragEndEvent) => {
     const targetRuleId = event.over?.id;
     if (targetRuleId) moveRule(String(event.active.id), String(targetRuleId));
@@ -2311,23 +2343,184 @@ function SerialNumberProperties({
       <PropertyFold title="规则定义">
         <div className="space-y-1.5">
           <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-            {rules.map((rule) => <SerialNumberRuleItem key={rule.id} rule={rule} fields={selectableFields} onDelete={() => update({ serialNumberRules: rules.filter((item) => item.id !== rule.id) })} onEdit={() => setEditingRuleId(rule.id)} />)}
+            {rules.map((rule) => (
+              <SerialNumberRuleItem
+                key={rule.id}
+                rule={rule}
+                fields={selectableFields}
+                onDelete={() =>
+                  update({
+                    serialNumberRules: rules.filter(
+                      (item) => item.id !== rule.id,
+                    ),
+                  })
+                }
+                onEdit={() => setEditingRuleId(rule.id)}
+              />
+            ))}
           </DndContext>
-          <SerialNumberAddRulePopover fields={selectableFields} onAdd={(rule) => update({ serialNumberRules: [...rules, rule] })} />
+          <SerialNumberAddRulePopover
+            fields={selectableFields}
+            onAdd={(rule) => update({ serialNumberRules: [...rules, rule] })}
+          />
         </div>
       </PropertyFold>
       <PropertyFold title="流水号效果预览">
-        <div className="rounded-md bg-[var(--color-primary-soft)] px-3 py-2 text-center font-mono text-sm text-[var(--color-text-primary)]">
-          {preview}
-        </div>
+        <Input
+          value={preview}
+          readOnly
+          aria-label="流水号预览"
+          className="w-full"
+        />
       </PropertyFold>
-      <Modal isOpen={Boolean(editingRule)} onOpenChange={(open) => !open && setEditingRuleId(null)}>
-        <Modal.Backdrop className={styles["designer-theme__modal-backdrop"]}><Modal.Container placement="center" size="sm"><Modal.Dialog className="bg-[var(--designer-surface-solid)]"><Modal.Header><Modal.Heading>编辑规则</Modal.Heading></Modal.Header><Modal.Body>
-          {editingRule?.type === "fixedText" ? <Input aria-label="固定字符内容" value={editingRule.value} onChange={(event) => updateRule(editingRule.id, { ...editingRule, value: event.currentTarget.value })} /> : null}
-          {editingRule?.type === "submittedDate" ? <PropertySegmented value={editingRule.format} options={[{ label: "年", value: "year" }, { label: "年月", value: "yearMonth" }, { label: "年月日", value: "yearMonthDay" }, { label: "年月日时分", value: "yearMonthDayHourMinute" }, { label: "年月日时分秒", value: "yearMonthDayHourMinuteSecond" }]} onChange={(value) => updateRule(editingRule.id, { ...editingRule, format: value as typeof editingRule.format })} /> : null}
-          {editingRule?.type === "formField" ? <div className="space-y-2"><select aria-label="表单字段" value={editingRule.fieldId} onChange={(event) => updateRule(editingRule.id, { ...editingRule, fieldId: event.currentTarget.value })} className="h-9 w-full rounded-md border border-[var(--designer-border)] bg-[var(--designer-surface-solid)] px-2 text-sm"><option value="">请选择字段</option>{selectableFields.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.label}</option>)}</select><Input aria-label="空值替代" placeholder="请输入（最多10个字符）" maxLength={10} value={editingRule.fallback} onChange={(event) => updateRule(editingRule.id, { ...editingRule, fallback: event.currentTarget.value })} /></div> : null}
-          {editingRule?.type === "autoCount" ? <div className="space-y-2"><PropertyRow label="计数位数"><NumberWithActions min={1} value={editingRule.digits} onChange={(value) => updateRule(editingRule.id, { ...editingRule, digits: Math.max(1, value ?? 4) })} /></PropertyRow><PropertyRow label="固定补零"><PanelSwitch isSelected={editingRule.fixedDigits} onChange={(value) => updateRule(editingRule.id, { ...editingRule, fixedDigits: value })} /></PropertyRow><PropertyRow label="重置周期"><PropertySegmented value={editingRule.resetPeriod} options={[{ label: "不自动重置", value: "never" }, { label: "每天", value: "daily" }, { label: "每月", value: "monthly" }, { label: "每年", value: "yearly" }]} onChange={(value) => updateRule(editingRule.id, { ...editingRule, resetPeriod: value as typeof editingRule.resetPeriod })} /></PropertyRow><PropertyRow label="初始值"><NumberWithActions min={1} value={editingRule.initialValue} onChange={(value) => updateRule(editingRule.id, { ...editingRule, initialValue: Math.max(1, value ?? 1) })} /></PropertyRow></div> : null}
-        </Modal.Body><Modal.Footer><Button onPress={() => setEditingRuleId(null)}>完成</Button></Modal.Footer></Modal.Dialog></Modal.Container></Modal.Backdrop>
+      <Modal
+        isOpen={Boolean(editingRule)}
+        onOpenChange={(open) => !open && setEditingRuleId(null)}
+      >
+        <Modal.Backdrop>
+          <Modal.Container placement="center" size="sm">
+            <Modal.Dialog>
+              <Modal.Header>
+                <Modal.Heading>编辑规则</Modal.Heading>
+              </Modal.Header>
+              <Modal.Body>
+                {editingRule?.type === "fixedText" ? (
+                  <Input
+                    aria-label="固定字符内容"
+                    value={editingRule.value}
+                    onChange={(event) =>
+                      updateRule(editingRule.id, {
+                        ...editingRule,
+                        value: event.currentTarget.value,
+                      })
+                    }
+                  />
+                ) : null}
+                {editingRule?.type === "submittedDate" ? (
+                  <PropertySegmented
+                    value={editingRule.format}
+                    options={[
+                      { label: "年", value: "year" },
+                      { label: "年月", value: "yearMonth" },
+                      { label: "年月日", value: "yearMonthDay" },
+                      { label: "年月日时分", value: "yearMonthDayHourMinute" },
+                      {
+                        label: "年月日时分秒",
+                        value: "yearMonthDayHourMinuteSecond",
+                      },
+                    ]}
+                    onChange={(value) =>
+                      updateRule(editingRule.id, {
+                        ...editingRule,
+                        format: value as typeof editingRule.format,
+                      })
+                    }
+                  />
+                ) : null}
+                {editingRule?.type === "formField" ? (
+                  <div className="space-y-2">
+                    <Select
+                      aria-label="表单字段"
+                      selectedKey={editingRule.fieldId || null}
+                      onSelectionChange={(key) =>
+                        updateRule(editingRule.id, {
+                          ...editingRule,
+                          fieldId: key ? String(key) : "",
+                        })
+                      }
+                    >
+                      <Select.Trigger className="h-9 w-full">
+                        <Select.Value>请选择字段</Select.Value>
+                        <Select.Indicator />
+                      </Select.Trigger>
+                      <Select.Popover>
+                        <ListBox>
+                          {selectableFields.map((candidate) => (
+                            <ListBox.Item key={candidate.id} id={candidate.id}>
+                              {candidate.label}
+                            </ListBox.Item>
+                          ))}
+                        </ListBox>
+                      </Select.Popover>
+                    </Select>
+                    <Input
+                      aria-label="空值替代"
+                      placeholder="请输入（最多10个字符）"
+                      maxLength={10}
+                      value={editingRule.fallback}
+                      onChange={(event) =>
+                        updateRule(editingRule.id, {
+                          ...editingRule,
+                          fallback: event.currentTarget.value,
+                        })
+                      }
+                    />
+                  </div>
+                ) : null}
+                {editingRule?.type === "autoCount" ? (
+                  <div className="space-y-2">
+                    <PropertyRow label="计数位数">
+                      <NumberWithActions
+                        min={1}
+                        value={editingRule.digits}
+                        onChange={(value) =>
+                          updateRule(editingRule.id, {
+                            ...editingRule,
+                            digits: Math.max(1, value ?? 4),
+                          })
+                        }
+                      />
+                    </PropertyRow>
+                    <PropertyRow label="固定补零">
+                      <PanelSwitch
+                        isSelected={editingRule.fixedDigits}
+                        onChange={(value) =>
+                          updateRule(editingRule.id, {
+                            ...editingRule,
+                            fixedDigits: value,
+                          })
+                        }
+                      />
+                    </PropertyRow>
+                    <PropertyRow label="重置周期">
+                      <PropertySegmented
+                        value={editingRule.resetPeriod}
+                        options={[
+                          { label: "不自动重置", value: "never" },
+                          { label: "每天", value: "daily" },
+                          { label: "每月", value: "monthly" },
+                          { label: "每年", value: "yearly" },
+                        ]}
+                        onChange={(value) =>
+                          updateRule(editingRule.id, {
+                            ...editingRule,
+                            resetPeriod:
+                              value as typeof editingRule.resetPeriod,
+                          })
+                        }
+                      />
+                    </PropertyRow>
+                    <PropertyRow label="初始值">
+                      <NumberWithActions
+                        min={1}
+                        value={editingRule.initialValue}
+                        onChange={(value) =>
+                          updateRule(editingRule.id, {
+                            ...editingRule,
+                            initialValue: Math.max(1, value ?? 1),
+                          })
+                        }
+                      />
+                    </PropertyRow>
+                  </div>
+                ) : null}
+              </Modal.Body>
+              <Modal.Footer>
+                <Button onPress={() => setEditingRuleId(null)}>完成</Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
       </Modal>
     </>
   );
@@ -2335,67 +2528,235 @@ function SerialNumberProperties({
 
 function getSerialNumberRules(props: DesignerFieldProps): SerialNumberRule[] {
   if (props.serialNumberRules?.length) return props.serialNumberRules;
-  return [{ id: "auto-count", type: "autoCount", digits: Math.max(1, props.serialNumberDigits ?? 4), fixedDigits: props.serialNumberFixedDigits !== false, resetPeriod: props.serialNumberResetPeriod ?? "never", initialValue: Math.max(1, props.serialNumberInitialValue ?? 1) }];
+  return [
+    {
+      id: "auto-count",
+      type: "autoCount",
+      digits: Math.max(1, props.serialNumberDigits ?? 4),
+      fixedDigits: props.serialNumberFixedDigits !== false,
+      resetPeriod: props.serialNumberResetPeriod ?? "never",
+      initialValue: Math.max(1, props.serialNumberInitialValue ?? 1),
+    },
+  ];
 }
 
-function SerialNumberRuleItem({ rule, fields, onDelete, onEdit }: { rule: SerialNumberRule; fields: PlacedField[]; onDelete: () => void; onEdit: () => void }) {
-  const { attributes, listeners, setNodeRef: setDraggableRef, transform, isDragging } = useDraggable({ id: rule.id });
-  const { setNodeRef: setDroppableRef, isOver } = useDroppable({ id: rule.id });
-  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
-  return <div ref={(node) => { setDraggableRef(node); setDroppableRef(node); }} style={style} className={`flex min-w-0 items-center gap-1 rounded-md border px-2 py-1.5 ${isDragging ? "opacity-40" : ""} ${isOver ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)]" : "border-[var(--designer-border)] bg-[var(--designer-surface-solid)]"}`}>
-    <button type="button" aria-label="拖拽排序" className="cursor-grab touch-none text-[13px] text-[var(--color-text-disabled)] active:cursor-grabbing" {...attributes} {...listeners}>⋮⋮</button>
-    <span className="min-w-0 flex-1 truncate text-[11px]">{serialRuleLabel(rule, fields)}</span>
-    <button type="button" aria-label="编辑规则" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-primary)]" onClick={onEdit}>✎</button>
-    {rule.type !== "autoCount" ? <button type="button" aria-label="删除规则" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-danger)]" onClick={onDelete}>×</button> : null}
-  </div>;
+function SerialNumberRuleItem({
+  rule,
+  fields,
+  onDelete,
+  onEdit,
+}: {
+  rule: SerialNumberRule;
+  fields: PlacedField[];
+  onDelete: () => void;
+  onEdit: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setDraggableRef,
+    transform,
+  } = useDraggable({ id: rule.id });
+  const { setNodeRef: setDroppableRef } = useDroppable({ id: rule.id });
+  const style = transform
+    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
+    : undefined;
+  return (
+    <div
+      ref={(node) => {
+        setDraggableRef(node);
+        setDroppableRef(node);
+      }}
+      style={style}
+      className="flex min-w-0 items-center gap-1 px-2 py-1.5"
+    >
+      <Button
+        isIconOnly
+        size="sm"
+        variant="ghost"
+        aria-label="拖拽排序"
+        className="touch-none"
+        {...attributes}
+        {...listeners}
+      >
+        ⋮⋮
+      </Button>
+      <span className="min-w-0 flex-1 truncate">
+        {serialRuleLabel(rule, fields)}
+      </span>
+      <Button
+        isIconOnly
+        size="sm"
+        variant="ghost"
+        aria-label="编辑规则"
+        onPress={onEdit}
+      >
+        ✎
+      </Button>
+      {rule.type !== "autoCount" ? (
+        <Button
+          isIconOnly
+          size="sm"
+          variant="ghost"
+          aria-label="删除规则"
+          onPress={onDelete}
+        >
+          ×
+        </Button>
+      ) : null}
+    </div>
+  );
 }
 
-function SerialNumberAddRulePopover({ fields, onAdd }: { fields: PlacedField[]; onAdd: (rule: SerialNumberRule) => void }) {
+function SerialNumberAddRulePopover({
+  fields,
+  onAdd,
+}: {
+  fields: PlacedField[];
+  onAdd: (rule: SerialNumberRule) => void;
+}) {
   const [isOpen, setOpen] = useState(false);
   const [ruleCounter, setRuleCounter] = useState(1);
-  const [type, setType] = useState<"fixedText" | "submittedDate" | "formField">("fixedText");
+  const [type, setType] = useState<"fixedText" | "submittedDate" | "formField">(
+    "fixedText",
+  );
   const [value, setValue] = useState("TEXT");
-  const [format, setFormat] = useState<Extract<SerialNumberRule, { type: "submittedDate" }>["format"]>("yearMonthDay");
+  const [format, setFormat] =
+    useState<Extract<SerialNumberRule, { type: "submittedDate" }>["format"]>(
+      "yearMonthDay",
+    );
   const [fieldId, setFieldId] = useState("");
   const [fallback, setFallback] = useState("");
   const confirmAdd = () => {
     const id = `serial-rule-${type}-${ruleCounter}`;
-    onAdd(type === "fixedText" ? { id, type, value } : type === "submittedDate" ? { id, type, format } : { id, type, fieldId, fallback });
+    onAdd(
+      type === "fixedText"
+        ? { id, type, value }
+        : type === "submittedDate"
+          ? { id, type, format }
+          : { id, type, fieldId, fallback },
+    );
     setRuleCounter((current) => current + 1);
     setOpen(false);
   };
-  return <Popover isOpen={isOpen} onOpenChange={setOpen}>
-    <Popover.Trigger><Button size="sm" variant="secondary">添加规则</Button></Popover.Trigger>
-    <Popover.Content className="w-72 border border-[var(--designer-border)] bg-[var(--designer-surface-solid)] p-0">
-      <Popover.Dialog className="space-y-3 p-3">
-        <Popover.Heading className="text-sm font-medium">添加规则</Popover.Heading>
-        <PropertySegmented value={type} options={[{ label: "固定字符", value: "fixedText" }, { label: "提交日期", value: "submittedDate" }, { label: "表单字段", value: "formField" }]} onChange={(next) => setType(next as typeof type)} />
-        {type === "fixedText" ? <Input aria-label="固定字符" value={value} onChange={(event) => setValue(event.currentTarget.value)} /> : null}
-        {type === "submittedDate" ? <PropertySegmented value={format} options={[{ label: "年", value: "year" }, { label: "年月", value: "yearMonth" }, { label: "年月日", value: "yearMonthDay" }, { label: "年月日时分", value: "yearMonthDayHourMinute" }, { label: "年月日时分秒", value: "yearMonthDayHourMinuteSecond" }]} onChange={(next) => setFormat(next as typeof format)} /> : null}
-        {type === "formField" ? <div className="space-y-2"><Select aria-label="表单字段" selectedKey={fieldId || null} onSelectionChange={(key: Key | null) => setFieldId(key ? String(key) : "")}><Select.Trigger className="h-9 w-full rounded-md border-[var(--designer-border)]"><Select.Value>{fields.find((field) => field.id === fieldId)?.label ?? "请选择字段"}</Select.Value><Select.Indicator /></Select.Trigger><Select.Popover><ListBox>{fields.map((field) => <ListBox.Item key={field.id} id={field.id} textValue={field.label}>{field.label}</ListBox.Item>)}</ListBox></Select.Popover></Select><Input aria-label="空值替代" placeholder="请输入（最多10个字符）" maxLength={10} value={fallback} onChange={(event) => setFallback(event.currentTarget.value)} /></div> : null}
-        <div className="flex justify-end"><Button size="sm" onPress={confirmAdd}>确认添加</Button></div>
-      </Popover.Dialog>
-    </Popover.Content>
-  </Popover>;
+  return (
+    <Popover isOpen={isOpen} onOpenChange={setOpen}>
+      <Popover.Trigger>
+        <Button size="sm" variant="secondary">
+          添加规则
+        </Button>
+      </Popover.Trigger>
+      <Popover.Content className="w-72 p-0">
+        <Popover.Dialog className="space-y-3 p-3">
+          <Popover.Heading>添加规则</Popover.Heading>
+          <PropertySegmented
+            value={type}
+            options={[
+              { label: "固定字符", value: "fixedText" },
+              { label: "提交日期", value: "submittedDate" },
+              { label: "表单字段", value: "formField" },
+            ]}
+            onChange={(next) => setType(next as typeof type)}
+          />
+          {type === "fixedText" ? (
+            <Input
+              aria-label="固定字符"
+              value={value}
+              onChange={(event) => setValue(event.currentTarget.value)}
+            />
+          ) : null}
+          {type === "submittedDate" ? (
+            <PropertySegmented
+              value={format}
+              options={[
+                { label: "年", value: "year" },
+                { label: "年月", value: "yearMonth" },
+                { label: "年月日", value: "yearMonthDay" },
+                { label: "年月日时分", value: "yearMonthDayHourMinute" },
+                {
+                  label: "年月日时分秒",
+                  value: "yearMonthDayHourMinuteSecond",
+                },
+              ]}
+              onChange={(next) => setFormat(next as typeof format)}
+            />
+          ) : null}
+          {type === "formField" ? (
+            <div className="space-y-2">
+              <Select
+                aria-label="表单字段"
+                selectedKey={fieldId || null}
+                onSelectionChange={(key: Key | null) =>
+                  setFieldId(key ? String(key) : "")
+                }
+              >
+                <Select.Trigger className="h-9 w-full">
+                  <Select.Value>
+                    {fields.find((field) => field.id === fieldId)?.label ??
+                      "请选择字段"}
+                  </Select.Value>
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    {fields.map((field) => (
+                      <ListBox.Item
+                        key={field.id}
+                        id={field.id}
+                        textValue={field.label}
+                      >
+                        {field.label}
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+              <Input
+                aria-label="空值替代"
+                placeholder="请输入（最多10个字符）"
+                maxLength={10}
+                value={fallback}
+                onChange={(event) => setFallback(event.currentTarget.value)}
+              />
+            </div>
+          ) : null}
+          <div className="flex justify-end">
+            <Button size="sm" onPress={confirmAdd}>
+              确认添加
+            </Button>
+          </div>
+        </Popover.Dialog>
+      </Popover.Content>
+    </Popover>
+  );
 }
 
 function serialRuleLabel(rule: SerialNumberRule, fields: PlacedField[]) {
   if (rule.type === "autoCount") return `自动计数  ${rule.digits} 位数`;
   if (rule.type === "fixedText") return `固定字符  ${rule.value || "未设置"}`;
-  if (rule.type === "submittedDate") return `提交日期  ${serialRulePreview(rule, fields)}`;
+  if (rule.type === "submittedDate")
+    return `提交日期  ${serialRulePreview(rule, fields)}`;
   return `表单字段  ${fields.find((field) => field.id === rule.fieldId)?.label ?? "未选择"}`;
 }
 
 function serialRulePreview(rule: SerialNumberRule, fields: PlacedField[]) {
-  if (rule.type === "autoCount") return rule.fixedDigits ? String(rule.initialValue).padStart(rule.digits, "0") : String(rule.initialValue);
+  if (rule.type === "autoCount")
+    return rule.fixedDigits
+      ? String(rule.initialValue).padStart(rule.digits, "0")
+      : String(rule.initialValue);
   if (rule.type === "fixedText") return rule.value;
-  if (rule.type === "formField") return `{${fields.find((field) => field.id === rule.fieldId)?.label ?? "字段"}}` || rule.fallback;
+  if (rule.type === "formField")
+    return (
+      `{${fields.find((field) => field.id === rule.fieldId)?.label ?? "字段"}}` ||
+      rule.fallback
+    );
   const now = new Date();
   const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
   if (rule.format === "year") return String(now.getFullYear());
   if (rule.format === "yearMonth") return date.slice(0, 6);
   if (rule.format === "yearMonthDay") return date;
-  if (rule.format === "yearMonthDayHourMinute") return `${date}${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+  if (rule.format === "yearMonthDayHourMinute")
+    return `${date}${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
   return `${date}${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(now.getSeconds()).padStart(2, "0")}`;
 }
 
@@ -2409,18 +2770,13 @@ function PropertySegmented({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="flex h-7 min-w-0 flex-1 rounded-md bg-[var(--color-bg-subtle)] p-0.5">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          onClick={() => onChange(option.value)}
-          className={`min-w-0 flex-1 truncate rounded-sm px-1 text-[10px] ${value === option.value ? "bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-sm" : "text-[var(--color-text-secondary)]"}`}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
+    <MyTabs
+      ariaLabel="属性选项"
+      className="min-w-0 flex-1"
+      items={options}
+      onValueChange={onChange}
+      value={value}
+    />
   );
 }
 
@@ -2446,28 +2802,18 @@ function StatusSegmented({
   ];
 
   return (
-    <div className="flex h-7 flex-1 rounded-md bg-[var(--color-bg-subtle)] p-0.5">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          onClick={() =>
-            onPropsChange(field.id, {
-              isDisabled: option.value === "disabled",
-              isHidden: option.value === "hidden",
-              isReadOnly: option.value === "readOnly",
-            })
-          }
-          className={[
-            "flex-1 rounded-sm px-1 text-[10px] transition",
-            current === option.value
-              ? "bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-sm"
-              : "text-[var(--color-text-secondary)]",
-          ].join(" ")}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
+    <MyTabs
+      ariaLabel="字段状态"
+      className="flex-1"
+      items={options}
+      onValueChange={(key) =>
+        onPropsChange(field.id, {
+          isDisabled: key === "disabled",
+          isHidden: key === "hidden",
+          isReadOnly: key === "readOnly",
+        })
+      }
+      value={current}
+    />
   );
 }

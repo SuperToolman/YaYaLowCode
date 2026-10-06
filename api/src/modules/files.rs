@@ -157,7 +157,7 @@ pub(crate) async fn download_file(
         }
         let allowed = state.db.query_one_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
-            "SELECT 1 FROM communication_message_attachments a JOIN communication_messages m ON m.id = a.message_id JOIN communication_conversation_members cm ON cm.conversation_id = m.conversation_id WHERE a.file_id = $1 AND cm.user_id = $2 LIMIT 1",
+            "SELECT 1 FROM im_message_attachments a JOIN im_messages m ON m.id = a.message_id JOIN im_conversation_members cm ON cm.conversation_id = m.conversation_id WHERE a.file_id = $1 AND cm.user_id = $2 LIMIT 1",
             vec![SeaValue::Uuid(Some(id)), SeaValue::Uuid(Some(current.id))],
         )).await?.is_some();
         if !allowed {

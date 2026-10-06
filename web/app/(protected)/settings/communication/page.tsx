@@ -1,7 +1,8 @@
 "use client";
+import { notify } from "@lib/notify";
 
 import { useEffect, useState } from "react";
-import { Button, Input, Modal, Switch, toast } from "@heroui/react";
+import { Button, Input, Modal, Switch } from "@heroui/react";
 import { openLicenseManagementModal } from "@components/LicenseManagementModal";
 import { SettingsContentCard } from "../components/SettingsContentCard";
 import {
@@ -74,7 +75,7 @@ export default function CommunicationSettingsPage() {
         setStats(await getCommunicationStats<StorageStats>());
       }
     } catch (error) {
-      toast.danger("无法加载通讯模块设置", {
+      notify.error("无法加载通讯模块设置", {
         description: error instanceof Error ? error.message : "请稍后重试。",
       });
     } finally {
@@ -91,9 +92,9 @@ export default function CommunicationSettingsPage() {
       setSettings(
         normalizeSettings(await updateCommunicationSettings(settings)),
       );
-      toast.success("通讯模块设置已保存");
+      notify.success("通讯模块设置已保存");
     } catch (error) {
-      toast.danger("保存失败", {
+      notify.error("保存失败", {
         description: error instanceof Error ? error.message : "请稍后重试。",
       });
     } finally {
@@ -107,13 +108,13 @@ export default function CommunicationSettingsPage() {
         deletedMessages: number;
         deletedFiles: number;
       }>();
-      toast.success("过期通讯数据已清理", {
+      notify.success("过期通讯数据已清理", {
         description: `消息 ${result.deletedMessages} 条，附件 ${result.deletedFiles} 个`,
       });
       setCleanupConfirmOpen(false);
       await load();
     } catch (error) {
-      toast.danger("清理失败", {
+      notify.error("清理失败", {
         description: error instanceof Error ? error.message : "请稍后重试。",
       });
     } finally {

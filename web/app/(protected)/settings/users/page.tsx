@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useMemo, useState } from "react";
+import { notify } from "@lib/notify";
 import {
   Avatar,
   Button,
@@ -80,11 +81,15 @@ export default function UsersSettingsPage() {
       ),
     );
   }
-  async function update(user: UserItem, payload: UpdateUserRequest) {
+  async function update(user: UserItem, payload: UpdateUserRequest): Promise<boolean> {
+    setError("");
     try {
       await userManagement.update(user.id, payload);
+      notify.success("用户信息已更新");
+      return true;
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "更新用户失败");
+      notify.error("更新用户失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
+      return false;
     }
   }
   async function saveEdit() {
@@ -96,7 +101,7 @@ export default function UsersSettingsPage() {
       setError("请完整填写每个附加邮箱的名称和地址");
       return;
     }
-    await update(editing, {
+    const saved = await update(editing, {
       displayName: editName,
       title: editTitle,
       mobile: editMobile,
@@ -108,14 +113,16 @@ export default function UsersSettingsPage() {
       emailAddresses: editEmailAddresses,
       roleIds: editRoleIds,
     });
-    setEditing(null);
+    if (saved) setEditing(null);
   }
   async function remove(user: UserItem) {
+    setError("");
     try {
       await userManagement.remove(user.id);
       setDeleting(null);
+      notify.success("用户已删除");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "删除用户失败");
+      notify.error("删除用户失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
     }
   }
   async function createUser() {
@@ -123,8 +130,10 @@ export default function UsersSettingsPage() {
       setError("请填写账号、密码和姓名");
       return;
     }
+    setError("");
     try {
       await userManagement.create({ username: newUsername, password: newPassword, displayName: newName, roleIds: newRoleIds });
+      notify.success("用户已创建");
       setCreating(false);
       setNewUsername("");
       setNewPassword("");
@@ -132,7 +141,7 @@ export default function UsersSettingsPage() {
       setNewRoleIds([]);
       await loadUsers();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "创建用户失败");
+      notify.error("创建用户失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
     }
   }
 async function initializeCredentials() {
@@ -142,8 +151,9 @@ async function initializeCredentials() {
       const result = await initializeUserCredentials();
       setCredentialInitializationResult(result);
       await loadUsers();
+      notify.success("账号密码初始化完成");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "初始化账号密码失败");
+      notify.error("初始化账号密码失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
     } finally {
       setInitializingCredentials(false);
     }

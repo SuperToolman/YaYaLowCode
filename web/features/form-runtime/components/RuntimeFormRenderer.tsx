@@ -1,4 +1,5 @@
 "use client";
+import { notify } from "@lib/notify";
 
 import dynamic from "next/dynamic";
 import {
@@ -19,7 +20,6 @@ import {
   NumberField,
   Radio,
   RadioGroup,
-  toast,
   Typography,
 } from "@heroui/react";
 import { Description } from "@heroui/react/description";
@@ -52,7 +52,8 @@ import {
 } from "./RuntimeFormFieldControls";
 
 const RichTextEditor = dynamic(
-  () => import("@shared/ui/RichTextEditor").then((module) => module.RichTextEditor),
+  () =>
+    import("@shared/ui/RichTextEditor").then((module) => module.RichTextEditor),
   {
     ssr: false,
     loading: () => (
@@ -242,7 +243,7 @@ export function RuntimeFormRenderer({
             debugEvent: nextDebugEvent,
           }));
         }, 0);
-        toast.danger("页面加载动作执行失败", {
+        notify.error("页面加载动作执行失败", {
           description: actionModule.error,
         });
       }
@@ -266,7 +267,7 @@ export function RuntimeFormRenderer({
           eventName: "didMount",
           dataSources: nextDataSources,
           onError: (message) =>
-            toast.danger("页面加载动作执行失败", {
+            notify.error("页面加载动作执行失败", {
               description: message,
             }),
           onSuccess: () => undefined,
@@ -368,7 +369,7 @@ export function RuntimeFormRenderer({
       eventName: "onSubmit",
       dataSources: submitDataSources,
       onError: (message) =>
-        toast.danger("表单动作执行失败", {
+        notify.error("表单动作执行失败", {
           description: message,
         }),
       onSuccess: (output) =>
@@ -424,7 +425,7 @@ export function RuntimeFormRenderer({
         eventName,
         dataSources: nextDataSources,
         onError: (message) =>
-          toast.danger("组件事件执行失败", {
+          notify.error("组件事件执行失败", {
             description: `${fieldId} / ${eventName}: ${message}`,
           }),
         onSuccess: (output) =>
@@ -538,43 +539,66 @@ export function RuntimeFormRenderer({
   );
 }
 
-function RuntimeFieldNode({
-  childFieldsByParent,
-  definedComponentWritableFieldIds,
-  definedAssets,
-  field,
-  formulaErrors,
-  onFieldAction,
-  value,
-  values,
-}: {
+export type FormFieldRenderMode = "runtime" | "designer";
+
+export type SharedFormFieldProps = {
   childFieldsByParent: Map<string, RuntimeSchemaField[]>;
-  definedComponentWritableFieldIds: string[];
-  definedAssets: RuntimePageAsset[];
+  definedComponentWritableFieldIds?: string[];
+  definedAssets?: RuntimePageAsset[];
   field: RuntimeSchemaField;
-  formulaErrors: Record<string, string>;
-  onFieldAction: (
+  formulaErrors?: Record<string, string>;
+  mode?: FormFieldRenderMode;
+  onFieldAction?: (
     fieldId: string,
     nextValue: unknown,
     eventName?: string,
   ) => void;
   value: unknown;
   values: Record<string, unknown>;
-}) {
-  if (field.type === "subform") {
+};
+
+export function RuntimeFieldNode({
+  childFieldsByParent,
+  definedComponentWritableFieldIds,
+  definedAssets,
+  field,
+  formulaErrors,
+  mode = "runtime",
+  onFieldAction,
+  value,
+  values,
+}: SharedFormFieldProps) {
+  const readOnlyField =
+    mode === "designer"
+      ? {
+          ...field,
+          props: {
+            ...field.props,
+            isDisabled: true,
+            isReadOnly: true,
+          },
+        }
+      : field;
+  const emitFieldAction =
+    mode === "designer"
+      ? () => undefined
+      : (onFieldAction ?? (() => undefined));
+
+  if (readOnlyField.type === "subform") {
     const childFields = childFieldsByParent.get(field.id) ?? [];
     return (
       <RuntimeSubform
-        field={field}
+        field={readOnlyField}
         childFields={childFields}
+        mode={mode}
         value={value}
-        onChange={(nextValue) => onFieldAction(field.id, nextValue, "onChange")}
+        onChange={(nextValue) => emitFieldAction(field.id, nextValue, "onChange")}
         isGrouped={Boolean(field.parentGroupId)}
       />
     );
   }
 
-  if (field.type === "groupContainer") {
+  if (readOnlyField.type === "groupContainer") {
     const childFields = childFieldsByParent.get(field.id) ?? [];
 
     return (
@@ -619,7 +643,8 @@ function RuntimeFieldNode({
                 definedAssets={definedAssets}
                 field={child}
                 formulaErrors={formulaErrors}
-                onFieldAction={onFieldAction}
+                mode={mode}
+                onFieldAction={emitFieldAction}
                 value={values[child.id]}
                 values={values}
               />
@@ -630,31 +655,31 @@ function RuntimeFieldNode({
     );
   }
 
-  if (field.type === "associationFormField") {
+  if (readOnlyField.type === "associationFormField") {
     return (
       <RuntimeAssociationField
-        field={field}
+        field={readOnlyField}
         value={value}
-        onChange={(nextValue) => onFieldAction(field.id, nextValue, "onChange")}
+        onChange={(nextValue) => emitFieldAction(field.id, nextValue, "onChange")}
         onFill={(source) =>
-          applyAssociationFillRules(field.props, source, onFieldAction)
+          applyAssociationFillRules(readOnlyField.props, source, emitFieldAction)
         }
       />
     );
   }
 
-  if (field.type === "html" || field.type === "tsx") {
+  if (readOnlyField.type === "html" || readOnlyField.type === "tsx") {
     return (
       <RuntimeDefinedComponent
-        type={field.type}
-        code={field.props?.code}
-        allowedResourceOrigins={field.props?.allowedResourceOrigins}
-        allowedFieldIds={definedComponentWritableFieldIds}
-        assets={definedAssets}
+        type={readOnlyField.type}
+        code={readOnlyField.props?.code}
+        allowedResourceOrigins={readOnlyField.props?.allowedResourceOrigins}
+        allowedFieldIds={definedComponentWritableFieldIds ?? []}
+        assets={definedAssets ?? []}
         values={values}
-        isReadOnly={Boolean(field.props?.isReadOnly || field.props?.isDisabled)}
+        isReadOnly
         onSetFieldValue={(fieldId, nextValue) =>
-          onFieldAction(fieldId, nextValue, "onChange")
+          emitFieldAction(fieldId, nextValue, "onChange")
         }
       />
     );
@@ -662,9 +687,9 @@ function RuntimeFieldNode({
 
   return (
     <FormField
-      field={field}
-      formulaError={formulaErrors[field.id]}
-      onFieldAction={onFieldAction}
+      field={readOnlyField}
+      formulaError={formulaErrors?.[field.id]}
+      onFieldAction={emitFieldAction}
       value={value}
     />
   );
@@ -710,12 +735,14 @@ function applyAssociationFillRules(
 function RuntimeSubform({
   field,
   childFields,
+  mode = "runtime",
   value,
   onChange,
   isGrouped = false,
 }: {
   field: RuntimeSchemaField;
   childFields: RuntimeSchemaField[];
+  mode?: FormFieldRenderMode;
   value: unknown;
   onChange: (value: Array<Record<string, unknown>>) => void;
   isGrouped?: boolean;
@@ -840,42 +867,39 @@ function RuntimeSubform({
         props={props}
         rows={rows}
         showActions={showActions}
-        renderCell={(child, row, rowIndex) =>
-          child.type === "associationFormField" ? (
+        renderCell={(child, row, rowIndex) => {
+          const renderChild =
+            mode === "designer"
+              ? {
+                  ...child,
+                  props: {
+                    ...child.props,
+                    isDisabled: true,
+                    isReadOnly: true,
+                  },
+                }
+              : child;
+          return renderChild.type === "associationFormField" ? (
             <RuntimeAssociationField
-              field={child}
-              value={row[child.id]}
+              field={renderChild}
+              value={row[renderChild.id]}
               showLabel={false}
               onChange={(nextValue) =>
-                updateCell(rowIndex, child.id, nextValue)
+                updateCell(rowIndex, renderChild.id, nextValue)
               }
-              onFill={(source) => {
-                const nextRow = { ...row };
-                for (const fill of child.props?.associationFills ?? []) {
-                  if (
-                    childFields.some((item) => item.id === fill.targetFieldId)
-                  )
-                    nextRow[fill.targetFieldId] =
-                      source[fill.sourceFieldId] ?? "";
-                }
-                onChange(
-                  rows.map((current, index) =>
-                    index === rowIndex ? nextRow : current,
-                  ),
-                );
-              }}
+              onFill={() => undefined}
             />
           ) : (
             <FormField
-              field={child}
-              value={row[child.id]}
+              field={renderChild}
+              value={row[renderChild.id]}
               showLabel={false}
               onFieldAction={(_, nextValue) =>
-                updateCell(rowIndex, child.id, nextValue)
+                updateCell(rowIndex, renderChild.id, nextValue)
               }
             />
-          )
-        }
+          );
+        }}
         renderActions={(rowIndex) => (
           <div className="flex items-center justify-center gap-1">
             {props.subformShowSort ? (

@@ -11,7 +11,7 @@ import {
   Picture,
 } from "@gravity-ui/icons";
 import { Card, ScrollShadow } from "@heroui/react";
-import type { AgentFile } from "@/features/agent-assistant/api";
+import type { AgentFile } from "@/features/agent-workbench/platform-api";
 
 interface WorkspaceFilesProps {
   sessionId: string | null;

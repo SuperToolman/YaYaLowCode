@@ -84,7 +84,6 @@ pub(crate) struct ApiAutomationFlowList {
     pub(crate) total: i64,
     pub(crate) enabled: i64,
     pub(crate) paused: i64,
-    pub(crate) draft: i64,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

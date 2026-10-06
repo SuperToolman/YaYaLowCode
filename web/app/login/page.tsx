@@ -1,11 +1,13 @@
 "use client";
+import { notify } from "@lib/notify";
 
 import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { Button, Card, Input, Tabs, toast } from "@heroui/react";
+import { Button, Card, Input, Tabs } from "@heroui/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CompactThemeSwitcher } from "../components/ThemeSwitcherMenu";
 import { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY, type AuthUser, writeAuthStorage } from "../lib/auth";
-import { getAuthSession, loginWithPassword } from "@features/auth/api";
+import { getAuthSession, loginWithPassword, loginWithSms, sendSmsCode as requestSmsCode } from "@features/auth/api";
+import { isSystemRequestError } from "@lib/api-request";
 
 type LoginMode = "password" | "sms" | "dingtalk";
 type LoginResponse = {
@@ -68,15 +70,13 @@ function LoginScreen() {
 
   async function sendSmsCode() {
     const normalized = mobile.trim();
-    if (!/^1\d{10}$/.test(normalized)) { toast.danger("请输入正确的手机号"); return; }
+    if (!/^1\d{10}$/.test(normalized)) { notify.error("请输入正确的手机号"); return; }
     if (smsCountdown > 0 || sendingSms) return;
     setSendingSms(true); setError("");
     try {
-      const response = await fetch("/api/auth/sms/send-code", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mobile: normalized }) });
-      const payload = await response.json() as { code: number; message: string };
-      if (!response.ok || payload.code !== 0) throw new Error(payload.message || "验证码发送失败");
+      await requestSmsCode(normalized);
       setSmsCountdown(60);
-    } catch (reason) { toast.danger(reason instanceof Error ? reason.message : "验证码发送失败"); }
+    } catch (reason) { if (!isSystemRequestError(reason)) notify.error(reason instanceof Error ? reason.message : "验证码发送失败"); }
     finally { setSendingSms(false); }
   }
 
@@ -85,11 +85,10 @@ function LoginScreen() {
     if (submitting) return;
     setSubmitting(true); setError("");
     try {
-      const response = await fetch("/api/auth/sms/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mobile: mobile.trim(), code: smsCode.trim() }) });
-      const payload = await response.json() as LoginResponse;
-      if (!response.ok || payload.code !== 0 || !payload.data) throw new Error(payload.message || "登录失败，请稍后重试");
-      completeLogin(payload.data.token, payload.data.user); router.replace(getSafeRedirect());
-    } catch (reason) { toast.danger(reason instanceof Error ? reason.message : "登录失败，请稍后重试"); }
+      const payload = await loginWithSms<NonNullable<LoginResponse["data"]>>(mobile.trim(), smsCode.trim());
+      if (!payload?.token || !payload.user) throw new Error("登录失败，请稍后重试");
+      completeLogin(payload.token, payload.user); router.replace(getSafeRedirect());
+    } catch (reason) { if (!isSystemRequestError(reason)) setError(reason instanceof Error ? reason.message : "登录失败，请稍后重试"); }
     finally { setSubmitting(false); }
   }
 
@@ -155,7 +154,7 @@ function LoginScreen() {
     try {
       await login(username, password, rememberPassword, autoLogin);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "登录失败，请稍后重试");
+      if (!isSystemRequestError(reason)) setError(reason instanceof Error ? reason.message : "登录失败，请稍后重试");
     } finally {
       setSubmitting(false);
     }

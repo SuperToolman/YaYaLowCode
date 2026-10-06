@@ -1,13 +1,15 @@
 "use client";
+import { notify } from "@lib/notify";
 
 import {
+  createContext,
   memo,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 import {
   Button,
@@ -16,7 +18,6 @@ import {
   ListBox,
   Select,
   TextArea,
-  toast,
   type SortDescriptor,
 } from "@heroui/react";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -30,8 +31,6 @@ import {
   ArrowsExpand,
   Copy,
   Ellipsis,
-  Eye,
-  TrashBin,
   Xmark,
 } from "@gravity-ui/icons";
 import {
@@ -51,6 +50,8 @@ import {
   getAssociationRecordId,
   getBuiltinRecordValues,
   getTableFieldDisplayValue,
+  workflowApprovalStatusLabel,
+  workflowInstanceStatusLabel,
 } from "../form-record-utils";
 import type { ViewConfig, ViewSortRule } from "../model/use-form-views";
 import type { FormRecord } from "@/features/records/types";
@@ -62,9 +63,48 @@ import {
   MyTableCheckbox,
   type MyTableColumnMeta,
 } from "@components/my-fields/MyTable";
+import { RecordRowActions } from "./RecordRowActions";
 import styles from "./RecordsTable.module.css";
 
 type SchemaField = RuntimeSchemaField;
+
+type TableSelectionContextValue = {
+  selectedIds: Set<string>;
+  pageIds: string[];
+  onRowChange: (recordId: string, selected: boolean) => void;
+  onPageChange: (selectedPageIds: Set<string>) => void;
+};
+
+const TableSelectionContext = createContext<TableSelectionContextValue | null>(null);
+
+function SelectionHeader() {
+  const selection = useContext(TableSelectionContext);
+  if (!selection) return null;
+  const allSelected = selection.pageIds.length > 0 &&
+    selection.pageIds.every((id) => selection.selectedIds.has(id));
+  return (
+    <MyTableCheckbox
+      ariaLabel="全选当前页"
+      isSelected={allSelected}
+      onChange={(selected) => selection.onPageChange(new Set(selected ? selection.pageIds : []))}
+    />
+  );
+}
+
+function SelectionCell({ recordId, rowNumber }: { recordId: string; rowNumber: number }) {
+  const selection = useContext(TableSelectionContext);
+  if (!selection) return null;
+  const isSelected = selection.selectedIds.has(recordId);
+  return (
+    <>
+      <span className={`!text-[12px] ${isSelected ? "opacity-0" : "transition-opacity group-hover:opacity-0"}`}>{rowNumber}</span>
+      <span className={`absolute inset-0 flex items-center justify-center transition-opacity ${isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+        <MyTableCheckbox ariaLabel={`选择第 ${rowNumber} 行`} isSelected={isSelected} onChange={(selected) => selection.onRowChange(recordId, selected)} />
+      </span>
+    </>
+  );
+}
+
 type FormSchema = RuntimeFormSchema;
 type RecordTableRow = FormRecord & {
   rowNumber: number;
@@ -83,16 +123,34 @@ type CombinedInstanceTableColumn = {
   field: { id: "instanceId"; label: "实例标题" };
   index: number;
 };
+type CombinedSubmitterTableColumn = {
+  kind: "combinedSubmitter";
+  field: { id: "submitter"; label: "提交人&组织" };
+  index: number;
+};
 type RecordTableColumn =
   | { kind: "field"; field: SchemaField; index: number }
   | BuiltInTableColumn
-  | CombinedInstanceTableColumn;
+  | CombinedInstanceTableColumn
+  | CombinedSubmitterTableColumn;
 type TableAssociationFormData = AssociationFormData<FormSchema>;
 type AssociationDetail = {
   field: SchemaField;
   record: FormRecord;
   schema: FormSchema;
 };
+
+const WORKFLOW_DELETE_WARNING_APPROVAL_STATUSES = new Set([
+  "reviewing",
+  "approved",
+  "rejected",
+]);
+const WORKFLOW_DELETE_WARNING_INSTANCE_STATUSES = new Set([
+  "running",
+  "paused",
+  "completed",
+  "failed",
+]);
 
 async function copyText(value: string) {
   if (navigator.clipboard && window.isSecureContext) {
@@ -165,157 +223,6 @@ export const RuntimeFormPanel = memo(function RuntimeFormPanel({
   );
 });
 
-type RecordAction = {
-  id: string;
-  label: string;
-  icon?: ReactNode;
-  isDisabled?: boolean;
-  tone?: "default" | "primary" | "warning" | "danger";
-  onAction: () => void;
-};
-
-function RecordRowActions({
-  record,
-  formType,
-  submitting,
-  canDeleteRecord,
-  deletingRecordId,
-  onOpenDetail,
-  onWorkflowAction,
-  onPause,
-  onDelete,
-  onCopy,
-}: {
-  record: FormRecord;
-  formType: "normal" | "workflow";
-  submitting: boolean;
-  canDeleteRecord: boolean;
-  deletingRecordId: string | null;
-  onOpenDetail: () => void;
-  onWorkflowAction: (action: "submit" | "reverse" | "resume") => void;
-  onPause: () => void;
-  onDelete: () => void;
-  onCopy: () => void;
-}) {
-  const actions: RecordAction[] = [
-    {
-      id: "view",
-      label: "查看",
-      icon: <Eye className="h-3.5 w-3.5" />,
-      onAction: onOpenDetail,
-    },
-  ];
-
-  if (formType === "workflow") {
-    actions.push(
-      {
-        id: "submit",
-        label: "提交",
-        tone: "primary",
-        isDisabled:
-          submitting || record.data.workflowApprovalStatus !== "saved",
-        onAction: () => onWorkflowAction("submit"),
-      },
-      {
-        id: "reverse",
-        label: "反审",
-        tone: "warning",
-        isDisabled:
-          submitting || record.data.workflowApprovalStatus !== "approved",
-        onAction: () => onWorkflowAction("reverse"),
-      },
-      {
-        id: "pause",
-        label: "暂停",
-        isDisabled:
-          submitting || record.data.workflowInstanceStatus !== "running",
-        onAction: onPause,
-      },
-      {
-        id: "resume",
-        label: "恢复",
-        tone: "primary",
-        isDisabled:
-          submitting || record.data.workflowInstanceStatus !== "paused",
-        onAction: () => onWorkflowAction("resume"),
-      },
-    );
-  }
-
-  if (canDeleteRecord) {
-    actions.push({
-      id: "delete",
-      label: deletingRecordId === record.id ? "删除中..." : "删除",
-      icon: <TrashBin className="h-3.5 w-3.5" />,
-      tone: "danger",
-      isDisabled: deletingRecordId === record.id,
-      onAction: onDelete,
-    });
-  }
-  actions.push({
-    id: "copy",
-    label: "复制记录数据",
-    icon: <Copy className="h-3.5 w-3.5" />,
-    onAction: onCopy,
-  });
-
-  const directActions = actions.length >= 3 ? actions.slice(0, 2) : actions;
-  const overflowActions = actions.length >= 3 ? actions.slice(2) : [];
-  const toneClass = {
-    default: "border-[var(--color-border)] text-[var(--color-text-primary)]",
-    primary: "border-[var(--color-primary)]/30 text-[var(--color-primary)]",
-    warning: "border-[var(--color-warning)]/30 text-[var(--color-warning)]",
-    danger: "border-[var(--color-danger)]/30 text-[var(--color-danger)]",
-  } as const;
-
-  return (
-    <div className="flex w-max items-center gap-1.5">
-      {directActions.map((action) => (
-        <Button
-          key={action.id}
-          type="button"
-          variant="ghost"
-          isDisabled={action.isDisabled}
-          className={`h-8 gap-1 rounded-md border bg-[var(--color-bg-panel)] px-2.5 text-xs ${toneClass[action.tone ?? "default"]}`}
-          onPress={action.onAction}
-        >
-          {action.icon}
-          {action.label}
-        </Button>
-      ))}
-      {overflowActions.length > 0 ? (
-        <Dropdown>
-          <Dropdown.Trigger
-            aria-label="更多记录操作"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-panel)] text-[var(--color-text-secondary)]"
-          >
-            <Ellipsis className="h-4 w-4" />
-          </Dropdown.Trigger>
-          <Dropdown.Popover>
-            <Dropdown.Menu aria-label="更多记录操作">
-              {overflowActions.map((action) => (
-                <Dropdown.Item
-                  key={action.id}
-                  id={action.id}
-                  isDisabled={action.isDisabled}
-                  className={
-                    action.tone === "danger"
-                      ? "text-[var(--color-danger)]"
-                      : undefined
-                  }
-                  onAction={action.onAction}
-                >
-                  {action.label}
-                </Dropdown.Item>
-              ))}
-            </Dropdown.Menu>
-          </Dropdown.Popover>
-        </Dropdown>
-      ) : null}
-    </div>
-  );
-}
-
 export function RecordsTable({
   builtinFields,
   columnOrder,
@@ -334,12 +241,15 @@ export function RecordsTable({
   onDeleteRecord,
   onUpdateRecord,
   onWorkflowAction,
+  onCompleteExecutionTask,
   canEditRecord,
   canDeleteRecord,
   urlParams,
   onRecordSelectionChange,
+  onPageSelectionChange,
   onViewConfigChange,
   initialRecordId,
+  initialTaskId,
   pagination,
 }: {
   builtinFields: readonly { id: string; label: string }[];
@@ -366,14 +276,20 @@ export function RecordsTable({
     action: "submit" | "reverse" | "pause" | "resume",
     reason?: string,
   ) => Promise<boolean>;
+  onCompleteExecutionTask: (
+    taskId: string,
+    changes: Record<string, unknown>,
+  ) => Promise<boolean>;
   canEditRecord: boolean;
   canDeleteRecord: boolean;
   urlParams: Record<string, string>;
   onRecordSelectionChange: (recordId: string, selected: boolean) => void;
+  onPageSelectionChange: (pageIds: string[], selectedPageIds: Set<string>) => void;
   onViewConfigChange: (
     patch: Partial<Pick<ViewConfig, "columnOrder" | "columnWidths" | "sorts">>,
   ) => void;
   initialRecordId?: string;
+  initialTaskId?: string;
   pagination?: {
     page: number;
     pageSize: number;
@@ -419,27 +335,53 @@ export function RecordsTable({
     const instanceIdIndex = allColumns.findIndex(
       (column) => column.kind === "builtin" && column.field.id === "instanceId",
     );
-    if (instanceTitleIndex < 0 || instanceIdIndex < 0) return allColumns;
+    const withCombinedInstance =
+      instanceTitleIndex < 0 || instanceIdIndex < 0
+        ? allColumns
+        : allColumns
+            .filter(
+              (column) =>
+                !(
+                  column.kind === "builtin" &&
+                  (column.field.id === "instanceTitle" ||
+                    column.field.id === "instanceId")
+                ),
+            )
+            .toSpliced(Math.min(instanceTitleIndex, instanceIdIndex), 0, {
+              kind: "combinedInstance",
+              field: { id: "instanceId", label: "实例标题" },
+              index: instanceTitleIndex,
+            });
+    const submitterIndex = withCombinedInstance.findIndex(
+      (column) => column.kind === "builtin" && column.field.id === "submitter",
+    );
+    const organizationIndex = withCombinedInstance.findIndex(
+      (column) =>
+        column.kind === "builtin" &&
+        column.field.id === "submitterOrganization",
+    );
+    if (submitterIndex < 0 || organizationIndex < 0)
+      return withCombinedInstance;
 
-    const firstIndex = Math.min(instanceTitleIndex, instanceIdIndex);
-    return allColumns
+    return withCombinedInstance
       .filter(
         (column) =>
           !(
             column.kind === "builtin" &&
-            (column.field.id === "instanceTitle" ||
-              column.field.id === "instanceId")
+            (column.field.id === "submitter" ||
+              column.field.id === "submitterOrganization")
           ),
       )
-      .toSpliced(firstIndex, 0, {
-        kind: "combinedInstance",
-        field: { id: "instanceId", label: "实例标题" },
-        index: instanceTitleIndex,
+      .toSpliced(Math.min(submitterIndex, organizationIndex), 0, {
+        kind: "combinedSubmitter",
+        field: { id: "submitter", label: "提交人&组织" },
+        index: submitterIndex,
       });
   }, [builtinFields, columnOrder, columns]);
   const [detailRecord, setDetailRecord] = useState<FormRecord | null>(null);
   const autoOpenedRecordIdRef = useRef<string | null>(null);
   const [isDetailEditing, setIsDetailEditing] = useState(false);
+  const detailSubmitModeRef = useRef<"save" | "complete">("save");
   const [detailTab, setDetailTab] = useState<"comments" | "history">(
     "comments",
   );
@@ -448,6 +390,15 @@ export function RecordsTable({
   const [isDetailFullscreen, setIsDetailFullscreen] = useState(false);
   const [deleteRecordTarget, setDeleteRecordTarget] =
     useState<FormRecord | null>(null);
+  const workflowDeleteWarning =
+    formType === "workflow" &&
+    deleteRecordTarget !== null &&
+    (WORKFLOW_DELETE_WARNING_APPROVAL_STATUSES.has(
+      String(deleteRecordTarget.data.workflowApprovalStatus ?? ""),
+    ) ||
+      WORKFLOW_DELETE_WARNING_INSTANCE_STATUSES.has(
+        String(deleteRecordTarget.data.workflowInstanceStatus ?? ""),
+      ));
   const [localPage, setLocalPage] = useState(1);
   const [localPageSize, setLocalPageSize] = useState(20);
   const [isDetailContentReady, setIsDetailContentReady] = useState(false);
@@ -545,9 +496,11 @@ export function RecordsTable({
   const pageCount = Math.max(1, Math.ceil(totalRecords / pageSize));
   const activePage = Math.min(pagination?.page ?? localPage, pageCount);
   const pageStart = (activePage - 1) * pageSize;
-  const pageRecords = pagination
-    ? records
-    : records.slice(pageStart, pageStart + pageSize);
+  const pageRecords = useMemo(
+    () => pagination ? records : records.slice(pageStart, pageStart + pageSize),
+    [pagination, records, pageStart, pageSize],
+  );
+  const pageIds = useMemo(() => pageRecords.map((record) => record.id), [pageRecords]);
   const tableRows = useMemo<RecordTableRow[]>(
     () =>
       pageRecords.map((record, index) => ({
@@ -557,9 +510,6 @@ export function RecordsTable({
       })),
     [pageRecords, pageStart, recordDisplayValues],
   );
-  const allCurrentPageSelected =
-    pageRecords.length > 0 &&
-    pageRecords.every((record) => selectedRecordIds.has(record.id));
   const activeSort = sorts[0];
   const sortDescriptor = useMemo<SortDescriptor | undefined>(
     () =>
@@ -592,14 +542,6 @@ export function RecordsTable({
     },
     [onViewConfigChange, sorts],
   );
-  const toggleCurrentPageSelection = useCallback(
-    (selected: boolean) => {
-      pageRecords.forEach((record) =>
-        onRecordSelectionChange(record.id, selected),
-      );
-    },
-    [onRecordSelectionChange, pageRecords],
-  );
   const paginationPages = getPaginationPageNumbers(activePage, pageCount);
   const setPage = (nextPage: number) => {
     if (pagination) pagination.onPageChange(nextPage);
@@ -615,6 +557,8 @@ export function RecordsTable({
   const detailBuiltIns = detailRecord
     ? getBuiltinRecordValues(detailRecord, formName, formType === "workflow")
     : null;
+  const workflowActionRef = useRef(onWorkflowAction);
+  workflowActionRef.current = onWorkflowAction;
 
   const myTableColumns = useMemo<ColumnDef<RecordTableRow, unknown>[]>(() => {
     const selectionColumn: ColumnDef<RecordTableRow, unknown> = {
@@ -628,40 +572,18 @@ export function RecordsTable({
         headerClassName: "text-center",
         cellClassName: "text-center",
       } satisfies MyTableColumnMeta,
-      header: () => (
-        <div className="flex items-center justify-center">
-          <MyTableCheckbox
-            ariaLabel="全选当前页"
-            isSelected={allCurrentPageSelected}
-            onChange={toggleCurrentPageSelection}
-          />
-        </div>
-      ),
-      cell: ({ row }) => (
-        <>
-          <span
-            className={`!text-[12px] ${selectedRecordIds.has(row.original.id) ? "opacity-0" : "transition-opacity group-hover:opacity-0"}`}
-          >
-            {row.original.rowNumber}
-          </span>
-          <span
-            className={`absolute inset-0 flex items-center justify-center transition-opacity ${selectedRecordIds.has(row.original.id) ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-          >
-            <MyTableCheckbox
-              ariaLabel={`选择第 ${row.original.rowNumber} 行`}
-              isSelected={selectedRecordIds.has(row.original.id)}
-              onChange={(selected) =>
-                onRecordSelectionChange(row.original.id, selected)
-              }
-            />
-          </span>
-        </>
-      ),
+      header: () => <div className="flex items-center justify-center"><SelectionHeader /></div>,
+      cell: ({ row }) => <SelectionCell recordId={row.original.id} rowNumber={row.original.rowNumber} />,
     };
     const dataColumns = tableColumns.map(
       (column): ColumnDef<RecordTableRow, unknown> => {
         const { field, index } = column;
-        const id = column.kind === "combinedInstance" ? "instanceId" : field.id;
+        const id =
+          column.kind === "combinedInstance"
+            ? "instanceId"
+            : column.kind === "combinedSubmitter"
+              ? "submitter"
+              : field.id;
         const defaultWidth =
           savedColumnWidths[id] ??
           (column.kind === "field"
@@ -675,6 +597,8 @@ export function RecordsTable({
           accessorFn: (record) =>
             column.kind === "combinedInstance"
               ? (record.displayValues.builtIns.instanceTitle ?? "")
+              : column.kind === "combinedSubmitter"
+                ? (record.displayValues.builtIns.submitter ?? "")
               : (record.displayValues.fields[id] ??
                 record.displayValues.builtIns[id] ??
                 ""),
@@ -691,11 +615,25 @@ export function RecordsTable({
                   className="min-w-0 leading-tight"
                   title={`${record.displayValues.builtIns.instanceTitle} (${record.displayValues.builtIns.instanceId})`}
                 >
-                  <span className="block truncate !text-[8px]">
+                  <span className="block truncate !text-xs">
                     {record.displayValues.builtIns.instanceTitle}
                   </span>
-                  <span className="mt-0.5 block truncate !text-[6px] text-[var(--color-text-secondary)]">
+                  <span className="mt-0.5 block truncate !text-[10px] text-[var(--color-text-secondary)]">
                     {record.displayValues.builtIns.instanceId}
+                  </span>
+                </div>
+              );
+            if (column.kind === "combinedSubmitter")
+              return (
+                <div
+                  className="min-w-0 leading-tight"
+                  title={`${record.displayValues.builtIns.submitter} (${record.displayValues.builtIns.submitterOrganization})`}
+                >
+                  <span className="block truncate !text-xs">
+                    {record.displayValues.builtIns.submitter}
+                  </span>
+                  <span className="mt-0.5 block truncate !text-[10px] text-[var(--color-text-secondary)]">
+                    {record.displayValues.builtIns.submitterOrganization}
                   </span>
                 </div>
               );
@@ -760,7 +698,7 @@ export function RecordsTable({
             canDeleteRecord={canDeleteRecord}
             deletingRecordId={deletingRecordId}
             onOpenDetail={() => openDetail(record)}
-            onWorkflowAction={(action) => void onWorkflowAction(record, action)}
+            onWorkflowAction={(action) => void workflowActionRef.current(record, action)}
             onPause={() => {
               setPauseTarget(record);
               setPauseReason("");
@@ -768,9 +706,9 @@ export function RecordsTable({
             onDelete={() => setDeleteRecordTarget(record)}
             onCopy={() =>
               void copyText(JSON.stringify(record.data, null, 2))
-                .then(() => toast.success("记录数据已复制"))
+                .then(() => notify.success("记录数据已复制"))
                 .catch(() =>
-                  toast.danger("当前浏览器不支持复制，请手动选择文本"),
+                  notify.error("当前浏览器不支持复制，请手动选择文本"),
                 )
             }
           />
@@ -779,7 +717,6 @@ export function RecordsTable({
     };
     return [selectionColumn, ...dataColumns, actionColumn];
   }, [
-    allCurrentPageSelected,
     associationForms,
     builtInColumnMaxWidths,
     builtInColumnWidths,
@@ -788,18 +725,16 @@ export function RecordsTable({
     deletingRecordId,
     formType,
     frozenFieldIds,
-    onWorkflowAction,
     savedColumnWidths,
-    selectedRecordIds,
     sortableFieldIds,
     submitting,
     tableColumns,
-    toggleCurrentPageSelection,
   ]);
 
   function openDetail(record: FormRecord, editing = false) {
     setDetailRecord(record);
     setIsDetailEditing(editing);
+    detailSubmitModeRef.current = "save";
     setDetailTab("comments");
     setIsDetailFullscreen(false);
   }
@@ -810,9 +745,9 @@ export function RecordsTable({
     const record = records.find((item) => item.id === initialRecordId);
     if (!record) return;
     autoOpenedRecordIdRef.current = initialRecordId;
-    const timer = window.setTimeout(() => openDetail(record), 0);
+    const timer = window.setTimeout(() => openDetail(record, Boolean(initialTaskId)), 0);
     return () => window.clearTimeout(timer);
-  }, [initialRecordId, records]);
+  }, [initialRecordId, initialTaskId, records]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -824,13 +759,25 @@ export function RecordsTable({
   const handleDetailFormSubmit = useCallback(
     async (values: Record<string, unknown>) => {
       if (!isDetailEditing || !detailRecord) return;
-      const updated = await onUpdateRecord(detailRecord.id, values);
+      const completingTask = detailSubmitModeRef.current === "complete" && initialTaskId && detailRecord.id === initialRecordId;
+      const updated = completingTask
+        ? await onCompleteExecutionTask(
+            initialTaskId,
+            Object.fromEntries(Object.entries(values).filter(([key, value]) =>
+              JSON.stringify(value) !== JSON.stringify(detailRecord.data[key]),
+            )),
+          )
+        : await onUpdateRecord(detailRecord.id, values);
       if (updated) {
+        if (!completingTask && initialTaskId && detailRecord.id === initialRecordId) {
+          setDetailRecord({ ...detailRecord, data: { ...detailRecord.data, ...values } });
+          return;
+        }
         setDetailRecord(null);
         setIsDetailEditing(false);
       }
     },
-    [detailRecord, isDetailEditing, onUpdateRecord],
+    [detailRecord, initialRecordId, initialTaskId, isDetailEditing, onCompleteExecutionTask, onUpdateRecord],
   );
 
   function showAdjacentRecord(direction: -1 | 1) {
@@ -842,9 +789,9 @@ export function RecordsTable({
     if (!detailRecord) return;
     try {
       await copyText(JSON.stringify(detailRecord.data, null, 2));
-      toast.success("记录数据已复制");
+      notify.success("记录数据已复制");
     } catch {
-      toast.danger("当前浏览器不支持复制，请手动选择文本");
+      notify.error("当前浏览器不支持复制，请手动选择文本");
     }
   }
 
@@ -852,7 +799,15 @@ export function RecordsTable({
     <>
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
         <MySurface className="min-h-0 min-w-0 flex-1 overflow-hidden p-0">
-          <MyTable
+          <TableSelectionContext.Provider
+            value={{
+              selectedIds: selectedRecordIds,
+              pageIds,
+              onRowChange: onRecordSelectionChange,
+              onPageChange: (selectedPageIds) => onPageSelectionChange(pageIds, selectedPageIds),
+            }}
+          >
+            <MyTable
             ariaLabel="表单提交数据"
             data={tableRows}
             columns={myTableColumns}
@@ -861,7 +816,7 @@ export function RecordsTable({
             sortDescriptor={sortDescriptor}
             onSortChange={handleSortChange}
             selectedRowIds={selectedRecordIds}
-            onSelectedRowIdsChange={onRecordSelectionChange}
+            onSelectedRowIdsChange={(nextSelectedIds) => onPageSelectionChange(pageIds, nextSelectedIds)}
             columnSizing={savedColumnWidths}
             onColumnSizingChange={(sizing) =>
               onViewConfigChange({ columnWidths: sizing })
@@ -874,7 +829,8 @@ export function RecordsTable({
                 </div>
               </div>
             }
-          />
+            />
+          </TableSelectionContext.Provider>
         </MySurface>
         <MySurface className="shrink-0 min-w-0 overflow-hidden p-0">
           <div className="flex min-h-14 min-w-0 flex-nowrap items-center justify-between gap-4 overflow-hidden px-4 py-2">
@@ -1125,7 +1081,7 @@ export function RecordsTable({
                   />
                 ) : null}
               </Drawer.Body>
-              <Drawer.Footer className="flex shrink-0 justify-end gap-3 border-t border-[var(--color-border)] px-6 py-4">
+              <Drawer.Footer>
                 {isDetailEditing ? (
                   <Button
                     variant="ghost"
@@ -1159,6 +1115,7 @@ export function RecordsTable({
                       if (!isDetailEditing) {
                         setIsDetailEditing(true);
                       } else {
+                        detailSubmitModeRef.current = "save";
                         const form = document.getElementById(
                           `record-detail-${detailRecord.id}`,
                         ) as HTMLFormElement | null;
@@ -1171,6 +1128,23 @@ export function RecordsTable({
                         ? "保存中..."
                         : "保存"
                       : "编辑"}
+                  </Button>
+                ) : null}
+                {initialTaskId && detailRecord?.id === initialRecordId ? (
+                  <Button
+                    isDisabled={!detailRecord || submitting}
+                    onPress={() => {
+                      if (!detailRecord) return;
+                      if (!isDetailEditing) {
+                        setIsDetailEditing(true);
+                        return;
+                      }
+                      detailSubmitModeRef.current = "complete";
+                      const form = document.getElementById(`record-detail-${detailRecord.id}`) as HTMLFormElement | null;
+                      form?.requestSubmit();
+                    }}
+                  >
+                    {isDetailEditing ? "保存并完成" : "填写并完成"}
                   </Button>
                 ) : null}
               </Drawer.Footer>
@@ -1290,14 +1264,25 @@ export function RecordsTable({
       >
         <AlertDialog.Backdrop className="theme-modal-backdrop">
           <AlertDialog.Container placement="center" size="md">
-            <AlertDialog.Dialog className="theme-menu-surface rounded-xl shadow-[var(--shadow-dialog)]">
-              <AlertDialog.Header className="border-b border-[var(--color-border)]">
-                <AlertDialog.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
+            <AlertDialog.Dialog>
+              <AlertDialog.Header>
+                <AlertDialog.Heading>
                   删除数据
                 </AlertDialog.Heading>
               </AlertDialog.Header>
               <AlertDialog.Body className="">
-                确认删除这条数据吗？删除后无法恢复。
+                <p>确认删除这条数据吗？删除后无法恢复。</p>
+                {workflowDeleteWarning ? (
+                  <div className="mt-4 border-l-2 border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-2 text-sm text-[var(--color-text-primary)]">
+                    <p className="font-medium">该流程记录已进入审批或实例生命周期。</p>
+                    <p className="mt-1 text-[var(--color-text-secondary)]">
+                      审批状态：{workflowApprovalStatusLabel(deleteRecordTarget?.data.workflowApprovalStatus)}；实例状态：{workflowInstanceStatusLabel(deleteRecordTarget?.data.workflowInstanceStatus)}。
+                    </p>
+                    <p className="mt-1 text-[var(--color-text-secondary)]">
+                      删除后，业务数据会移入回收站，相关流程历史可能仍会保留。
+                    </p>
+                  </div>
+                ) : null}
               </AlertDialog.Body>
               <AlertDialog.Footer className="">
                 <Button
@@ -1309,7 +1294,6 @@ export function RecordsTable({
                 </Button>
                 <Button
                   isDisabled={!deleteRecordTarget || deletingRecordId !== null}
-                  className="bg-[var(--color-danger)] text-[var(--color-text-on-primary)]"
                   onPress={async () => {
                     if (!deleteRecordTarget) return;
                     const deletedRecord = deleteRecordTarget;

@@ -5,7 +5,7 @@ import { Spinner } from "@heroui/react";
 import { AgentMarkdown } from "./AgentMarkdown";
 import { MySurface } from "@shared/ui/MySurface";
 import type { AgentMessage as Message, AgentRunStatus, AgentTimelineItem } from "@/features/agent-assistant/types";
-import { agentFileDownloadUrl } from "@/features/agent-assistant/api";
+import { agentFileDownloadUrl } from "@/features/agent-workbench/platform-api";
 import { ThinkBlock } from "./AgentThinkBlock";
 import { ToolCallCard } from "./AgentToolCallCard";
 

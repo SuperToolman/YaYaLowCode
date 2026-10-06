@@ -1,4 +1,5 @@
 "use client";
+import { notify } from "@lib/notify";
 /* eslint-disable @next/next/no-img-element -- authenticated attachment URLs cannot use the server-side image optimizer */
 
 import {
@@ -22,23 +23,29 @@ import {
   Tooltip,
 } from "@heroui/react";
 import {
-  Comment,
   Envelope,
   FaceSmile,
   PaperPlane,
   Paperclip,
   Plus,
+  TrashBin,
 } from "@gravity-ui/icons";
 import { useAuth } from "@components/AuthProvider";
 import { MyAvatar } from "@components/my-fields/MyAvatar";
 import { getCommunicationAvailability } from "@features/communication/api";
 import { PageContentLayout } from "@components/PageContentLayout";
-import styles from "./messages.module.css";
+import { Empty } from "./components/Empty";
+import { ToolButton } from "./components/ToolButton";
+import { ConversationList } from "./components/ConversationList";
+import { MessageDisplay } from "./components/MessageDisplay";
+import { NewConversationModal as NewConversationDialog } from "./components/NewConversationModal";
+import { ManageGroupModal as ManageGroupDialog } from "./components/ManageGroupModal";
+import { MessageComposer } from "./components/MessageComposer";
+import { useRouter } from "next/navigation";
 import {
   createDirectConversation,
   createGroupConversation,
   listCommunicationConversations,
-  listCommunicationMessages,
   listCommunicationUsers,
   markCommunicationConversationRead,
   recallCommunicationMessage,
@@ -50,6 +57,12 @@ import {
   type CommunicationUserResponse,
   uploadCommunicationFile,
 } from "@/features/communication/api";
+import { approveWorkflowTask, rejectWorkflowTask } from "@/app/lib/api-client";
+import {
+  ImClientAdapter,
+  type ImEnvelope,
+} from "@features/communication/im-client";
+import type { PendingImMessage } from "@features/communication/im-store";
 
 const EMOJIS = [
   "😀",
@@ -82,6 +95,7 @@ function createClientMessageId() {
 }
 
 export default function MessagesPage() {
+  const router = useRouter();
   const { token, user } = useAuth();
   const [conversations, setConversations] = useState<
     CommunicationConversationResponse[]
@@ -96,13 +110,15 @@ export default function MessagesPage() {
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
   const [currentTime, setCurrentTime] = useState<number | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
+  const adapterRef = useRef<ImClientAdapter | null>(null);
   const [composer, setComposer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const lastNotifiedError = useRef("");
   const [newOpen, setNewOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
+  const [clearCacheOpen, setClearCacheOpen] = useState(false);
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [reediting, setReediting] =
@@ -113,8 +129,21 @@ export default function MessagesPage() {
   const lastTypingSentAt = useRef(0);
   const typingExpiryTimers = useRef(new Map<string, number>());
   const presenceExpiryTimers = useRef(new Map<string, number>());
+  const selectedIdRef = useRef<string | null>(selectedId);
+  selectedIdRef.current = selectedId;
 
   const selected = conversations.find((item) => item.id === selectedId) ?? null;
+  const systemSelected = selected?.conversationType === "system";
+
+  useEffect(() => {
+    if (!error) {
+      lastNotifiedError.current = "";
+      return;
+    }
+    if (lastNotifiedError.current === error) return;
+    lastNotifiedError.current = error;
+    notify.error("消息操作失败", { description: error });
+  }, [error]);
 
   const loadConversations = useCallback(async () => {
     const result = (await listCommunicationConversations()) as ApiResult<{
@@ -130,7 +159,14 @@ export default function MessagesPage() {
     }
     setCommunicationAvailable(true);
     setConversations(result.data.data);
-    setSelectedId((current) => current ?? result.data!.data![0]?.id ?? null);
+    setSelectedId(
+      (current) =>
+        current ??
+        result.data!.data!.find((item) => item.conversationType === "system")
+          ?.id ??
+        result.data!.data![0]?.id ??
+        null,
+    );
   }, []);
 
   const markConversationRead = useCallback(
@@ -151,29 +187,28 @@ export default function MessagesPage() {
 
   const loadMessages = useCallback(
     async (conversationId: string, beforeSequence?: number) => {
-      const result = (await listCommunicationMessages({
-        path: { conversationId },
-        query: { limit: 50, beforeSequence },
-      })) as ApiResult<{
-        code: number;
-        data: {
-          items: CommunicationMessageResponse[];
-          nextBeforeSequence?: number | null;
-        } | null;
-        message: string;
-      }>;
-      if (result.error || !result.data?.data)
-        throw new Error(result.data?.message ?? "无法加载消息");
-      setMessages((current) =>
-        beforeSequence
-          ? [...result.data!.data!.items, ...current]
-          : result.data!.data!.items,
+      const adapter = adapterRef.current;
+      if (!adapter) return;
+      if (beforeSequence === undefined) {
+        const cached = await adapter.getCachedMessages(conversationId);
+        const queued = (await adapter.getQueuedMessages()).filter((item) => item.conversationId === conversationId);
+        if (selectedIdRef.current !== conversationId) return;
+        setMessages((current) => mergeMessages(cached, current.filter((item) => item.conversationId === conversationId && item.deliveryState !== undefined), queued.map((item) => pendingMessage(item, user?.id ?? ""))));
+        setNextBeforeSequence(cached[0]?.sequence ?? null);
+      }
+      if (beforeSequence === undefined && adapter.connectionState !== "online" && adapter.connectionState !== "syncing") return;
+      const page = await adapter.requestHistory<CommunicationMessageResponse>(
+        conversationId,
+        beforeSequence,
+        50,
       );
-      setNextBeforeSequence(result.data.data.nextBeforeSequence ?? null);
-      const sequence = result.data.data.items.at(-1)?.sequence;
+      if (selectedIdRef.current !== conversationId) return;
+      setMessages((current) => mergeMessages(current, page.items));
+      setNextBeforeSequence(page.hasMore === false ? null : page.nextBeforeConversationSeq ?? null);
+      const sequence = page.items.at(-1)?.sequence;
       if (sequence) await markConversationRead(conversationId, sequence);
     },
-    [markConversationRead],
+    [markConversationRead, user?.id],
   );
 
   useEffect(() => {
@@ -182,7 +217,6 @@ export default function MessagesPage() {
         .then((status) => {
           if (!status.enabled) {
             setCommunicationAvailable(false);
-            setError("通讯模块尚未激活，请联系系统管理员启用。");
             return;
           }
           return loadConversations();
@@ -202,7 +236,6 @@ export default function MessagesPage() {
     const timer = window.setTimeout(
       () =>
         void loadMessages(selectedId)
-          .then(loadConversations)
           .catch((cause) => setError(messageOf(cause))),
       0,
     );
@@ -210,16 +243,61 @@ export default function MessagesPage() {
   }, [selectedId, loadMessages, loadConversations]);
 
   useEffect(() => {
-    if (!token || !communicationAvailable) return;
-    let socket: WebSocket | null = null;
-    let timer = 0;
-    let stopped = false;
-    let attempt = 0;
-    let presenceHeartbeat = 0;
-    const typingTimers = typingExpiryTimers.current;
-    const presenceTimers = presenceExpiryTimers.current;
+    if (!token || !user?.id) return;
+    const configuredUrl = process.env.NEXT_PUBLIC_BACKEND_WS_URL?.trim();
+    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    const defaultPort =
+      location.port === "8787"
+        ? "8788"
+        : location.port === "8801"
+          ? "8802"
+          : location.port;
+    const url = configuredUrl
+      ? location.protocol === "https:" && configuredUrl.startsWith("ws://")
+        ? `wss://${configuredUrl.slice("ws://".length)}`
+        : configuredUrl
+      : `${protocol}//${location.hostname}${defaultPort ? `:${defaultPort}` : ""}/api/communication/ws`;
+    const adapter = new ImClientAdapter({
+      url,
+      token,
+      userId: user.id,
+      deviceId: `web-${navigator.userAgent.slice(0, 48)}`,
+      commandTransport: async (action, data) => {
+        if (action !== "send") throw new Error("该命令通过专用 HTTP 接口提交");
+        const input = data as {
+          conversationId: string;
+          messageType: string;
+          content?: string;
+          fileIds?: string[];
+          emailSubject?: string;
+          localId: string;
+        };
+        const result = await sendCommunicationMessage({
+          path: { conversationId: input.conversationId },
+          body: {
+            messageType: input.messageType,
+            content: input.content ?? "",
+            fileIds: input.fileIds ?? [],
+            emailSubject: input.emailSubject,
+            localId: input.localId,
+            clientMessageId: input.localId,
+          },
+        });
+        if (result.error) throw result.error;
+        return result.data?.data;
+      },
+    });
+    adapterRef.current = adapter;
+    void adapter.getCachedConversations().then((cached) => {
+      if (adapterRef.current !== adapter || !cached.length) return;
+      setConversations((current) => current.length ? current : cached);
+      setSelectedId((current) => current ?? cached[0].id);
+    }).catch((cause) => setError(messageOf(cause)));
     const refreshUserExpiry = (kind: "typing" | "presence", userId: string) => {
-      const timers = kind === "typing" ? typingTimers : presenceTimers;
+      const timers =
+        kind === "typing"
+          ? typingExpiryTimers.current
+          : presenceExpiryTimers.current;
       const existing = timers.get(userId);
       if (existing) window.clearTimeout(existing);
       const timeout = window.setTimeout(
@@ -234,190 +312,120 @@ export default function MessagesPage() {
       );
       timers.set(userId, timeout);
     };
-    const sendPresence = () => {
-      if (selectedId && socket?.readyState === WebSocket.OPEN)
-        socket.send(
-          JSON.stringify({
-            type: "conversation.presence",
-            conversationId: selectedId,
-          }),
-        );
-    };
-    const connect = () => {
-      const configuredUrl = process.env.NEXT_PUBLIC_BACKEND_WS_URL?.trim();
-      const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-      const defaultPort =
-        location.port === "8787"
-          ? "8788"
-          : location.port === "8801"
-            ? "8802"
-            : location.port;
-      const url = configuredUrl
-        ? location.protocol === "https:" && configuredUrl.startsWith("ws://")
-          ? `wss://${configuredUrl.slice("ws://".length)}`
-          : configuredUrl
-        : `${protocol}//${location.hostname}${defaultPort ? `:${defaultPort}` : ""}/api/communication/ws`;
-      socket = new WebSocket(url, ["yaya-chat", token]);
-      socketRef.current = socket;
-      socket.onopen = () => {
-        attempt = 0;
-        setRealtimeOnline(true);
-        sendPresence();
-        window.clearInterval(presenceHeartbeat);
-        presenceHeartbeat = window.setInterval(sendPresence, 20_000);
-      };
-      socket.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(String(event.data)) as {
-            type?: string;
-            data?: CommunicationMessageResponse & {
-              conversationId?: string;
-              userId?: string;
-              typing?: boolean;
-              sequence?: number;
-            };
-          };
-          if (
-            payload.type === "conversation.typing" &&
-            payload.data?.userId &&
-            payload.data.userId !== user?.id
-          ) {
-            const userId = payload.data.userId;
-            setTypingUsers((current) =>
-              payload.data!.typing
-                ? [...new Set([...current, userId])]
-                : current.filter((id) => id !== userId),
-            );
-            if (payload.data.typing) refreshUserExpiry("typing", userId);
-          }
-          if (
-            payload.type === "conversation.presence" &&
-            payload.data?.userId &&
-            payload.data.userId !== user?.id
-          ) {
-            const userId = payload.data.userId;
-            setOnlineUsers((current) => [...new Set([...current, userId])]);
-            refreshUserExpiry("presence", userId);
-          }
-          if (payload.type === "message.created" && payload.data?.id) {
-            const isOpenConversation =
-              payload.data.conversationId === selectedId;
-            if (isOpenConversation) {
-              setMessages((current) =>
-                current.some((item) => item.id === payload.data!.id)
-                  ? current
-                  : [
-                      ...current.filter(
-                        (item) => !item.id.startsWith("pending-"),
-                      ),
-                      payload.data!,
-                    ],
-              );
-              if (payload.data.sequence)
-                void markConversationRead(
-                  payload.data.conversationId!,
-                  payload.data.sequence,
-                ).catch((cause) => setError(messageOf(cause)));
-            }
-            setConversations((current) =>
-              current
-                .map((item) =>
-                  item.id === payload.data!.conversationId
-                    ? {
-                        ...item,
-                        lastMessageAt: payload.data!.createdAt,
-                        lastMessageSequence: payload.data!.sequence,
-                        lastMessagePreview: previewMessage(payload.data!),
-                        unreadCount: isOpenConversation ? 0 : item.unreadCount,
-                      }
-                    : item,
-                )
-                .sort((left, right) =>
-                  (right.lastMessageAt ?? "").localeCompare(
-                    left.lastMessageAt ?? "",
-                  ),
-                ),
-            );
-          } else if (payload.type === "message.recalled" && payload.data?.id) {
-            setMessages((current) =>
-              current.map((item) =>
-                item.id === payload.data!.id ? payload.data! : item,
-              ),
-            );
-            void loadConversations();
-          }
-        } catch {
-          /* Ignore malformed server events. */
+    const unsubscribe = adapter.subscribe((envelope: ImEnvelope) => {
+      const eventType = envelope.event;
+      const payload = (envelope.data ?? {}) as any;
+      if (eventType === "connection.state") {
+        setRealtimeOnline(payload.state === "online");
+        if (payload.state === "reset_required") {
+          setMessages([]);
+          setNextBeforeSequence(null);
+          setError("消息同步游标已过期，正在重新加载");
         }
-      };
-      socket.onclose = () => {
-        window.clearInterval(presenceHeartbeat);
-        setRealtimeOnline(false);
-        setOnlineUsers([]);
-        setTypingUsers([]);
-        if (!stopped)
-          timer = window.setTimeout(
-            () => {
-              void Promise.all([
-                loadConversations(),
-                selectedId ? loadMessages(selectedId) : Promise.resolve(),
-              ])
-                .then(() => {
-                  if (!stopped) connect();
-                })
-                .catch((cause) => setError(messageOf(cause)));
-            },
-            Math.min(30_000, 1000 * 2 ** attempt++),
-          );
-      };
-    };
-    connect();
+        if (payload.state === "online" && selectedIdRef.current)
+          void loadMessages(selectedIdRef.current).catch((cause) => setError(messageOf(cause)));
+      }
+      if (eventType === "storage.error") setError("本机聊天记录写入失败，请检查浏览器存储空间");
+      if (eventType === "message.retry_pending" && envelope.localId)
+        setMessages((current) => current.map((item) => item.localId === envelope.localId ? { ...item, deliveryState: "failed" } : item));
+      if (
+        eventType === "conversation.snapshot" &&
+        Array.isArray(payload.items)
+      ) {
+        setConversations(payload.items);
+        setSelectedId((current) => current ?? payload.items[0]?.id ?? null);
+      }
+      if (
+        eventType === "conversation.typing" &&
+        payload.userId &&
+        payload.userId !== user?.id
+      ) {
+        setTypingUsers((current) =>
+          payload.typing
+            ? [...new Set([...current, payload.userId])]
+            : current.filter((id) => id !== payload.userId),
+        );
+        if (payload.typing) refreshUserExpiry("typing", payload.userId);
+      }
+      if (
+        eventType === "conversation.presence" &&
+        payload.userId &&
+        payload.userId !== user?.id
+      ) {
+        setOnlineUsers((current) => [...new Set([...current, payload.userId])]);
+        refreshUserExpiry("presence", payload.userId);
+      }
+      if (
+        eventType === "message.created" &&
+        (payload.id || payload.messageId)
+      ) {
+        const messagePayload = {
+          ...payload,
+          id: payload.id ?? payload.messageId,
+          conversationId: payload.conversationId ?? envelope.conversationId,
+          sequence: payload.sequence ?? envelope.conversationSeq,
+        } as CommunicationMessageResponse;
+        const open = messagePayload.conversationId === selectedIdRef.current;
+        if (open) {
+          setMessages((current) => mergeMessages(current, [messagePayload]));
+          if (messagePayload.sequence)
+            void markConversationRead(
+              messagePayload.conversationId!,
+              messagePayload.sequence,
+            ).catch((cause) => setError(messageOf(cause)));
+        }
+        setConversations((current) =>
+          current.map((item) =>
+            item.id === messagePayload.conversationId
+              ? {
+                  ...item,
+                  lastMessageAt: messagePayload.createdAt,
+                  lastMessageSequence: messagePayload.sequence,
+                  lastMessagePreview: previewMessage(messagePayload),
+                  unreadCount: open ? 0 : item.unreadCount,
+                }
+              : item,
+          ),
+        );
+      }
+      if (eventType === "message.recalled" && payload.id) {
+        if (payload.conversationId === selectedIdRef.current)
+          setMessages((current) => mergeMessages(current, [payload as CommunicationMessageResponse]));
+        void loadConversations();
+      }
+    });
+    void adapter.connect();
+    const heartbeat = window.setInterval(() => {
+      if (selectedIdRef.current)
+        adapter.sendTransient("conversation.presence", {
+          conversationId: selectedIdRef.current,
+        });
+    }, 20_000);
     return () => {
-      stopped = true;
-      window.clearTimeout(timer);
-      window.clearInterval(presenceHeartbeat);
-      typingTimers.forEach(window.clearTimeout);
-      presenceTimers.forEach(window.clearTimeout);
-      typingTimers.clear();
-      presenceTimers.clear();
-      socket?.close();
+      window.clearInterval(heartbeat);
+      unsubscribe();
+      adapter.disconnect();
+      adapterRef.current = null;
     };
   }, [
     token,
-    communicationAvailable,
-    selectedId,
     user?.id,
     loadConversations,
     loadMessages,
     markConversationRead,
   ]);
-
   async function send(
     messageType: string,
     content: string,
     fileIds: string[] = [],
     subject?: string,
+    retryLocalId?: string,
   ) {
     if (!selectedId || (!content.trim() && fileIds.length === 0)) return;
-    const temporaryId = `pending-${createClientMessageId()}`;
+    const localId = retryLocalId ?? createClientMessageId();
+    const temporaryId = `pending-${localId}`;
     if (!reediting)
-      setMessages((current) => [
-        ...current,
-        {
-          id: temporaryId,
-          conversationId: selectedId,
-          senderUserId: user?.id ?? "",
-          sequence: Number.MAX_SAFE_INTEGER,
-          messageType,
-          content: content.trim(),
-          emailSubject: subject,
-          fileIds,
-          attachments: [],
-          status: "active",
-          createdAt: new Date().toISOString(),
-          deliveryState: "sending",
-        },
-      ]);
+      setMessages((current) => mergeMessages(current, [pendingMessage({ localId, conversationId: selectedId, messageType, content: content.trim(), fileIds, emailSubject: subject, createdAt: new Date().toISOString() }, user?.id ?? "")]));
     setBusy(true);
     setError("");
     try {
@@ -428,24 +436,28 @@ export default function MessagesPage() {
             content: content.trim(),
             fileIds,
             emailSubject: subject,
-            clientMessageId: createClientMessageId(),
+            clientMessageId: localId,
+            localId,
           },
         });
         setReediting(null);
       } else {
-        await sendCommunicationMessage({
-          path: { conversationId: selectedId },
-          body: {
-            messageType,
-            content: content.trim(),
-            fileIds,
-            emailSubject: subject,
-            clientMessageId: createClientMessageId(),
-          },
+        const adapter = adapterRef.current;
+        if (!adapter) throw new Error("消息客户端尚未准备好，请稍后重试");
+        if (messageType !== "text" && adapter.connectionState !== "online")
+          throw new Error("当前离线，请连接后发送附件或邮件");
+        await adapter.sendMessage({
+          conversationId: selectedId,
+          messageType,
+          content: content.trim(),
+          fileIds,
+          emailSubject: subject,
+          localId,
+          createdAt: new Date().toISOString(),
         });
       }
       setComposer("");
-      await Promise.all([loadMessages(selectedId), loadConversations()]);
+      if (adapterRef.current?.connectionState === "online") void loadConversations().catch(() => undefined);
     } catch (cause) {
       setMessages((current) =>
         current.map((item) =>
@@ -493,28 +505,22 @@ export default function MessagesPage() {
 
   function updateComposer(value: string) {
     setComposer(value);
-    if (!selectedId || socketRef.current?.readyState !== WebSocket.OPEN) return;
+    if (!selectedId) return;
     const now = Date.now();
     if (value && now - lastTypingSentAt.current >= 500) {
-      socketRef.current.send(
-        JSON.stringify({
-          type: "conversation.typing",
-          conversationId: selectedId,
-          typing: true,
-        }),
-      );
+      adapterRef.current?.sendTransient("conversation.typing", {
+        conversationId: selectedId,
+        typing: true,
+      });
       lastTypingSentAt.current = now;
     }
     if (typingTimer.current) window.clearTimeout(typingTimer.current);
     typingTimer.current = window.setTimeout(
       () =>
-        socketRef.current?.send(
-          JSON.stringify({
-            type: "conversation.typing",
-            conversationId: selectedId,
-            typing: false,
-          }),
-        ),
+        adapterRef.current?.sendTransient("conversation.typing", {
+          conversationId: selectedId,
+          typing: false,
+        }),
       1500,
     );
   }
@@ -522,298 +528,234 @@ export default function MessagesPage() {
   return (
     <PageContentLayout
       title="消息"
-      subtitle={`${conversations.length} 个会话 · ${realtimeOnline ? "实时连接正常" : "通讯中心"}`}
+      subtitle={`${conversations.length} 个会话`}
       actions={
-        <Tooltip>
+        <div className="flex items-center gap-2"><Tooltip>
           <Tooltip.Trigger>
             <Button
               isIconOnly
               aria-label="新建会话"
+              isDisabled={!communicationAvailable}
               onPress={() => setNewOpen(true)}
             >
               <Plus />
             </Button>
           </Tooltip.Trigger>
           <Tooltip.Content>新建会话</Tooltip.Content>
-        </Tooltip>
+        </Tooltip><Tooltip><Tooltip.Trigger><Button isIconOnly aria-label="清除本机聊天记录" onPress={() => setClearCacheOpen(true)}><TrashBin /></Button></Tooltip.Trigger><Tooltip.Content>清除本机聊天记录</Tooltip.Content></Tooltip></div>
       }
     >
-      <main className={`${styles.page}`}>
-        <div className={styles.shell}>
-          <Card className={styles.sidebar}>
-            <Card.Header className={styles.header}>
+      <main className="h-full min-h-0">
+        <div className="grid h-full min-h-0 grid-cols-[240px_minmax(0,1fr)] gap-3 overflow-hidden max-[1023px]:grid-cols-1 max-[1023px]:grid-rows-[minmax(12rem,32%)_minmax(0,1fr)]">
+          <ConversationList
+            conversations={conversations}
+            selectedId={selectedId}
+            currentUserId={user?.id}
+            onSelect={setSelectedId}
+            formatTime={formatConversationTime}
+          />
+          <Card className="flex min-h-0 flex-col">
+            <header className="flex h-16 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-5">
               <div>
-                <h2 className={styles.title}>会话</h2>
-                <p className={styles.subtitle}>最近的沟通记录</p>
-              </div>
-            </Card.Header>
-            <ScrollShadow className={styles.conversationList}>
-              {conversations.map((item) => {
-                const avatarMember =
-                  item.conversationType === "group"
-                    ? item.members[0]
-                    : (item.members.find(
-                        (member) => member.userId !== user?.id,
-                      ) ?? item.members[0]);
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setSelectedId(item.id)}
-                    className={`${styles.conversationItem} ${item.id === selectedId ? styles.conversationItemSelected : ""}`}
-                  >
-                    <MyAvatar
-                      name={item.title}
-                      imageUrl={avatarMember?.avatarUrl}
-                    />
-                    <span className={styles.conversationSummary}>
-                      <span className={styles.conversationName}>
-                        {item.title}
-                        {item.conversationType === "group" ? (
-                          <span className={styles.conversationType}>群聊</span>
-                        ) : null}
-                      </span>
-                      <span className={styles.conversationPreview}>
-                        {item.lastMessagePreview ??
-                          (item.conversationType === "group"
-                            ? `${item.members.length} 位成员`
-                            : "暂无消息")}
-                      </span>
-                    </span>
-                    <span className={styles.conversationMeta}>
-                      {item.lastMessageAt ? (
-                        <time className={styles.conversationTime}>
-                          {formatConversationTime(item.lastMessageAt)}
-                        </time>
-                      ) : null}
-                      {item.unreadCount > 0 ? (
-                        <span className={styles.unread}>
-                          {item.unreadCount > 99 ? "99+" : item.unreadCount}
-                        </span>
-                      ) : null}
-                    </span>
-                  </button>
-                );
-              })}
-              {conversations.length === 0 ? <Empty text="暂无会话" /> : null}
-            </ScrollShadow>
-          </Card>
-          <Card className={styles.conversation}>
-            <header className={`${styles.header} ${styles.conversationHeader}`}>
-              <div>
-                <h2 className={styles.conversationTitle}>
-                  {selected?.title ?? "选择会话"}
+                <h2 className="text-sm font-semibold">
+                  {systemSelected
+                    ? "系统通知"
+                    : (selected?.title ?? "选择会话")}
                 </h2>
-                <p className={styles.subtitle}>
-                  {typingUsers.length
-                    ? "对方正在输入…"
-                    : selected
-                      ? `${realtimeOnline ? "实时连接正常" : "正在重连"}${onlineUsers.length ? ` · ${onlineUsers.length} 人在线` : ""} · ${selected.members.map((member) => member.displayName).join("、")}`
-                      : "从左侧选择一条会话"}
+                <p className="m-0 text-xs text-[var(--color-text-secondary)]">
+                  {systemSelected
+                    ? "流程待办、抄送和系统提醒"
+                    : typingUsers.length
+                      ? "对方正在输入…"
+                      : selected
+                        ? `${realtimeOnline ? "实时连接正常" : "正在重连"}${onlineUsers.length ? ` · ${onlineUsers.length} 人在线` : ""} · ${selected!.members.map((member) => member.displayName).join("、")}`
+                        : "从左侧选择一条会话"}
                 </p>
               </div>
               {selected?.conversationType === "group" &&
-              selected.members.some(
+              selected!.members.some(
                 (member) =>
                   member.userId === user?.id && member.role === "owner",
               ) ? (
                 <Button onPress={() => setManageOpen(true)}>管理群聊</Button>
               ) : null}
             </header>
-            {error ? <div className={styles.error}>{error}</div> : null}
-            <ScrollShadow className={styles.messageList}>
-              {selected ? (
-                <div className={styles.messageStack}>
-                  {nextBeforeSequence ? (
+            <MessageDisplay
+              conversation={selected}
+              messages={messages}
+              currentUserId={user?.id}
+              currentUserName={user?.displayName}
+              currentTime={currentTime}
+              nextBeforeSequence={nextBeforeSequence}
+              onLoadEarlier={() => selectedId && void loadMessages(selectedId, nextBeforeSequence ?? undefined)}
+              onRecall={(message) => void recall(message)}
+              onReedit={beginReedit}
+              onRetry={(message) => {
+                void (async () => {
+                  const adapter = adapterRef.current;
+                  const queued = adapter && message.localId && (await adapter.getQueuedMessages()).some((item) => item.localId === message.localId);
+                  if (queued) {
+                    adapter.retryPending();
+                    setMessages((current) => current.map((item) => item.id === message.id ? { ...item, deliveryState: "sending" } : item));
+                  } else {
+                    await send(message.messageType, message.content, message.fileIds, message.emailSubject ?? undefined, message.localId ?? undefined);
+                  }
+                })().catch((cause) => setError(messageOf(cause)));
+              }}
+              onApprovalAction={async (message, action) => {
+                const payload = (message.payload ?? {}) as { taskUuid?: string; businessId?: string; cardType?: string; version?: number };
+                const taskUuid = payload.taskUuid ?? payload.businessId;
+                if (payload.cardType !== "approval" || !taskUuid) return;
+                const request = action === "approve" ? approveWorkflowTask : rejectWorkflowTask;
+                const result = await request({ path: { taskUuid }, body: { comment: undefined, cardVersion: payload.version, messageId: message.id } });
+                if (result.error) throw result.error;
+              }}
+            />
+            {!systemSelected ? (
+              <MessageComposer>
+                {reediting ? (
+                  <div className="mb-2 flex items-center justify-between rounded-md bg-[var(--color-primary-soft)] px-3 py-2 text-xs text-[var(--color-primary)]">
+                    <span>正在重新编辑撤回的消息</span>
                     <Button
-                      onPress={() =>
-                        selectedId &&
-                        void loadMessages(selectedId, nextBeforeSequence)
-                      }
+                      onPress={() => {
+                        setReediting(null);
+                        setComposer("");
+                      }}
                     >
-                      加载更早消息
+                      取消
                     </Button>
-                  ) : null}
-                  {messages.map((message) => {
-                    const sender = selected.members.find(
-                      (member) => member.userId === message.senderUserId,
-                    );
-                    const mine = message.senderUserId === user?.id;
-                    const myRole = selected.members.find(
-                      (member) => member.userId === user?.id,
-                    )?.role;
-                    const canRecall =
-                      mine &&
-                      ((currentTime !== null &&
-                        currentTime - new Date(message.createdAt).getTime() <
-                          2 * 60_000) ||
-                        (selected.conversationType === "group" &&
-                          (myRole === "owner" || myRole === "admin")));
-                    return (
-                      <MessageBubble
-                        key={message.id}
-                        message={message}
-                        mine={mine}
-                        canRecall={canRecall}
-                        senderName={
-                          sender?.displayName ??
-                          (mine ? (user?.displayName ?? "当前用户") : "成员")
-                        }
-                        senderAvatarUrl={sender?.avatarUrl}
-                        onRecall={() => void recall(message)}
-                        onReedit={() => beginReedit(message)}
-                        onRetry={() => {
-                          setMessages((current) =>
-                            current.filter((item) => item.id !== message.id),
-                          );
-                          void send(
-                            message.messageType,
-                            message.content,
-                            message.fileIds,
-                            message.emailSubject ?? undefined,
-                          );
+                  </div>
+                ) : null}
+                <div className="flex h-40 min-h-32 flex-col overflow-visible rounded-md border border-[var(--color-border)] bg-[var(--color-bg-input)]">
+                  <MentionComposer
+                    ref={composerEditor}
+                    value={composer}
+                    members={
+                      selected?.conversationType === "group"
+                        ? selected!.members
+                        : []
+                    }
+                    disabled={!selected}
+                    placeholder={selected ? "输入消息" : "选择会话后输入消息"}
+                    onChange={updateComposer}
+                    onSend={() =>
+                      void send(
+                        reediting?.messageType ?? "text",
+                        composer,
+                        reediting?.fileIds ?? [],
+                        reediting?.emailSubject ?? undefined,
+                      )
+                    }
+                  />
+                  <div className="flex h-10 shrink-0 items-center justify-between px-2">
+                    <div className="flex gap-1">
+                      <Popover>
+                        <Popover.Trigger>
+                          <Button
+                            isIconOnly
+                            aria-label="发送表情"
+                            isDisabled={!selected}
+                          >
+                            <FaceSmile />
+                          </Button>
+                        </Popover.Trigger>
+                        <Popover.Content>
+                          <Popover.Dialog aria-label="选择表情">
+                            {EMOJIS.map((emoji) => (
+                              <Button
+                                key={emoji}
+                                isIconOnly
+                                onPress={() =>
+                                  composerEditor.current?.insertText(emoji)
+                                }
+                              >
+                                {emoji}
+                              </Button>
+                            ))}
+                          </Popover.Dialog>
+                        </Popover.Content>
+                      </Popover>
+                      <ToolButton
+                        label="发送文件"
+                        disabled={!selected || busy}
+                        onPress={() => fileInput.current?.click()}
+                      >
+                        <Paperclip />
+                      </ToolButton>
+                      <ToolButton
+                        label="发送邮件"
+                        disabled={!selected || busy}
+                        onPress={() => setEmailOpen(true)}
+                      >
+                        <Envelope />
+                      </ToolButton>
+                      <input
+                        ref={fileInput}
+                        type="file"
+                        hidden
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) void upload(file);
+                          event.currentTarget.value = "";
                         }}
                       />
-                    );
-                  })}
-                  {messages.length === 0 ? <Empty text="还没有消息" /> : null}
-                </div>
-              ) : (
-                <Empty text="没有选中的会话" />
-              )}
-            </ScrollShadow>
-            <footer className={styles.composerFooter}>
-              {reediting ? (
-                <div className={styles.composerNotice}>
-                  <span>正在重新编辑撤回的消息</span>
-                  <Button
-                    onPress={() => {
-                      setReediting(null);
-                      setComposer("");
-                    }}
-                  >
-                    取消
-                  </Button>
-                </div>
-              ) : null}
-              <div className={styles.composer}>
-                <MentionComposer
-                  ref={composerEditor}
-                  value={composer}
-                  members={
-                    selected?.conversationType === "group"
-                      ? selected.members
-                      : []
-                  }
-                  disabled={!selected}
-                  placeholder={selected ? "输入消息" : "选择会话后输入消息"}
-                  onChange={updateComposer}
-                  onSend={() =>
-                    void send(
-                      reediting?.messageType ?? "text",
-                      composer,
-                      reediting?.fileIds ?? [],
-                      reediting?.emailSubject ?? undefined,
-                    )
-                  }
-                />
-                <div className={styles.composerToolbar}>
-                  <div className={styles.toolbarGroup}>
-                    <Popover>
-                      <Popover.Trigger>
+                    </div>
+                    <Tooltip>
+                      <Tooltip.Trigger>
                         <Button
                           isIconOnly
-                          aria-label="发送表情"
-                          isDisabled={!selected}
+                          aria-label="发送消息"
+                          isDisabled={!selected || !composer.trim() || busy}
+                          onPress={() =>
+                            void send(
+                              reediting?.messageType ?? "text",
+                              composer,
+                              reediting?.fileIds ?? [],
+                              reediting?.emailSubject ?? undefined,
+                            )
+                          }
                         >
-                          <FaceSmile />
+                          <PaperPlane />
                         </Button>
-                      </Popover.Trigger>
-                      <Popover.Content>
-                        <Popover.Dialog aria-label="选择表情">
-                          {EMOJIS.map((emoji) => (
-                            <Button
-                              key={emoji}
-                              isIconOnly
-                              onPress={() =>
-                                composerEditor.current?.insertText(emoji)
-                              }
-                            >
-                              {emoji}
-                            </Button>
-                          ))}
-                        </Popover.Dialog>
-                      </Popover.Content>
-                    </Popover>
-                    <ToolButton
-                      label="发送文件"
-                      disabled={!selected || busy}
-                      onPress={() => fileInput.current?.click()}
-                    >
-                      <Paperclip />
-                    </ToolButton>
-                    <ToolButton
-                      label="发送邮件"
-                      disabled={!selected || busy}
-                      onPress={() => setEmailOpen(true)}
-                    >
-                      <Envelope />
-                    </ToolButton>
-                    <input
-                      ref={fileInput}
-                      type="file"
-                      hidden
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        if (file) void upload(file);
-                        event.currentTarget.value = "";
-                      }}
-                    />
+                      </Tooltip.Trigger>
+                      <Tooltip.Content>发送消息</Tooltip.Content>
+                    </Tooltip>
                   </div>
-                  <Tooltip>
-                    <Tooltip.Trigger>
-                      <Button
-                        isIconOnly
-                        aria-label="发送消息"
-                        isDisabled={!selected || !composer.trim() || busy}
-                        onPress={() =>
-                          void send(
-                            reediting?.messageType ?? "text",
-                            composer,
-                            reediting?.fileIds ?? [],
-                            reediting?.emailSubject ?? undefined,
-                          )
-                        }
-                      >
-                        <PaperPlane />
-                      </Button>
-                    </Tooltip.Trigger>
-                    <Tooltip.Content>发送消息</Tooltip.Content>
-                  </Tooltip>
                 </div>
-              </div>
-            </footer>
+              </MessageComposer>
+            ) : null}
           </Card>
         </div>
-        <NewConversationModal
+        <NewConversationDialog
           open={newOpen}
           onClose={() => setNewOpen(false)}
+          messageOf={messageOf}
           onCreated={(id) => {
             setNewOpen(false);
             void loadConversations().then(() => setSelectedId(id));
           }}
         />
         {selected ? (
-          <ManageGroupModal
+          <ManageGroupDialog
             open={manageOpen}
-            conversation={selected}
+            conversation={selected!}
             onClose={() => setManageOpen(false)}
+            messageOf={messageOf}
             onSaved={() => {
               setManageOpen(false);
               void loadConversations();
             }}
           />
         ) : null}
+        <Modal isOpen={clearCacheOpen} onOpenChange={setClearCacheOpen}>
+          <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
+            <Modal.Container placement="center" size="sm"><Modal.Dialog>
+              <Modal.Header><Modal.Heading>清除本机聊天记录</Modal.Heading><Modal.CloseTrigger aria-label="关闭" /></Modal.Header>
+              <Modal.Body>仅清除当前账号在本机缓存的会话、消息及待发送内容。服务器记录不会删除。</Modal.Body>
+              <Modal.Footer><Button onPress={() => setClearCacheOpen(false)}>取消</Button><Button onPress={() => void adapterRef.current?.clearLocalHistory().then(() => { setMessages([]); setConversations([]); setClearCacheOpen(false); }).catch((cause) => setError(messageOf(cause)))}>清除</Button></Modal.Footer>
+            </Modal.Dialog></Modal.Container>
+          </Modal.Backdrop>
+        </Modal>
         <Modal isOpen={emailOpen} onOpenChange={setEmailOpen}>
           <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
             <Modal.Container placement="center" size="md">
@@ -956,7 +898,7 @@ const MentionComposer = forwardRef<
       const chip = document.createElement("span");
       chip.contentEditable = "false";
       chip.dataset.mention = member.userId;
-      chip.className = styles.mentionToken;
+      chip.className = "mx-0.5 inline-block select-none rounded-[3px] bg-[var(--color-primary-soft)] px-1 py-px text-[var(--color-primary)] leading-[1.4]";
       chip.textContent = `@${member.displayName}`;
       const spacer = document.createTextNode("");
       fragment.append(chip, spacer);
@@ -993,7 +935,7 @@ const MentionComposer = forwardRef<
 
   const showMenu = query !== null && filteredMembers.length > 0;
   return (
-    <div className={styles.editorWrap}>
+    <div className="relative min-h-0 flex-1">
       <div
         ref={editorRef}
         contentEditable={!disabled}
@@ -1010,15 +952,17 @@ const MentionComposer = forwardRef<
             onSend();
           }
         }}
-        className={styles.editor}
+        className="min-h-0 w-full flex-1 resize-none overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-3 py-2 text-[var(--color-text-primary)] outline-none"
       />
       {showMenu ? (
-        <div className={styles.mentionMenu}>
-          <div className={styles.mentionHeader}>群成员</div>
+        <div className="absolute bottom-2 left-2 z-20 w-64 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] shadow-[var(--shadow-floating)]">
+          <div className="border-b border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)]">
+            群成员
+          </div>
           {query === "" ? (
             <button
               type="button"
-              className={styles.mentionOption}
+              className="flex w-full items-center gap-2 border-0 bg-transparent px-3 py-2 text-start text-[var(--color-text-primary)] hover:bg-[var(--color-control-soft-hover)]"
               onMouseDown={(event) => {
                 event.preventDefault();
                 insertMentions("all");
@@ -1029,24 +973,24 @@ const MentionComposer = forwardRef<
           ) : filteredMembers.length > 1 ? (
             <button
               type="button"
-              className={styles.mentionOption}
+              className="flex w-full items-center gap-2 border-0 bg-transparent px-3 py-2 text-start text-[var(--color-text-primary)] hover:bg-[var(--color-control-soft-hover)]"
               onMouseDown={(event) => {
                 event.preventDefault();
                 insertMentions(filteredMembers);
               }}
             >
               @以下成员{" "}
-              <span className={styles.subtitle}>
+              <span className="m-0 text-xs text-[var(--color-text-secondary)]">
                 {filteredMembers.length} 人
               </span>
             </button>
           ) : null}
-          <div className={styles.mentionMembers}>
+          <div className="max-h-48 overflow-y-auto">
             {filteredMembers.map((member) => (
               <button
                 key={member.userId}
                 type="button"
-                className={styles.mentionOption}
+                className="flex w-full items-center gap-2 border-0 bg-transparent px-3 py-2 text-start text-[var(--color-text-primary)] hover:bg-[var(--color-control-soft-hover)]"
                 onMouseDown={(event) => {
                   event.preventDefault();
                   insertMentions([member]);
@@ -1075,6 +1019,7 @@ function MessageBubble({
   onRecall,
   onReedit,
   onRetry,
+  onApprovalAction,
 }: {
   message: UiMessage;
   mine: boolean;
@@ -1084,6 +1029,7 @@ function MessageBubble({
   onRecall: () => void;
   onReedit: () => void;
   onRetry: () => void;
+  onApprovalAction: (action: "approve" | "reject") => Promise<void>;
 }) {
   const recalled = message.status === "recalled";
   const [menuPosition, setMenuPosition] = useState<{
@@ -1107,35 +1053,66 @@ function MessageBubble({
       window.removeEventListener("blur", closeOnBlur);
     };
   }, [menuPosition]);
-  if (message.messageType === "system")
-    return <div className={styles.systemMessage}>{message.content}</div>;
+  if (message.messageType === "system") {
+    const card = (message.payload ?? {}) as {
+      cardType?: string;
+      title?: string;
+      content?: string;
+      actions?: Array<{ id?: string; label?: string }>;
+    };
+    return (
+      <div className="self-center rounded-full bg-[var(--color-bg-subtle)] px-3 py-1 text-xs text-[var(--color-text-secondary)]">
+        {card.title ? <strong className="block">{card.title}</strong> : null}
+        <span>{card.content ?? message.content}</span>
+        {card.cardType === "approval" && card.actions?.length ? (
+          <div className="mt-2 flex gap-2">
+            {card.actions
+              .filter(
+                (action) => action.id === "approve" || action.id === "reject",
+              )
+              .map((action) => (
+                <Button
+                  key={action.id}
+                  size="sm"
+                  onPress={() =>
+                    void onApprovalAction(action.id as "approve" | "reject")
+                  }
+                >
+                  {action.label ?? action.id}
+                </Button>
+              ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
   const bubble = (
     <div
-      className={`${styles.messageBubble} ${mine ? styles.messageBubbleMine : ""}`}
+      className={`relative inline-block max-w-[80%] rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2 text-start ${mine ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)]" : ""}`}
     >
       {recalled ? (
-        <p className={styles.messageText}>消息已撤回</p>
+        <p className="m-0 whitespace-pre-wrap break-words text-sm text-[var(--color-text-primary)]">消息已撤回</p>
       ) : (
         <>
           {message.messageType === "email" ? (
-            <p className={styles.messageText}>
+            <p className="m-0 whitespace-pre-wrap break-words text-sm text-[var(--color-text-primary)]">
               <Envelope />
               {message.emailSubject}
             </p>
           ) : null}
-          <p className={styles.messageText}>{message.content}</p>
+          <p className="m-0 whitespace-pre-wrap break-words text-sm text-[var(--color-text-primary)]">{message.content}</p>
           {message.attachments.map((attachment) =>
             attachment.isImage ? (
               <a
                 key={attachment.fileId}
                 href={`/api/files/${attachment.fileId}/download`}
                 target="_blank"
-                className={styles.attachment}
+                className="mt-2 block text-sm text-[var(--color-primary)]"
               >
                 <img
                   src={`/api/files/${attachment.fileId}/download`}
                   alt={attachment.name}
-                  className={styles.attachmentImage}
+                  className="block max-h-64 max-w-full object-contain"
                 />
                 <span>
                   {attachment.name} · {formatBytes(attachment.size)}
@@ -1145,7 +1122,7 @@ function MessageBubble({
               <a
                 key={attachment.fileId}
                 href={`/api/files/${attachment.fileId}/download`}
-                className={styles.attachment}
+                className="mt-2 block text-sm text-[var(--color-primary)]"
               >
                 <Paperclip />
                 {attachment.name} · {formatBytes(attachment.size)}
@@ -1158,16 +1135,16 @@ function MessageBubble({
   );
   return (
     <div
-      className={`${styles.messageRow} ${mine ? styles.messageRowMine : ""}`}
+      className={`flex w-full items-start gap-2 ${mine ? "justify-end" : ""}`}
     >
-      <div className={`${mine ? styles.messageAvatarMine : ""}`}>
+      <div className={mine ? "order-2" : ""}>
         <MyAvatar name={senderName} imageUrl={senderAvatarUrl} />
       </div>
       <div
-        className={`${styles.messageContent} ${mine ? styles.messageContentMine : ""}`}
+        className={`min-w-0 w-[calc(100%-2.75rem)] ${mine ? "order-1 text-end" : ""}`}
       >
         <div
-          className={`${styles.messageMeta} ${mine ? styles.messageMetaMine : ""}`}
+          className={`mb-1 flex items-center gap-2 text-xs text-[var(--color-text-secondary)] ${mine ? "justify-end" : ""}`}
         >
           {mine ? (
             <>
@@ -1198,7 +1175,7 @@ function MessageBubble({
         <div
           ref={menuRef}
           role="menu"
-          className={styles.contextMenu}
+          className="fixed z-50 flex flex-col rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-1 shadow-[var(--shadow-floating)]"
           style={{ left: menuPosition.left, top: menuPosition.top }}
           onContextMenu={(event) => event.preventDefault()}
         >
@@ -1543,43 +1520,6 @@ function ManageGroupModal({
   );
 }
 
-function ToolButton({
-  children,
-  label,
-  disabled,
-  onPress,
-}: {
-  children: React.ReactNode;
-  label: string;
-  disabled: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Tooltip>
-      <Tooltip.Trigger>
-        <Button
-          isIconOnly
-          aria-label={label}
-          isDisabled={disabled}
-          onPress={onPress}
-        >
-          {children}
-        </Button>
-      </Tooltip.Trigger>
-      <Tooltip.Content>{label}</Tooltip.Content>
-    </Tooltip>
-  );
-}
-function Empty({ text }: { text: string }) {
-  return (
-    <div className={styles.empty}>
-      <div>
-        <Comment />
-        <p>{text}</p>
-      </div>
-    </div>
-  );
-}
 function messageOf(value: unknown) {
   if (value instanceof Error) return value.message;
   if (typeof value === "string" && value.trim()) return value;
@@ -1600,6 +1540,38 @@ function messageOf(value: unknown) {
     }
   }
   return "操作失败，请稍后重试";
+}
+
+function pendingMessage(item: PendingImMessage, userId: string): UiMessage {
+  return {
+    id: `pending-${item.localId}`,
+    conversationId: item.conversationId,
+    senderUserId: userId,
+    sequence: Number.MAX_SAFE_INTEGER,
+    messageType: item.messageType,
+    content: item.content,
+    emailSubject: item.emailSubject,
+    fileIds: item.fileIds,
+    attachments: [],
+    payload: {},
+    status: "active",
+    createdAt: item.createdAt,
+    deliveryState: "sending",
+    localId: item.localId,
+  };
+}
+
+function mergeMessages(...groups: UiMessage[][]): UiMessage[] {
+  const result = new Map<string, UiMessage>();
+  for (const item of groups.flat()) {
+    if (item.localId) result.delete(`local-${item.localId}`);
+    if (!item.id.startsWith("pending-") && item.localId) result.delete(`pending-${item.localId}`);
+    result.set(item.id.startsWith("pending-") ? `pending-${item.localId}` : item.id, item);
+  }
+  const deliveredLocalIds = new Set([...result.values()].filter((item) => !item.id.startsWith("pending-")).map((item) => item.localId));
+  return [...result.values()]
+    .filter((item) => !item.id.startsWith("pending-") || !deliveredLocalIds.has(item.localId))
+    .sort((left, right) => left.sequence - right.sequence || left.createdAt.localeCompare(right.createdAt));
 }
 function formatMessageTime(value: string) {
   const sentAt = new Date(value);

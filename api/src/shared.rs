@@ -18,7 +18,6 @@ pub(crate) enum FormType {
 pub(crate) enum AutomationStatus {
     Enabled,
     Paused,
-    Draft,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
@@ -180,7 +179,7 @@ pub(crate) fn retry_source_label(value: RetrySource) -> String {
 
 pub(crate) fn normalize_automation_status(status: &str) -> Result<String, AppError> {
     let normalized = status.trim();
-    if matches!(normalized, "enabled" | "paused" | "draft") {
+    if matches!(normalized, "enabled" | "paused") {
         Ok(normalized.to_string())
     } else {
         Err(AppError::BadRequest(

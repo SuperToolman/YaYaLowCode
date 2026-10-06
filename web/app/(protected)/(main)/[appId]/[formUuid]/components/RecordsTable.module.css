@@ -2,3 +2,9 @@
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
+
+.records-table__row-actions {
+  display: flex;
+  width: max-content;
+  align-items: center;
+}

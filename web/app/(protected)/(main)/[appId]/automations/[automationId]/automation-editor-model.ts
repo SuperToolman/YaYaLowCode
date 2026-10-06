@@ -151,6 +151,7 @@ export type AssigneeConfig = {
   assigneeIds?: string[];
   assignees?: string[];
   approvalMode?: "all" | "any";
+  requiredFieldIds?: string[];
 };
 export type CopyConfig = { recipientIds?: string[]; recipients?: string[] };
 export type MemberOption = { id: string; displayName: string; status: string };
@@ -1196,6 +1197,11 @@ export function normalizeAssigneeConfig(value: unknown): AssigneeConfig {
           )
         : [],
     approvalMode: current.approvalMode === "any" ? "any" : "all",
+    requiredFieldIds: Array.isArray(current.requiredFieldIds)
+      ? current.requiredFieldIds.filter(
+          (item): item is string => typeof item === "string" && item.trim().length > 0,
+        )
+      : [],
   };
 }
 

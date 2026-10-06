@@ -7,6 +7,7 @@
 import type { ChangeEvent, ReactNode } from "react";
 import { Button, Input, Switch } from "@heroui/react";
 import { parseOptionalNumber } from "../../designer-options";
+import { MySurface } from "@/components/ui/MySurface";
 
 export function PropertyPanel({ children }: { children: ReactNode }) {
   return <div className="space-y-1 p-1">{children}</div>;
@@ -22,16 +23,12 @@ export function PropertyFold({
   title: string;
 }) {
   return (
-    <section className="m-1 overflow-hidden rounded-md border border-[var(--designer-border)] bg-[var(--designer-surface-muted)]">
-      <div className="flex h-7 items-center justify-between border-b border-[var(--designer-border)] bg-[var(--designer-surface-soft)] px-1 text-[11px] font-medium text-[var(--color-text-primary)]">
-        <span>{title}</span>
-        <span className="flex items-center gap-1 text-[var(--color-text-disabled)]">
-          {rightIcon}
-          <ChevronIcon />
-        </span>
+    <MySurface className="overflow-hidden rounded-md bg-[var(--designer-surface-muted)]">
+      <div className="flex p-1 items-center justify-between bg-[var(--designer-surface-soft)] text-[12px]">
+        <span className="text-[12px]">{title}</span>
       </div>
       <div className="space-y-1 p-1">{children}</div>
-    </section>
+    </MySurface>
   );
 }
 
@@ -67,7 +64,7 @@ export function TextWithActions({
   return (
     <Input
       aria-label="属性值"
-      className="h-7 min-w-0 flex-1 text-[11px]"
+      className="flex-1"
       value={value}
       onChange={(event: ChangeEvent<HTMLInputElement>) =>
         onChange(event.currentTarget.value)
@@ -111,19 +108,30 @@ export function PanelSwitch({
 }) {
   return (
     <Switch aria-label="开关" isSelected={isSelected} onChange={onChange}>
-      <Switch.Control><Switch.Thumb /></Switch.Control>
+      <Switch.Control>
+        <Switch.Thumb />
+      </Switch.Control>
     </Switch>
   );
 }
 
-export function IconAction({ icon, label }: { icon: ReactNode; label: string }) {
-  return <Button isIconOnly size="sm" variant="ghost" aria-label={label}>{icon}</Button>;
+export function IconAction({
+  icon,
+  label,
+}: {
+  icon: ReactNode;
+  label: string;
+}) {
+  return (
+    <Button isIconOnly size="sm" variant="ghost" aria-label={label}>
+      {icon}
+    </Button>
+  );
 }
 
 export function CodeToken() {
   return <span className="font-mono text-[10px]">{"{}"}</span>;
 }
-
 
 function ChevronIcon() {
   return (

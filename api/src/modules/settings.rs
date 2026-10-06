@@ -736,7 +736,7 @@ pub(crate) async fn get_communication_storage_stats(
     ensure_communication_installed()?;
     let row = state.db.query_one_raw(Statement::from_string(
         DbBackend::Postgres,
-        "SELECT (SELECT COUNT(*) FROM communication_conversations)::BIGINT AS conversation_count, (SELECT COUNT(*) FROM communication_messages)::BIGINT AS message_count, (SELECT COALESCE(SUM(octet_length(content)), 0) FROM communication_messages)::BIGINT AS message_bytes, (SELECT COUNT(DISTINCT a.file_id) FROM communication_message_attachments a)::BIGINT AS attachment_count, (SELECT COALESCE(SUM(f.byte_size), 0) FROM uploaded_files f WHERE EXISTS (SELECT 1 FROM communication_message_attachments a WHERE a.file_id = f.id))::BIGINT AS attachment_bytes".to_string(),
+        "SELECT (SELECT COUNT(*) FROM im_conversations)::BIGINT AS conversation_count, (SELECT COUNT(*) FROM im_messages)::BIGINT AS message_count, (SELECT COALESCE(SUM(octet_length(content)), 0) FROM im_messages)::BIGINT AS message_bytes, (SELECT COUNT(DISTINCT a.file_id) FROM im_message_attachments a)::BIGINT AS attachment_count, (SELECT COALESCE(SUM(f.byte_size), 0) FROM uploaded_files f WHERE EXISTS (SELECT 1 FROM im_message_attachments a WHERE a.file_id = f.id))::BIGINT AS attachment_bytes".to_string(),
     )).await?.ok_or_else(|| AppError::Server(std::io::Error::other("communication storage statistics unavailable")))?;
     let message_bytes = row.try_get::<i64>("", "message_bytes")?;
     let attachment_bytes = row.try_get::<i64>("", "attachment_bytes")?;
@@ -765,11 +765,11 @@ pub(crate) async fn cleanup_communication_data(
     }
     let cutoff = chrono::Utc::now() - chrono::Duration::days(i64::from(retention_days));
     let transaction = state.db.begin().await?;
-    let candidates = transaction.query_all_raw(Statement::from_sql_and_values(DbBackend::Postgres, "SELECT DISTINCT f.id, f.storage_key FROM uploaded_files f JOIN communication_message_attachments a ON a.file_id = f.id JOIN communication_messages m ON m.id = a.message_id WHERE m.created_at < $1", vec![SeaValue::ChronoDateTimeUtc(Some(cutoff))])).await?;
+    let candidates = transaction.query_all_raw(Statement::from_sql_and_values(DbBackend::Postgres, "SELECT DISTINCT f.id, f.storage_key FROM uploaded_files f JOIN im_message_attachments a ON a.file_id = f.id JOIN im_messages m ON m.id = a.message_id WHERE m.created_at < $1", vec![SeaValue::ChronoDateTimeUtc(Some(cutoff))])).await?;
     let deleted_messages = transaction
         .execute_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
-            "DELETE FROM communication_messages WHERE created_at < $1",
+            "DELETE FROM im_messages WHERE created_at < $1",
             vec![SeaValue::ChronoDateTimeUtc(Some(cutoff))],
         ))
         .await?
@@ -779,7 +779,7 @@ pub(crate) async fn cleanup_communication_data(
     for candidate in candidates {
         let file_id = candidate.try_get("", "id")?;
         let storage_key: String = candidate.try_get("", "storage_key")?;
-        let result = transaction.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres, "DELETE FROM uploaded_files f WHERE f.id = $1 AND NOT EXISTS (SELECT 1 FROM communication_message_attachments a WHERE a.file_id = f.id)", vec![SeaValue::Uuid(Some(file_id))])).await?;
+        let result = transaction.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres, "DELETE FROM uploaded_files f WHERE f.id = $1 AND NOT EXISTS (SELECT 1 FROM im_message_attachments a WHERE a.file_id = f.id)", vec![SeaValue::Uuid(Some(file_id))])).await?;
         if result.rows_affected() > 0 {
             deleted_files += 1;
             storage_keys.push(storage_key);

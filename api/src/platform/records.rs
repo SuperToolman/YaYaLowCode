@@ -263,15 +263,33 @@ where
         form_uuid: &str,
         record_uuid: &str,
     ) -> Result<StoredFormRecord, AppError> {
+        self.find_with_lock(form_uuid, record_uuid, false).await
+    }
+
+    pub(crate) async fn find_for_update(
+        &self,
+        form_uuid: &str,
+        record_uuid: &str,
+    ) -> Result<StoredFormRecord, AppError> {
+        self.find_with_lock(form_uuid, record_uuid, true).await
+    }
+
+    async fn find_with_lock(
+        &self,
+        form_uuid: &str,
+        record_uuid: &str,
+        lock: bool,
+    ) -> Result<StoredFormRecord, AppError> {
         let plan = self.storage_plan(form_uuid).await?;
         let row = self
             .db
             .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Postgres,
                 format!(
-                    "SELECT {} FROM \"{}\" WHERE record_uuid = $1 AND deleted_at IS NULL",
+                    "SELECT {} FROM \"{}\" WHERE record_uuid = $1 AND deleted_at IS NULL{}",
                     base_select_columns(&plan),
-                    plan.main_table
+                    plan.main_table,
+                    if lock { " FOR UPDATE" } else { "" }
                 ),
                 vec![SeaValue::String(Some(record_uuid.to_string()))],
             ))

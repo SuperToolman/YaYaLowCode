@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useRef } from "react";
 import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
 import { getAssociationFormData, getDetailForms, getFormBootstrapData, getRecordsPage, getWorkflowActions, getWorkflowComments } from "./api";
 import type { RecordFilter, RecordSort } from "./types";
@@ -14,14 +15,22 @@ export function useFormBootstrapQuery(appId: string, formUuid: string, enabled: 
 }
 
 export function useAssociationFormsQuery(formUuids: string[]) {
-  const results = useQueries({
+  const previous = useRef(new Map<string, Awaited<ReturnType<typeof getAssociationFormData>>>());
+  const combine = useCallback((results: { data?: Awaited<ReturnType<typeof getAssociationFormData>> }[]) => {
+    const next = new Map(results.flatMap((result, index) => result.data ? [[formUuids[index], result.data] as const] : []));
+    const current = previous.current;
+    if (next.size === current.size && [...next].every(([id, data]) => current.get(id) === data)) return current;
+    previous.current = next;
+    return next;
+  }, [formUuids]);
+  return useQueries({
     queries: formUuids.map((formUuid) => ({
       queryKey: ["association-form", formUuid],
       queryFn: () => getAssociationFormData(formUuid),
       staleTime: 60_000,
     })),
+    combine,
   });
-  return new Map(results.flatMap((result, index) => result.data ? [[formUuids[index], result.data] as const] : []));
 }
 
 export function useWorkflowActionsQuery(formUuid: string, recordUuid: string) {

@@ -1,9 +1,11 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { Button } from "@heroui/react/button";
+import { Description } from "@heroui/react/description";
 import { Drawer } from "@heroui/react/drawer";
+import { Tooltip } from "@heroui/react/tooltip";
 import { TrashBin } from "@gravity-ui/icons";
-import styles from "./WorkflowNodeConfigDrawer.module.css";
 
 type WorkflowNodeConfigDrawerProps = {
   children: ReactNode;
@@ -28,40 +30,37 @@ export function WorkflowNodeConfigDrawer({
     <Drawer isOpen={isOpen} onOpenChange={onOpenChange}>
       <Drawer.Backdrop isDismissable>
         <Drawer.Content placement="right">
-          <Drawer.Dialog className={`${styles["workflow-node-config__panel"]} w-[630px] max-w-[85vw] overflow-hidden p-0`}>
-            <Drawer.Header className="border-b border-[var(--color-border)] bg-[var(--color-control-soft)] px-3 py-2.5">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <Drawer.Heading className={`${styles["workflow-node-config__title"]} font-semibold text-[var(--color-text-primary)]`}>
-                    {title}
-                  </Drawer.Heading>
-                  <p className="mt-0.5 text-[var(--color-text-secondary)]">
-                    {subtitle}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {headerActions}
-                  {onDelete ? (
-                    <button
-                      type="button"
-                      aria-label="删除节点"
-                      title="删除节点"
-                      className="flex h-8 w-8 items-center justify-center rounded-md border border-transparent text-[var(--color-danger)] transition-colors hover:border-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
-                      onClick={onDelete}
-                    >
-                      <TrashBin />
-                    </button>
-                  ) : null}
-                  <Drawer.CloseTrigger
-                    aria-label="关闭属性配置"
-                    className="flex h-8 min-w-8 items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2 text-[var(--color-text-secondary)]"
-                  >
-                    ×
-                  </Drawer.CloseTrigger>
-                </div>
+          <Drawer.Dialog style={{ width: 830, maxWidth: "85vw" }}>
+            <Drawer.Header className="flex-row items-start justify-between">
+              <div className="min-w-0 flex-1">
+                <Drawer.Heading className="break-words">{title}</Drawer.Heading>
+                <Description>{subtitle}</Description>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {headerActions}
+                {onDelete ? (
+                  <Tooltip>
+                    <Tooltip.Trigger>
+                      <Button
+                        isIconOnly
+                        size="sm"
+                        variant="danger-soft"
+                        aria-label="删除节点"
+                        onPress={onDelete}
+                      >
+                        <TrashBin />
+                      </Button>
+                    </Tooltip.Trigger>
+                    <Tooltip.Content>删除节点</Tooltip.Content>
+                  </Tooltip>
+                ) : null}
+                <Drawer.CloseTrigger
+                  aria-label="关闭属性配置"
+                  className="static"
+                />
               </div>
             </Drawer.Header>
-            <Drawer.Body className="min-h-0 flex-1 overflow-y-auto p-2">
+            <Drawer.Body>
               <div className="space-y-2">{children}</div>
             </Drawer.Body>
           </Drawer.Dialog>

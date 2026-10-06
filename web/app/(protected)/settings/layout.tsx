@@ -80,22 +80,16 @@ const settingsGroups = [
     label: "AI员工",
     items: [
       {
-        href: "/settings/ai-employee-market",
-        permission: "settings.agent",
-        label: "AI员工市场",
-        description: "浏览与安装 AI 员工",
-      },
-      {
         href: "/settings/model-providers",
         permission: "settings.agent",
         label: "模型",
         description: "配置 Agent 使用的模型供应商与默认路由",
       },
       {
-        href: "/settings/knowledge",
+        href: "/settings/agent-archive",
         permission: "settings.agent",
-        label: "知识库",
-        description: "配置 AI 员工使用的知识内容",
+        label: "归档会话",
+        description: "查看、恢复或永久移除已归档会话",
       },
     ],
   },

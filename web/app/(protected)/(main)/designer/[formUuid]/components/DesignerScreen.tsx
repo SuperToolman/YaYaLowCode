@@ -1,4 +1,5 @@
 "use client";
+import { notify } from "@lib/notify";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent } from "react";
@@ -15,7 +16,7 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { Card, toast } from "@heroui/react";
+import { Card } from "@heroui/react";
 import { useRouter } from "next/navigation";
 import {
   getDefaultDesignerFieldProps,
@@ -446,7 +447,7 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
 
     if (attemptedInsertion && !insertionPlan?.valid) {
       setFields(originFields);
-      toast.danger("无法插入组件", {
+      notify.error("无法插入组件", {
         description: insertionPlan?.reason ?? "当前位置无法完成自动重排。",
       });
       return;
@@ -483,14 +484,14 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
         : null;
       if (parentField?.type === "subform" && (isContainerFieldType(componentType) || componentType === "richText")) {
         if (componentType === "richText") {
-          toast.danger("无法添加富文本", { description: "富文本不能添加到子表单。" });
+          notify.error("无法添加富文本", { description: "富文本不能添加到子表单。" });
         }
         return originFields;
       }
       if (componentType === "serialNumber") {
         const targetScope = parentField?.type === "subform" ? `subform:${parentField.id}` : "canvas";
         if (baseFields.some((field) => field.type === "serialNumber" && getSerialNumberScope(field, baseFields) === targetScope)) {
-          toast.danger("无法添加流水号", {
+          notify.error("无法添加流水号", {
             description: targetScope === "canvas" ? "主画布只能添加一个流水号组件。" : "每个子表单只能添加一个流水号组件。",
           });
           return originFields;
@@ -736,7 +737,7 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
     if (issues.length === 0) return true;
 
     setSelectedFieldId(issues[0].fieldId);
-    toast.danger("Schema 校验失败", {
+    notify.error("Schema 校验失败", {
       description: issues.length === 1
         ? issues[0].message
         : `${issues[0].message}，另有 ${issues.length - 1} 个空容器`,
@@ -768,15 +769,15 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
             : NO_EFFECTIVE_SCHEMA_CHANGE_MESSAGE,
         );
         if (hasEffectiveSchemaChange) {
-          toast.success("已保存", {
+          notify.success("已保存", {
             description: `当前版本 v${result.latestVersion ?? latestVersion}`,
           });
         } else {
-          toast.warning(NO_EFFECTIVE_SCHEMA_CHANGE_MESSAGE);
+          notify.warning(NO_EFFECTIVE_SCHEMA_CHANGE_MESSAGE);
         }
       } catch {
         setSaveMessage("保存失败");
-        toast.danger("保存失败", {
+        notify.error("保存失败", {
           description: "请稍后重试。",
         });
       }
@@ -795,12 +796,12 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
         setLatestVersion(result.latestVersion);
         setCurrentVersion(version);
         setSaveMessage(`已读取 v${version}（未保存）`);
-        toast.success("历史版本已载入", {
+        notify.success("历史版本已载入", {
           description: `已读取 v${version}，保存后将生成新版本`,
         });
       } catch {
         setSaveMessage("读取失败");
-        toast.danger("读取失败", {
+        notify.error("读取失败", {
           description: "请稍后重试。",
         });
       }
@@ -832,11 +833,11 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
       if (!workflow) {
         const restored = await restoreProcessAutomation(formUuid);
         workflow = { id: restored.id };
-        toast.success("已重新创建流程自动化");
+        notify.success("已重新创建流程自动化");
       }
       router.push(`/${appId}/automations/${workflow.id}`);
     } catch {
-      toast.danger("流程设计暂不可用", { description: "流程自动化恢复失败，请稍后重试。" });
+      notify.error("流程设计暂不可用", { description: "流程自动化恢复失败，请稍后重试。" });
     }
   }
 
@@ -928,7 +929,7 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
               onResizePointerMove={handleResizePointerMove}
               onResizePointerUp={endResizing}
             />
-            <Card className="h-full w-[300px] shrink-0 overflow-hidden p-0">
+            <Card className="h-full w-[300px] shrink-0 overflow-hidden p-2">
               {selectedField ? (
                 <FieldPropertyPanel
                   fields={fields}
@@ -939,6 +940,7 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
                 />
               ) : (
                 <PagePropertyPanel
+                  fields={fields}
                   formName={formName}
                   formType={formType}
                   pageProps={pageProps}

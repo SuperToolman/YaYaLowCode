@@ -1,9 +1,10 @@
 "use client";
+import { notify } from "@lib/notify";
 
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowRotateLeft, Eye, Gear, TrashBin } from "@gravity-ui/icons";
-import { Button, Checkbox, Drawer, EmptyState, Input, Modal, Table, toast, Tooltip, type Selection } from "@heroui/react";
+import { Button, Checkbox, Drawer, EmptyState, Input, Modal, Table, Tooltip, type Selection } from "@heroui/react";
 import { RuntimeFormRenderer, type RuntimeFormSchema } from "@features/form-runtime/components";
 import { PageContentLayout } from "@components/PageContentLayout";
 import { getFormSchema } from "@/features/form-runtime/api";
@@ -53,10 +54,10 @@ function RecycleBinContent() {
       for (const item of entries) {
         await mutations.restore.mutateAsync(item.id);
       }
-      toast.success(successMessage);
+      notify.success(successMessage);
       await refreshItems();
     } catch (error) {
-      toast.danger("恢复失败", { description: error instanceof Error ? error.message : "请稍后重试" });
+      notify.error("恢复失败", { description: error instanceof Error ? error.message : "请稍后重试" });
     } finally { setBusy(null); }
   };
 
@@ -67,11 +68,11 @@ function RecycleBinContent() {
       for (const item of entries) {
         await mutations.remove.mutateAsync(item.id);
       }
-      toast.success(entries.length === 1 ? "数据已永久删除" : `已永久删除 ${entries.length} 条数据`);
+      notify.success(entries.length === 1 ? "数据已永久删除" : `已永久删除 ${entries.length} 条数据`);
       setDeleteConfirmation(null);
       await refreshItems();
     } catch (error) {
-      toast.danger("永久删除失败", { description: error instanceof Error ? error.message : "请稍后重试" });
+      notify.error("永久删除失败", { description: error instanceof Error ? error.message : "请稍后重试" });
     } finally { setBusy(null); }
   };
 
@@ -79,11 +80,11 @@ function RecycleBinContent() {
     setBusy("all");
     try {
       await mutations.empty.mutateAsync();
-      toast.success("回收站已清空");
+      notify.success("回收站已清空");
       setDeleteConfirmation(null);
       await refreshItems();
     } catch (error) {
-      toast.danger("清空失败", { description: error instanceof Error ? error.message : "请稍后重试" });
+      notify.error("清空失败", { description: error instanceof Error ? error.message : "请稍后重试" });
     } finally { setBusy(null); }
   };
 
@@ -106,21 +107,21 @@ function RecycleBinContent() {
       if (!result.data) throw new Error("无法加载回收站设置");
       setRetentionDays(String(result.data.retentionDays));
     } catch (error) {
-      toast.danger("无法加载回收站设置", { description: error instanceof Error ? error.message : "请稍后重试" });
+      notify.error("无法加载回收站设置", { description: error instanceof Error ? error.message : "请稍后重试" });
     } finally { setSettingsLoading(false); }
   };
 
   const saveSettings = async (event: React.FormEvent) => {
     event.preventDefault();
     const value = Number(retentionDays);
-    if (!Number.isInteger(value) || value < 1 || value > 3650) return toast.danger("请输入 1 至 3650 的整数天数");
+    if (!Number.isInteger(value) || value < 1 || value > 3650) return notify.error("请输入 1 至 3650 的整数天数");
     setSettingsSaving(true);
     try {
       await mutations.saveSettings.mutateAsync(value);
       setSettingsOpen(false);
-      toast.success("回收站设置已保存");
+      notify.success("回收站设置已保存");
     } catch (error) {
-      toast.danger("保存失败", { description: error instanceof Error ? error.message : "请稍后重试" });
+      notify.error("保存失败", { description: error instanceof Error ? error.message : "请稍后重试" });
     } finally { setSettingsSaving(false); }
   };
 

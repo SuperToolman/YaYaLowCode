@@ -1,15 +1,10 @@
-import { agentRuntimeBaseUrl } from "../../../../../../_lib/agent-runtime-proxy";
+import { backendAuthorizationHeaders, backendBaseUrl } from "../../../../../../_lib/backend-json-proxy";
 type Context = { params: Promise<{ sessionId: string; artifactId: string }> };
 export async function GET(request: Request, { params }: Context) {
   const { sessionId, artifactId } = await params;
-  const headers: Record<string,string> = {};
-  const auth = request.headers.get("authorization");
-  if (auth) headers.authorization = auth;
-  const cookie = request.headers.get("cookie");
-  if (cookie) headers.cookie = cookie;
   const response = await fetch(
-    `${agentRuntimeBaseUrl}/api/agent/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifactId)}/download`,
-    { headers, cache: "no-store" }
+    `${backendBaseUrl}/api/agent/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifactId)}/download`,
+    { headers: backendAuthorizationHeaders(request), cache: "no-store" }
   );
   return new Response(response.body, {
     status: response.status,

@@ -16,6 +16,7 @@ import {
 } from "@dnd-kit/core";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { AppSidebarToggle } from "./AppSidebarToggle";
 import { Gear } from "@gravity-ui/icons";
 import {
   Alert,
@@ -478,6 +479,7 @@ export function FormSidebar({ routeAppId }: FormSidebarProps) {
               <SearchField.ClearButton />
             </SearchField.Group>
           </SearchField>
+          <div className="flex items-center gap-1">
           {canCreateForm || canCreateGroup ? <Dropdown>
             <Dropdown.Trigger
               aria-label="新增导航项"
@@ -531,6 +533,8 @@ export function FormSidebar({ routeAppId }: FormSidebarProps) {
               </Dropdown.Menu>
             </Dropdown.Popover>
           </Dropdown> : null}
+          <AppSidebarToggle />
+          </div>
         </div>
 
         {errorMessage ? (
@@ -804,46 +808,50 @@ function SidebarTreeItem({
             <span className="min-w-0 truncate text-xs font-medium">{node.name}</span>
           </Link>
         )}
-        {node.itemType === "group" ? (
-          <Dropdown>
-            <Dropdown.Trigger aria-label={`${node.name} 设置`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="pointer-events-none absolute right-8 top-1/2 z-30 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-[var(--radius)] text-[var(--color-text-disabled)] opacity-0 transition-opacity hover:bg-[var(--color-control-soft-hover)] hover:text-[var(--color-text-primary)] group-hover/sidebar-item:pointer-events-auto group-hover/sidebar-item:opacity-100 group-focus-within/sidebar-item:pointer-events-auto group-focus-within/sidebar-item:opacity-100">
-              <Gear className="h-4 w-4" />
-            </Dropdown.Trigger>
-            <Dropdown.Popover>
-              <Dropdown.Menu aria-label={`${node.name} 分组操作`} onAction={(key) => onGroupAction(node, String(key) as GroupAction)}>
-                <Dropdown.Item id="rename">修改名称</Dropdown.Item>
-                <Dropdown.Item id="move">移动到</Dropdown.Item>
-                <Dropdown.Item id="delete" className="text-[var(--color-danger)]">删除</Dropdown.Item>
-              </Dropdown.Menu>
-            </Dropdown.Popover>
-          </Dropdown>
-        ) : null}
-        {node.itemType === "form" ? (
-          <Dropdown>
-            <Dropdown.Trigger aria-label={`${node.name} 设置`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className={`pointer-events-none absolute top-1/2 z-30 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-[var(--radius)] text-[var(--color-text-disabled)] opacity-0 transition-opacity hover:bg-[var(--color-control-soft-hover)] hover:text-[var(--color-text-primary)] group-hover/sidebar-item:pointer-events-auto group-hover/sidebar-item:opacity-100 group-focus-within/sidebar-item:pointer-events-auto group-focus-within/sidebar-item:opacity-100 ${isDraggable ? "right-8" : "right-1"}`}>
-              <Gear className="h-4 w-4" />
-            </Dropdown.Trigger>
-            <Dropdown.Popover>
-              <Dropdown.Menu aria-label={`${node.name} 表单操作`} onAction={(key) => onFormAction(node, String(key) as FormAction)}>
-                <Dropdown.Item id="rename">修改名称</Dropdown.Item>
-                <Dropdown.Item id="move">移动到</Dropdown.Item>
-                <Dropdown.Item id="delete" className="text-[var(--color-danger)]">删除</Dropdown.Item>
-              </Dropdown.Menu>
-            </Dropdown.Popover>
-          </Dropdown>
-        ) : null}
-        {isDraggable ? (
-          <button
-            type="button"
-            aria-label={`拖拽 ${node.name}`}
-            onClick={(event) => event.stopPropagation()}
-            {...attributes}
-            {...listeners}
-            className="pointer-events-none absolute right-1 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 cursor-grab items-center justify-center rounded-[var(--radius)] text-[10px] tracking-[-2px] text-[var(--color-text-disabled)] opacity-0 transition-opacity hover:bg-[var(--color-control-soft-hover)] hover:text-[var(--color-text-primary)] active:cursor-grabbing group-hover/sidebar-item:pointer-events-auto group-hover/sidebar-item:opacity-100 group-focus-within/sidebar-item:pointer-events-auto group-focus-within/sidebar-item:opacity-100"
-            style={{ touchAction: "none" }}
-          >
-            ⋮⋮
-          </button>
+        {node.itemType === "group" || node.itemType === "form" || isDraggable ? (
+          <div className="pointer-events-none absolute right-1 top-1/2 z-30 flex -translate-y-1/2 items-center rounded-[var(--radius)] bg-[var(--color-bg-surface)] p-0.5 text-[var(--color-text-disabled)] opacity-0 transition-opacity group-hover/sidebar-item:pointer-events-auto group-hover/sidebar-item:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100">
+            {node.itemType === "group" ? (
+              <Dropdown>
+                <Dropdown.Trigger aria-label={`${node.name} 设置`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="flex h-7 w-7 items-center justify-center rounded-[var(--radius)] hover:bg-[var(--color-control-soft-hover)] hover:text-[var(--color-text-primary)]">
+                  <Gear className="h-4 w-4" />
+                </Dropdown.Trigger>
+                <Dropdown.Popover>
+                  <Dropdown.Menu aria-label={`${node.name} 分组操作`} onAction={(key) => onGroupAction(node, String(key) as GroupAction)}>
+                    <Dropdown.Item id="rename">修改名称</Dropdown.Item>
+                    <Dropdown.Item id="move">移动到</Dropdown.Item>
+                    <Dropdown.Item id="delete" className="text-[var(--color-danger)]">删除</Dropdown.Item>
+                  </Dropdown.Menu>
+                </Dropdown.Popover>
+              </Dropdown>
+            ) : null}
+            {node.itemType === "form" ? (
+              <Dropdown>
+                <Dropdown.Trigger aria-label={`${node.name} 设置`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="flex h-7 w-7 items-center justify-center rounded-[var(--radius)] hover:bg-[var(--color-control-soft-hover)] hover:text-[var(--color-text-primary)]">
+                  <Gear className="h-4 w-4" />
+                </Dropdown.Trigger>
+                <Dropdown.Popover>
+                  <Dropdown.Menu aria-label={`${node.name} 表单操作`} onAction={(key) => onFormAction(node, String(key) as FormAction)}>
+                    <Dropdown.Item id="rename">修改名称</Dropdown.Item>
+                    <Dropdown.Item id="move">移动到</Dropdown.Item>
+                    <Dropdown.Item id="delete" className="text-[var(--color-danger)]">删除</Dropdown.Item>
+                  </Dropdown.Menu>
+                </Dropdown.Popover>
+              </Dropdown>
+            ) : null}
+            {isDraggable ? (
+              <button
+                type="button"
+                aria-label={`拖拽 ${node.name}`}
+                onClick={(event) => event.stopPropagation()}
+                {...attributes}
+                {...listeners}
+                className="flex h-7 w-7 cursor-grab items-center justify-center rounded-[var(--radius)] text-[10px] tracking-[-2px] hover:bg-[var(--color-control-soft-hover)] hover:text-[var(--color-text-primary)] active:cursor-grabbing"
+                style={{ touchAction: "none" }}
+              >
+                ⋮⋮
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </div>
       {node.itemType === "group" && showChildren ? (

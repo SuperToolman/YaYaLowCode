@@ -17,7 +17,7 @@ import { Box } from "@gravity-ui/icons";
 import { AgentAssistantTrigger } from "./agent/AgentAssistantTrigger";
 import { useAuth } from "./AuthProvider";
 import { logoutSession } from "@features/auth/api";
-import { WorkflowNotificationItems } from "./WorkflowNotificationItems";
+import { listWorkflowNotifications } from "@features/workflow/api";
 import { getCommunicationAvailability } from "@features/communication/api";
 import { MyAvatar } from "./my-fields/MyAvatar";
 import {
@@ -50,6 +50,12 @@ const primaryNavItems: NavItem[] = [
     label: "应用",
     icon: SquareListUl,
     match: (pathname) => pathname.startsWith("/myApp"),
+  },
+  {
+    href: "/market",
+    label: "市场",
+    icon: Box,
+    match: (pathname) => pathname.startsWith("/market"),
   },
   {
     href: "/messages",
@@ -90,6 +96,7 @@ export default function HomeSideBar() {
   const router = useRouter();
   const { logout, user, permissions, permissionsReady, hasPermission } = useAuth();
   const [messageUnreadCount, setMessageUnreadCount] = useState(0);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [communicationEnabled, setCommunicationEnabled] = useState(false);
   const [apps, setApps] = useState<App[]>([]);
   const [appsLoading, setAppsLoading] = useState(true);
@@ -108,7 +115,9 @@ export default function HomeSideBar() {
   }, [permissionsReady]);
   useEffect(() => {
     if (!permissionsReady) return;
-    const reload = () => {
+    const reload = (event: Event) => {
+      const deletedAppId = (event as CustomEvent<{ deletedAppId?: string }>).detail?.deletedAppId;
+      if (deletedAppId) setApps((current) => current.filter((app) => app.id !== deletedAppId));
       void listApps({ responseStyle: "fields" }).then(({ data, error }) => {
         if (!error && data?.code === 0 && data.data) setApps(data.data);
       }).catch(() => undefined);
@@ -150,10 +159,26 @@ export default function HomeSideBar() {
       window.removeEventListener("yaya-communication-read-updated", load);
     };
   }, [communicationEnabled, permissionsReady]);
+  useEffect(() => {
+    if (!permissionsReady) return;
+    let cancelled = false;
+    const load = () => void listWorkflowNotifications({ responseStyle: "fields" }).then(({ data, error }) => {
+      const result = data as { code?: number; data?: { unread?: number } | null } | undefined;
+      if (!cancelled && !error && result?.code === 0) setNotificationUnreadCount(result.data?.unread ?? 0);
+    }).catch(() => undefined);
+    load();
+    const timer = window.setInterval(load, 60_000);
+    window.addEventListener("yaya-workflow-notifications-updated", load);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener("yaya-workflow-notifications-updated", load);
+    };
+  }, [permissionsReady]);
   const visiblePrimaryNavItems = !permissionsReady
     ? []
     : primaryNavItems.filter((item) => {
-        if (item.href === "/messages") return communicationEnabled;
+        if (item.href === "/messages") return true;
         return true;
       });
   const visibleRecycleBinNavItems = permissionsReady && hasPermission("settings.database")
@@ -174,14 +199,14 @@ export default function HomeSideBar() {
   return (
     <aside >
       <div className="flex h-full flex-col">
-        <div className="mb-2"><UserMenu user={user} onLogout={() => void handleLogout()} onTasks={() => router.push("/tasks")} /></div>
+        <div className="mb-2"><UserMenu user={user} messageUnreadCount={messageUnreadCount + notificationUnreadCount} onLogout={() => void handleLogout()} onTasks={() => router.push("/tasks")} /></div>
 
         <div className="flex flex-1 flex-col justify-between">
           <div className="flex flex-col gap-2">
             <NavGroup
               apps={apps}
               appsLoading={appsLoading}
-              items={visiblePrimaryNavItems.map((item) => item.href === "/messages" ? { ...item, badgeCount: messageUnreadCount } : item)}
+              items={visiblePrimaryNavItems.map((item) => item.href === "/messages" ? { ...item, badgeCount: messageUnreadCount + notificationUnreadCount } : item)}
               pathname={pathname}
             />
             {permissionsReady && hasPermission("agent.window") ? <AgentAssistantTrigger /> : null}
@@ -200,10 +225,12 @@ export default function HomeSideBar() {
 function UserMenu({
   onLogout,
   onTasks,
+  messageUnreadCount,
   user,
 }: {
   onLogout: () => void;
   onTasks: () => void;
+  messageUnreadCount: number;
   user: { displayName: string; username: string } | null;
 }) {
   const displayName = user?.displayName ?? "当前用户";
@@ -214,7 +241,11 @@ function UserMenu({
           aria-label={`打开 ${displayName} 的账户菜单`}
           className="group flex h-11 w-11 items-center justify-center rounded-2xl border border-transparent bg-[var(--sidebar-active-bg)] text-[var(--color-text-primary)] shadow-[var(--shadow-sm)] backdrop-blur-xl transition-colors hover:border-[var(--sidebar-soft-border)] hover:bg-[var(--sidebar-soft-bg)]"
         >
-          <MyAvatar name={displayName} size="md" />
+          {messageUnreadCount > 0 ? (
+            <Badge color="danger" size="sm" content={messageUnreadCount > 99 ? "99+" : String(messageUnreadCount)} className="translate-x-1 -translate-y-1">
+              <MyAvatar name={displayName} size="md" />
+            </Badge>
+          ) : <MyAvatar name={displayName} size="md" />}
         </Dropdown.Trigger>
         <Dropdown.Popover className="border border-[var(--color-border)] bg-transparent shadow-none">
           <Dropdown.Menu
@@ -234,7 +265,6 @@ function UserMenu({
                 </span>
               </span>
             </Dropdown.Item>
-            <WorkflowNotificationItems />
             <Dropdown.Item id="tasks" textValue="我的任务" className="rounded-lg text-[var(--color-text-primary)]">
               <span className="flex items-center gap-3"><SquareListUl className="h-4 w-4" /><span>我的任务</span></span>
             </Dropdown.Item>

@@ -34,7 +34,7 @@ export type MyTableProps<TData> = {
   sortDescriptor?: SortDescriptor;
   onSortChange?: (descriptor: SortDescriptor) => void;
   selectedRowIds?: Set<string>;
-  onSelectedRowIdsChange?: (rowId: string, selected: boolean) => void;
+  onSelectedRowIdsChange?: (selectedPageIds: Set<string>) => void;
   columnSizing?: Record<string, number>;
   onColumnSizingChange?: (sizing: Record<string, number>) => void;
 };
@@ -92,6 +92,9 @@ export function MyTable<TData>({
   const [liveColumnWidths, setLiveColumnWidths] = useState<Record<string, number>>({});
   const resizableContainerRef = useRef<HTMLDivElement | null>(null);
   const [viewportWidth, setViewportWidth] = useState(0);
+  useEffect(() => {
+    setLiveColumnWidths({});
+  }, [columnSizing]);
   const columnPinning = useMemo<ColumnPinningState>(() => ({
     left: columns.filter((column) => column.meta && (column.meta as MyTableColumnMeta).pin === "left").map((column) => String(column.id)),
     right: columns.filter((column) => column.meta && (column.meta as MyTableColumnMeta).pin === "right").map((column) => String(column.id)),
@@ -172,7 +175,9 @@ export function MyTable<TData>({
           onSelectionChange={(keys: Selection) => {
             if (!onSelectedRowIdsChange) return;
             const nextSelectedIds = keys === "all" ? new Set(data.map(getRowId)) : new Set([...keys].map(String));
-            data.forEach((row) => onSelectedRowIdsChange(getRowId(row), nextSelectedIds.has(getRowId(row))));
+            if (data.some((row) => Boolean(selectedRowIds?.has(getRowId(row))) !== nextSelectedIds.has(getRowId(row)))) {
+              onSelectedRowIdsChange(nextSelectedIds);
+            }
           }}
           sortDescriptor={sortDescriptor}
           onSortChange={(descriptor) => onSortChange?.(descriptor)}

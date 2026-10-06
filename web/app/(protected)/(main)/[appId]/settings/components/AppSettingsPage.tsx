@@ -1,8 +1,9 @@
-﻿"use client";
+"use client";
+import { notify } from "@lib/notify";
 
 import Link from "next/link";
 import { use, useEffect, useState, type Key, type ReactNode } from "react";
-import { Button, Card, Input, ListBox, Select, Switch, TextArea, toast } from "@heroui/react";
+import { Button, Card, Input, ListBox, Select, Switch, TextArea } from "@heroui/react";
 import {
   Database,
   FileText,
@@ -133,7 +134,7 @@ export default function AppSettingsPage({
   async function saveBasicSettings() {
     const nextName = appName.trim();
     if (!nextName) {
-      toast.danger("请输入应用名称");
+      notify.error("请输入应用名称");
       return;
     }
     setIsSaving(true);
@@ -156,11 +157,11 @@ export default function AppSettingsPage({
       invalidateAppResources(appId, ["app", "navigation"]);
       setAppName(appPayload.data?.name ?? nextName);
       setAppDescription(appPayload.data?.desc ?? appDescription.trim());
-      toast.success("基础设置已保存", {
+      notify.success("基础设置已保存", {
         description: "进入应用时将默认打开所选页面。",
       });
     } catch (error) {
-      toast.danger("保存失败", { description: error instanceof Error ? error.message : "请稍后重试。" });
+      notify.error("保存失败", { description: error instanceof Error ? error.message : "请稍后重试。" });
     } finally {
       setIsSaving(false);
     }
@@ -170,9 +171,9 @@ export default function AppSettingsPage({
     setIsSaving(true);
     try {
       setBusinessContext(await updateAppBusinessContext<typeof businessContext>(appId, businessContext));
-      toast.success("Agent 业务上下文已保存");
+      notify.success("Agent 业务上下文已保存");
     } catch (error) {
-      toast.danger("保存失败", { description: error instanceof Error ? error.message : "请稍后重试。" });
+      notify.error("保存失败", { description: error instanceof Error ? error.message : "请稍后重试。" });
     } finally {
       setIsSaving(false);
     }

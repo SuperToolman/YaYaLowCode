@@ -12,8 +12,31 @@ type RumMetric = {
   attribution?: unknown;
 };
 
+function serializeMetric(metric: RumMetric) {
+  const seen = new WeakSet<object>();
+
+  return JSON.stringify(metric, (_key, value: unknown) => {
+    if (value instanceof Element) {
+      return {
+        element: value.tagName.toLowerCase(),
+        id: value.id || undefined,
+        role: value.getAttribute("role") || undefined,
+      };
+    }
+
+    if (typeof value === "object" && value !== null) {
+      if (seen.has(value)) return undefined;
+      seen.add(value);
+    }
+
+    if (typeof value === "bigint") return value.toString();
+    if (typeof value === "function" || typeof value === "symbol") return undefined;
+    return value;
+  });
+}
+
 function report(metric: RumMetric) {
-  const body = JSON.stringify(metric);
+  const body = serializeMetric(metric);
   if (navigator.sendBeacon?.("/api/rum", new Blob([body], { type: "application/json" }))) return;
   void fetch("/api/rum", {
     method: "POST",

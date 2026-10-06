@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { notify } from "@lib/notify";
 import {
   Button,
   Checkbox,
@@ -171,7 +172,6 @@ export default function PermissionsSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
   const activeRole = roles.find((role) => role.id === roleId);
   const isSystemAdministrator =
     activeRole?.externalId === "system-administrator";
@@ -283,7 +283,6 @@ export default function PermissionsSettingsPage() {
   function selectRole(id: string) {
     setRoleId(id);
     setSelectedResource(null);
-    setMessage("");
   }
   function resourceState(prefix: string, actions: readonly string[]) {
     if (grantSet.has("*")) return "all";
@@ -373,7 +372,6 @@ export default function PermissionsSettingsPage() {
     if (!roleId) return;
     setSaving(true);
     setError("");
-    setMessage("");
     try {
       const { data, error } = await updateRolePermissions({
         body: { grants },
@@ -384,9 +382,9 @@ export default function PermissionsSettingsPage() {
         throw new Error(data?.message || "保存权限失败");
       }
       setGrants(data.data.grants);
-      setMessage("权限配置已保存");
+      notify.success("权限配置已保存");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "保存权限失败");
+      notify.error("保存权限失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
     } finally {
       setSaving(false);
     }
@@ -398,7 +396,7 @@ export default function PermissionsSettingsPage() {
       subtitle="按角色配置应用、表单与平台功能的访问范围。"
       bodyScrollable={false}
       bodyClassName="flex min-h-0 flex-1 flex-col !overflow-clip"
-      footer={<><p className="text-xs leading-5 text-[var(--color-text-secondary)]">{message || (activeRole ? isSystemAdministrator ? "系统管理员拥有全部权限，权限不可修改。" : `正在配置「${activeRole.name}」的 RBAC 权限。` : "请先选择需要配置的角色。")}</p><Button variant="primary" isDisabled={!roleId || saving || isSystemAdministrator} onPress={() => void save()}>{saving ? "正在保存…" : "保存权限"}</Button></>}
+      footer={<><p className="text-xs leading-5 text-[var(--color-text-secondary)]">{activeRole ? isSystemAdministrator ? "系统管理员拥有全部权限，权限不可修改。" : `正在配置「${activeRole.name}」的 RBAC 权限。` : "请先选择需要配置的角色。"}</p><Button variant="primary" isDisabled={!roleId || saving || isSystemAdministrator} onPress={() => void save()}>{saving ? "正在保存…" : "保存权限"}</Button></>}
     >
     <section className="grid min-h-0 w-full flex-1 grid-cols-[180px_minmax(0,1fr)] overflow-clip">
       <aside className="flex min-h-0 flex-col overflow-clip border-r border-[var(--color-border)] pr-4">
@@ -498,11 +496,6 @@ export default function PermissionsSettingsPage() {
         {error ? (
           <p className="mt-4 rounded-lg bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]">
             {error}
-          </p>
-        ) : null}
-        {message ? (
-          <p className="mt-4 rounded-lg bg-[var(--color-success-soft)] px-4 py-3 text-sm text-[var(--color-success)]">
-            {message}
           </p>
         ) : null}
         <div className="flex min-h-0 flex-1 flex-col overflow-clip">

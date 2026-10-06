@@ -65,10 +65,8 @@ async fn main() -> Result<(), AppError> {
     infrastructure::legacy_bootstrap::ensure_agent_tables(&db).await?;
     infrastructure::legacy_bootstrap::ensure_workflow_tables(&db).await?;
     infrastructure::legacy_bootstrap::ensure_file_tables(&db).await?;
-    if communication_module_enabled() {
-        infrastructure::legacy_bootstrap::ensure_communication_tables(&db).await?;
-    }
     infrastructure::migrator::Migrator::up(&db, None).await?;
+    agents::cleanup_native_workbench_reset(&db).await?;
     if let Err(error) = agents::cleanup_expired_agent_workspaces(&db).await {
         warn!(
             ?error,
@@ -87,6 +85,9 @@ async fn main() -> Result<(), AppError> {
 
     let (shutdown, mut shutdown_signal) = tokio::sync::watch::channel(false);
     let state = AppState::new(db, valkey, config.valkey_cache_ttl_seconds, shutdown);
+    if communication_module_enabled() {
+        modules::communication::start_delivery_worker(state.clone());
+    }
     let app = http::router::build(state);
 
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;

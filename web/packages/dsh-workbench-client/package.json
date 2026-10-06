@@ -1,0 +1,8 @@
+{
+  "name": "@yaya/dsh-workbench-client",
+  "version": "0.1.0",
+  "dshProtocolVersion": "0.1.0-rc.8",
+  "dshSource": "../../../agent/deepseek-harness",
+  "private": true,
+  "type": "module"
+}

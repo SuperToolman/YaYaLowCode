@@ -1,4 +1,5 @@
 "use client";
+import { notify } from "@lib/notify";
 
 import {
   useCallback,
@@ -13,7 +14,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Label,
-  Typography,
   Badge,
   Button,
   Dropdown,
@@ -22,7 +22,6 @@ import {
   SearchField,
   Select,
   Tabs,
-  toast,
 } from "@heroui/react";
 import { AlertDialog } from "@heroui/react/alert-dialog";
 import { Card } from "@heroui/react/card";
@@ -78,10 +77,12 @@ import {
   useRecordsQuery,
 } from "@/features/records/queries";
 import {
+  completeWorkflowExecutionTask,
   runWorkflowRecordAction,
   useRecordMutations,
 } from "@/features/records/mutations";
 import type { FormRecord } from "@/features/records/types";
+import { mergePageSelection, retainAvailableSelection } from "@/features/records/selection";
 import { normalizeDetailFormSchema } from "@features/records/model/schema";
 import { useRecordDrafts, type RecordFormDraft } from "../model/drafts";
 import { useRecordEditor } from "../model/use-record-editor";
@@ -97,6 +98,7 @@ import {
   DetailDisplayFieldSelect,
   IconToolbarButton,
   ReorderableViewFieldRow,
+  type ViewFieldOption,
 } from "./ViewConfigComponents";
 import { FormTableSetting } from "./FormTableSetting";
 import {
@@ -113,7 +115,24 @@ import {
 
 type FormSchema = RuntimeFormSchema;
 
-type ViewKey = "records" | "submit";
+const EMPTY_COLUMN_WIDTHS: Record<string, number> = {};
+const EMPTY_FROZEN_FIELD_IDS: string[] = [];
+const COMBINED_VIEW_FIELD_GROUPS: Array<{
+  id: string;
+  label: string;
+  fieldIds: string[];
+}> = [
+  {
+    id: "instanceId",
+    label: "实例标题",
+    fieldIds: ["instanceId", "instanceTitle"],
+  },
+  {
+    id: "submitter",
+    label: "提交人&组织",
+    fieldIds: ["submitter", "submitterOrganization"],
+  },
+];
 
 const EMPTY_IMPORT_STATE: ImportWorkbookState = {
   fileName: "",
@@ -301,8 +320,6 @@ function FormHomeRecords({
     [bootstrap],
   );
 
-  const activeView: ViewKey =
-    searchParams.get("view") === "submit" ? "submit" : "records";
   const submitButtonText =
     schema?.pageProps?.submitButtonText?.trim() || "提交";
   const agentConfig = schema?.pageProps?.agent;
@@ -433,7 +450,7 @@ function FormHomeRecords({
   const viewFieldOrderSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
-  const orderedDraftViewFields = useMemo(() => {
+  const orderedDraftViewFields = useMemo<ViewFieldOption[]>(() => {
     const order =
       viewConfigDraft?.columnOrder ?? allViewFields.map((field) => field.id);
     const fieldById = new Map(allViewFields.map((field) => [field.id, field]));
@@ -449,10 +466,29 @@ function FormHomeRecords({
       ...allViewFields.filter((field) => remaining.has(field.id)),
     ];
     const frozenIds = new Set(viewConfigDraft?.frozenFieldIds ?? []);
-    return [
+    const frozenOrdered = [
       ...allOrdered.filter((field) => frozenIds.has(field.id)),
       ...allOrdered.filter((field) => !frozenIds.has(field.id)),
     ];
+    const renderedGroupIds = new Set<string>();
+    return frozenOrdered.flatMap<ViewFieldOption>((field) => {
+      const group = COMBINED_VIEW_FIELD_GROUPS.find((candidate) =>
+        candidate.fieldIds.includes(field.id),
+      );
+      if (!group) return [field];
+      if (renderedGroupIds.has(group.id)) return [];
+      renderedGroupIds.add(group.id);
+      const primaryField = fieldById.get(group.id);
+      return primaryField
+        ? [
+            {
+              ...primaryField,
+              label: group.label,
+              linkedFieldIds: [...group.fieldIds],
+            },
+          ]
+        : [field];
+    });
   }, [
     allViewFields,
     viewConfigDraft?.columnOrder,
@@ -466,15 +502,30 @@ function FormHomeRecords({
       setViewConfigDraft((current) => {
         if (!current) return current;
         const frozenIds = new Set(current.frozenFieldIds ?? []);
-        if (frozenIds.has(sourceId) !== frozenIds.has(targetId)) return current;
+        const sourceFieldIds =
+          COMBINED_VIEW_FIELD_GROUPS.find((group) => group.id === sourceId)
+            ?.fieldIds ?? [sourceId];
+        const targetFieldIds =
+          COMBINED_VIEW_FIELD_GROUPS.find((group) => group.id === targetId)
+            ?.fieldIds ?? [targetId];
+        if (
+          sourceFieldIds.some((id) => frozenIds.has(id)) !==
+          targetFieldIds.some((id) => frozenIds.has(id))
+        )
+          return current;
         const currentOrder =
           current.columnOrder ?? allViewFields.map((field) => field.id);
-        const sourceIndex = currentOrder.indexOf(sourceId);
-        const targetIndex = currentOrder.indexOf(targetId);
-        if (sourceIndex < 0 || targetIndex < 0) return current;
-        const nextOrder = [...currentOrder];
-        nextOrder.splice(sourceIndex, 1);
-        nextOrder.splice(targetIndex, 0, sourceId);
+        const sourceEntries = currentOrder.filter((id) =>
+          sourceFieldIds.includes(id),
+        );
+        const nextOrder = currentOrder.filter(
+          (id) => !sourceFieldIds.includes(id),
+        );
+        const targetIndex = nextOrder.findIndex((id) =>
+          targetFieldIds.includes(id),
+        );
+        if (sourceEntries.length === 0 || targetIndex < 0) return current;
+        nextOrder.splice(targetIndex, 0, ...sourceEntries);
         return { ...current, columnOrder: nextOrder };
       });
     },
@@ -569,17 +620,22 @@ function FormHomeRecords({
         })),
     [effectiveViewConfig.sorts, queryableViewFields],
   );
+  const executionTaskId = searchParams.get("task") ?? undefined;
+  const executionRecordId = executionTaskId ? searchParams.get("record") : null;
   const recordsQuery = useRecordsQuery({
     formUuid,
     page: recordPage,
     pageSize: recordPageSize,
-    filters: recordFilters,
+    filters: executionRecordId
+      ? [{ fieldId: "instanceId", operator: "eq", value: executionRecordId }]
+      : recordFilters,
     sorts: recordSorts,
     detail: isDetailForm,
     enabled: Boolean(schema) && !isSystemPageSlug(formUuid),
     initialData:
       recordPage === 1 &&
       recordPageSize === 20 &&
+      !executionRecordId &&
       recordFilters.length === 0 &&
       recordSorts.length === 0
         ? bootstrap?.records
@@ -608,7 +664,7 @@ function FormHomeRecords({
       .map((entry) => entry.record);
   }, [deferredSearchValue, displayedRecords, searchableRecords]);
   useEffect(() => {
-    if (!views.length || activeView !== "records") return;
+    if (!views.length) return;
     const requestedViewUuid = searchParams.get("viewUuid");
     const pendingTransition = viewUrlTransitionRef.current;
     if (pendingTransition && pendingTransition.viewUuid !== requestedViewUuid)
@@ -627,7 +683,6 @@ function FormHomeRecords({
     }
     viewUrlTransitionRef.current = null;
   }, [
-    activeView,
     activeViewId,
     searchParams,
     setActiveViewId,
@@ -669,10 +724,10 @@ function FormHomeRecords({
 
   async function handleCreateRecord(
     values: Record<string, unknown>,
-    source: "drawer" | "drawerContinue" | "page",
+    source: "drawer" | "drawerContinue",
   ) {
     if (detailSourceFormUuid && !detailParentRecordUuid) {
-      toast.danger("请选择归属主记录");
+      notify.error("请选择归属主记录");
       return;
     }
     setSubmitting(true);
@@ -685,7 +740,7 @@ function FormHomeRecords({
       );
 
       await loadRecords();
-      toast.success("表单数据已保存", {
+      notify.success("表单数据已保存", {
         description: `表单 ${formUuid} 已提交成功`,
       });
 
@@ -700,7 +755,7 @@ function FormHomeRecords({
         setDrawerResetKey((current) => current + 1);
       }
     } catch (error) {
-      toast.danger("提交失败", {
+      notify.error("提交失败", {
         description:
           error instanceof Error ? error.message : "请确认后端服务正常。",
       });
@@ -712,7 +767,7 @@ function FormHomeRecords({
   async function handleCreateDetailForm() {
     if (!detailSubformId) return;
     if (existingDetailSubformIds.has(detailSubformId)) {
-      toast.danger("该子表单已生成明细表单");
+      notify.error("该子表单已生成明细表单");
       return;
     }
     setCreatingDetailForm(true);
@@ -730,7 +785,7 @@ function FormHomeRecords({
       notifyAppNavigationChanged(appId);
       router.push(`/${appId}/${detailForm?.detailFormUuid ?? ""}`);
     } catch (error) {
-      toast.danger("创建明细表单失败", {
+      notify.error("创建明细表单失败", {
         description: error instanceof Error ? error.message : "请稍后重试。",
       });
     } finally {
@@ -748,12 +803,12 @@ function FormHomeRecords({
       await recordEditor.submitUpdate(recordId, values);
 
       await loadRecords();
-      toast.success("表单数据已更新", {
+      notify.success("表单数据已更新", {
         description: `记录 ${recordId} 已保存`,
       });
       return true;
     } catch {
-      toast.danger("更新失败", {
+      notify.error("更新失败", {
         description: "请确认后端服务正常。",
       });
       return false;
@@ -770,7 +825,7 @@ function FormHomeRecords({
     try {
       await runWorkflowRecordAction(formUuid, record.id, action, reason ?? "");
       await loadRecords();
-      toast.success(
+      notify.success(
         (
           {
             submit: "流程已提交",
@@ -782,10 +837,31 @@ function FormHomeRecords({
       );
       return true;
     } catch (error) {
-      toast.danger("流程操作失败", {
+      notify.error("流程操作失败", {
         description: error instanceof Error ? error.message : "请稍后重试",
       });
       return false;
+    }
+  }
+
+  async function handleCompleteExecutionTask(
+    taskId: string,
+    changes: Record<string, unknown>,
+  ): Promise<boolean> {
+    setSubmitting(true);
+    try {
+      await completeWorkflowExecutionTask(taskId, changes);
+      await loadRecords();
+      notify.success("填写完成，流程已流转");
+      router.push(`/${appId}/tasks`);
+      return true;
+    } catch (error) {
+      notify.error("执行任务失败", {
+        description: error instanceof Error ? error.message : "请稍后重试",
+      });
+      return false;
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -796,12 +872,12 @@ function FormHomeRecords({
       await recordMutations.remove.mutateAsync(recordId);
 
       await loadRecords();
-      toast.success("记录已删除", {
+      notify.success("记录已删除", {
         description: `记录 ${recordId} 已移除`,
       });
       return true;
     } catch {
-      toast.danger("删除记录失败", {
+      notify.error("删除记录失败", {
         description: "请确认后端服务正常。",
       });
       return false;
@@ -817,13 +893,13 @@ function FormHomeRecords({
       await recordMutations.removeForm.mutateAsync();
 
       setDeleteOpen(false);
-      toast.success("表单已删除", {
+      notify.success("表单已删除", {
         description: `表单 ${formUuid} 已移除`,
       });
       notifyAppNavigationChanged(appId);
       router.replace(`/${appId}`);
     } catch {
-      toast.danger("删除表单失败", {
+      notify.error("删除表单失败", {
         description: "请确认后端服务正常。",
       });
     } finally {
@@ -845,18 +921,14 @@ function FormHomeRecords({
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const availableIds = new Set(displayedRecords.map((record) => record.id));
-      setSelectedRecordIds((current) => {
-        const next = new Set(
-          [...current].filter((recordId) => availableIds.has(recordId)),
-        );
-        return next.size === current.size ? current : next;
-      });
+      setSelectedRecordIds((current) => retainAvailableSelection(current, availableIds));
     }, 0);
     return () => window.clearTimeout(timer);
   }, [displayedRecords]);
 
   function toggleRecordSelection(recordId: string, selected: boolean) {
     setSelectedRecordIds((current) => {
+      if (current.has(recordId) === selected) return current;
       const next = new Set(current);
       if (selected) next.add(recordId);
       else next.delete(recordId);
@@ -864,10 +936,14 @@ function FormHomeRecords({
     });
   }
 
+  function updatePageSelection(pageIds: string[], selectedPageIds: Set<string>) {
+    setSelectedRecordIds((current) => mergePageSelection(current, pageIds, selectedPageIds));
+  }
+
   function saveDraft() {
     persistDraft(drawerValues);
     setDrawerOpen(false);
-    toast.success("草稿已暂存");
+    notify.success("草稿已暂存");
   }
 
   function openDraft(draft: RecordFormDraft) {
@@ -885,7 +961,7 @@ function FormHomeRecords({
 
   function submitDrawerForm(mode: "submit" | "continue") {
     if (detailSourceFormUuid && !detailParentRecordUuid) {
-      toast.danger("请选择归属主记录");
+      notify.error("请选择归属主记录");
       return;
     }
     drawerSubmitModeRef.current = mode;
@@ -910,7 +986,7 @@ function FormHomeRecords({
 
   async function exportSelectedRecords() {
     if (selectedRecordIds.size === 0) {
-      toast.warning("请选择需要导出的数据", {
+      notify.warning("请选择需要导出的数据", {
         description: "在数据行上悬停并勾选复选框后再导出。",
       });
       return;
@@ -932,7 +1008,7 @@ function FormHomeRecords({
           }),
       );
     } catch (error) {
-      toast.danger("无法导出关联字段", {
+      notify.error("无法导出关联字段", {
         description:
           error instanceof Error ? error.message : "请检查关联表单权限和配置。",
       });
@@ -991,7 +1067,7 @@ function FormHomeRecords({
         mappings,
       });
     } catch (reason) {
-      toast.danger("无法读取 Excel", {
+      notify.error("无法读取 Excel", {
         description:
           reason instanceof Error ? reason.message : "请检查文件格式。",
       });
@@ -1030,7 +1106,7 @@ function FormHomeRecords({
       );
     } catch (error) {
       setImportState((current) => ({ ...current, importing: false }));
-      toast.danger("无法解析关联字段", {
+      notify.error("无法解析关联字段", {
         description:
           error instanceof Error ? error.message : "请检查关联表单权限和配置。",
       });
@@ -1069,11 +1145,11 @@ function FormHomeRecords({
       failureCount,
     }));
     if (failureCount === 0)
-      toast.success("导入完成", {
+      notify.success("导入完成", {
         description: `成功导入 ${successCount} 条数据。`,
       });
     else
-      toast.warning("导入完成", {
+      notify.warning("导入完成", {
         description: `成功 ${successCount} 条，失败 ${failureCount} 条。`,
       });
   }
@@ -1093,12 +1169,6 @@ function FormHomeRecords({
       <div className="flex h-full min-h-0 flex-1 items-center justify-center text-sm text-[var(--color-text-secondary)]">
         正在加载页面...
       </div>
-    );
-  }
-
-  function handleViewChange(view: ViewKey) {
-    router.replace(
-      `/${appId}/${formUuid}${view === "submit" ? "?view=submit" : ""}`,
     );
   }
 
@@ -1227,34 +1297,29 @@ function FormHomeRecords({
           </div>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
             <Tabs
-              selectedKey={
-                activeView === "submit" ? "submit" : `view:${activeViewId}`
-              }
+              className="min-w-0 max-w-full"
+              selectedKey={`view:${activeViewId}`}
               onSelectionChange={(key) => {
                 const value = String(key);
-                if (value === "submit") {
-                  setPendingViewConfig(null);
-                  setViewConfigDraft(null);
-                  handleViewChange("submit");
-                  return;
-                }
                 const viewId = value.replace("view:", "");
                 const view = views.find((item) => item.id === viewId);
                 if (view) activateTableView(view);
               }}
             >
-              <Tabs.List aria-label="数据视图">
-                {views.map((view) => (
-                  <Tabs.Tab key={view.id} id={`view:${view.id}`}>
-                    {view.isDefault ? "全部数据" : view.name}
-                    <Tabs.Indicator />
-                  </Tabs.Tab>
-                ))}
-                <Tabs.Tab id="submit">
-                  表单提交
-                  <Tabs.Indicator />
-                </Tabs.Tab>
-              </Tabs.List>
+              <Tabs.ListContainer className="max-w-full overflow-x-auto">
+                <Tabs.List aria-label="数据视图" className="w-max min-w-max flex-nowrap">
+                  {views.map((view) => (
+                    <Tabs.Tab
+                      key={view.id}
+                      id={`view:${view.id}`}
+                      className="w-auto min-w-0 shrink-0 whitespace-nowrap"
+                    >
+                      {view.isDefault ? "全部数据" : view.name}
+                      <Tabs.Indicator />
+                    </Tabs.Tab>
+                  ))}
+                </Tabs.List>
+              </Tabs.ListContainer>
             </Tabs>
             {canUseViewDevelopment ? (
               <IconToolbarButton
@@ -1291,133 +1356,62 @@ function FormHomeRecords({
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
-          {activeView === "records" ? (
-            <>
-              {canUseViewDevelopment && viewConfigDirty ? (
-                <div className="flex shrink-0 items-center justify-between gap-3 rounded-lg border border-[var(--color-primary)]/30 bg-[var(--color-primary-soft)] px-4 py-2 text-sm text-[var(--color-primary)]">
-                  <span>你调整了显示配置，是否需要保存配置？</span>
-                  <Button size="sm" onPress={saveViewConfig}>
-                    保存配置
-                  </Button>
-                </div>
-              ) : null}
-              {isViewConfigReady ? (
-                <RecordsTable
-                  key={`${activeViewId}:${JSON.stringify(effectiveViewConfig.columnWidths ?? {})}`}
-                  fields={configuredFields}
-                  builtinFields={configuredBuiltinFields}
-                  columnOrder={orderedViewFieldIds}
-                  frozenFieldIds={effectiveViewConfig.frozenFieldIds ?? []}
-                  formType={formType}
-                  sortableFieldIds={sortableFieldIds}
-                  columnWidths={effectiveViewConfig.columnWidths ?? {}}
-                  sorts={effectiveViewConfig.sorts}
-                  formName={formMetadataName || schema.formName || formUuid}
-                  schema={schema}
-                  records={
-                    searchedRecords as Parameters<
-                      typeof RecordsTable
-                    >[0]["records"]
-                  }
-                  pagination={{
-                    page: recordsQuery.data?.page ?? recordPage,
-                    pageSize: recordsQuery.data?.pageSize ?? recordPageSize,
-                    total: recordsQuery.data?.total ?? 0,
-                    onPageChange: setRecordPage,
-                    onPageSizeChange: (nextPageSize) => {
-                      setRecordPageSize(nextPageSize);
-                      setRecordPage(1);
-                    },
-                  }}
-                  submitting={submitting}
-                  deletingRecordId={deletingRecordId}
-                  selectedRecordIds={selectedRecordIds}
-                  onDeleteRecord={handleDeleteRecord}
-                  onUpdateRecord={handleUpdateRecord}
-                  onWorkflowAction={handleWorkflowAction}
-                  canEditRecord={canEditRecord}
-                  canDeleteRecord={canDeleteRecord}
-                  urlParams={{ appId, formUuid }}
-                  onRecordSelectionChange={toggleRecordSelection}
-                  onViewConfigChange={(patch) => {
-                    setRecordPage(1);
-                    setPendingViewConfig((current) => ({
-                      ...(current ?? effectiveViewConfig),
-                      ...patch,
-                    }));
-                  }}
-                  initialRecordId={searchParams.get("record") ?? undefined}
-                />
-              ) : (
-                <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-[var(--color-text-secondary)]">
-                  正在加载视图配置...
-                </div>
-              )}
-            </>
+          {canUseViewDevelopment && viewConfigDirty ? (
+            <div className="flex shrink-0 items-center justify-between gap-3 rounded-lg border border-[var(--color-primary)]/30 bg-[var(--color-primary-soft)] px-4 py-2 text-sm text-[var(--color-primary)]">
+              <span>你调整了显示配置，是否需要保存配置？</span>
+              <Button size="sm" onPress={saveViewConfig}>
+                保存配置
+              </Button>
+            </div>
+          ) : null}
+          {isViewConfigReady ? (
+            <RecordsTable
+              fields={configuredFields}
+              builtinFields={configuredBuiltinFields}
+              columnOrder={orderedViewFieldIds}
+              frozenFieldIds={effectiveViewConfig.frozenFieldIds ?? EMPTY_FROZEN_FIELD_IDS}
+              formType={formType}
+              sortableFieldIds={sortableFieldIds}
+              columnWidths={effectiveViewConfig.columnWidths ?? EMPTY_COLUMN_WIDTHS}
+              sorts={effectiveViewConfig.sorts}
+              formName={formMetadataName || schema.formName || formUuid}
+              schema={schema}
+              records={searchedRecords as Parameters<typeof RecordsTable>[0]["records"]}
+              pagination={{
+                page: recordsQuery.data?.page ?? recordPage,
+                pageSize: recordsQuery.data?.pageSize ?? recordPageSize,
+                total: recordsQuery.data?.total ?? 0,
+                onPageChange: setRecordPage,
+                onPageSizeChange: (nextPageSize) => {
+                  setRecordPageSize(nextPageSize);
+                  setRecordPage(1);
+                },
+              }}
+              submitting={submitting}
+              deletingRecordId={deletingRecordId}
+              selectedRecordIds={selectedRecordIds}
+              onDeleteRecord={handleDeleteRecord}
+              onUpdateRecord={handleUpdateRecord}
+              onWorkflowAction={handleWorkflowAction}
+              onCompleteExecutionTask={handleCompleteExecutionTask}
+              canEditRecord={canEditRecord}
+              canDeleteRecord={canDeleteRecord}
+              urlParams={{ appId, formUuid }}
+              onRecordSelectionChange={toggleRecordSelection}
+              onPageSelectionChange={updatePageSelection}
+              onViewConfigChange={(patch) => {
+                setRecordPage(1);
+                setPendingViewConfig((current) => ({
+                  ...(current ?? effectiveViewConfig),
+                  ...patch,
+                }));
+              }}
+              initialRecordId={searchParams.get("record") ?? undefined}
+              initialTaskId={executionTaskId}
+            />
           ) : (
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {detailSourceFormUuid ? (
-                <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 py-2.5">
-                  <div className="min-w-0">
-                    <div className="text-xs font-medium text-[var(--color-text-secondary)]">
-                      归属主记录
-                    </div>
-                    <div className="mt-0.5 truncate text-sm text-[var(--color-text-primary)]">
-                      {detailParentRecordUuid
-                        ? getDetailParentRecordLabel(
-                            detailParentRecords.find(
-                              (record) => record.id === detailParentRecordUuid,
-                            ),
-                            detailPrimaryDisplayFieldId,
-                            detailSecondaryDisplayFieldId,
-                            detailParentRecordUuid,
-                          )
-                        : "请选择此明细数据归属的主记录"}
-                    </div>
-                  </div>
-                  <Dropdown>
-                    <Dropdown.Trigger
-                      aria-label="选择归属主记录"
-                      className="inline-flex h-8 shrink-0 items-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2.5 text-xs text-[var(--color-text-primary)]"
-                    >
-                      选择记录
-                    </Dropdown.Trigger>
-                    <Dropdown.Popover>
-                      <Dropdown.Menu aria-label="选择归属主记录">
-                        {detailParentRecords.map((record) => (
-                          <Dropdown.Item
-                            key={record.id}
-                            id={record.id}
-                            onAction={() =>
-                              setDetailParentRecordUuid(record.id)
-                            }
-                          >
-                            {getDetailParentRecordLabel(
-                              record,
-                              detailPrimaryDisplayFieldId,
-                              detailSecondaryDisplayFieldId,
-                            )}
-                          </Dropdown.Item>
-                        ))}
-                        {detailParentRecords.length === 0 ? (
-                          <Dropdown.Item id="empty" isDisabled>
-                            暂无可选主记录
-                          </Dropdown.Item>
-                        ) : null}
-                      </Dropdown.Menu>
-                    </Dropdown.Popover>
-                  </Dropdown>
-                </div>
-              ) : null}
-              <RuntimeFormSurface>
-                <RuntimeFormPanel
-                  schema={schema}
-                  submitLabel={submitButtonText}
-                  submitting={submitting}
-                  urlParams={{ appId, formUuid }}
-                  onSubmit={(values) => handleCreateRecord(values, "page")}
-                />
-              </RuntimeFormSurface>
+            <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-[var(--color-text-secondary)]">
+              正在加载视图配置...
             </div>
           )}
         </div>
@@ -1520,9 +1514,7 @@ function FormHomeRecords({
               <Drawer.Header>
                 <div className="flex w-full items-center justify-between gap-4">
                   <div>
-                    <Drawer.Heading>
-                      <Typography type="h3">新增数据</Typography>
-                    </Drawer.Heading>
+                    <Drawer.Heading>新增数据</Drawer.Heading>
                   </div>
                 </div>
               </Drawer.Header>
@@ -2154,9 +2146,9 @@ function FormHomeRecords({
       >
         <AlertDialog.Backdrop className="theme-modal-backdrop">
           <AlertDialog.Container placement="center" size="md">
-            <AlertDialog.Dialog className="theme-menu-surface rounded-xl shadow-[var(--shadow-dialog)]">
-              <AlertDialog.Header className="border-b border-[var(--color-border)]">
-                <AlertDialog.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
+            <AlertDialog.Dialog>
+              <AlertDialog.Header>
+                <AlertDialog.Heading>
                   删除视图
                 </AlertDialog.Heading>
               </AlertDialog.Header>
@@ -2174,7 +2166,6 @@ function FormHomeRecords({
                 </Button>
                 <Button
                   isDisabled={viewDeleteTarget === null}
-                  className="bg-[var(--color-danger)] text-[var(--color-text-on-primary)]"
                   onPress={handleConfirmDeleteView}
                 >
                   确认删除

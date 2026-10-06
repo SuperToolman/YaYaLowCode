@@ -1,3 +1,5 @@
+import { reportSystemFailure } from "./system-notification";
+
 export type ApiEnvelope<T> = {
   code: number;
   data: T | null;
@@ -29,12 +31,19 @@ export function isRequestAborted(error: unknown): boolean {
   );
 }
 
-export type ApiRequestInit = RequestInit & { timeoutMs?: number };
+export function isSystemRequestError(error: unknown): boolean {
+  return error instanceof ApiRequestError && (
+    error.kind === "network" || error.kind === "timeout" || error.kind === "invalid-response" ||
+    (error.kind === "http" && error.status >= 500)
+  );
+}
+
+export type ApiRequestInit = RequestInit & { timeoutMs?: number; suppressAuthNotification?: boolean };
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 export async function fetchWithControl(input: RequestInfo | URL, init: ApiRequestInit = {}): Promise<Response> {
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, signal: initSignal, ...requestInit } = init;
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, suppressAuthNotification = false, signal: initSignal, ...requestInit } = init;
   const signal = initSignal ?? (input instanceof Request ? input.signal : undefined);
   const timeoutController = new AbortController();
   const timeoutId = globalThis.setTimeout(() => timeoutController.abort("timeout"), timeoutMs);
@@ -62,14 +71,22 @@ export async function fetchWithControl(input: RequestInfo | URL, init: ApiReques
   }
 
   try {
-    return await fetch(input, { ...requestInit, signal: combinedSignal });
+    const response = await fetch(input, { ...requestInit, signal: combinedSignal });
+    if (response.status === 401 && !suppressAuthNotification) reportSystemFailure("auth");
+    else if (response.status >= 500) reportSystemFailure("server");
+    return response;
   } catch (error) {
+    if (signal?.aborted) {
+      throw new ApiRequestError("请求已取消", 0, "aborted", undefined, { cause: error });
+    }
     if (timeoutController.signal.aborted) {
+      reportSystemFailure("timeout");
       throw new ApiRequestError(`请求超时 (${timeoutMs}ms)`, 0, "timeout", undefined, { cause: error });
     }
     if (combinedSignal.aborted) {
       throw new ApiRequestError("请求已取消", 0, "aborted", undefined, { cause: error });
     }
+    reportSystemFailure("network");
     throw new ApiRequestError("网络请求失败", 0, "network", undefined, { cause: error });
   } finally {
     if (externalAbortHandler && signal) {
@@ -86,6 +103,7 @@ export async function requestApi<T>(
   init?: ApiRequestInit,
 ): Promise<T> {
   const response = await fetchWithControl(path, init);
+  if (response.status === 204) return undefined as T;
   const payload = await response.json().catch(() => null) as ApiEnvelope<T> | null;
 
   if (!response.ok) {
@@ -96,7 +114,10 @@ export async function requestApi<T>(
       payload?.code,
     );
   }
-  if (!payload) throw new ApiRequestError("服务返回了无效响应", response.status, "invalid-response");
+  if (!payload || typeof payload.code !== "number" || typeof payload.message !== "string") {
+    reportSystemFailure("invalid-response");
+    throw new ApiRequestError("服务返回了无效响应", response.status, "invalid-response");
+  }
   if (payload.code !== 0) throw new ApiRequestError(payload.message || "业务请求失败", response.status, "business", payload.code);
 
   return payload.data as T;

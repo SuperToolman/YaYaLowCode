@@ -9,107 +9,6 @@
     "version": "0.2.0-alpha.0"
   },
   "paths": {
-    "/api/agent/knowledge-bases": {
-      "get": {
-        "tags": [],
-        "operationId": "listKnowledgeBases",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_AgentKnowledgeBaseDefinition"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [],
-        "operationId": "createKnowledgeBase",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/KnowledgeBaseRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentKnowledgeBaseDefinition"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agent/knowledge-bases/{id}": {
-      "put": {
-        "tags": [],
-        "operationId": "updateKnowledgeBase",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/KnowledgeBaseRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AgentKnowledgeBaseDefinition"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [],
-        "operationId": "deleteKnowledgeBase",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response"
-          }
-        }
-      }
-    },
     "/api/agent/plugins": {
       "get": {
         "tags": [],
@@ -4006,6 +3905,44 @@
         }
       }
     },
+    "/api/workflow/tasks/{taskUuid}/complete": {
+      "post": {
+        "tags": [],
+        "operationId": "completeWorkflowExecution",
+        "parameters": [
+          {
+            "name": "taskUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowExecutionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workflow/tasks/{taskUuid}/reject": {
       "post": {
         "tags": [],
@@ -4091,41 +4028,6 @@
           },
           "licenseCenterUrl": {
             "type": "string"
-          }
-        }
-      },
-      "AgentKnowledgeBaseDefinition": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "enabled",
-          "retrievalMode"
-        ],
-        "properties": {
-          "content": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "retrievalMode": {
-            "type": "string"
-          },
-          "sourceIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
           }
         }
       },
@@ -4302,6 +4204,12 @@
               "null"
             ]
           },
+          "archivedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "context": {},
           "createdAt": {
             "type": "string"
@@ -4313,6 +4221,12 @@
             "type": "boolean"
           },
           "modelProvider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parentSessionId": {
             "type": [
               "string",
               "null"
@@ -4594,14 +4508,9 @@
           "items",
           "total",
           "enabled",
-          "paused",
-          "draft"
+          "paused"
         ],
         "properties": {
-          "draft": {
-            "type": "integer",
-            "format": "int64"
-          },
           "enabled": {
             "type": "integer",
             "format": "int64"
@@ -5134,61 +5043,6 @@
           }
         }
       },
-      "ApiResponse_AgentKnowledgeBaseDefinition": {
-        "type": "object",
-        "required": [
-          "code",
-          "message",
-          "time"
-        ],
-        "properties": {
-          "code": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "data": {
-            "type": "object",
-            "required": [
-              "id",
-              "name",
-              "enabled",
-              "retrievalMode"
-            ],
-            "properties": {
-              "content": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              },
-              "enabled": {
-                "type": "boolean"
-              },
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "type": "string"
-              },
-              "retrievalMode": {
-                "type": "string"
-              },
-              "sourceIds": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "message": {
-            "type": "string"
-          },
-          "time": {
-            "type": "string"
-          }
-        }
-      },
       "ApiResponse_AgentPluginDefinition": {
         "type": "object",
         "required": [
@@ -5280,6 +5134,12 @@
                   "null"
                 ]
               },
+              "archivedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "context": {},
               "createdAt": {
                 "type": "string"
@@ -5291,6 +5151,12 @@
                 "type": "boolean"
               },
               "modelProvider": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "parentSessionId": {
                 "type": [
                   "string",
                   "null"
@@ -5672,14 +5538,9 @@
               "items",
               "total",
               "enabled",
-              "paused",
-              "draft"
+              "paused"
             ],
             "properties": {
-              "draft": {
-                "type": "integer",
-                "format": "int64"
-              },
               "enabled": {
                 "type": "integer",
                 "format": "int64"
@@ -6313,6 +6174,7 @@
               "sequence",
               "messageType",
               "content",
+              "payload",
               "fileIds",
               "attachments",
               "status",
@@ -6349,9 +6211,23 @@
               "id": {
                 "type": "string"
               },
+              "localId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "mailboxSeq": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64"
+              },
               "messageType": {
                 "type": "string"
               },
+              "payload": {},
               "replacesMessageId": {
                 "type": [
                   "string",
@@ -7747,64 +7623,6 @@
           }
         }
       },
-      "ApiResponse_Vec_AgentKnowledgeBaseDefinition": {
-        "type": "object",
-        "required": [
-          "code",
-          "message",
-          "time"
-        ],
-        "properties": {
-          "code": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "data": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "id",
-                "name",
-                "enabled",
-                "retrievalMode"
-              ],
-              "properties": {
-                "content": {
-                  "type": "string"
-                },
-                "description": {
-                  "type": "string"
-                },
-                "enabled": {
-                  "type": "boolean"
-                },
-                "id": {
-                  "type": "string"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "retrievalMode": {
-                  "type": "string"
-                },
-                "sourceIds": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          },
-          "message": {
-            "type": "string"
-          },
-          "time": {
-            "type": "string"
-          }
-        }
-      },
       "ApiResponse_Vec_AgentPluginDefinition": {
         "type": "object",
         "required": [
@@ -7997,6 +7815,12 @@
                     "null"
                   ]
                 },
+                "archivedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "context": {},
                 "createdAt": {
                   "type": "string"
@@ -8008,6 +7832,12 @@
                   "type": "boolean"
                 },
                 "modelProvider": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "parentSessionId": {
                   "type": [
                     "string",
                     "null"
@@ -9252,8 +9082,7 @@
         "type": "string",
         "enum": [
           "enabled",
-          "paused",
-          "draft"
+          "paused"
         ]
       },
       "AutomationTriggerEvent": {
@@ -9456,6 +9285,7 @@
           "sequence",
           "messageType",
           "content",
+          "payload",
           "fileIds",
           "attachments",
           "status",
@@ -9492,9 +9322,23 @@
           "id": {
             "type": "string"
           },
+          "localId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mailboxSeq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "messageType": {
             "type": "string"
           },
+          "payload": {},
           "replacesMessageId": {
             "type": [
               "string",
@@ -10234,39 +10078,6 @@
           }
         }
       },
-      "KnowledgeBaseRequest": {
-        "type": "object",
-        "required": [
-          "name",
-          "description",
-          "enabled",
-          "retrievalMode",
-          "sourceIds"
-        ],
-        "properties": {
-          "content": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "name": {
-            "type": "string"
-          },
-          "retrievalMode": {
-            "type": "string"
-          },
-          "sourceIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
       "LocalLoginRequest": {
         "type": "object",
         "required": [
@@ -10567,9 +10378,6 @@
           "instructions": {
             "type": "string"
           },
-          "isSystem": {
-            "type": "boolean"
-          },
           "packageName": {
             "type": "string"
           },
@@ -10579,9 +10387,6 @@
           "pluginManifestJson": {
             "type": "string",
             "description": "Canonical DSH Plugin manifest emitted by the operation center/package\ninstaller. Kept on the signed entitlement so Host can build its\nemployee-scoped plugin registry without reading the database directly."
-          },
-          "requiresConfirmation": {
-            "type": "boolean"
           },
           "source": {
             "type": "string"
@@ -11027,6 +10832,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "localId": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -11171,6 +10982,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "localId": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "messageType": {
             "type": "string"
@@ -11917,6 +11734,21 @@
           }
         }
       },
+      "WorkflowExecutionRequest": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data": {}
+        }
+      },
       "WorkflowPauseRequest": {
         "type": "object",
         "properties": {
@@ -11931,7 +11763,20 @@
       "WorkflowTaskActionRequest": {
         "type": "object",
         "properties": {
+          "cardVersion": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
           "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "messageId": {
             "type": [
               "string",
               "null"

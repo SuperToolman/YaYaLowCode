@@ -1,4 +1,5 @@
-﻿"use client";
+"use client";
+import { notify } from "@lib/notify";
 
 import {
   useCallback,
@@ -14,10 +15,11 @@ import {
   Dropdown,
   Input,
   ListBox,
+  Pagination,
   Select,
+  Table,
   Tabs,
   Tooltip,
-  toast,
 } from "@heroui/react";
 import { AlertDialog } from "@heroui/react/alert-dialog";
 import { Modal } from "@heroui/react/modal";
@@ -36,6 +38,7 @@ import {
   type AutomationFlowList,
   type FormSummary,
 } from "@/features/automation-editor/api";
+import { MySurface } from "@/components/ui/MySurface";
 import {
   Plus as AddIcon,
   FileText as FormIcon,
@@ -44,7 +47,6 @@ import {
   ArrowRotateLeft,
 } from "@gravity-ui/icons";
 import { statusMeta, type AutomationStatus } from "./AutomationShared";
-import { MySurface } from "@shared/ui/MySurface";
 
 type AutomationsPageClientProps = {
   appId: string;
@@ -52,12 +54,12 @@ type AutomationsPageClientProps = {
 
 type RunLogFilter = "all" | "failed" | "success" | "running";
 type AutomationTypeFilter = "all" | "trigger" | "process";
+const AUTOMATIONS_PAGE_SIZE = 10;
 const emptyAutomationList: AutomationFlowList = {
   items: [],
   total: 0,
   enabled: 0,
   paused: 0,
-  draft: 0,
 };
 
 export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
@@ -67,6 +69,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
   const [forms, setForms] = useState<FormSummary[]>([]);
   const [keyword, setKeyword] = useState("");
   const [typeFilter, setTypeFilter] = useState<AutomationTypeFilter>("all");
+  const [automationPage, setAutomationPage] = useState(1);
   const [errorMessage, setErrorMessage] = useState("");
   const [busyAutomationId, setBusyAutomationId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AutomationFlow | null>(null);
@@ -84,9 +87,19 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
   const [retryingKey, setRetryingKey] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const isMountedRef = useRef(false);
   const latestLoadRequestRef = useRef(0);
 
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      latestLoadRequestRef.current += 1;
+    };
+  }, []);
+
   const loadData = useCallback(async () => {
+    if (!isMountedRef.current) return;
     const requestId = ++latestLoadRequestRef.current;
     setErrorMessage("");
     setIsLoading(true);
@@ -121,18 +134,27 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
         throw new Error("load forms failed");
       }
 
-      if (requestId === latestLoadRequestRef.current) {
+      if (
+        isMountedRef.current &&
+        requestId === latestLoadRequestRef.current
+      ) {
         setAutomationList(flowsResult.data.data);
         setForms(formsResult.data.data);
       }
     } catch {
-      if (requestId === latestLoadRequestRef.current) {
+      if (
+        isMountedRef.current &&
+        requestId === latestLoadRequestRef.current
+      ) {
         setErrorMessage(
           "集成自动化数据加载失败，请确认后端服务和数据库已启动。",
         );
       }
     } finally {
-      if (requestId === latestLoadRequestRef.current) {
+      if (
+        isMountedRef.current &&
+        requestId === latestLoadRequestRef.current
+      ) {
         setIsLoading(false);
       }
     }
@@ -173,6 +195,25 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
         .includes(normalizedKeyword);
     });
   }, [automationList.items, formNameByUuid, keyword, typeFilter]);
+  const automationPageCount = Math.max(
+    1,
+    Math.ceil(filteredAutomations.length / AUTOMATIONS_PAGE_SIZE),
+  );
+  const activeAutomationPage = Math.min(automationPage, automationPageCount);
+  const pagedAutomations = useMemo(() => {
+    const start = (activeAutomationPage - 1) * AUTOMATIONS_PAGE_SIZE;
+    return filteredAutomations.slice(start, start + AUTOMATIONS_PAGE_SIZE);
+  }, [activeAutomationPage, filteredAutomations]);
+
+  function updateKeyword(value: string) {
+    setKeyword(value);
+    setAutomationPage(1);
+  }
+
+  function updateTypeFilter(value: AutomationTypeFilter) {
+    setTypeFilter(value);
+    setAutomationPage(1);
+  }
 
   function openCreateModal() {
     const formUuid = forms[0]?.id ?? "";
@@ -219,10 +260,10 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
           ...current,
           items: [createdFlow, ...current.items],
           total: current.total + 1,
-          draft: current.draft + 1,
+          paused: current.paused + 1,
         }));
         setCreateOpen(false);
-        toast.success("集成自动化已创建");
+        notify.success("集成自动化已创建");
         router.push(`/${appId}/automations/${createdFlow.id}`);
       } catch {
         setErrorMessage("创建集成自动化失败，请检查触发表单配置。");
@@ -252,7 +293,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
       setAutomationList((current) =>
         rebuildAutomationList(current, updatedFlow),
       );
-      toast.success(nextStatus === "enabled" ? "自动化已启用" : "自动化已停用");
+      notify.success(nextStatus === "enabled" ? "自动化已启动" : "自动化已停止");
     } catch {
       setErrorMessage("更新自动化状态失败。");
     } finally {
@@ -283,7 +324,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
         removeAutomationFromList(current, deleteTarget),
       );
       setDeleteTarget(null);
-      toast.success("集成自动化已删除");
+      notify.success("集成自动化已删除");
     } catch {
       setErrorMessage("删除集成自动化失败。");
     } finally {
@@ -308,7 +349,7 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
       setRunLogs(data.data);
     } catch {
       setRunLogs([]);
-      toast.danger("运行日志加载失败");
+      notify.error("运行日志加载失败");
     } finally {
       setLogsLoading(false);
     }
@@ -324,12 +365,12 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
       if (error || !data || data.code !== 0) {
         throw new Error("retry run failed");
       }
-      toast.success("已重新触发自动化");
+      notify.success("已重新触发自动化");
       if (logsTarget?.id === flowId) {
         await openRunLogs(logsTarget);
       }
     } catch {
-      toast.danger("重新触发失败");
+      notify.error("重新触发失败");
     } finally {
       setRetryingKey(null);
     }
@@ -349,12 +390,12 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
       if (error || !data || data.code !== 0) {
         throw new Error("retry node failed");
       }
-      toast.success("已发起错误节点重试");
+      notify.success("已发起错误节点重试");
       if (logsTarget?.id === flowId) {
         await openRunLogs(logsTarget);
       }
     } catch {
-      toast.danger("节点重试失败");
+      notify.error("节点重试失败");
     } finally {
       setRetryingKey(null);
     }
@@ -402,20 +443,32 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
 
   return (
     <div className="mx-auto flex h-full min-h-0 w-full flex-col gap-4 text-[var(--color-text-primary)]">
-      <section className="flex justify-between">
-        <div className="min-w-0">
-          <h1 className="mt-3 text-2xl font-semibold tracking-normal text-[var(--color-text-primary)]">
+      <section className="flex items-center gap-3 overflow-x-auto rounded-xl">
+        <div className="min-w-[170px] shrink-0">
+          <h1 className="text-xl font-semibold tracking-normal text-[var(--color-text-primary)]">
             自动化流程
           </h1>
-          <p className="mt-2 max-w-[760px] ">
-            基于表单记录创建、编辑、删除事件触发后端业务处理，后续将在这里进入触发器和节点编排。
+          <p className="mt-1 truncate text-xs text-[var(--color-text-secondary)]">
+            管理触发器与流程自动化规则
           </p>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
+        <Input
+          aria-label="搜索自动化"
+          className="min-w-[220px] flex-1"
+          placeholder="搜索自动化"
+          value={keyword}
+          onChange={(event) => updateKeyword(event.currentTarget.value)}
+        />
+        <div className="flex shrink-0 items-center gap-2">
+          <Metric label="总数" value={automationList.total} />
+          <Metric label="已启动" value={automationList.enabled} tone="green" />
+          <Metric label="已停止" value={automationList.paused} tone="amber" />
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
           <Button
             isIconOnly
             variant="outline"
+            aria-label="刷新自动化列表"
             onClick={() => void loadData()}
             isDisabled={isLoading || isPending}
           >
@@ -423,36 +476,31 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
           </Button>
           <Button
             isIconOnly
+            aria-label="新增集成自动化"
             onClick={openCreateModal}
             isDisabled={forms.length === 0}
           >
             <AddIcon />
           </Button>
         </div>
-      </section>
-
-      <section className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex-1">
-          <div className="mb-2 text-xs font-medium text-[var(--color-text-secondary)]">
-            自动化类型
-          </div>
+        <div className="shrink-0">
           <Tabs
             selectedKey={typeFilter}
             onSelectionChange={(key) =>
-              setTypeFilter(key as AutomationTypeFilter)
+              updateTypeFilter(key as AutomationTypeFilter)
             }
           >
             <Tabs.ListContainer>
-              <Tabs.List aria-label="自动化类型筛选" className="w-full">
-                <Tabs.Tab id="all" className="flex-1 px-2 py-2 text-sm">
+              <Tabs.List aria-label="自动化类型筛选">
+                <Tabs.Tab id="all" className="px-3 text-xs whitespace-nowrap">
                   全部
                   <Tabs.Indicator />
                 </Tabs.Tab>
-                <Tabs.Tab id="trigger" className="flex-1 px-2 py-2 text-sm">
+                <Tabs.Tab id="trigger" className="px-3 text-xs whitespace-nowrap">
                   触发类型
                   <Tabs.Indicator />
                 </Tabs.Tab>
-                <Tabs.Tab id="process" className="flex-1 px-2 py-2 text-sm">
+                <Tabs.Tab id="process" className="px-3 text-xs whitespace-nowrap">
                   流程类型
                   <Tabs.Indicator />
                 </Tabs.Tab>
@@ -460,15 +508,6 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
             </Tabs.ListContainer>
           </Tabs>
         </div>
-        <MySurface className="flex-1 h-full">
-          {automationList.total}
-        </MySurface>
-        <MySurface className="flex-1 h-full">
-          {automationList.enabled}
-        </MySurface>
-        <MySurface className="flex-1 h-full">
-          {automationList.paused}
-        </MySurface>
       </section>
 
       {forms.length === 0 ? (
@@ -477,42 +516,23 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
         </div>
       ) : null}
 
-      <section className="theme-panel-strong flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl">
-        <div className="flex shrink-0 flex-col gap-3 border-b border-[var(--color-border)] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-[var(--color-text-primary)]">
-              规则列表
-            </h2>
-            <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-              当前只管理自动化定义，执行器和日志会在下一阶段接入。
-            </p>
-          </div>
-          <Input
-            aria-label="搜索自动化"
-            className="w-full lg:w-[320px]"
-            placeholder="搜索名称、触发表单或事件"
-            value={keyword}
-            onChange={(event) => setKeyword(event.currentTarget.value)}
-          />
-        </div>
-
-        {filteredAutomations.length > 0 ? (
-          <div className="min-h-0 flex-1 overflow-auto">
-            <table className="w-full min-w-[900px] border-collapse text-left text-sm">
-              <thead className="bg-[var(--color-bg-panel-soft)] text-xs font-medium text-[var(--color-text-secondary)]">
-                <tr>
-                  <th className="px-4 py-3">自动化名称</th>
-                  <th className="px-4 py-3">状态</th>
-                  <th className="px-4 py-3">触发表单</th>
-                  <th className="px-4 py-3">触发事件</th>
-                  <th className="px-4 py-3">节点</th>
-                  <th className="px-4 py-3">更新人</th>
-                  <th className="px-4 py-3">更新时间</th>
-                  <th className="w-[72px] px-4 py-3 text-right">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredAutomations.map((flow) => (
+      {filteredAutomations.length > 0 ? (
+        <div className="min-h-0 flex-1">
+          <Table className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]">
+              <Table.ScrollContainer className="min-h-0 max-w-full overflow-auto">
+                <Table.Content aria-label="集成自动化规则列表" className="min-w-[980px]">
+                  <Table.Header>
+                    <Table.Column id="name" isRowHeader>自动化名称</Table.Column>
+                    <Table.Column id="status">状态</Table.Column>
+                    <Table.Column id="form">触发表单</Table.Column>
+                    <Table.Column id="trigger">触发事件</Table.Column>
+                    <Table.Column id="nodes">节点</Table.Column>
+                    <Table.Column id="updatedBy">更新人</Table.Column>
+                    <Table.Column id="updatedAt">更新时间</Table.Column>
+                    <Table.Column id="actions">操作</Table.Column>
+                  </Table.Header>
+                  <Table.Body>
+                {pagedAutomations.map((flow) => (
                   <AutomationRow
                     key={flow.id}
                     flow={flow}
@@ -526,31 +546,71 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                     onDelete={() => setDeleteTarget(flow)}
                   />
                 ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <EmptyState
-            hasKeyword={keyword.trim().length > 0 || typeFilter !== "all"}
-          />
-        )}
-      </section>
+                  </Table.Body>
+                </Table.Content>
+              </Table.ScrollContainer>
+              <Table.Footer className="border-t border-[var(--color-border)]">
+                <Pagination size="sm" aria-label="自动化规则分页" className="w-full">
+                  <Pagination.Summary>
+                    共 {filteredAutomations.length} 条，每页 {AUTOMATIONS_PAGE_SIZE} 条
+                  </Pagination.Summary>
+                  <Pagination.Content>
+                    <Pagination.Item>
+                      <Pagination.Previous
+                        aria-label="上一页"
+                        isDisabled={activeAutomationPage === 1}
+                        onPress={() => setAutomationPage(activeAutomationPage - 1)}
+                      >
+                        <Pagination.PreviousIcon />
+                        上一页
+                      </Pagination.Previous>
+                    </Pagination.Item>
+                    {Array.from({ length: automationPageCount }, (_, index) => index + 1).map((page) => (
+                      <Pagination.Item key={page}>
+                        <Pagination.Link
+                          isActive={page === activeAutomationPage}
+                          onPress={() => setAutomationPage(page)}
+                        >
+                          {page}
+                        </Pagination.Link>
+                      </Pagination.Item>
+                    ))}
+                    <Pagination.Item>
+                      <Pagination.Next
+                        aria-label="下一页"
+                        isDisabled={activeAutomationPage === automationPageCount}
+                        onPress={() => setAutomationPage(activeAutomationPage + 1)}
+                      >
+                        下一页
+                        <Pagination.NextIcon />
+                      </Pagination.Next>
+                    </Pagination.Item>
+                  </Pagination.Content>
+                </Pagination>
+              </Table.Footer>
+          </Table>
+        </div>
+      ) : (
+        <EmptyState
+          hasKeyword={keyword.trim().length > 0 || typeFilter !== "all"}
+        />
+      )}
 
       {createOpen ? (
         <Modal isOpen={createOpen} onOpenChange={setCreateOpen}>
           <Modal.Trigger aria-hidden="true" tabIndex={-1} className="hidden" />
           <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
             <Modal.Container placement="center" size="lg">
-              <Modal.Dialog className="theme-menu-surface rounded-xl shadow-[var(--shadow-dialog)]">
-                <Modal.Header className="border-b border-[var(--color-border)]">
-                  <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
+              <Modal.Dialog>
+                <Modal.Header>
+                  <Modal.Heading>
                     新建集成自动化
                   </Modal.Heading>
                 </Modal.Header>
                 <Modal.Body className="space-y-4">
                   <div className="grid gap-4">
                     <div className="grid gap-1.5">
-                      <span className="text-sm font-medium text-[var(--color-text-primary)]">
+                      <span>
                         表单
                       </span>
                       <Select
@@ -601,13 +661,11 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                 <Modal.Footer>
                   <Button
                     variant="ghost"
-                    className="h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-4 text-[var(--color-text-primary)]"
                     onClick={() => setCreateOpen(false)}
                   >
                     取消
                   </Button>
                   <Button
-                    className="h-10 rounded-lg bg-[var(--color-primary)] px-4 text-[var(--color-text-on-primary)]"
                     onClick={() => void handleCreateAutomation()}
                     isDisabled={isPending || !createFormUuid}
                   >
@@ -631,9 +689,9 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
         />
         <AlertDialog.Backdrop className="theme-modal-backdrop">
           <AlertDialog.Container placement="center" size="md">
-            <AlertDialog.Dialog className="theme-menu-surface rounded-xl shadow-[var(--shadow-dialog)]">
-              <AlertDialog.Header className="border-b border-[var(--color-border)]">
-                <AlertDialog.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
+            <AlertDialog.Dialog>
+              <AlertDialog.Header>
+                <AlertDialog.Heading>
                   删除集成自动化
                 </AlertDialog.Heading>
               </AlertDialog.Header>
@@ -644,14 +702,12 @@ export function AutomationsPageClient({ appId }: AutomationsPageClientProps) {
                 <Button
                   variant="ghost"
                   onClick={() => setDeleteTarget(null)}
-                  className="h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-4 text-[var(--color-text-primary)]"
                 >
                   取消
                 </Button>
                 <Button
                   onClick={() => void handleDeleteAutomation()}
                   isDisabled={busyAutomationId === deleteTarget?.id}
-                  className="h-10 rounded-lg bg-[var(--color-danger)] px-4 text-[var(--color-text-on-primary)]"
                 >
                   删除
                 </Button>
@@ -921,12 +977,10 @@ function Metric({
         : "text-[var(--color-text-primary)]";
 
   return (
-    <div className="theme-panel rounded-lg px-4 py-3">
-      <div className="text-xs text-[var(--color-text-secondary)]">{label}</div>
-      <div className={`mt-2 text-2xl font-semibold ${toneClassName}`}>
-        {value}
-      </div>
-    </div>
+    <MySurface className="flex gap-2 items-center p-2">
+      <span className="whitespace-nowrap text-xs text-[var(--color-text-secondary)]">{label}</span>
+      <span className={`text-base font-semibold ${toneClassName}`}>{value}</span>
+    </MySurface>
   );
 }
 
@@ -950,10 +1004,10 @@ function AutomationRow({
   const status = statusMeta[flow.status];
 
   return (
-    <tr className="border-t border-[var(--color-border)] align-top hover:bg-[var(--color-bg-panel-soft)]">
-      <td className="px-4 py-4">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+    <Table.Row className="align-middle">
+      <Table.Cell className="min-w-[260px]">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
             <FormIcon />
           </span>
           <div className="min-w-0">
@@ -971,34 +1025,31 @@ function AutomationRow({
                 {flow.flowType === "process" ? "流程类型" : "触发类型"}
               </span>
             </div>
-            <div className="mt-1 max-w-[300px] truncate text-xs text-[var(--color-text-secondary)]">
-              {flow.description || flow.id}
-            </div>
           </div>
         </div>
-      </td>
-      <td className="px-4 py-4">
+      </Table.Cell>
+      <Table.Cell>
         <span
           className={`inline-flex items-center gap-2 rounded-md px-2 py-1 text-xs font-medium ${status.className}`}
         >
           <span className={`h-1.5 w-1.5 rounded-full ${status.dotClassName}`} />
           {status.label}
         </span>
-      </td>
-      <td className="px-4 py-4 text-[var(--color-text-primary)]">{formName}</td>
-      <td className="px-4 py-4 text-[var(--color-text-primary)]">
+      </Table.Cell>
+      <Table.Cell className="text-[var(--color-text-primary)]">{formName}</Table.Cell>
+      <Table.Cell className="text-[var(--color-text-primary)]">
         {flow.triggerLabel}
-      </td>
-      <td className="px-4 py-4 text-[var(--color-text-secondary)]">
+      </Table.Cell>
+      <Table.Cell className="text-[var(--color-text-secondary)]">
         {flow.nodesCount}
-      </td>
-      <td className="px-4 py-4 text-[var(--color-text-secondary)]">
+      </Table.Cell>
+      <Table.Cell className="text-[var(--color-text-secondary)]">
         {flow.updatedBy}
-      </td>
-      <td className="px-4 py-4 text-[var(--color-text-secondary)]">
+      </Table.Cell>
+      <Table.Cell className="text-[var(--color-text-secondary)]">
         {formatDateTime(flow.updatedAt)}
-      </td>
-      <td className="px-4 py-4 text-right">
+      </Table.Cell>
+      <Table.Cell className="text-right">
         <Dropdown>
           <Tooltip>
             <Tooltip.Trigger>
@@ -1021,7 +1072,7 @@ function AutomationRow({
                 isDisabled={isBusy}
                 onAction={onToggle}
               >
-                {flow.status === "enabled" ? "停用" : "启用"}
+                {flow.status === "enabled" ? "停止" : "启动"}
               </Dropdown.Item>
               <Dropdown.Item id="edit" onAction={onEdit}>
                 编辑编排
@@ -1040,8 +1091,8 @@ function AutomationRow({
             </Dropdown.Menu>
           </Dropdown.Popover>
         </Dropdown>
-      </td>
-    </tr>
+      </Table.Cell>
+    </Table.Row>
   );
 }
 
@@ -1057,7 +1108,7 @@ function EmptyState({ hasKeyword }: { hasKeyword: boolean }) {
       <p className="mt-2 max-w-[420px] ">
         {hasKeyword
           ? "调整搜索条件后再查看。"
-          : "新建后会先进入草稿状态，后续可以继续配置触发器条件和执行节点。"}
+          : "暂无自动化"}
       </p>
     </div>
   );
@@ -1089,7 +1140,6 @@ function buildAutomationList(items: AutomationFlow[]): AutomationFlowList {
     total: items.length,
     enabled: items.filter((flow) => flow.status === "enabled").length,
     paused: items.filter((flow) => flow.status === "paused").length,
-    draft: items.filter((flow) => flow.status === "draft").length,
   };
 }
 

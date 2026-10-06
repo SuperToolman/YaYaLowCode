@@ -1,6 +1,8 @@
 "use client";
+import { notify } from "@lib/notify";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ArrowRotateRight,
   CircleExclamation,
@@ -11,10 +13,8 @@ import {
   Button,
   Card,
   Chip,
-  Input,
   Popover,
   Tooltip,
-  toast,
 } from "@heroui/react";
 import { MySurface } from "@shared/ui/MySurface";
 import { openLicenseUpdatePrompt } from "@components/LicenseManagementModal";
@@ -49,14 +49,20 @@ const billingText = {
   one_time: "一次性购买",
 } as const;
 
-export default function AiEmployeeMarketPage() {
+export default function AiEmployeeMarketPage({
+  embedded = false,
+  query = "",
+}: {
+  embedded?: boolean;
+  query?: string;
+}) {
+  const router = useRouter();
   const [employees, setEmployees] = useState<MarketEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [currentTimestamp, setCurrentTimestamp] = useState(0);
-  const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [purchase, setPurchase] = useState<MarketEmployee | null>(null);
   const [error, setError] = useState("");
@@ -75,6 +81,10 @@ export default function AiEmployeeMarketPage() {
   }, []);
 
   useEffect(() => {
+    if (!embedded) {
+      router.replace("/market?tab=ai");
+      return;
+    }
     const timer = window.setTimeout(() => void load(), 0);
     const handleLicenseUpdated = () => void load();
     window.addEventListener("yaya-license-updated", handleLicenseUpdated);
@@ -82,7 +92,7 @@ export default function AiEmployeeMarketPage() {
       window.clearTimeout(timer);
       window.removeEventListener("yaya-license-updated", handleLicenseUpdated);
     };
-  }, [load]);
+  }, [embedded, load, router]);
 
   const categories = useMemo(
     () =>
@@ -122,10 +132,10 @@ export default function AiEmployeeMarketPage() {
     setInstallingId(employee.id);
     try {
       await installMarketAiEmployee<unknown>(employee.id);
-      toast.success("AI 员工已安装", { description: employee.title });
+      notify.success("AI 员工已安装", { description: employee.title });
       await load();
     } catch (cause) {
-      toast.danger("安装失败", {
+      notify.error("安装失败", {
         description: cause instanceof Error ? cause.message : "请稍后重试",
       });
     } finally {
@@ -137,10 +147,10 @@ export default function AiEmployeeMarketPage() {
     setSyncingId(employee.id);
     try {
       await installMarketAiEmployee<unknown>(employee.id);
-      toast.success("AI 员工已更新", { description: employee.title });
+      notify.success("AI 员工已更新", { description: employee.title });
       await load();
     } catch (cause) {
-      toast.danger("AI 员工更新失败", {
+      notify.error("AI 员工更新失败", {
         description: cause instanceof Error ? cause.message : "请稍后重试",
       });
     } finally {
@@ -152,10 +162,10 @@ export default function AiEmployeeMarketPage() {
     setRemovingId(employee.id);
     try {
       await uninstallMarketAiEmployee<unknown>(employee.id);
-      toast.success("AI 员工已移除", { description: employee.title });
+      notify.success("AI 员工已移除", { description: employee.title });
       await load();
     } catch (cause) {
-      toast.danger("AI 员工移除失败", {
+      notify.error("AI 员工移除失败", {
         description: cause instanceof Error ? cause.message : "请稍后重试",
       });
     } finally {
@@ -170,18 +180,20 @@ export default function AiEmployeeMarketPage() {
         orderNo: string;
         licenseId: string;
       }>(purchase.id);
-      toast.success("测试支付完成", {
+      notify.success("测试支付完成", {
         description: `订单 ${payload.orderNo} 已回款并签发新许可证`,
       });
       window.setTimeout(openLicenseUpdatePrompt, 0);
       return true;
     } catch (cause) {
-      toast.danger("测试支付失败", {
+      notify.error("测试支付失败", {
         description: cause instanceof Error ? cause.message : "请稍后重试",
       });
       return false;
     }
   }
+
+  if (!embedded) return null;
 
   return (
     <>
@@ -259,14 +271,7 @@ export default function AiEmployeeMarketPage() {
             <Summary label="运行中" value={runningCount} />
             <Summary label="已过期" value={expiredCount} />
           </div>
-          <div className="flex justify-between">
-            <Input
-              className="w-full xl:max-w-md"
-              aria-label="搜索 AI 员工"
-              placeholder="搜索名称、分类或能力"
-              value={query}
-              onChange={(event) => setQuery(event.currentTarget.value)}
-            />
+          <div className="flex justify-end">
             <div className="flex items-center justify-between gap-3 xl:justify-end">
               <p className="shrink-0 text-sm text-[var(--color-text-secondary)]">
                 {loading ? "正在更新" : `共 ${filtered.length} 位员工`}

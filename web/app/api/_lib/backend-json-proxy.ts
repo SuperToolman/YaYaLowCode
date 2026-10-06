@@ -5,6 +5,8 @@ export const backendBaseUrl = process.env.BACKEND_API_BASE_URL ?? "http://127.0.
 export function backendAuthorizationHeaders(
   request: Request,
 ): Record<string, string> {
+  const direct = request.headers.get("authorization")?.trim();
+  if (direct?.toLowerCase().startsWith("bearer ")) return { authorization: direct };
   const token = request.headers
     .get("cookie")
     ?.match(/(?:^|;\s*)yaya-auth-token=([^;]+)/)?.[1];

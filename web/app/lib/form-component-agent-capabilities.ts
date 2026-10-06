@@ -12,11 +12,14 @@ export type FormComponentAgentCapability = {
   writable: boolean;
   valueType: FormComponentAgentValueType;
   description: string;
+  capabilities?: Array<"create" | "configure" | "writeValue" | "readValue">;
+  constraints?: string[];
+  limitations?: string[];
   requiresUserInteraction?: boolean;
   example?: unknown;
 };
 
-export const FORM_COMPONENT_AGENT_CAPABILITIES_VERSION = 1;
+export const FORM_COMPONENT_AGENT_CAPABILITIES_VERSION = 2;
 
 export const FORM_COMPONENT_AGENT_CAPABILITIES: Record<string, FormComponentAgentCapability> = {
   groupContainer: { writable: false, valueType: "object", description: "布局分组容器，不产生独立表单值。" },
@@ -51,5 +54,19 @@ const UNKNOWN_COMPONENT_CAPABILITY: FormComponentAgentCapability = {
 };
 
 export function getFormComponentAgentCapability(type: string) {
-  return FORM_COMPONENT_AGENT_CAPABILITIES[type] ?? UNKNOWN_COMPONENT_CAPABILITY;
+  const legacy = FORM_COMPONENT_AGENT_CAPABILITIES[type];
+  const manifest = getComponentManifest(type);
+  if (!manifest) return legacy ?? UNKNOWN_COMPONENT_CAPABILITY;
+  const valueType = legacy?.valueType ?? (type === "multiSelect" ? "string[]" : type === "number" ? "number" : type === "date" ? "date" : "object");
+  return {
+    writable: legacy?.writable ?? manifest.agent.capabilities.includes("writeValue"),
+    valueType,
+    description: manifest.agent.purpose,
+    capabilities: manifest.agent.capabilities,
+    constraints: manifest.agent.constraints.map((constraint) => constraint.description),
+    limitations: manifest.agent.limitations,
+    requiresUserInteraction: legacy?.requiresUserInteraction,
+    example: legacy?.example,
+  } satisfies FormComponentAgentCapability;
 }
+import { getComponentManifest } from "./agent-development-contracts";

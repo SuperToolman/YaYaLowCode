@@ -14,7 +14,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN" className="h-full antialiased" suppressHydrationWarning>
-      <body className="min-h-full">
+      <body className="min-h-full" suppressHydrationWarning>
         {children}
         {/* Web Vitals Reporter是用于报告Web Vitals指标的组件 */}
         <WebVitalsReporter />

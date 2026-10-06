@@ -1,4 +1,5 @@
 "use client";
+import { notify } from "@lib/notify";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, Key } from "react";
@@ -11,7 +12,6 @@ import {
   Popover,
   RangeCalendar,
   Select,
-  toast,
 } from "@heroui/react";
 import styles from "./RuntimeFormControls.module.css";
 import { DateInputGroup } from "@heroui/react/date-input-group";
@@ -26,8 +26,11 @@ import {
   type CountryCityValue,
   type LocationCatalogItem,
 } from "@lib/location-catalog";
-import type { RuntimeFieldOption, RuntimeFieldProps, RuntimeSchemaField } from "./runtime-form-types";
-
+import type {
+  RuntimeFieldOption,
+  RuntimeFieldProps,
+  RuntimeSchemaField,
+} from "./runtime-form-types";
 
 function getOptionLabel(options: RuntimeFieldOption[], value: string) {
   return options.find((option) => option.value === value)?.label ?? "";
@@ -63,19 +66,27 @@ export function RuntimeSelect({
       aria-label={field.label}
       className={styles["form-runtime-controls__select-field"]}
       selectedKey={value || null}
-      onSelectionChange={(key: Key | null) => onChange(key === null ? "" : String(key))}
+      onSelectionChange={(key: Key | null) =>
+        onChange(key === null ? "" : String(key))
+      }
       isDisabled={Boolean(props.isDisabled || props.isReadOnly)}
       isRequired={props.isRequired}
       fullWidth
     >
       <Select.Trigger>
-        <Select.Value>{getOptionLabel(options, value) || placeholder}</Select.Value>
+        <Select.Value>
+          {getOptionLabel(options, value) || placeholder}
+        </Select.Value>
         <Select.Indicator />
       </Select.Trigger>
       <Select.Popover>
         <ListBox>
           {options.map((option) => (
-            <ListBox.Item key={option.value} id={option.value} textValue={option.label}>
+            <ListBox.Item
+              key={option.value}
+              id={option.value}
+              textValue={option.label}
+            >
               {option.label}
             </ListBox.Item>
           ))}
@@ -96,7 +107,10 @@ export function RuntimeCountryCitySelect({
   value: unknown;
   onChange: (value: CountryCityValue, eventName: "onChange") => void;
 }) {
-  const maxDepth = Math.min(4, Math.max(1, Math.round(props.locationDepth ?? 3)));
+  const maxDepth = Math.min(
+    4,
+    Math.max(1, Math.round(props.locationDepth ?? 3)),
+  );
   const popoverWidth = `${maxDepth === 1 ? 18 : maxDepth * 14}rem`;
   const [isOpen, setIsOpen] = useState(false);
   const [columns, setColumns] = useState<LocationCatalogItem[][]>([]);
@@ -108,13 +122,18 @@ export function RuntimeCountryCitySelect({
   const location = normalizeCountryCityValue(value);
   const isDisabled = Boolean(props.isDisabled || props.isReadOnly);
   const selectedPath = location.path;
-  const filteredColumns = useMemo(() => columns
-    .map((items, columnIndex) => ({
-      columnIndex,
-      items: searches[columnIndex]?.trim()
-        ? items.filter((item) => matchesLocationSearch(item, searches[columnIndex]))
-        : items,
-    })), [columns, searches]);
+  const filteredColumns = useMemo(
+    () =>
+      columns.map((items, columnIndex) => ({
+        columnIndex,
+        items: searches[columnIndex]?.trim()
+          ? items.filter((item) =>
+              matchesLocationSearch(item, searches[columnIndex]),
+            )
+          : items,
+      })),
+    [columns, searches],
+  );
 
   useEffect(() => {
     let active = true;
@@ -126,7 +145,9 @@ export function RuntimeCountryCitySelect({
         setLoadError("地区目录加载失败");
       })
       .finally(() => active && setIsLoading(false));
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, []);
 
   async function selectItem(item: LocationCatalogItem, columnIndex: number) {
@@ -148,9 +169,11 @@ export function RuntimeCountryCitySelect({
     try {
       const children = await listLocationChildren(item.code, item.depth + 1);
       setSelectionIsLeaf(children.length === 0);
-      setColumns((current) => children.length > 0
-        ? [...current.slice(0, columnIndex + 1), children]
-        : current.slice(0, columnIndex + 1));
+      setColumns((current) =>
+        children.length > 0
+          ? [...current.slice(0, columnIndex + 1), children]
+          : current.slice(0, columnIndex + 1),
+      );
     } catch {
       setSelectionIsLeaf(true);
       setColumns((current) => current.slice(0, columnIndex + 1));
@@ -161,7 +184,10 @@ export function RuntimeCountryCitySelect({
   }
 
   return (
-    <Popover isOpen={isOpen} onOpenChange={(next) => !isDisabled && setIsOpen(next)}>
+    <Popover
+      isOpen={isOpen}
+      onOpenChange={(next) => !isDisabled && setIsOpen(next)}
+    >
       <Popover.Trigger aria-label={field.label} className="block w-full">
         <div
           style={{ backgroundColor: "var(--field-background)" }}
@@ -170,29 +196,122 @@ export function RuntimeCountryCitySelect({
             isDisabled ? "cursor-not-allowed opacity-60" : "",
           ].join(" ")}
         >
-          <span className={[
-            "min-w-0 flex-1 truncate leading-5",
-            selectedPath.length === 0 ? "text-[var(--color-text-disabled)]" : "",
-          ].join(" ")}>
+          <span
+            className={[
+              "min-w-0 flex-1 truncate leading-5",
+              selectedPath.length === 0
+                ? "text-[var(--color-text-disabled)]"
+                : "",
+            ].join(" ")}
+          >
             {selectedPath.length > 0
               ? selectedPath.map((item) => getLocationLabel(item)).join(" / ")
-              : (props.placeholder || "请选择国家/地区")}
+              : props.placeholder || "请选择国家/地区"}
           </span>
-          <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-[var(--color-text-disabled)]" />
+          <ChevronDown
+            aria-hidden="true"
+            className="h-4 w-4 shrink-0 text-[var(--color-text-disabled)]"
+          />
         </div>
       </Popover.Trigger>
-      <Popover.Content className="max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl bg-[var(--color-bg-surface)] p-0 shadow-[var(--shadow-floating)]" style={{ width: `min(${popoverWidth}, calc(100vw - 2rem))` }}>
-        <Popover.Dialog aria-label={`${field.label}国家地区选择`} className="w-full min-w-0">
+      <Popover.Content
+        className="max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl bg-[var(--color-bg-surface)] p-0 shadow-[var(--shadow-floating)]"
+        style={{ width: `min(${popoverWidth}, calc(100vw - 2rem))` }}
+      >
+        <Popover.Dialog
+          aria-label={`${field.label}国家地区选择`}
+          className="w-full min-w-0"
+        >
           <div className="flex min-w-0 overflow-x-auto" role="listbox">
-            {filteredColumns.map(({ items, columnIndex }) => <div key={columnIndex} className={["flex h-72 shrink-0 flex-col border-r border-[var(--color-border)] last:border-r-0", maxDepth === 1 ? "w-full" : "w-56"].join(" ")}>
-              <div className="border-b border-[var(--color-border)] p-2"><Input aria-label={`搜索第${columnIndex + 1}级地区`} placeholder={`搜索第${columnIndex + 1}级地区`} value={searches[columnIndex] ?? ""} onChange={(event) => setSearches((current) => { const next = [...current]; next[columnIndex] = event.currentTarget.value; return next; })} fullWidth /></div>
-              <div className="min-h-0 flex-1 overflow-y-auto p-1">
-                {items.map((item) => <Button key={item.id || item.code} type="button" variant="ghost" className={["h-auto min-h-10 w-full justify-between rounded-lg px-2 py-1 text-left focus-visible:outline-none focus-visible:ring-0", activePath[columnIndex]?.code === item.code ? "bg-[var(--color-bg-hover)]" : ""].join(" ")} onPress={() => void selectItem(item, columnIndex)}><LocationOptionContent item={item} />{item.depth < maxDepth ? <span aria-hidden="true" className="ml-2 text-[var(--color-text-secondary)]">&gt;</span> : null}</Button>)}
-                {!isLoading && items.length === 0 ? <div className="px-2 py-5 text-center text-xs text-[var(--color-text-secondary)]">{loadError || (searches[columnIndex]?.trim() ? "没有匹配的地区" : "没有地区数据")}</div> : null}
+            {filteredColumns.map(({ items, columnIndex }) => (
+              <div
+                key={columnIndex}
+                className={[
+                  "flex h-72 shrink-0 flex-col border-r border-[var(--color-border)] last:border-r-0",
+                  maxDepth === 1 ? "w-full" : "w-56",
+                ].join(" ")}
+              >
+                <div className="border-b border-[var(--color-border)] p-2">
+                  <Input
+                    aria-label={`搜索第${columnIndex + 1}级地区`}
+                    placeholder={`搜索第${columnIndex + 1}级地区`}
+                    value={searches[columnIndex] ?? ""}
+                    onChange={(event) =>
+                      setSearches((current) => {
+                        const next = [...current];
+                        next[columnIndex] = event.currentTarget.value;
+                        return next;
+                      })
+                    }
+                    fullWidth
+                  />
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto p-1">
+                  {items.map((item) => (
+                    <Button
+                      key={item.id || item.code}
+                      type="button"
+                      variant="ghost"
+                      className={[
+                        "h-auto min-h-10 w-full justify-between rounded-lg px-2 py-1 text-left focus-visible:outline-none focus-visible:ring-0",
+                        activePath[columnIndex]?.code === item.code
+                          ? "bg-[var(--color-bg-hover)]"
+                          : "",
+                      ].join(" ")}
+                      onPress={() => void selectItem(item, columnIndex)}
+                    >
+                      <LocationOptionContent item={item} />
+                      {item.depth < maxDepth ? (
+                        <span
+                          aria-hidden="true"
+                          className="ml-2 text-[var(--color-text-secondary)]"
+                        >
+                          &gt;
+                        </span>
+                      ) : null}
+                    </Button>
+                  ))}
+                  {!isLoading && items.length === 0 ? (
+                    <div className="px-2 py-5 text-center text-xs text-[var(--color-text-secondary)]">
+                      {loadError ||
+                        (searches[columnIndex]?.trim()
+                          ? "没有匹配的地区"
+                          : "没有地区数据")}
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            </div>)}
+            ))}
           </div>
-          <div className="flex items-center justify-between border-t border-[var(--color-border)] p-2"><span className="min-w-0 truncate text-xs text-[var(--color-text-secondary)]">{activePath.map((item) => getLocationLabel(item)).join(" / ") || `请选择第 ${maxDepth} 级地区`}</span><Button type="button" size="sm" isDisabled={activePath.length === 0 || (activePath.length < maxDepth && !selectionIsLeaf)} onPress={() => { const selected = activePath.at(-1); if (!selected) return; onChange({ code: selected.code, depth: selected.depth, path: activePath.map(toStoredLocationItem) }, "onChange"); setIsOpen(false); }}>确认</Button></div>
+          <div className="flex items-center justify-between border-t border-[var(--color-border)] p-2">
+            <span className="min-w-0 truncate text-xs text-[var(--color-text-secondary)]">
+              {activePath.map((item) => getLocationLabel(item)).join(" / ") ||
+                `请选择第 ${maxDepth} 级地区`}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              isDisabled={
+                activePath.length === 0 ||
+                (activePath.length < maxDepth && !selectionIsLeaf)
+              }
+              onPress={() => {
+                const selected = activePath.at(-1);
+                if (!selected) return;
+                onChange(
+                  {
+                    code: selected.code,
+                    depth: selected.depth,
+                    path: activePath.map(toStoredLocationItem),
+                  },
+                  "onChange",
+                );
+                setIsOpen(false);
+              }}
+            >
+              确认
+            </Button>
+          </div>
         </Popover.Dialog>
       </Popover.Content>
     </Popover>
@@ -202,17 +321,25 @@ export function RuntimeCountryCitySelect({
 function matchesLocationSearch(item: LocationCatalogItem, query: string) {
   const keyword = query.trim().toLocaleLowerCase();
   if (!keyword) return true;
-  return item.name.toLocaleLowerCase().includes(keyword)
-    || Object.values(item.labels ?? {}).some((label) => label.toLocaleLowerCase().includes(keyword))
-    || item.code.toLocaleLowerCase().includes(keyword);
+  return (
+    item.name.toLocaleLowerCase().includes(keyword) ||
+    Object.values(item.labels ?? {}).some((label) =>
+      label.toLocaleLowerCase().includes(keyword),
+    ) ||
+    item.code.toLocaleLowerCase().includes(keyword)
+  );
 }
 
 function LocationOptionContent({ item }: { item: LocationCatalogItem }) {
   const label = getLocationLabel(item);
   return (
     <span className="flex min-w-0 flex-col py-0.5">
-      <span className="truncate text-sm text-[var(--color-text-primary)]">{label}</span>
-      <span className="truncate text-xs text-[var(--color-text-secondary)]">{item.name}</span>
+      <span className="truncate text-sm text-[var(--color-text-primary)]">
+        {label}
+      </span>
+      <span className="truncate text-xs text-[var(--color-text-secondary)]">
+        {item.name}
+      </span>
     </span>
   );
 }
@@ -239,14 +366,26 @@ export function RuntimeCheckboxOptions({
       {options.map((option) => {
         const isSelected = value.includes(option.value);
         return (
-          <label key={option.value} className={["inline-flex items-center gap-2 text-[12px] text-[var(--color-text-primary)]", isDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"].join(" ")}>
+          <label
+            key={option.value}
+            className={[
+              "inline-flex items-center gap-2 text-[12px] text-[var(--color-text-primary)]",
+              isDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+            ].join(" ")}
+          >
             <input
               aria-required={isRequired || undefined}
               type="checkbox"
               value={option.value}
               checked={isSelected}
               disabled={isDisabled}
-              onChange={(event) => onChange(event.target.checked ? [...value, option.value] : value.filter((item) => item !== option.value))}
+              onChange={(event) =>
+                onChange(
+                  event.target.checked
+                    ? [...value, option.value]
+                    : value.filter((item) => item !== option.value),
+                )
+              }
               className="h-4 w-4 accent-[var(--color-primary)]"
             />
             <span>{option.label}</span>
@@ -273,7 +412,9 @@ export function RuntimeMultiSelect({
   value: string[];
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const selectedLabels = value.map((item) => getOptionLabel(options, item)).filter(Boolean);
+  const selectedLabels = value
+    .map((item) => getOptionLabel(options, item))
+    .filter(Boolean);
 
   return (
     <div className="relative">
@@ -322,21 +463,30 @@ export function RuntimeUpload({
     const selectedFiles = Array.from(event.currentTarget.files ?? []);
     event.currentTarget.value = "";
     if (selectedFiles.length === 0) return;
-    if (field.type === "imageUpload" && selectedFiles.some((file) => !file.type.startsWith("image/"))) {
-      toast.danger("请选择图片文件");
+    if (
+      field.type === "imageUpload" &&
+      selectedFiles.some((file) => !file.type.startsWith("image/"))
+    ) {
+      notify.error("请选择图片文件");
       return;
     }
     const maxBytes = (props.maxFileSizeMb ?? 20) * 1024 * 1024;
     if (selectedFiles.some((file) => file.size > maxBytes)) {
-      toast.danger("文件超过大小限制", { description: `单个文件不能超过 ${props.maxFileSizeMb ?? 20} MB。` });
+      notify.error("文件超过大小限制", {
+        description: `单个文件不能超过 ${props.maxFileSizeMb ?? 20} MB。`,
+      });
       return;
     }
     setIsUploading(true);
     try {
       const uploaded = await Promise.all(selectedFiles.map(uploadRuntimeFile));
-      onFilesCommitted(props.multiple ? [...files, ...uploaded] : uploaded.slice(0, 1));
+      onFilesCommitted(
+        props.multiple ? [...files, ...uploaded] : uploaded.slice(0, 1),
+      );
     } catch (error) {
-      toast.danger("文件上传失败", { description: error instanceof Error ? error.message : "请稍后重试。" });
+      notify.error("文件上传失败", {
+        description: error instanceof Error ? error.message : "请稍后重试。",
+      });
     } finally {
       setIsUploading(false);
     }
@@ -365,12 +515,90 @@ export function RuntimeUpload({
         tabIndex={-1}
         onChange={handleFileChange}
       />
-      {files.length > 0 ? <div className={field.type === "imageUpload" ? "mt-3 grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2" : "mt-2 space-y-1"}>{files.map((file) => field.type === "imageUpload" ? <div key={file.fileId} className="relative min-w-0 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)]"><Image src={`/api/files/${encodeURIComponent(file.fileId)}/download`} alt={file.name} width={112} height={80} unoptimized className="h-20 w-full object-cover" /><div className="truncate px-2 py-1 text-xs text-[var(--color-text-secondary)]" title={file.name}>{file.name}</div><button type="button" aria-label={`删除${file.name}`} className="absolute right-1 top-1 h-5 w-5 rounded bg-black/60 text-xs text-white" disabled={isDisabled || isUploading} onClick={() => onFilesCommitted(files.filter((item) => item.fileId !== file.fileId))}>×</button></div> : <div key={file.fileId} className="flex items-center justify-between gap-2 text-xs text-[var(--color-text-secondary)]"><a className="min-w-0 truncate text-[var(--color-primary)]" href={`/api/files/${encodeURIComponent(file.fileId)}/download`} target="_blank" rel="noreferrer">{file.name}</a><span className="shrink-0">{formatFileSize(file.size)}</span><button type="button" aria-label={`删除${file.name}`} className="shrink-0 text-[var(--color-danger)]" disabled={isDisabled || isUploading} onClick={() => onFilesCommitted(files.filter((item) => item.fileId !== file.fileId))}>删除</button></div>)}</div> : null}
+      {files.length > 0 ? (
+        <div
+          className={
+            field.type === "imageUpload"
+              ? "mt-3 grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2"
+              : "mt-2 space-y-1"
+          }
+        >
+          {files.map((file) =>
+            field.type === "imageUpload" ? (
+              <div
+                key={file.fileId}
+                className="relative min-w-0 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)]"
+              >
+                <Image
+                  src={`/api/files/${encodeURIComponent(file.fileId)}/download`}
+                  alt={file.name}
+                  width={112}
+                  height={80}
+                  unoptimized
+                  className="h-20 w-full object-cover"
+                />
+                <div
+                  className="truncate px-2 py-1 text-xs text-[var(--color-text-secondary)]"
+                  title={file.name}
+                >
+                  {file.name}
+                </div>
+                <button
+                  type="button"
+                  aria-label={`删除${file.name}`}
+                  className="absolute right-1 top-1 h-5 w-5 rounded bg-black/60 text-xs text-white"
+                  disabled={isDisabled || isUploading}
+                  onClick={() =>
+                    onFilesCommitted(
+                      files.filter((item) => item.fileId !== file.fileId),
+                    )
+                  }
+                >
+                  ×
+                </button>
+              </div>
+            ) : (
+              <div
+                key={file.fileId}
+                className="flex items-center justify-between gap-2 text-xs text-[var(--color-text-secondary)]"
+              >
+                <a
+                  className="min-w-0 truncate text-[var(--color-primary)]"
+                  href={`/api/files/${encodeURIComponent(file.fileId)}/download`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {file.name}
+                </a>
+                <span className="shrink-0">{formatFileSize(file.size)}</span>
+                <button
+                  type="button"
+                  aria-label={`删除${file.name}`}
+                  className="shrink-0 text-[var(--color-danger)]"
+                  disabled={isDisabled || isUploading}
+                  onClick={() =>
+                    onFilesCommitted(
+                      files.filter((item) => item.fileId !== file.fileId),
+                    )
+                  }
+                >
+                  删除
+                </button>
+              </div>
+            ),
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-type UploadedRuntimeFile = { fileId: string; name: string; size: number; mimeType: string };
+type UploadedRuntimeFile = {
+  fileId: string;
+  name: string;
+  size: number;
+  mimeType: string;
+};
 
 async function uploadRuntimeFile(file: File): Promise<UploadedRuntimeFile> {
   return uploadFile<UploadedRuntimeFile>(file);
@@ -378,7 +606,13 @@ async function uploadRuntimeFile(file: File): Promise<UploadedRuntimeFile> {
 
 function normalizeUploadedRuntimeFiles(value: unknown): UploadedRuntimeFile[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((item): item is UploadedRuntimeFile => Boolean(item && typeof item === "object" && typeof (item as UploadedRuntimeFile).fileId === "string"));
+  return value.filter((item): item is UploadedRuntimeFile =>
+    Boolean(
+      item &&
+      typeof item === "object" &&
+      typeof (item as UploadedRuntimeFile).fileId === "string",
+    ),
+  );
 }
 
 function formatFileSize(size: number) {
@@ -407,8 +641,17 @@ export function RuntimeDateRangePicker({
       defaultValue={defaultValue as never}
       isDisabled={props.isDisabled}
       isReadOnly={props.isReadOnly}
-      onChange={(nextValue: { start: { toString: () => string }; end: { toString: () => string } } | null) =>
-        onChange(nextValue ? [nextValue.start.toString(), nextValue.end.toString()] : [])
+      onChange={(
+        nextValue: {
+          start: { toString: () => string };
+          end: { toString: () => string };
+        } | null,
+      ) =>
+        onChange(
+          nextValue
+            ? [nextValue.start.toString(), nextValue.end.toString()]
+            : [],
+        )
       }
     >
       <DateInputGroup fullWidth>
@@ -436,7 +679,9 @@ export function RuntimeDateRangePicker({
           </RangeCalendar.Header>
           <RangeCalendar.Grid>
             <RangeCalendar.GridHeader>
-              {(day) => <RangeCalendar.HeaderCell>{day}</RangeCalendar.HeaderCell>}
+              {(day) => (
+                <RangeCalendar.HeaderCell>{day}</RangeCalendar.HeaderCell>
+              )}
             </RangeCalendar.GridHeader>
             <RangeCalendar.GridBody>
               {(date) => <RangeCalendar.Cell date={date} />}

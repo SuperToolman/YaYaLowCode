@@ -1,7 +1,8 @@
 "use client";
+import { notify } from "@lib/notify";
 
 import { useEffect, useState } from "react";
-import { Button, Input, Surface, Switch, toast } from "@heroui/react";
+import { Button, Input, Surface, Switch } from "@heroui/react";
 import { isRequestAborted, jsonRequest, requestApi } from "@lib/api-request";
 import { Field } from "../components/Field";
 import { SettingsContentCard } from "../components/SettingsContentCard";
@@ -41,7 +42,7 @@ export default function NotificationSettingsPage() {
         setForm(settings);
       } catch (error) {
         if (!controller.signal.aborted && !isRequestAborted(error)) {
-          toast.danger("无法加载通知设置", { description: error instanceof Error ? error.message : "请稍后重试。" });
+          notify.error("无法加载通知设置", { description: error instanceof Error ? error.message : "请稍后重试。" });
         }
       } finally {
         if (!controller.signal.aborted) setLoading(false);
@@ -57,9 +58,9 @@ export default function NotificationSettingsPage() {
     try {
       const settings = await requestApi<NotificationSettings>("/api/settings/notifications", jsonRequest(form, { method: "PUT" }));
       setForm(settings);
-      toast.success("通知设置已保存");
+      notify.success("通知设置已保存");
     } catch (error) {
-      toast.danger("保存失败", { description: error instanceof Error ? error.message : "请稍后重试。" });
+      notify.error("保存失败", { description: error instanceof Error ? error.message : "请稍后重试。" });
     } finally { setSaving(false); }
   }
 

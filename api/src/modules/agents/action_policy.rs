@@ -55,6 +55,7 @@ pub(crate) fn is_supported_transaction(action_type: &str) -> bool {
             | "delete_navigation_group"
             | "create_detail_form"
             | "save_form_schema"
+            | "yaya_apply_design_patch"
             | "delete_form"
     )
 }

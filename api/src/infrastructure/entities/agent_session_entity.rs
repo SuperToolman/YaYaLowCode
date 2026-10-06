@@ -7,6 +7,7 @@ pub struct Model {
     pub id: Uuid,
     #[sea_orm(unique)]
     pub session_uuid: String,
+    pub parent_session_id: Option<Uuid>,
     pub agent_id: String,
     pub owner_user_id: Option<Uuid>,
     pub title: String,

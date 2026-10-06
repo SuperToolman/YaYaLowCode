@@ -37,21 +37,21 @@ export function MappingRowsEditor({
   return (
     <PropertyPanelSection
       title="字段设置"
-      description="必填字段会自动带出并禁止删除，新增字段按目标表单字段选择。"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-xs leading-5 text-[var(--color-text-secondary)]">
-          根据目标表单字段配置写入值。
-        </div>
+      description={lockRequiredRows
+        ? "必填字段会自动带出并禁止删除，新增字段按目标表单字段选择。"
+        : "选择需要更新的目标字段并配置写入值。"}
+      actions={
         <Button
-          className="h-8 rounded-md bg-[var(--color-primary)] px-3 text-[var(--color-text-on-primary)]"
-          onClick={onAddMappingRow}
+          size="sm"
+          variant="primary"
+          onPress={onAddMappingRow}
           isDisabled={targetFields.length === 0 || rows.length >= targetFields.length}
         >
           <AddIcon />
           添加字段
         </Button>
-      </div>
+      }
+    >
 
       {rows.length > 0 ? (
         <div className="space-y-3">
