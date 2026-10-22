@@ -2,6 +2,7 @@ use crate::infrastructure::entities::form_detail_definition_entity;
 use crate::infrastructure::entities::form_storage_definition_entity;
 use crate::infrastructure::entities::form_view_entity;
 use crate::infrastructure::entities::{iam_user_entity, organization_unit_entity};
+use crate::infrastructure::entities::{workflow_comment_entity, workflow_instance_entity};
 use crate::modules::automations;
 use crate::modules::navigation::{
     ensure_system_navigation_for_app, next_navigation_sort_order, normalize_navigation_orders,
@@ -52,6 +53,8 @@ pub(crate) async fn create_form_view(
     Path(form_uuid): Path<String>,
     Json(payload): Json<SaveFormViewRequest>,
 ) -> Result<Json<ApiResponse<FormViewResponse>>, AppError> {
+    crate::modules::view_custom_buttons::validate_view_config(&state, &form_uuid, &payload.config)
+        .await?;
     let name = payload.name.trim();
     if name.is_empty() {
         return Err(AppError::BadRequest("view name is required".to_string()));
@@ -81,6 +84,8 @@ pub(crate) async fn update_form_view(
     Path((form_uuid, view_uuid)): Path<(String, String)>,
     Json(payload): Json<SaveFormViewRequest>,
 ) -> Result<Json<ApiResponse<FormViewResponse>>, AppError> {
+    crate::modules::view_custom_buttons::validate_view_config(&state, &form_uuid, &payload.config)
+        .await?;
     if view_uuid == "default" {
         let now = Utc::now();
         let default_view = form_view_entity::Entity::find()
@@ -272,8 +277,9 @@ pub(crate) async fn get_form_schema_contract(
                 "label": "string; field display label belongs at the field top level",
                 "props": "object; component-specific settings belong inside props",
                 "requiredProperty": "props.isRequired (boolean)",
-                "optionsProperty": "props.options (array of {label, value}) for option controls",
-                "agentDataAccess": ["allow", "mask", "deny"]
+                "uniqueProperty": "props.isUnique (boolean); singleLineText, multiLineText, serialNumber only; exact nonempty value within the same form and field",
+                "formatProperty": "props.formatValidation: email | phoneCN | idCardCN; singleLineText only",
+                "optionsProperty": "props.options (array of {label, value}) for option controls"
             },
             "componentTypes": [
                 "singleLineText", "multiLineText", "description", "number", "radio", "checkbox",
@@ -771,6 +777,27 @@ pub(crate) fn validate_schema_for_form_type(
                 "fields[{index}] must be an object"
             )));
         };
+        let kind = object.get("type").and_then(Value::as_str).unwrap_or("");
+        let props = &field["props"];
+        if let Some(unique) = props.get("isUnique") {
+            if !unique.is_boolean()
+                || (unique == &Value::Bool(true)
+                    && !matches!(kind, "singleLineText" | "multiLineText" | "serialNumber"))
+            {
+                return Err(AppError::BadRequest(format!(
+                    "fields[{index}].props.isUnique is invalid for {kind}"
+                )));
+            }
+        }
+        if let Some(format) = props.get("formatValidation").filter(|v| !v.is_null()) {
+            if kind != "singleLineText"
+                || !matches!(format.as_str(), Some("email" | "phoneCN" | "idCardCN"))
+            {
+                return Err(AppError::BadRequest(format!(
+                    "fields[{index}].props.formatValidation is invalid"
+                )));
+            }
+        }
         // Custom page components are self-contained UI nodes and may omit the
         // record-layout fields required by data-backed controls.
         let custom_component = matches!(
@@ -799,17 +826,6 @@ pub(crate) fn validate_schema_for_form_type(
     }
 
     for field in fields {
-        if let Some(access) = field
-            .get("props")
-            .and_then(|props| props.get("agentDataAccess"))
-            .and_then(Value::as_str)
-        {
-            if !matches!(access, "allow" | "mask" | "deny") {
-                return Err(AppError::BadRequest(
-                    "agentDataAccess must be allow, mask, or deny".to_string(),
-                ));
-            }
-        }
         let component_type = field.get("type").and_then(Value::as_str).unwrap_or("");
         if component_type != "html" && component_type != "tsx" {
             continue;
@@ -1121,6 +1137,12 @@ pub(crate) async fn delete_form_definition(
             .filter(automation_run_entity::Column::FlowId.is_in(flow_ids.clone()))
             .exec(&txn)
             .await?;
+        // Runs reference instances, and instances restrict deletion of their process flow.
+        // Delete in that order; instance children (tasks, actions, branch tokens) cascade.
+        workflow_instance_entity::Entity::delete_many()
+            .filter(workflow_instance_entity::Column::ProcessFlowId.is_in(flow_ids.clone()))
+            .exec(&txn)
+            .await?;
         AutomationFlowVersionEntity::delete_many()
             .filter(automation_flow_version_entity::Column::FlowId.is_in(flow_ids.clone()))
             .exec(&txn)
@@ -1138,6 +1160,11 @@ pub(crate) async fn delete_form_definition(
             .exec(&txn)
             .await?;
     }
+
+    workflow_comment_entity::Entity::delete_many()
+        .filter(workflow_comment_entity::Column::FormUuid.eq(form_uuid))
+        .exec(&txn)
+        .await?;
 
     FormDefinitionEntity::delete_many()
         .filter(form_definition_entity::Column::FormUuid.eq(form_uuid))
@@ -1165,16 +1192,18 @@ pub(crate) async fn update_form_name(
         .as_object_mut()
         .ok_or_else(|| AppError::BadRequest("form schema must be an object".to_string()))?;
     object.insert("formName".to_string(), Value::String(name.to_string()));
-    save_form_schema(
-        State(state),
-        Path(form_uuid),
-        Json(SaveSchemaRequest {
+    let (unchanged, payload) = save_form_schema_definition(
+        &state,
+        &form_uuid,
+        SaveSchemaRequest {
             schema,
             change_log: Some(format!("rename form to {name}")),
             base_version: None,
-        }),
+        },
     )
-    .await
+    .await?;
+    let _ = unchanged;
+    Ok(Json(success_response("表单名称更新成功", payload)))
 }
 
 pub(crate) async fn get_form_schema(
@@ -1242,7 +1271,7 @@ pub(crate) async fn list_form_records(
             page_size: total as u64,
         };
         state
-            .cache_set_json(&cache_key, &response, state.cache_ttl_seconds())
+            .cache_set_json(&cache_key, &response, state.cache_ttl_seconds().min(60))
             .await;
         return Ok(Json(success_response("获取明细数据成功", response)));
     }
@@ -1277,7 +1306,7 @@ pub(crate) async fn list_form_records(
         page_size,
     };
     state
-        .cache_set_json(&cache_key, &response, state.cache_ttl_seconds())
+        .cache_set_json(&cache_key, &response, state.cache_ttl_seconds().min(60))
         .await;
     Ok(Json(success_response("获取表单数据成功", response)))
 }
@@ -1384,10 +1413,10 @@ fn form_records_cache_version_key(form_uuid: &str) -> String {
 
 fn form_records_cache_key(form_uuid: &str, query: &ListFormRecordsQuery, version: u64) -> String {
     if query.page.is_none() && query.page_size.is_none() {
-        return format!("yaya:v1:form:{form_uuid}:records:v{version}:all");
+        return format!("yaya:v2:form:{form_uuid}:records:v{version}:all");
     }
     let (page, page_size) = normalize_record_pagination(query.page, query.page_size);
-    format!("yaya:v1:form:{form_uuid}:records:v{version}:page:{page}:size:{page_size}")
+    format!("yaya:v2:form:{form_uuid}:records:v{version}:page:{page}:size:{page_size}")
 }
 
 async fn invalidate_form_records_cache(state: &AppState, form_uuid: &str) {
@@ -1596,26 +1625,36 @@ pub(crate) async fn create_form_record(
         "before_create",
         &trigger_data,
         &operator,
+        Some(submitter.id),
         None,
     )
     .await?;
 
-    let record = RecordRepository::new(&state.db)
+    let txn = state.db.begin().await?;
+    let record = RecordRepository::new(&txn)
         .insert(&definition, trigger_data, &operator, now)
         .await?;
 
-    if let Err(err) = automations::execute_automation_flows_for_event(
-        &state.db,
+    automations::execution::enqueue_form_event(
+        &txn,
         &definition,
         "after_create",
-        &automation_trigger_payload(&record.record_data, &record.record_uuid),
-        &operator,
+        &automation_trigger_payload(
+            &record.record_data,
+            &record.record_uuid,
+            Some(record.created_at),
+            Some(record.updated_at),
+            Some(record.created_by.clone()),
+        ),
+        automations::execution::ExecutionIdentity {
+            user_id: Some(submitter.id),
+            display_name: operator.clone(),
+            operator: operator.clone(),
+        },
         None,
     )
-    .await
-    {
-        error!("run automation after create failed: {err:?}");
-    }
+    .await?;
+    txn.commit().await?;
 
     invalidate_form_records_cache(&state, &form_uuid).await;
 
@@ -1682,9 +1721,8 @@ pub(crate) async fn update_form_record(
     }
     let repository = RecordRepository::new(&state.db);
     let record = repository.find(&form_uuid, &record_uuid).await?;
-    let operator = authorization::current_user(&headers, &state)
-        .await?
-        .display_name;
+    let update_user = authorization::current_user(&headers, &state).await?;
+    let operator = update_user.display_name.clone();
     let mut next_data = normalize_record_payload(payload.data);
     if definition.form_type == "workflow" {
         preserve_workflow_system_fields(&record.record_data, &mut next_data)?;
@@ -1695,28 +1733,44 @@ pub(crate) async fn update_form_record(
         &state.db,
         &definition,
         "before_update",
-        &automation_trigger_payload(&next_data, &record.record_uuid),
+        &automation_trigger_payload(
+            &next_data,
+            &record.record_uuid,
+            Some(record.created_at),
+            None,
+            Some(record.created_by.clone()),
+        ),
         &operator,
+        Some(update_user.id),
         Some(&changed_fields),
     )
     .await?;
 
-    let updated = repository
+    let txn = state.db.begin().await?;
+    let updated = RecordRepository::new(&txn)
         .update(&record, next_data.clone(), &operator, Utc::now())
         .await?;
 
-    if let Err(err) = automations::execute_automation_flows_for_event(
-        &state.db,
+    automations::execution::enqueue_form_event(
+        &txn,
         &definition,
         "after_update",
-        &automation_trigger_payload(&updated.record_data, &updated.record_uuid),
-        &operator,
+        &automation_trigger_payload(
+            &updated.record_data,
+            &updated.record_uuid,
+            Some(updated.created_at),
+            Some(updated.updated_at),
+            Some(updated.created_by.clone()),
+        ),
+        automations::execution::ExecutionIdentity {
+            user_id: Some(update_user.id),
+            display_name: operator.clone(),
+            operator: operator.clone(),
+        },
         Some(&changed_fields),
     )
-    .await
-    {
-        error!("run automation after update failed: {err:?}");
-    }
+    .await?;
+    txn.commit().await?;
 
     invalidate_form_records_cache(&state, &form_uuid).await;
 
@@ -1730,7 +1784,7 @@ pub(crate) async fn update_form_record(
     )))
 }
 
-fn initialize_workflow_record(data: &mut Value, submitter: &str) {
+pub(crate) fn initialize_workflow_record(data: &mut Value, submitter: &str) {
     let Some(values) = data.as_object_mut() else {
         return;
     };
@@ -1759,8 +1813,10 @@ fn preserve_workflow_system_fields(current: &Value, next: &mut Value) -> Result<
 
 pub(crate) async fn delete_form_record(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path((form_uuid, record_uuid)): Path<(String, String)>,
 ) -> Result<Json<ApiResponse<Value>>, AppError> {
+    let delete_user = authorization::current_user(&headers, &state).await?;
     let definition = find_form_definition(&state.db, &form_uuid).await?;
     if definition.form_type == "detail" {
         let detail = load_detail_definition(&state.db, &form_uuid).await?;
@@ -1804,20 +1860,28 @@ pub(crate) async fn delete_form_record(
     }
     let repository = RecordRepository::new(&state.db);
     let record = repository.find(&form_uuid, &record_uuid).await?;
-    let operator = "管理员".to_string();
+    let operator = delete_user.display_name.clone();
 
     automations::execute_automation_flows_for_event(
         &state.db,
         &definition,
         "before_delete",
-        &automation_trigger_payload(&record.record_data, &record.record_uuid),
+        &automation_trigger_payload(
+            &record.record_data,
+            &record.record_uuid,
+            Some(record.created_at),
+            Some(record.updated_at),
+            Some(record.created_by.clone()),
+        ),
         &operator,
+        Some(delete_user.id),
         None,
     )
     .await?;
 
+    let txn = state.db.begin().await?;
     recycle_bin::record_deleted(
-        &state.db,
+        &txn,
         &form_uuid,
         &record_uuid,
         &definition.name,
@@ -1826,23 +1890,33 @@ pub(crate) async fn delete_form_record(
         None,
     )
     .await?;
-    repository.soft_delete(&record, Utc::now()).await?;
-    repository
+    RecordRepository::new(&txn)
+        .soft_delete(&record, Utc::now())
+        .await?;
+    RecordRepository::new(&txn)
         .decrement_app_records_count(&definition.app_route_app_id, 1, Utc::now())
         .await?;
 
-    if let Err(err) = automations::execute_automation_flows_for_event(
-        &state.db,
+    automations::execution::enqueue_form_event(
+        &txn,
         &definition,
         "after_delete",
-        &automation_trigger_payload(&record.record_data, &record.record_uuid),
-        &operator,
+        &automation_trigger_payload(
+            &record.record_data,
+            &record.record_uuid,
+            Some(record.created_at),
+            Some(record.updated_at),
+            Some(record.created_by.clone()),
+        ),
+        automations::execution::ExecutionIdentity {
+            user_id: Some(delete_user.id),
+            display_name: operator.clone(),
+            operator: operator.clone(),
+        },
         None,
     )
-    .await
-    {
-        error!("run automation after delete failed: {err:?}");
-    }
+    .await?;
+    txn.commit().await?;
 
     invalidate_form_records_cache(&state, &form_uuid).await;
 
@@ -1871,8 +1945,9 @@ pub(crate) async fn save_form_schema(
 pub(crate) async fn save_form_schema_definition(
     state: &AppState,
     form_uuid: &str,
-    payload: SaveSchemaRequest,
+    mut payload: SaveSchemaRequest,
 ) -> Result<(bool, ApiSchemaPayload), AppError> {
+    clean_removed_field_config(&mut payload.schema);
     let definition = FormDefinitionEntity::find()
         .filter(form_definition_entity::Column::FormUuid.eq(form_uuid))
         .one(&state.db)
@@ -1884,14 +1959,17 @@ pub(crate) async fn save_form_schema_definition(
     // Saving is also the apply operation. Reusing an existing schema keeps
     // the global version sequence stable when the editor saves without
     // changes (including after switching back to an older version).
-    let current_schema = load_schema_version(
-        &state.db,
-        &form_uuid,
-        payload
-            .base_version
-            .unwrap_or(definition.current_schema_version),
-    )
-    .await?;
+    // Compare the stored schema so saving historical configuration persists its removal.
+    let current_schema = FormSchemaEntity::find()
+        .filter(form_schema_entity::Column::FormUuid.eq(form_uuid.to_string()))
+        .filter(
+            form_schema_entity::Column::Version.eq(payload
+                .base_version
+                .unwrap_or(definition.current_schema_version)),
+        )
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("schema not found".to_string()))?;
     let unchanged = current_schema.schema_json == payload.schema;
     let next_version = if unchanged {
         current_schema.version
@@ -1941,6 +2019,37 @@ pub(crate) async fn save_form_schema_definition(
     )
     .await?;
 
+    if updated_definition.form_type == "workflow" {
+        if let Some(flow) = AutomationFlowEntity::find()
+            .filter(
+                automation_flow_entity::Column::AppRouteAppId
+                    .eq(updated_definition.app_route_app_id.clone()),
+            )
+            .filter(automation_flow_entity::Column::TriggerFormUuid.eq(Some(form_uuid.to_string())))
+            .filter(automation_flow_entity::Column::FlowType.eq("process"))
+            .one(&state.db)
+            .await?
+        {
+            let process_name = format!("{}审批流程", updated_definition.name);
+            let mut flow_active: automation_flow_entity::ActiveModel = flow.clone().into();
+            flow_active.name = Set(process_name);
+            flow_active.updated_at = Set(now.into());
+            let updated_flow = flow_active.update(&state.db).await?;
+            AutomationFlowVersionEntity::update_many()
+                .col_expr(
+                    automation_flow_version_entity::Column::Name,
+                    Expr::value(updated_flow.name.clone()),
+                )
+                .filter(automation_flow_version_entity::Column::FlowId.eq(updated_flow.id))
+                .filter(
+                    automation_flow_version_entity::Column::Version
+                        .eq(updated_flow.current_version),
+                )
+                .exec(&state.db)
+                .await?;
+        }
+    }
+
     let applied = load_schema_version(&state.db, &form_uuid, next_version).await?;
     if !is_detail_form {
         sync_current_storage_plan(&state.db, &form_uuid, next_version, &applied.schema_json)
@@ -1975,6 +2084,11 @@ pub(crate) async fn list_form_versions(
             .into_iter()
             .map(|item| ApiFormVersionSummary {
                 version: item.version,
+                component_count: item
+                    .schema_json
+                    .get("fields")
+                    .and_then(Value::as_array)
+                    .map_or(0, Vec::len),
                 change_log: item.change_log,
                 created_at: item.created_at.to_rfc3339(),
             })
@@ -2009,8 +2123,8 @@ pub(crate) async fn restore_form_version(
     )))
 }
 
-pub(crate) async fn find_form_definition(
-    db: &DatabaseConnection,
+pub(crate) async fn find_form_definition<C: ConnectionTrait>(
+    db: &C,
     form_uuid: &str,
 ) -> Result<form_definition_entity::Model, AppError> {
     FormDefinitionEntity::find()
@@ -2039,11 +2153,20 @@ pub(crate) fn collect_changed_fields(previous: &Value, next: &Value) -> HashSet<
     changed
 }
 
-fn automation_trigger_payload(data: &Value, record_uuid: &str) -> Value {
+fn automation_trigger_payload(
+    data: &Value,
+    record_uuid: &str,
+    created_at: Option<chrono::DateTime<Utc>>,
+    updated_at: Option<chrono::DateTime<Utc>>,
+    submitter: Option<String>,
+) -> Value {
     let mut payload = data.as_object().cloned().unwrap_or_default();
-    payload.insert(
-        "__automationRecordUuid".to_string(),
-        Value::String(record_uuid.to_string()),
+    crate::modules::automations::inject_automation_system_fields(
+        &mut payload,
+        record_uuid,
+        created_at.map(|value| value.to_rfc3339()),
+        updated_at.map(|value| value.to_rfc3339()),
+        submitter,
     );
     Value::Object(payload)
 }
@@ -2064,12 +2187,14 @@ pub(crate) async fn load_schema_version_for_connection<C>(
 where
     C: ConnectionTrait,
 {
-    FormSchemaEntity::find()
+    let mut schema = FormSchemaEntity::find()
         .filter(form_schema_entity::Column::FormUuid.eq(form_uuid.to_string()))
         .filter(form_schema_entity::Column::Version.eq(version))
         .one(db)
         .await?
-        .ok_or_else(|| AppError::NotFound("schema not found".to_string()))
+        .ok_or_else(|| AppError::NotFound("schema not found".to_string()))?;
+    clean_removed_field_config(&mut schema.schema_json);
+    Ok(schema)
 }
 
 pub(crate) fn resolve_schema_version(
@@ -2079,10 +2204,41 @@ pub(crate) fn resolve_schema_version(
     query.version.unwrap_or(definition.current_schema_version)
 }
 
+/// Retired field configuration must not survive reads, restores, or saves.
+fn clean_removed_field_config(schema: &mut Value) {
+    let Some(fields) = schema.get_mut("fields").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for field in fields {
+        let is_serial_number = field.get("type").and_then(Value::as_str) == Some("serialNumber");
+        if is_serial_number && !field.get("props").is_some_and(Value::is_object) {
+            field["props"] = serde_json::json!({});
+        }
+        if let Some(props) = field.get_mut("props").and_then(Value::as_object_mut) {
+            for key in ["agentDataAccess", "rows", "step"] {
+                props.remove(key);
+            }
+            // Extra validators depend on required, including historical schemas.
+            if is_serial_number
+                || props.get("isUnique").and_then(Value::as_bool) == Some(true)
+                || props
+                    .get("formatValidation")
+                    .and_then(Value::as_str)
+                    .is_some_and(|v| !v.is_empty())
+                || props.get("minValue").is_some_and(|v| !v.is_null())
+                || props.get("maxValue").is_some_and(|v| !v.is_null())
+            {
+                props.insert("isRequired".into(), Value::Bool(true));
+            }
+        }
+    }
+}
+
 pub(crate) fn build_schema_payload(
     definition: &form_definition_entity::Model,
-    schema: form_schema_entity::Model,
+    mut schema: form_schema_entity::Model,
 ) -> ApiSchemaPayload {
+    clean_removed_field_config(&mut schema.schema_json);
     ApiSchemaPayload {
         form_uuid: definition.form_uuid.clone(),
         schema: if definition.form_type == "detail" {
@@ -2197,9 +2353,56 @@ fn normalize_detail_schema(mut schema: Value) -> Value {
 }
 
 #[cfg(test)]
+#[path = "forms/delete_tests.rs"]
+mod delete_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn retired_field_configuration_is_removed_without_changing_status_or_layout() {
+        let mut schema = json!({"rows": 8, "fields": [
+            {"id": "text", "props": {"agentDataAccess": "deny", "rows": 5,
+                "isDisabled": true, "isReadOnly": false, "isRequired": true}},
+            {"id": "number", "props": {"step": 0.5, "minValue": 0}},
+            {"id": "child", "parentGroupId": "group", "props": {"agentDataAccess": "mask"}}
+        ]});
+        clean_removed_field_config(&mut schema);
+        assert_eq!(schema["rows"], 8);
+        assert_eq!(
+            schema["fields"][0]["props"],
+            json!({
+                "isDisabled": true, "isReadOnly": false, "isRequired": true
+            })
+        );
+        assert_eq!(
+            schema["fields"][1]["props"],
+            json!({"minValue": 0, "isRequired": true})
+        );
+        assert_eq!(schema["fields"][2]["parentGroupId"], "group");
+        assert_eq!(schema["fields"][2]["props"], json!({}));
+        let cleaned = schema.clone();
+        clean_removed_field_config(&mut schema);
+        assert_eq!(schema, cleaned);
+    }
+
+    #[test]
+    fn extra_validation_rules_require_required_fields() {
+        let mut schema = json!({"fields": [
+            {"props": {"isRequired": false, "isUnique": true}},
+            {"props": {"formatValidation": "email"}},
+            {"props": {"minValue": 0}},
+            {"props": {"maxValue": 100}},
+            {"props": {"isRequired": false, "isUnique": false, "formatValidation": ""}}
+        ]});
+        clean_removed_field_config(&mut schema);
+        for field in schema["fields"].as_array().unwrap().iter().take(4) {
+            assert_eq!(field["props"]["isRequired"], true);
+        }
+        assert_eq!(schema["fields"][4]["props"]["isRequired"], false);
+    }
 
     #[test]
     fn new_workflow_record_has_not_started_instance() {
@@ -2240,3 +2443,89 @@ mod tests {
 pub(crate) mod dto;
 
 pub(crate) use dto::*;
+
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ValidateRecordRequest {
+    data: Value,
+    record_uuid: Option<String>,
+    schema: Option<Value>,
+}
+
+pub(crate) async fn validate_form_record(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(form_uuid): Path<String>,
+    Json(payload): Json<ValidateRecordRequest>,
+) -> Result<Json<ApiResponse<std::collections::BTreeMap<String, String>>>, AppError> {
+    let method = if payload.record_uuid.is_some() {
+        axum::http::Method::PATCH
+    } else {
+        axum::http::Method::POST
+    };
+    authorization::authorize_request(
+        &headers,
+        &state,
+        &method,
+        &format!("/api/forms/{form_uuid}/records"),
+    )
+    .await?;
+    let definition = find_form_definition(&state.db, &form_uuid).await?;
+    let repository = RecordRepository::new(&state.db);
+    let errors = if definition.form_type == "detail" {
+        let detail = load_detail_definition(&state.db, &form_uuid).await?;
+        let (parent_uuid, row_index) = if let Some(id) = payload.record_uuid.as_deref() {
+            let (parent, index) = parse_detail_record_id(id)?;
+            (parent, Some(index))
+        } else {
+            (
+                payload.data["__parentRecordUuid"]
+                    .as_str()
+                    .ok_or_else(|| AppError::BadRequest("请选择归属主记录".into()))?
+                    .to_owned(),
+                None,
+            )
+        };
+        let parent = repository
+            .find(&detail.source_form_uuid, &parent_uuid)
+            .await?;
+        let mut next = parent.record_data.clone();
+        let rows = next
+            .as_object_mut()
+            .ok_or_else(|| AppError::BadRequest("parent record data must be an object".into()))?
+            .entry(detail.subform_field_id.clone())
+            .or_insert_with(|| json!([]))
+            .as_array_mut()
+            .ok_or_else(|| AppError::BadRequest("子表单数据无效".into()))?;
+        let index = row_index.unwrap_or(rows.len());
+        if let Some(row) = rows.get_mut(index) {
+            *row = payload.data.clone();
+        } else if index == rows.len() {
+            rows.push(payload.data.clone());
+        } else {
+            return Err(AppError::NotFound("detail row not found".into()));
+        }
+        let prefix = format!("{}:{index}:", detail.subform_field_id);
+        repository
+            .validate_values(&detail.source_form_uuid, &next, Some(&parent_uuid))
+            .await?
+            .into_iter()
+            .map(|(key, error)| (key.strip_prefix(&prefix).unwrap_or(&key).to_owned(), error))
+            .collect()
+    } else if let Some(schema) = &payload.schema {
+        // Draft schemas are allowed for preflight only. Writes always load the saved schema.
+        repository
+            .validate_schema_values(
+                &form_uuid,
+                schema,
+                &payload.data,
+                payload.record_uuid.as_deref(),
+            )
+            .await?
+    } else {
+        repository
+            .validate_values(&form_uuid, &payload.data, payload.record_uuid.as_deref())
+            .await?
+    };
+    Ok(Json(success_response("校验完成", errors)))
+}

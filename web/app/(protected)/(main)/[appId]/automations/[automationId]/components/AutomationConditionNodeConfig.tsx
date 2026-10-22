@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Input, ListBox, Select } from "@heroui/react";
+import { Button, ListBox, Select } from "@heroui/react";
 import {
   Plus as AddIcon,
   ArrowDown as ArrowDownIcon,
@@ -11,10 +11,10 @@ import {
 import {
   branchModeLabel,
   normalizeConditionConfig,
-  type BranchRule,
   type SourceFieldChoice,
   type WorkflowNode,
 } from "../automation-editor-model";
+import type { BranchRule } from "@/features/automation-editor/condition-rules";
 import { BranchRulesEditor } from "./AutomationConditionRuleEditor";
 import { WorkflowConfigGroup } from "@components/workflow-editor/WorkflowConfigGroup";
 import {
@@ -45,12 +45,12 @@ export function ConditionNodeConfig({
   ) => void;
   onConditionBranchChange: (
     branchId: string,
-    key: "name" | "hitLabel" | "expression",
+    key: "name" | "expression",
     value: string,
   ) => void;
   onConditionModeChange: (
     branchId: string,
-    value: "all" | "rules" | "expression",
+    value: "all" | "rules" | "expression" | "otherwise",
   ) => void;
   onConditionRuleChange: (
     branchId: string,
@@ -66,7 +66,10 @@ export function ConditionNodeConfig({
   const [editingConditionBranchId, setEditingConditionBranchId] = useState<
     string | null
   >(null);
-  if (node.data.kind === "condition") {
+  if (
+    node.data.kind === "condition" ||
+    node.data.kind === "parallel-condition"
+  ) {
     const config = normalizeConditionConfig(node.data.config);
     const branches = config.branches ?? [];
     return (
@@ -101,54 +104,82 @@ export function ConditionNodeConfig({
                   className="max-w-full truncate rounded px-1 py-1 text-left text-sm font-semibold text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-control-soft-hover)]"
                   onClick={() => setEditingConditionBranchId(branch.id)}
                 >
-                {branch.name || `条件分支 ${index + 1}`}
-              </button>
-            )
-          }
-          actions={
-            <>
-              <IconActionButton
-                ariaLabel="上移条件分支"
-                isDisabled={index === 0}
-                onClick={() => onMoveConditionBranch(branch.id, "up")}
-              >
-                <ArrowUpIcon />
-              </IconActionButton>
-              <IconActionButton
-                ariaLabel="下移条件分支"
-                isDisabled={index === branches.length - 1}
-                onClick={() => onMoveConditionBranch(branch.id, "down")}
-              >
-                <ArrowDownIcon />
-              </IconActionButton>
-              <IconActionButton
-                ariaLabel="删除条件分支"
-                danger
-                isDisabled={branches.length <= 1}
-                onClick={() => onRemoveConditionBranch(branch.id)}
-              >
-                <TrashIcon />
-              </IconActionButton>
-            </>
-          }
-        >
+                  {branch.name || `条件分支 ${index + 1}`}
+                </button>
+              )
+            }
+            actions={
+              <div className="flex items-center justify-end gap-1">
+                {node.data.kind !== "parallel-condition" ? (
+                  <>
+                    <IconActionButton
+                      ariaLabel="上移条件分支"
+                      isDisabled={
+                        branch.entryMode === "otherwise" || index === 0
+                      }
+                      onClick={() => onMoveConditionBranch(branch.id, "up")}
+                    >
+                      <ArrowUpIcon />
+                    </IconActionButton>
+                    <IconActionButton
+                      ariaLabel="下移条件分支"
+                      isDisabled={
+                        branch.entryMode === "otherwise" ||
+                        index === branches.length - 1 ||
+                        branches[index + 1]?.entryMode === "otherwise"
+                      }
+                      onClick={() => onMoveConditionBranch(branch.id, "down")}
+                    >
+                      <ArrowDownIcon />
+                    </IconActionButton>
+                  </>
+                ) : null}
+                <IconActionButton
+                  ariaLabel="删除条件分支"
+                  danger
+                  isDisabled={branches.length <= 1}
+                  onClick={() => onRemoveConditionBranch(branch.id)}
+                >
+                  <TrashIcon />
+                </IconActionButton>
+              </div>
+            }
+          >
             <PropertyField label="进入方式">
               <Select
                 aria-label={`条件分支 ${index + 1} 进入方式`}
-                selectedKey={branch.mode}
-                onSelectionChange={(key) =>
+                selectedKey={
+                  branch.entryMode === "otherwise" ? "otherwise" : branch.mode
+                }
+                disabledKeys={
+                  branches.some(
+                    (item) =>
+                      item.id !== branch.id && item.entryMode === "otherwise",
+                  )
+                    ? ["otherwise"]
+                    : []
+                }
+                onSelectionChange={(key) => {
+                  const value = String(key ?? "all");
                   onConditionModeChange(
                     branch.id,
-                    String(key ?? "all") as "all" | "rules" | "expression",
-                  )
-                }
+                    value as "all" | "rules" | "expression" | "otherwise",
+                  );
+                }}
               >
                 <Select.Trigger>
-                  <Select.Value>{branchModeLabel(branch.mode)}</Select.Value>
+                  <Select.Value>
+                    {branch.entryMode === "otherwise"
+                      ? "否则进入"
+                      : branchModeLabel(branch.mode)}
+                  </Select.Value>
                   <Select.Indicator />
                 </Select.Trigger>
                 <Select.Popover>
                   <ListBox>
+                    <ListBox.Item id="otherwise" textValue="否则进入">
+                      否则进入
+                    </ListBox.Item>
                     <ListBox.Item id="all" textValue="所有数据均可通过">
                       所有数据均可通过
                     </ListBox.Item>
@@ -162,28 +193,7 @@ export function ConditionNodeConfig({
                 </Select.Popover>
               </Select>
             </PropertyField>
-            <PropertyField label="命中说明">
-              <Input
-                aria-label={`条件分支 ${index + 1} 命中说明`}
-                placeholder={`例如：分支 ${index + 1} 满足审批条件`}
-                value={branch.hitLabel}
-                onChange={(event) =>
-                  onConditionBranchChange(
-                    branch.id,
-                    "hitLabel",
-                    event.currentTarget.value,
-                  )
-                }
-              />
-            </PropertyField>
-
-            {branch.mode === "all" ? (
-              <div className="rounded-lg bg-[var(--color-info-soft)] px-3 py-2 text-xs leading-5 text-[var(--color-info)]">
-                当前分支默认放行所有流转到该条件节点的数据。
-              </div>
-            ) : null}
-
-            {branch.mode === "rules" ? (
+            {branch.entryMode !== "otherwise" && branch.mode === "rules" ? (
               <BranchRulesEditor
                 rules={branch.rules}
                 sourceFieldChoices={sourceFieldChoices}
@@ -199,7 +209,8 @@ export function ConditionNodeConfig({
               />
             ) : null}
 
-            {branch.mode === "expression" ? (
+            {branch.entryMode !== "otherwise" &&
+            branch.mode === "expression" ? (
               <div className="space-y-2">
                 <div className="text-xs font-medium text-[var(--color-text-primary)]">
                   表达式

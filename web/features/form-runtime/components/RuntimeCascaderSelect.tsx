@@ -63,13 +63,13 @@ export function RuntimeCascaderSelect({
   }
 
   return <Popover isOpen={isOpen} onOpenChange={handleOpenChange}>
-    <Popover.Trigger className="block w-full">
+    <Popover.Trigger aria-label={ariaLabel} className="block w-full" tabIndex={isDisabled || isReadOnly ? -1 : 0}>
       <div className="relative w-full">
         <Input
           aria-expanded={isOpen}
           aria-haspopup="listbox"
           aria-label={ariaLabel}
-          className="pointer-events-none pr-10"
+          className="pointer-events-none h-9 pr-10"
           disabled={Boolean(isDisabled || isReadOnly)}
           placeholder={placeholder}
           readOnly

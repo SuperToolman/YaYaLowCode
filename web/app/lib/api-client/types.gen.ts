@@ -15,6 +15,25 @@ export type ActivatePlatformLicenseRequest = {
     licenseCenterUrl: string;
 };
 
+export type AgentFileResponse = {
+    checksum: string;
+    createdAt: string;
+    id: string;
+    kind: string;
+    mimeType: string;
+    name: string;
+    size: number;
+    storageKey: string;
+};
+
+export type AgentFileUploadResponse = {
+    checksum: string;
+    id: string;
+    mimeType: string;
+    name: string;
+    size: number;
+};
+
 export type AgentPageContext = {
     appId?: string | null;
     automationId?: string | null;
@@ -35,6 +54,11 @@ export type AgentPluginDefinition = {
     version: string;
 };
 
+export type AiEmployeeInstallationStatus = {
+    employeeId: string;
+    installed: boolean;
+};
+
 export type AiEmployeeMarketItem = {
     avatarUrl?: string | null;
     billingCycle: string;
@@ -52,6 +76,18 @@ export type AiEmployeeMarketItem = {
     version: string;
 };
 
+export type ApiAgentRuntimeSummary = {
+    eventGeneration: string;
+    lastActivityAt: string;
+    lastError?: string | null;
+    lastEventSeq: number;
+    lastToolName?: string | null;
+    pendingApprovalCount: number;
+    phase?: string | null;
+    runStatus: string;
+    unreadActivityVersion: number;
+};
+
 export type ApiAgentSession = {
     agentId: string;
     appId?: string | null;
@@ -66,6 +102,13 @@ export type ApiAgentSession = {
     status: string;
     title: string;
     updatedAt: string;
+};
+
+export type ApiAgentWorkbenchSession = ApiAgentSession & ApiAgentRuntimeSummary;
+
+export type ApiAgentWorkbenchSessionPage = {
+    items: Array<ApiAgentWorkbenchSession>;
+    nextCursor?: string | null;
 };
 
 export type ApiApp = {
@@ -101,7 +144,6 @@ export type ApiAutomationFlow = {
     name: string;
     nodesCount: number;
     status: AutomationStatus;
-    triggerEvent: AutomationTriggerEvent;
     triggerEvents: Array<AutomationTriggerEvent>;
     triggerFormUuid?: string | null;
     triggerLabel: string;
@@ -123,7 +165,6 @@ export type ApiAutomationFlowDetail = {
     nodesCount: number;
     status: AutomationStatus;
     triggerConfig: unknown;
-    triggerEvent: AutomationTriggerEvent;
     triggerEvents: Array<AutomationTriggerEvent>;
     triggerFormUuid?: string | null;
     triggerLabel: string;
@@ -148,8 +189,10 @@ export type ApiAutomationFlowVersionSummary = {
 };
 
 export type ApiAutomationRun = {
+    allowedActions: Array<string>;
     durationMs?: number | null;
     errorMessage?: string | null;
+    executionPolicy?: string | null;
     finishedAt?: string | null;
     flowVersion: number;
     id: string;
@@ -161,9 +204,13 @@ export type ApiAutomationRun = {
     status: string;
     triggerEvent: string;
     triggerPayload: unknown;
+    triggerSource?: unknown;
+    workflowInstanceId?: string | null;
 };
 
 export type ApiAutomationRunNode = {
+    attempt: number;
+    branchId?: string | null;
     durationMs?: number | null;
     errorMessage?: string | null;
     finishedAt?: string | null;
@@ -175,6 +222,32 @@ export type ApiAutomationRunNode = {
     output?: unknown;
     startedAt: string;
     status: string;
+    visitId?: string | null;
+};
+
+export type ApiCustomButton = {
+    actionConfig: FillFormConfig;
+    actionType: string;
+    appId: string;
+    availability: ButtonAvailability;
+    createdAt: string;
+    createdBy: string;
+    description: string;
+    disabledReason: string;
+    formUuid: string;
+    icon?: string | null;
+    id: string;
+    name: string;
+    targetFormName?: string | null;
+    updatedAt: string;
+    updatedBy: string;
+};
+
+export type ApiCustomButtonList = {
+    items: Array<ApiCustomButton>;
+    page: number;
+    pageSize: number;
+    total: number;
 };
 
 export type ApiDetailForm = {
@@ -238,6 +311,7 @@ export type ApiFormSummary = {
 
 export type ApiFormVersionSummary = {
     changeLog?: string | null;
+    componentCount: number;
     createdAt: string;
     version: number;
 };
@@ -265,6 +339,19 @@ export type ApiResponseAccessTokenResponse = {
     time: string;
 };
 
+export type ApiResponseAgentFileUploadResponse = {
+    code: number;
+    data?: {
+        checksum: string;
+        id: string;
+        mimeType: string;
+        name: string;
+        size: number;
+    };
+    message: string;
+    time: string;
+};
+
 export type ApiResponseAgentPluginDefinition = {
     code: number;
     data?: {
@@ -276,6 +363,16 @@ export type ApiResponseAgentPluginDefinition = {
         name: string;
         requiresConfirmation: boolean;
         version: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseAiEmployeeInstallationStatus = {
+    code: number;
+    data?: {
+        employeeId: string;
+        installed: boolean;
     };
     message: string;
     time: string;
@@ -297,6 +394,16 @@ export type ApiResponseApiAgentSession = {
         status: string;
         title: string;
         updatedAt: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseApiAgentWorkbenchSessionPage = {
+    code: number;
+    data?: {
+        items: Array<ApiAgentWorkbenchSession>;
+        nextCursor?: string | null;
     };
     message: string;
     time: string;
@@ -347,7 +454,6 @@ export type ApiResponseApiAutomationFlow = {
         name: string;
         nodesCount: number;
         status: AutomationStatus;
-        triggerEvent: AutomationTriggerEvent;
         triggerEvents: Array<AutomationTriggerEvent>;
         triggerFormUuid?: string | null;
         triggerLabel: string;
@@ -374,7 +480,6 @@ export type ApiResponseApiAutomationFlowDetail = {
         nodesCount: number;
         status: AutomationStatus;
         triggerConfig: unknown;
-        triggerEvent: AutomationTriggerEvent;
         triggerEvents: Array<AutomationTriggerEvent>;
         triggerFormUuid?: string | null;
         triggerLabel: string;
@@ -391,6 +496,41 @@ export type ApiResponseApiAutomationFlowList = {
         enabled: number;
         items: Array<ApiAutomationFlow>;
         paused: number;
+        total: number;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseApiCustomButton = {
+    code: number;
+    data?: {
+        actionConfig: FillFormConfig;
+        actionType: string;
+        appId: string;
+        availability: ButtonAvailability;
+        createdAt: string;
+        createdBy: string;
+        description: string;
+        disabledReason: string;
+        formUuid: string;
+        icon?: string | null;
+        id: string;
+        name: string;
+        targetFormName?: string | null;
+        updatedAt: string;
+        updatedBy: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseApiCustomButtonList = {
+    code: number;
+    data?: {
+        items: Array<ApiCustomButton>;
+        page: number;
+        pageSize: number;
         total: number;
     };
     message: string;
@@ -487,6 +627,15 @@ export type ApiResponseApiSchemaPayload = {
     time: string;
 };
 
+export type ApiResponseBTreeMapStringString = {
+    code: number;
+    data?: {
+        [key: string]: string;
+    };
+    message: string;
+    time: string;
+};
+
 export type ApiResponseClearDingTalkDataResponse = {
     code: number;
     data?: {
@@ -494,6 +643,15 @@ export type ApiResponseClearDingTalkDataResponse = {
         deletedRolePermissions: number;
         deletedRoles: number;
         deletedUsers: number;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseClearPlatformLogsResponse = {
+    code: number;
+    data?: {
+        clearedSizeBytes: number;
     };
     message: string;
     time: string;
@@ -657,6 +815,16 @@ export type ApiResponseDingTalkLoginUserResponse = {
     time: string;
 };
 
+export type ApiResponseExecuteButtonResponse = {
+    code: number;
+    data?: {
+        runId: string;
+        status: string;
+    };
+    message: string;
+    time: string;
+};
+
 export type ApiResponseFormBootstrapResponse = {
     code: number;
     data?: {
@@ -701,6 +869,103 @@ export type ApiResponseInitializeLocalCredentialsResponse = {
     time: string;
 };
 
+export type ApiResponseMailComposeContext = {
+    code: number;
+    data?: {
+        sender: MailContact;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseMailDetailResponse = {
+    code: number;
+    data?: {
+        attachments: Array<MailAttachment>;
+        cc: string;
+        hasAttachments: boolean;
+        html?: string | null;
+        inlineImages: {
+            [key: string]: string;
+        };
+        recipient: string;
+        sender: string;
+        sentAt: string;
+        subject: string;
+        text: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseMailPageResponse = {
+    code: number;
+    data?: {
+        items: Array<MailSummary>;
+        nextBeforeUid?: number | null;
+        notice?: string | null;
+        uidValidity: number;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseMarketInstallPreflight = {
+    code: number;
+    data?: {
+        alreadyInstalled: boolean;
+        blockingIssues: Array<string>;
+        connectorBindingRequired: boolean;
+        productId: string;
+        releaseId: string;
+        resourceSummary?: null | MarketResourceSummary;
+        version?: string | null;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseMarketInstallResponse = {
+    code: number;
+    data?: {
+        disabledAutomations: number;
+        installationId: string;
+        localAppId: string;
+        releaseId: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseMarketInstallationStatus = {
+    code: number;
+    data?: {
+        installationId: string;
+        status: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseMarketProduct = {
+    code: number;
+    data?: {
+        description: string;
+        name: string;
+        productId: string;
+        publisherAppId: string;
+        publisherOwned?: boolean | null;
+        publisherSubject: string;
+        releaseId: string;
+        resourceSummary?: null | MarketResourceSummary;
+        status: string;
+        version: string;
+        [key: string]: unknown;
+    };
+    message: string;
+    time: string;
+};
+
 export type ApiResponseMarketPurchaseReceipt = {
     code: number;
     data?: {
@@ -708,6 +973,115 @@ export type ApiResponseMarketPurchaseReceipt = {
         orderId: string;
         orderNo: string;
         status: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseMarketPurgeResponse = {
+    code: number;
+    data?: {
+        installationId: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseMarketReleaseResponse = {
+    code: number;
+    data?: {
+        installationId: string;
+        releaseId: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseMarketSubmission = {
+    code: number;
+    data?: {
+        appId: string;
+        appName: string;
+        applicantSubject?: string;
+        snapshot: unknown;
+        status: string;
+        submissionId: string;
+        submittedAt: number;
+        submittedBy: string;
+        version?: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseMarketSyncResponse = {
+    code: number;
+    data?: {
+        updated: number;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseMarketUpgradePreflight = {
+    code: number;
+    data?: {
+        blockingIssues: Array<string>;
+        canUpgrade: boolean;
+        currentReleaseId: string;
+        installationId: string;
+        targetReleaseId: string;
+        targetVersion?: string | null;
+        upToDate: boolean;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseModelRouteResponse = {
+    code: number;
+    data?: {
+        apiBaseUrl: string;
+        apiKeyConfigured: boolean;
+        defaultChatModel: string;
+        enabled: boolean;
+        id: string;
+        isDefault: boolean;
+        models: Array<string>;
+        name: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseNotificationSettings = {
+    code: number;
+    data?: {
+        dingtalkEnabled?: boolean;
+        dingtalkWebhookUrl?: string;
+        emailEnabled?: boolean;
+        emailFromAddress?: string;
+        inAppEnabled?: boolean;
+        pollIntervalSeconds?: number;
+        retentionDays?: number;
+        websocketEnabled?: boolean;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseOptionMarketSubmission = {
+    code: number;
+    data?: null | {
+        appId: string;
+        appName: string;
+        applicantSubject?: string;
+        snapshot: unknown;
+        status: string;
+        submissionId: string;
+        submittedAt: number;
+        submittedBy: string;
+        version?: string;
     };
     message: string;
     time: string;
@@ -757,6 +1131,17 @@ export type ApiResponsePlatformLicenseStatus = {
         subject?: string | null;
         updateAvailable: boolean;
         valid: boolean;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponsePlatformLogListResponse = {
+    code: number;
+    data?: {
+        records: Array<PlatformLogResponse>;
+        totalCount: number;
+        totalSizeBytes: number;
     };
     message: string;
     time: string;
@@ -814,6 +1199,17 @@ export type ApiResponseRoleResponse = {
     time: string;
 };
 
+export type ApiResponseSendMailResponse = {
+    code: number;
+    data?: {
+        accepted: boolean;
+        archiveWarning?: string | null;
+        requestId: string;
+    };
+    message: string;
+    time: string;
+};
+
 export type ApiResponseSendSmsCodeResponse = {
     code: number;
     data?: {
@@ -830,6 +1226,18 @@ export type ApiResponseSystemAiStatusResponse = {
         providerId?: string | null;
         providerName?: string | null;
         reason?: string | null;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseUploadedFileResponse = {
+    code: number;
+    data?: {
+        fileId: string;
+        mimeType: string;
+        name: string;
+        size: number;
     };
     message: string;
     time: string;
@@ -887,6 +1295,17 @@ export type ApiResponseUserSyncResponse = {
     time: string;
 };
 
+export type ApiResponseValkeyRuntimeStatusResponse = {
+    code: number;
+    data?: {
+        latencyMs?: number | null;
+        message: string;
+        status: string;
+    };
+    message: string;
+    time: string;
+};
+
 export type ApiResponseValkeySettingsResponse = {
     code: number;
     data?: {
@@ -907,6 +1326,22 @@ export type ApiResponseValkeySettingsResponse = {
 export type ApiResponseValue = {
     code: number;
     data?: unknown;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecAgentFileResponse = {
+    code: number;
+    data?: Array<{
+        checksum: string;
+        createdAt: string;
+        id: string;
+        kind: string;
+        mimeType: string;
+        name: string;
+        size: number;
+        storageKey: string;
+    }>;
     message: string;
     time: string;
 };
@@ -1008,8 +1443,10 @@ export type ApiResponseVecApiAutomationFlowVersionSummary = {
 export type ApiResponseVecApiAutomationRun = {
     code: number;
     data?: Array<{
+        allowedActions: Array<string>;
         durationMs?: number | null;
         errorMessage?: string | null;
+        executionPolicy?: string | null;
         finishedAt?: string | null;
         flowVersion: number;
         id: string;
@@ -1021,6 +1458,31 @@ export type ApiResponseVecApiAutomationRun = {
         status: string;
         triggerEvent: string;
         triggerPayload: unknown;
+        triggerSource?: unknown;
+        workflowInstanceId?: string | null;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecApiCustomButton = {
+    code: number;
+    data?: Array<{
+        actionConfig: FillFormConfig;
+        actionType: string;
+        appId: string;
+        availability: ButtonAvailability;
+        createdAt: string;
+        createdBy: string;
+        description: string;
+        disabledReason: string;
+        formUuid: string;
+        icon?: string | null;
+        id: string;
+        name: string;
+        targetFormName?: string | null;
+        updatedAt: string;
+        updatedBy: string;
     }>;
     message: string;
     time: string;
@@ -1060,6 +1522,7 @@ export type ApiResponseVecApiFormVersionSummary = {
     code: number;
     data?: Array<{
         changeLog?: string | null;
+        componentCount: number;
         createdAt: string;
         version: number;
     }>;
@@ -1079,6 +1542,18 @@ export type ApiResponseVecApiNavigationItem = {
         targetFormUuid?: string | null;
         title: string;
         visibilityRule?: string | null;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecButtonAutomationOption = {
+    code: number;
+    data?: Array<{
+        id: string;
+        name: string;
+        sourceFormUuid: string;
+        status: string;
     }>;
     message: string;
     time: string;
@@ -1135,6 +1610,71 @@ export type ApiResponseVecLocationResponse = {
         };
         name: string;
         parentId?: string | null;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecMailContact = {
+    code: number;
+    data?: Array<{
+        avatarUrl?: string | null;
+        email: string;
+        name: string;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecMarketInstallation = {
+    code: number;
+    data?: Array<{
+        archivedAt?: string | null;
+        events: Array<MarketInstallationEvent>;
+        installationId: string;
+        installedAt: string;
+        legacyMapping: boolean;
+        localAppId: string;
+        productId: string;
+        releaseId: string;
+        status: string;
+        updatedAt: string;
+        versions: Array<MarketInstallationVersion>;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecMarketProduct = {
+    code: number;
+    data?: Array<{
+        description: string;
+        name: string;
+        productId: string;
+        publisherAppId: string;
+        publisherOwned?: boolean | null;
+        publisherSubject: string;
+        releaseId: string;
+        resourceSummary?: null | MarketResourceSummary;
+        status: string;
+        version: string;
+        [key: string]: unknown;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecModelRouteResponse = {
+    code: number;
+    data?: Array<{
+        apiBaseUrl: string;
+        apiKeyConfigured: boolean;
+        defaultChatModel: string;
+        enabled: boolean;
+        id: string;
+        isDefault: boolean;
+        models: Array<string>;
+        name: string;
     }>;
     message: string;
     time: string;
@@ -1206,6 +1746,13 @@ export type ApiResponseVecRoleResponse = {
     time: string;
 };
 
+export type ApiResponseVecString = {
+    code: number;
+    data?: Array<string>;
+    message: string;
+    time: string;
+};
+
 export type ApiResponseVecUserResponse = {
     code: number;
     data?: Array<{
@@ -1241,6 +1788,69 @@ export type ApiResponseVecUserResponse = {
     time: string;
 };
 
+export type ApiResponseVecViewButtonRuntime = {
+    code: number;
+    data?: Array<{
+        binding: ViewButtonBinding;
+        definition?: null | ApiCustomButton;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseWorkflowCommentListResponse = {
+    code: number;
+    data?: {
+        items: Array<WorkflowCommentResponse>;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseWorkflowCommentResponse = {
+    code: number;
+    data?: {
+        author: string;
+        content: string;
+        createdAt: string;
+        id: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseWorkflowNotificationListResponse = {
+    code: number;
+    data?: {
+        items: Array<WorkflowNotificationResponse>;
+        unread: number;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseWorkflowNotificationPreferences = {
+    code: number;
+    data?: {
+        inAppEnabled: boolean;
+        pollIntervalSeconds: number;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseWorkflowRuntimeResponse = {
+    code: number;
+    data?: {
+        actions: Array<WorkflowActionResponse>;
+        instance?: unknown;
+        runId?: string | null;
+        tasks: Array<unknown>;
+    };
+    message: string;
+    time: string;
+};
+
 export type ApiResponseUsize = {
     code: number;
     data?: number;
@@ -1259,13 +1869,46 @@ export type AutomationFlowType = 'trigger' | 'process';
 
 export type AutomationStatus = 'enabled' | 'paused';
 
-export type AutomationTriggerEvent = 'before_create' | 'after_create' | 'before_update' | 'after_update' | 'before_delete' | 'after_delete' | 'form_submit';
+export type AutomationTriggerEvent = 'before_create' | 'after_create' | 'before_update' | 'after_update' | 'before_delete' | 'after_delete' | 'form_submit' | 'button_click';
+
+export type ButtonAutomationOption = {
+    id: string;
+    name: string;
+    sourceFormUuid: string;
+    status: string;
+};
+
+export type ButtonAvailability = {
+    mode: string;
+    rules: Array<ButtonConditionRule>;
+};
+
+export type ButtonConditionRule = {
+    fieldKey?: string | null;
+    id: string;
+    isGroup?: boolean | null;
+    logicalOperator?: string | null;
+    operator?: string | null;
+    parentId?: string | null;
+    rawValue?: string | null;
+    sourceFieldKey?: string | null;
+    valueType?: string | null;
+};
+
+export type ButtonInvocation = {
+    data?: unknown;
+    recordId: string;
+};
 
 export type ClearDingTalkDataResponse = {
     deletedOrganizationUnits: number;
     deletedRolePermissions: number;
     deletedRoles: number;
     deletedUsers: number;
+};
+
+export type ClearPlatformLogsResponse = {
+    clearedSizeBytes: number;
 };
 
 export type CommunicationAttachmentResponse = {
@@ -1367,9 +2010,12 @@ export type CreateAutomationFlowRequest = {
     description?: string | null;
     name?: string | null;
     operator?: string | null;
-    triggerEvent?: null | AutomationTriggerEvent;
     triggerEvents?: Array<AutomationTriggerEvent> | null;
     triggerFormUuid?: string | null;
+};
+
+export type CreateButtonAutomationRequest = {
+    name: string;
 };
 
 export type CreateDetailFormRequest = {
@@ -1409,11 +2055,17 @@ export type CreateLocalRoleRequest = {
 export type CreateLocalUserRequest = {
     displayName: string;
     email?: string | null;
+    emailAddresses?: Array<EmailAddressRequest> | null;
+    jobNumber?: string | null;
     mobile?: string | null;
     password: string;
+    remark?: string | null;
     roleIds: Array<string>;
+    status?: string | null;
+    telephone?: string | null;
     title?: string | null;
     username: string;
+    workPlace?: string | null;
 };
 
 export type CreateNavigationGroupRequest = {
@@ -1480,13 +2132,40 @@ export type DingTalkSettings = {
 };
 
 export type EmailAddressRequest = {
+    clearSmtpAuthorization?: boolean;
     email: string;
     label: string;
+    smtpPassword?: string | null;
 };
 
 export type EmailAddressResponse = {
     email: string;
     label: string;
+};
+
+export type ExecuteButtonRequest = {
+    recordId: string;
+    requestId: string;
+};
+
+export type ExecuteButtonResponse = {
+    runId: string;
+    status: string;
+};
+
+export type FileUploadBody = {
+    file: Blob | File;
+};
+
+export type FillFormConfig = {
+    automationId?: string | null;
+    fieldIds?: Array<string>;
+    linkType?: string | null;
+    openMode?: string | null;
+    pageMode?: string | null;
+    targetAppId?: string;
+    targetFormUuid?: string;
+    url?: string | null;
 };
 
 export type FormBootstrapResponse = {
@@ -1503,6 +2182,10 @@ export type FormViewResponse = {
     name: string;
     updatedAt: string;
     viewUuid: string;
+};
+
+export type HealthResponse = {
+    status: string;
 };
 
 export type IdentitySourceSettings = {
@@ -1555,8 +2238,120 @@ export type LocationResponse = {
     parentId?: string | null;
 };
 
+export type MailAttachment = {
+    contentType: string;
+    filename: string;
+    id: number;
+    size: number;
+};
+
+export type MailComposeContext = {
+    sender: MailContact;
+};
+
+export type MailContact = {
+    avatarUrl?: string | null;
+    email: string;
+    name: string;
+};
+
+export type MailDetailResponse = {
+    attachments: Array<MailAttachment>;
+    cc: string;
+    hasAttachments: boolean;
+    html?: string | null;
+    inlineImages: {
+        [key: string]: string;
+    };
+    recipient: string;
+    sender: string;
+    sentAt: string;
+    subject: string;
+    text: string;
+};
+
+export type MailPageResponse = {
+    items: Array<MailSummary>;
+    nextBeforeUid?: number | null;
+    notice?: string | null;
+    uidValidity: number;
+};
+
+export type MailSummary = {
+    id: string;
+    isRead: boolean;
+    isStarred: boolean;
+    preview: string;
+    recipient: string;
+    sender: string;
+    sentAt: string;
+    subject: string;
+};
+
 export type MarkConversationReadRequest = {
     sequence?: number | null;
+};
+
+export type MarketInstallPreflight = {
+    alreadyInstalled: boolean;
+    blockingIssues: Array<string>;
+    connectorBindingRequired: boolean;
+    productId: string;
+    releaseId: string;
+    resourceSummary?: null | MarketResourceSummary;
+    version?: string | null;
+};
+
+export type MarketInstallResponse = {
+    disabledAutomations: number;
+    installationId: string;
+    localAppId: string;
+    releaseId: string;
+};
+
+export type MarketInstallation = {
+    archivedAt?: string | null;
+    events: Array<MarketInstallationEvent>;
+    installationId: string;
+    installedAt: string;
+    legacyMapping: boolean;
+    localAppId: string;
+    productId: string;
+    releaseId: string;
+    status: string;
+    updatedAt: string;
+    versions: Array<MarketInstallationVersion>;
+};
+
+export type MarketInstallationEvent = {
+    createdAt: string;
+    detail: unknown;
+    eventType: string;
+};
+
+export type MarketInstallationStatus = {
+    installationId: string;
+    status: string;
+};
+
+export type MarketInstallationVersion = {
+    appliedAt: string;
+    releaseId: string;
+    version: string;
+};
+
+export type MarketProduct = {
+    description: string;
+    name: string;
+    productId: string;
+    publisherAppId: string;
+    publisherOwned?: boolean | null;
+    publisherSubject: string;
+    releaseId: string;
+    resourceSummary?: null | MarketResourceSummary;
+    status: string;
+    version: string;
+    [key: string]: unknown;
 };
 
 export type MarketPurchaseReceipt = {
@@ -1566,8 +2361,86 @@ export type MarketPurchaseReceipt = {
     status: string;
 };
 
+export type MarketPurgeResponse = {
+    installationId: string;
+};
+
+export type MarketReleaseResponse = {
+    installationId: string;
+    releaseId: string;
+};
+
+export type MarketResourceSummary = {
+    automations?: number | null;
+    forms?: number | null;
+    navigation?: number | null;
+    [key: string]: unknown;
+};
+
+export type MarketRollbackRequest = {
+    releaseId?: string | null;
+};
+
+export type MarketSubmission = {
+    appId: string;
+    appName: string;
+    applicantSubject?: string;
+    snapshot: unknown;
+    status: string;
+    submissionId: string;
+    submittedAt: number;
+    submittedBy: string;
+    version?: string;
+};
+
+export type MarketSyncResponse = {
+    updated: number;
+};
+
+export type MarketUpgradePreflight = {
+    blockingIssues: Array<string>;
+    canUpgrade: boolean;
+    currentReleaseId: string;
+    installationId: string;
+    targetReleaseId: string;
+    targetVersion?: string | null;
+    upToDate: boolean;
+};
+
+export type ModelRouteRequest = {
+    apiBaseUrl: string;
+    apiKey?: string | null;
+    defaultChatModel: string;
+    enabled?: boolean;
+    isDefault?: boolean;
+    models?: Array<string>;
+    name: string;
+};
+
+export type ModelRouteResponse = {
+    apiBaseUrl: string;
+    apiKeyConfigured: boolean;
+    defaultChatModel: string;
+    enabled: boolean;
+    id: string;
+    isDefault: boolean;
+    models: Array<string>;
+    name: string;
+};
+
 export type MoveFormNavigationRequest = {
     parent_group_id?: string | null;
+};
+
+export type NotificationSettings = {
+    dingtalkEnabled?: boolean;
+    dingtalkWebhookUrl?: string;
+    emailEnabled?: boolean;
+    emailFromAddress?: string;
+    inAppEnabled?: boolean;
+    pollIntervalSeconds?: number;
+    retentionDays?: number;
+    websocketEnabled?: boolean;
 };
 
 export type OrganizationMemberResponse = {
@@ -1646,6 +2519,21 @@ export type PlatformLicenseStatus = {
     subject?: string | null;
     updateAvailable: boolean;
     valid: boolean;
+};
+
+export type PlatformLogListResponse = {
+    records: Array<PlatformLogResponse>;
+    totalCount: number;
+    totalSizeBytes: number;
+};
+
+export type PlatformLogResponse = {
+    fields: unknown;
+    id: string;
+    level: string;
+    message: string;
+    occurredAt: string;
+    target: string;
 };
 
 export type PluginRequest = {
@@ -1740,6 +2628,11 @@ export type ReorderNavigationRequest = {
     target_item_id: string;
 };
 
+export type ResolveExecutionRequest = {
+    acceptDuplicateRisk?: boolean;
+    action: string;
+};
+
 export type RestoreVersionRequest = {
     change_log?: string | null;
 };
@@ -1756,6 +2649,16 @@ export type RoleResponse = {
     name: string;
     sourceType: string;
     status: string;
+};
+
+export type SaveCustomButtonRequest = {
+    actionConfig: FillFormConfig;
+    actionType: string;
+    availability?: ButtonAvailability;
+    description: string;
+    disabledReason?: string;
+    icon?: string | null;
+    name: string;
 };
 
 export type SaveFormViewRequest = {
@@ -1776,6 +2679,28 @@ export type SendCommunicationMessageRequest = {
     fileIds?: Array<string>;
     localId?: string | null;
     messageType: string;
+};
+
+export type SendMailAttachment = {
+    contentBase64: string;
+    contentType: string;
+    filename: string;
+};
+
+export type SendMailRequest = {
+    attachments?: Array<SendMailAttachment>;
+    bcc?: Array<string>;
+    cc?: Array<string>;
+    html?: string | null;
+    subject: string;
+    text: string;
+    to: Array<string>;
+};
+
+export type SendMailResponse = {
+    accepted: boolean;
+    archiveWarning?: string | null;
+    requestId: string;
 };
 
 export type SendSmsCodeRequest = {
@@ -1822,7 +2747,6 @@ export type UpdateAutomationFlowRequest = {
     operator?: string | null;
     status?: null | AutomationStatus;
     triggerConfig?: unknown;
-    triggerEvent?: null | AutomationTriggerEvent;
     triggerEvents?: Array<AutomationTriggerEvent> | null;
     triggerFormUuid?: string | null;
 };
@@ -1872,6 +2796,7 @@ export type UpdateRolePermissionsRequest = {
 };
 
 export type UpdateUserRequest = {
+    clearSmtpAuthorization?: boolean;
     displayName?: string | null;
     email?: string | null;
     emailAddresses?: Array<EmailAddressRequest> | null;
@@ -1879,6 +2804,10 @@ export type UpdateUserRequest = {
     mobile?: string | null;
     remark?: string | null;
     roleIds?: Array<string> | null;
+    /**
+     * Write-only SMTP credential; omitted/empty keeps existing authorization.
+     */
+    smtpPassword?: string | null;
     status?: string | null;
     telephone?: string | null;
     title?: string | null;
@@ -1893,6 +2822,13 @@ export type UpdateValkeySettingsRequest = {
     password?: string | null;
     port: number;
     username: string;
+};
+
+export type UploadedFileResponse = {
+    fileId: string;
+    mimeType: string;
+    name: string;
+    size: number;
 };
 
 export type UserResponse = {
@@ -1937,6 +2873,18 @@ export type UserSyncResponse = {
     updated: number;
 };
 
+export type ValidateRecordRequest = {
+    data: unknown;
+    recordUuid?: string | null;
+    schema?: unknown;
+};
+
+export type ValkeyRuntimeStatusResponse = {
+    latencyMs?: number | null;
+    message: string;
+    status: string;
+};
+
 export type ValkeySettingsResponse = {
     cacheTtlHours: number;
     connectionError?: string | null;
@@ -1954,8 +2902,35 @@ export type VerifySmsCodeRequest = {
     mobile: string;
 };
 
+export type ViewButtonBinding = {
+    buttonId: string;
+};
+
+export type ViewButtonRuntime = {
+    binding: ViewButtonBinding;
+    definition?: null | ApiCustomButton;
+};
+
+export type WorkflowActionResponse = {
+    action: string;
+    comment?: string | null;
+    createdAt: string;
+    operator: string;
+};
+
+export type WorkflowCommentListResponse = {
+    items: Array<WorkflowCommentResponse>;
+};
+
 export type WorkflowCommentRequest = {
     content: string;
+};
+
+export type WorkflowCommentResponse = {
+    author: string;
+    content: string;
+    createdAt: string;
+    id: string;
 };
 
 export type WorkflowExecutionRequest = {
@@ -1963,8 +2938,37 @@ export type WorkflowExecutionRequest = {
     data: unknown;
 };
 
+export type WorkflowNotificationListResponse = {
+    items: Array<WorkflowNotificationResponse>;
+    unread: number;
+};
+
+export type WorkflowNotificationPreferences = {
+    inAppEnabled: boolean;
+    pollIntervalSeconds: number;
+};
+
+export type WorkflowNotificationResponse = {
+    appId?: string | null;
+    content: string;
+    createdAt: string;
+    formUuid: string;
+    id: string;
+    readAt?: string | null;
+    recordUuid: string;
+    title: string;
+    type: string;
+};
+
 export type WorkflowPauseRequest = {
     reason?: string | null;
+};
+
+export type WorkflowRuntimeResponse = {
+    actions: Array<WorkflowActionResponse>;
+    instance?: unknown;
+    runId?: string | null;
+    tasks: Array<unknown>;
 };
 
 export type WorkflowTaskActionRequest = {
@@ -1972,6 +2976,19 @@ export type WorkflowTaskActionRequest = {
     comment?: string | null;
     messageId?: string | null;
 };
+
+export type ListArchivedAgentSessionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agent/archived-sessions';
+};
+
+export type ListArchivedAgentSessionsResponses = {
+    200: ApiResponseVecApiAgentSession;
+};
+
+export type ListArchivedAgentSessionsResponse = ListArchivedAgentSessionsResponses[keyof ListArchivedAgentSessionsResponses];
 
 export type ListPluginsData = {
     body?: never;
@@ -1994,7 +3011,7 @@ export type CreatePluginData = {
 };
 
 export type CreatePluginResponses = {
-    200: ApiResponseAgentPluginDefinition;
+    201: ApiResponseAgentPluginDefinition;
 };
 
 export type CreatePluginResponse = CreatePluginResponses[keyof CreatePluginResponses];
@@ -2009,11 +3026,10 @@ export type DeletePluginData = {
 };
 
 export type DeletePluginResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+    200: ApiResponseValue;
 };
+
+export type DeletePluginResponse = DeletePluginResponses[keyof DeletePluginResponses];
 
 export type UpdatePluginData = {
     body: PluginRequest;
@@ -2051,7 +3067,7 @@ export type CreateProviderData = {
 };
 
 export type CreateProviderResponses = {
-    200: ApiResponseProviderResponse;
+    201: ApiResponseProviderResponse;
 };
 
 export type CreateProviderResponse = CreateProviderResponses[keyof CreateProviderResponses];
@@ -2066,11 +3082,10 @@ export type DeleteProviderData = {
 };
 
 export type DeleteProviderResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+    200: ApiResponseValue;
 };
+
+export type DeleteProviderResponse = DeleteProviderResponses[keyof DeleteProviderResponses];
 
 export type UpdateProviderData = {
     body: ProviderRequest;
@@ -2108,7 +3123,7 @@ export type CreateAgentSessionData = {
 };
 
 export type CreateAgentSessionResponses = {
-    200: ApiResponseApiAgentSession;
+    201: ApiResponseApiAgentSession;
 };
 
 export type CreateAgentSessionResponse = CreateAgentSessionResponses[keyof CreateAgentSessionResponses];
@@ -2123,11 +3138,10 @@ export type DeleteAgentSessionData = {
 };
 
 export type DeleteAgentSessionResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+    204: void;
 };
+
+export type DeleteAgentSessionResponse = DeleteAgentSessionResponses[keyof DeleteAgentSessionResponses];
 
 export type UpdateAgentSessionData = {
     body: UpdateAgentSessionRequest;
@@ -2144,6 +3158,101 @@ export type UpdateAgentSessionResponses = {
 
 export type UpdateAgentSessionResponse = UpdateAgentSessionResponses[keyof UpdateAgentSessionResponses];
 
+export type ListAgentArtifactsData = {
+    body?: never;
+    path: {
+        sessionId: string;
+    };
+    query?: {
+        kind?: string;
+    };
+    url: '/api/agent/sessions/{sessionId}/artifacts';
+};
+
+export type ListAgentArtifactsResponses = {
+    200: ApiResponseVecAgentFileResponse;
+};
+
+export type ListAgentArtifactsResponse = ListAgentArtifactsResponses[keyof ListAgentArtifactsResponses];
+
+export type ListAgentFilesData = {
+    body?: never;
+    path: {
+        sessionId: string;
+    };
+    query?: {
+        kind?: string;
+    };
+    url: '/api/agent/sessions/{sessionId}/files';
+};
+
+export type ListAgentFilesResponses = {
+    200: ApiResponseVecAgentFileResponse;
+};
+
+export type ListAgentFilesResponse = ListAgentFilesResponses[keyof ListAgentFilesResponses];
+
+export type UploadAgentFileData = {
+    body: FileUploadBody;
+    path: {
+        sessionId: string;
+    };
+    query?: never;
+    url: '/api/agent/sessions/{sessionId}/files';
+};
+
+export type UploadAgentFileResponses = {
+    200: ApiResponseAgentFileUploadResponse;
+};
+
+export type UploadAgentFileResponse = UploadAgentFileResponses[keyof UploadAgentFileResponses];
+
+export type DownloadAgentFileData = {
+    body?: never;
+    path: {
+        sessionId: string;
+        fileId: string;
+    };
+    query?: never;
+    url: '/api/agent/sessions/{sessionId}/files/{fileId}';
+};
+
+export type DownloadAgentFileResponses = {
+    200: Blob | File;
+};
+
+export type DownloadAgentFileResponse = DownloadAgentFileResponses[keyof DownloadAgentFileResponses];
+
+export type PurgeAgentSessionData = {
+    body?: never;
+    path: {
+        sessionId: string;
+    };
+    query?: never;
+    url: '/api/agent/sessions/{sessionId}/purge';
+};
+
+export type PurgeAgentSessionResponses = {
+    204: void;
+};
+
+export type PurgeAgentSessionResponse = PurgeAgentSessionResponses[keyof PurgeAgentSessionResponses];
+
+export type RestoreAgentSessionData = {
+    body?: never;
+    path: {
+        sessionId: string;
+    };
+    query?: never;
+    url: '/api/agent/sessions/{sessionId}/restore';
+};
+
+export type RestoreAgentSessionResponses = {
+    200: ApiResponseApiAgentSession;
+};
+
+export type RestoreAgentSessionResponse = RestoreAgentSessionResponses[keyof RestoreAgentSessionResponses];
+
 export type GetSystemAiStatusData = {
     body?: never;
     path?: never;
@@ -2156,6 +3265,25 @@ export type GetSystemAiStatusResponses = {
 };
 
 export type GetSystemAiStatusResponse = GetSystemAiStatusResponses[keyof GetSystemAiStatusResponses];
+
+export type ListAgentWorkbenchSessionsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        cursor?: string;
+        limit?: number;
+        agentId?: string;
+        runStatus?: string;
+        query?: string;
+    };
+    url: '/api/agent/workbench/sessions';
+};
+
+export type ListAgentWorkbenchSessionsResponses = {
+    200: ApiResponseApiAgentWorkbenchSessionPage;
+};
+
+export type ListAgentWorkbenchSessionsResponse = ListAgentWorkbenchSessionsResponses[keyof ListAgentWorkbenchSessionsResponses];
 
 export type ListAppsData = {
     body?: never;
@@ -2178,7 +3306,7 @@ export type CreateAppData = {
 };
 
 export type CreateAppResponses = {
-    200: ApiResponseApiApp;
+    201: ApiResponseApiApp;
 };
 
 export type CreateAppResponse = CreateAppResponses[keyof CreateAppResponses];
@@ -2193,11 +3321,25 @@ export type DeleteAppData = {
 };
 
 export type DeleteAppResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+    200: ApiResponseValue;
 };
+
+export type DeleteAppResponse = DeleteAppResponses[keyof DeleteAppResponses];
+
+export type GetAppData = {
+    body?: never;
+    path: {
+        appId: string;
+    };
+    query?: never;
+    url: '/api/apps/{appId}';
+};
+
+export type GetAppResponses = {
+    200: ApiResponseApiApp;
+};
+
+export type GetAppResponse = GetAppResponses[keyof GetAppResponses];
 
 export type UpdateAppData = {
     body: UpdateAppRequest;
@@ -2239,7 +3381,7 @@ export type CreateAutomationFlowData = {
 };
 
 export type CreateAutomationFlowResponses = {
-    200: ApiResponseApiAutomationFlow;
+    201: ApiResponseApiAutomationFlow;
 };
 
 export type CreateAutomationFlowResponse = CreateAutomationFlowResponses[keyof CreateAutomationFlowResponses];
@@ -2284,10 +3426,40 @@ export type CreateFormData = {
 };
 
 export type CreateFormResponses = {
-    200: ApiResponseApiFormSummary;
+    201: ApiResponseApiFormSummary;
 };
 
 export type CreateFormResponse = CreateFormResponses[keyof CreateFormResponses];
+
+export type GetMarketSubmissionData = {
+    body?: never;
+    path: {
+        appId: string;
+    };
+    query?: never;
+    url: '/api/apps/{appId}/market-submission';
+};
+
+export type GetMarketSubmissionResponses = {
+    200: ApiResponseOptionMarketSubmission;
+};
+
+export type GetMarketSubmissionResponse = GetMarketSubmissionResponses[keyof GetMarketSubmissionResponses];
+
+export type SubmitMarketApplicationData = {
+    body?: never;
+    path: {
+        appId: string;
+    };
+    query?: never;
+    url: '/api/apps/{appId}/market-submission';
+};
+
+export type SubmitMarketApplicationResponses = {
+    200: ApiResponseMarketSubmission;
+};
+
+export type SubmitMarketApplicationResponse = SubmitMarketApplicationResponses[keyof SubmitMarketApplicationResponses];
 
 export type ListAppNavigationData = {
     body?: never;
@@ -2360,7 +3532,7 @@ export type CreateNavigationGroupData = {
 };
 
 export type CreateNavigationGroupResponses = {
-    200: ApiResponseApiNavigationItem;
+    201: ApiResponseApiNavigationItem;
 };
 
 export type CreateNavigationGroupResponse = CreateNavigationGroupResponses[keyof CreateNavigationGroupResponses];
@@ -2397,6 +3569,19 @@ export type UpdateNavigationGroupResponses = {
 
 export type UpdateNavigationGroupResponse = UpdateNavigationGroupResponses[keyof UpdateNavigationGroupResponses];
 
+export type GetAuthorizationGrantsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/authorization/grants';
+};
+
+export type GetAuthorizationGrantsResponses = {
+    200: ApiResponseVecString;
+};
+
+export type GetAuthorizationGrantsResponse = GetAuthorizationGrantsResponses[keyof GetAuthorizationGrantsResponses];
+
 export type DeleteAutomationFlowData = {
     body?: never;
     path: {
@@ -2407,11 +3592,10 @@ export type DeleteAutomationFlowData = {
 };
 
 export type DeleteAutomationFlowResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+    200: ApiResponseValue;
 };
+
+export type DeleteAutomationFlowResponse = DeleteAutomationFlowResponses[keyof DeleteAutomationFlowResponses];
 
 export type GetAutomationFlowData = {
     body?: never;
@@ -2475,6 +3659,22 @@ export type RetryAutomationFlowRunNodeResponses = {
 
 export type RetryAutomationFlowRunNodeResponse = RetryAutomationFlowRunNodeResponses[keyof RetryAutomationFlowRunNodeResponses];
 
+export type ResolveAutomationExecutionData = {
+    body: ResolveExecutionRequest;
+    path: {
+        automationId: string;
+        runId: string;
+    };
+    query?: never;
+    url: '/api/automations/{automationId}/runs/{runId}/resolve';
+};
+
+export type ResolveAutomationExecutionResponses = {
+    200: ApiResponseValue;
+};
+
+export type ResolveAutomationExecutionResponse = ResolveAutomationExecutionResponses[keyof ResolveAutomationExecutionResponses];
+
 export type RetryAutomationFlowRunData = {
     body?: never;
     path: {
@@ -2490,6 +3690,23 @@ export type RetryAutomationFlowRunResponses = {
 };
 
 export type RetryAutomationFlowRunResponse = RetryAutomationFlowRunResponses[keyof RetryAutomationFlowRunResponses];
+
+export type RetryAutomationVisitData = {
+    body?: never;
+    path: {
+        automationId: string;
+        runId: string;
+        logId: string;
+    };
+    query?: never;
+    url: '/api/automations/{automationId}/runs/{runId}/visits/{logId}/retry';
+};
+
+export type RetryAutomationVisitResponses = {
+    200: ApiResponseValue;
+};
+
+export type RetryAutomationVisitResponse = RetryAutomationVisitResponses[keyof RetryAutomationVisitResponses];
 
 export type ListAutomationFlowVersionsData = {
     body?: never;
@@ -2729,6 +3946,34 @@ export type ListCommunicationUsersResponses = {
 
 export type ListCommunicationUsersResponse = ListCommunicationUsersResponses[keyof ListCommunicationUsersResponses];
 
+export type UploadFileData = {
+    body: FileUploadBody;
+    path?: never;
+    query?: never;
+    url: '/api/files/upload';
+};
+
+export type UploadFileResponses = {
+    200: ApiResponseUploadedFileResponse;
+};
+
+export type UploadFileResponse = UploadFileResponses[keyof UploadFileResponses];
+
+export type DownloadFileData = {
+    body?: never;
+    path: {
+        fileId: string;
+    };
+    query?: never;
+    url: '/api/files/{fileId}/download';
+};
+
+export type DownloadFileResponses = {
+    200: Blob | File;
+};
+
+export type DownloadFileResponse = DownloadFileResponses[keyof DownloadFileResponses];
+
 export type GetFormSchemaContractData = {
     body?: never;
     path?: never;
@@ -2752,11 +3997,10 @@ export type DeleteFormData = {
 };
 
 export type DeleteFormResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+    200: ApiResponseValue;
 };
+
+export type DeleteFormResponse = DeleteFormResponses[keyof DeleteFormResponses];
 
 export type GetFormData = {
     body?: never;
@@ -2807,6 +4051,133 @@ export type GetFormBootstrapResponses = {
 
 export type GetFormBootstrapResponse = GetFormBootstrapResponses[keyof GetFormBootstrapResponses];
 
+export type ListViewButtonOptionsData = {
+    body?: never;
+    path: {
+        formUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/custom-button-options';
+};
+
+export type ListViewButtonOptionsResponses = {
+    200: ApiResponseVecApiCustomButton;
+};
+
+export type ListViewButtonOptionsResponse = ListViewButtonOptionsResponses[keyof ListViewButtonOptionsResponses];
+
+export type ListCustomButtonsData = {
+    body?: never;
+    path: {
+        formUuid: string;
+    };
+    query?: {
+        search?: string;
+        page?: number;
+        pageSize?: number;
+    };
+    url: '/api/forms/{formUuid}/custom-buttons';
+};
+
+export type ListCustomButtonsResponses = {
+    200: ApiResponseApiCustomButtonList;
+};
+
+export type ListCustomButtonsResponse = ListCustomButtonsResponses[keyof ListCustomButtonsResponses];
+
+export type CreateCustomButtonData = {
+    body: SaveCustomButtonRequest;
+    path: {
+        formUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/custom-buttons';
+};
+
+export type CreateCustomButtonResponses = {
+    200: ApiResponseApiCustomButton;
+};
+
+export type CreateCustomButtonResponse = CreateCustomButtonResponses[keyof CreateCustomButtonResponses];
+
+export type ListButtonAutomationOptionsData = {
+    body?: never;
+    path: {
+        formUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/custom-buttons/automation-options';
+};
+
+export type ListButtonAutomationOptionsResponses = {
+    200: ApiResponseVecButtonAutomationOption;
+};
+
+export type ListButtonAutomationOptionsResponse = ListButtonAutomationOptionsResponses[keyof ListButtonAutomationOptionsResponses];
+
+export type CreateButtonAutomationForFormData = {
+    body: CreateButtonAutomationRequest;
+    path: {
+        formUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/custom-buttons/automations';
+};
+
+export type CreateButtonAutomationForFormResponses = {
+    200: ApiResponseApiAutomationFlow;
+};
+
+export type CreateButtonAutomationForFormResponse = CreateButtonAutomationForFormResponses[keyof CreateButtonAutomationForFormResponses];
+
+export type DeleteCustomButtonData = {
+    body?: never;
+    path: {
+        formUuid: string;
+        buttonId: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/custom-buttons/{buttonId}';
+};
+
+export type DeleteCustomButtonResponses = {
+    200: ApiResponseValue;
+};
+
+export type DeleteCustomButtonResponse = DeleteCustomButtonResponses[keyof DeleteCustomButtonResponses];
+
+export type GetCustomButtonData = {
+    body?: never;
+    path: {
+        formUuid: string;
+        buttonId: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/custom-buttons/{buttonId}';
+};
+
+export type GetCustomButtonResponses = {
+    200: ApiResponseApiCustomButton;
+};
+
+export type GetCustomButtonResponse = GetCustomButtonResponses[keyof GetCustomButtonResponses];
+
+export type UpdateCustomButtonData = {
+    body: SaveCustomButtonRequest;
+    path: {
+        formUuid: string;
+        buttonId: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/custom-buttons/{buttonId}';
+};
+
+export type UpdateCustomButtonResponses = {
+    200: ApiResponseApiCustomButton;
+};
+
+export type UpdateCustomButtonResponse = UpdateCustomButtonResponses[keyof UpdateCustomButtonResponses];
+
 export type ListDetailFormsData = {
     body?: never;
     path: {
@@ -2832,7 +4203,7 @@ export type CreateDetailFormData = {
 };
 
 export type CreateDetailFormResponses = {
-    200: ApiResponseApiDetailForm;
+    201: ApiResponseApiDetailForm;
 };
 
 export type CreateDetailFormResponse = CreateDetailFormResponses[keyof CreateDetailFormResponses];
@@ -2865,7 +4236,7 @@ export type CreateFormRecordData = {
 };
 
 export type CreateFormRecordResponses = {
-    200: ApiResponseApiFormRecord;
+    201: ApiResponseApiFormRecord;
 };
 
 export type CreateFormRecordResponse = CreateFormRecordResponses[keyof CreateFormRecordResponses];
@@ -2884,6 +4255,21 @@ export type QueryFormRecordsResponses = {
 };
 
 export type QueryFormRecordsResponse = QueryFormRecordsResponses[keyof QueryFormRecordsResponses];
+
+export type ValidateFormRecordData = {
+    body: ValidateRecordRequest;
+    path: {
+        formUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/records/validate';
+};
+
+export type ValidateFormRecordResponses = {
+    200: ApiResponseBTreeMapStringString;
+};
+
+export type ValidateFormRecordResponse = ValidateFormRecordResponses[keyof ValidateFormRecordResponses];
 
 export type DeleteFormRecordData = {
     body?: never;
@@ -2928,7 +4314,7 @@ export type GetWorkflowRecordRuntimeData = {
 };
 
 export type GetWorkflowRecordRuntimeResponses = {
-    200: ApiResponseValue;
+    200: ApiResponseWorkflowRuntimeResponse;
 };
 
 export type GetWorkflowRecordRuntimeResponse = GetWorkflowRecordRuntimeResponses[keyof GetWorkflowRecordRuntimeResponses];
@@ -2944,7 +4330,7 @@ export type ListWorkflowCommentsData = {
 };
 
 export type ListWorkflowCommentsResponses = {
-    200: ApiResponseValue;
+    200: ApiResponseWorkflowCommentListResponse;
 };
 
 export type ListWorkflowCommentsResponse = ListWorkflowCommentsResponses[keyof ListWorkflowCommentsResponses];
@@ -2960,7 +4346,7 @@ export type CreateWorkflowCommentData = {
 };
 
 export type CreateWorkflowCommentResponses = {
-    200: ApiResponseValue;
+    200: ApiResponseWorkflowCommentResponse;
 };
 
 export type CreateWorkflowCommentResponse = CreateWorkflowCommentResponses[keyof CreateWorkflowCommentResponses];
@@ -3171,6 +4557,73 @@ export type UpdateFormViewResponses = {
 
 export type UpdateFormViewResponse = UpdateFormViewResponses[keyof UpdateFormViewResponses];
 
+export type ListViewButtonsData = {
+    body?: never;
+    path: {
+        formUuid: string;
+        viewUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/views/{viewUuid}/custom-buttons';
+};
+
+export type ListViewButtonsResponses = {
+    200: ApiResponseVecViewButtonRuntime;
+};
+
+export type ListViewButtonsResponse = ListViewButtonsResponses[keyof ListViewButtonsResponses];
+
+export type ExecuteViewButtonData = {
+    body: ExecuteButtonRequest;
+    path: {
+        formUuid: string;
+        viewUuid: string;
+        buttonUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/views/{viewUuid}/custom-buttons/{buttonUuid}/execute';
+};
+
+export type ExecuteViewButtonResponses = {
+    200: ApiResponseExecuteButtonResponse;
+};
+
+export type ExecuteViewButtonResponse = ExecuteViewButtonResponses[keyof ExecuteViewButtonResponses];
+
+export type PrepareViewButtonData = {
+    body: ButtonInvocation;
+    path: {
+        formUuid: string;
+        viewUuid: string;
+        buttonUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/views/{viewUuid}/custom-buttons/{buttonUuid}/prepare';
+};
+
+export type PrepareViewButtonResponses = {
+    200: ApiResponseApiCustomButton;
+};
+
+export type PrepareViewButtonResponse = PrepareViewButtonResponses[keyof PrepareViewButtonResponses];
+
+export type SubmitViewButtonData = {
+    body: ButtonInvocation;
+    path: {
+        formUuid: string;
+        viewUuid: string;
+        buttonUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/views/{viewUuid}/custom-buttons/{buttonUuid}/submit';
+};
+
+export type SubmitViewButtonResponses = {
+    200: ApiResponseApiFormRecord;
+};
+
+export type SubmitViewButtonResponse = SubmitViewButtonResponses[keyof SubmitViewButtonResponses];
+
 export type EnsureWorkflowProcessFlowData = {
     body?: never;
     path: {
@@ -3274,11 +4727,10 @@ export type DeleteLocalRoleData = {
 };
 
 export type DeleteLocalRoleResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+    200: ApiResponseValue;
 };
+
+export type DeleteLocalRoleResponse = DeleteLocalRoleResponses[keyof DeleteLocalRoleResponses];
 
 export type UpdateLocalRoleData = {
     body: UpdateLocalRoleRequest;
@@ -3370,11 +4822,10 @@ export type DeleteUserData = {
 };
 
 export type DeleteUserResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+    200: ApiResponseValue;
 };
+
+export type DeleteUserResponse = DeleteUserResponses[keyof DeleteUserResponses];
 
 export type UpdateUserData = {
     body: UpdateUserRequest;
@@ -3399,11 +4850,10 @@ export type GetInternalIdentitySourceSettingsData = {
 };
 
 export type GetInternalIdentitySourceSettingsResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+    200: ApiResponseIdentitySourceSettings;
 };
+
+export type GetInternalIdentitySourceSettingsResponse = GetInternalIdentitySourceSettingsResponses[keyof GetInternalIdentitySourceSettingsResponses];
 
 export type ListLocationsData = {
     body?: never;
@@ -3435,6 +4885,276 @@ export type ImportLocationsResponses = {
 };
 
 export type ImportLocationsResponse = ImportLocationsResponses[keyof ImportLocationsResponses];
+
+export type GetMailComposeContextData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/mail/compose/context';
+};
+
+export type GetMailComposeContextResponses = {
+    200: ApiResponseMailComposeContext;
+};
+
+export type GetMailComposeContextResponse = GetMailComposeContextResponses[keyof GetMailComposeContextResponses];
+
+export type GetRecentMailContactsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/mail/contacts/recent';
+};
+
+export type GetRecentMailContactsResponses = {
+    200: ApiResponseVecMailContact;
+};
+
+export type GetRecentMailContactsResponse = GetRecentMailContactsResponses[keyof GetRecentMailContactsResponses];
+
+export type ListMailMessagesData = {
+    body?: never;
+    path?: never;
+    query: {
+        folder: string;
+        beforeUid?: number;
+        uidValidity?: number;
+    };
+    url: '/api/mail/messages';
+};
+
+export type ListMailMessagesResponses = {
+    200: ApiResponseMailPageResponse;
+};
+
+export type ListMailMessagesResponse = ListMailMessagesResponses[keyof ListMailMessagesResponses];
+
+export type GetMailMessageData = {
+    body?: never;
+    path: {
+        uid: number;
+    };
+    query: {
+        folder: string;
+        uidValidity: number;
+    };
+    url: '/api/mail/messages/{uid}';
+};
+
+export type GetMailMessageResponses = {
+    200: ApiResponseMailDetailResponse;
+};
+
+export type GetMailMessageResponse = GetMailMessageResponses[keyof GetMailMessageResponses];
+
+export type DownloadMailAttachmentData = {
+    body?: never;
+    path: {
+        uid: number;
+        attachmentId: number;
+    };
+    query: {
+        folder: string;
+        uidValidity: number;
+    };
+    url: '/api/mail/messages/{uid}/attachments/{attachmentId}';
+};
+
+export type DownloadMailAttachmentResponses = {
+    /**
+     * Attachment download
+     */
+    200: Array<number>;
+};
+
+export type DownloadMailAttachmentResponse = DownloadMailAttachmentResponses[keyof DownloadMailAttachmentResponses];
+
+export type SendMailData = {
+    body: SendMailRequest;
+    path?: never;
+    query?: never;
+    url: '/api/mail/send';
+};
+
+export type SendMailResponses = {
+    200: ApiResponseSendMailResponse;
+};
+
+export type SendMailResponse2 = SendMailResponses[keyof SendMailResponses];
+
+export type ListMarketApplicationsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/market/applications';
+};
+
+export type ListMarketApplicationsResponses = {
+    200: ApiResponseVecMarketProduct;
+};
+
+export type ListMarketApplicationsResponse = ListMarketApplicationsResponses[keyof ListMarketApplicationsResponses];
+
+export type SyncMarketApplicationsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/market/applications/sync';
+};
+
+export type SyncMarketApplicationsResponses = {
+    200: ApiResponseMarketSyncResponse;
+};
+
+export type SyncMarketApplicationsResponse = SyncMarketApplicationsResponses[keyof SyncMarketApplicationsResponses];
+
+export type GetMarketApplicationData = {
+    body?: never;
+    path: {
+        productId: string;
+    };
+    query?: never;
+    url: '/api/market/applications/{productId}';
+};
+
+export type GetMarketApplicationResponses = {
+    200: ApiResponseMarketProduct;
+};
+
+export type GetMarketApplicationResponse = GetMarketApplicationResponses[keyof GetMarketApplicationResponses];
+
+export type InstallMarketApplicationData = {
+    body?: never;
+    path: {
+        productId: string;
+    };
+    query?: never;
+    url: '/api/market/applications/{productId}/installations';
+};
+
+export type InstallMarketApplicationResponses = {
+    200: ApiResponseMarketInstallResponse;
+};
+
+export type InstallMarketApplicationResponse = InstallMarketApplicationResponses[keyof InstallMarketApplicationResponses];
+
+export type PreflightMarketApplicationData = {
+    body?: never;
+    path: {
+        productId: string;
+    };
+    query?: never;
+    url: '/api/market/applications/{productId}/preflight';
+};
+
+export type PreflightMarketApplicationResponses = {
+    200: ApiResponseMarketInstallPreflight;
+};
+
+export type PreflightMarketApplicationResponse = PreflightMarketApplicationResponses[keyof PreflightMarketApplicationResponses];
+
+export type ListMarketInstallationsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/market/installations';
+};
+
+export type ListMarketInstallationsResponses = {
+    200: ApiResponseVecMarketInstallation;
+};
+
+export type ListMarketInstallationsResponse = ListMarketInstallationsResponses[keyof ListMarketInstallationsResponses];
+
+export type ArchiveMarketInstallationData = {
+    body?: never;
+    path: {
+        installationId: string;
+    };
+    query?: never;
+    url: '/api/market/installations/{installationId}';
+};
+
+export type ArchiveMarketInstallationResponses = {
+    200: ApiResponseMarketInstallationStatus;
+};
+
+export type ArchiveMarketInstallationResponse = ArchiveMarketInstallationResponses[keyof ArchiveMarketInstallationResponses];
+
+export type PreflightMarketInstallationData = {
+    body?: never;
+    path: {
+        installationId: string;
+    };
+    query?: never;
+    url: '/api/market/installations/{installationId}/preflight';
+};
+
+export type PreflightMarketInstallationResponses = {
+    200: ApiResponseMarketUpgradePreflight;
+};
+
+export type PreflightMarketInstallationResponse = PreflightMarketInstallationResponses[keyof PreflightMarketInstallationResponses];
+
+export type PurgeMarketInstallationData = {
+    body?: never;
+    path: {
+        installationId: string;
+    };
+    query?: never;
+    url: '/api/market/installations/{installationId}/purge';
+};
+
+export type PurgeMarketInstallationResponses = {
+    200: ApiResponseMarketPurgeResponse;
+};
+
+export type PurgeMarketInstallationResponse = PurgeMarketInstallationResponses[keyof PurgeMarketInstallationResponses];
+
+export type RestoreMarketInstallationData = {
+    body?: never;
+    path: {
+        installationId: string;
+    };
+    query?: never;
+    url: '/api/market/installations/{installationId}/restore';
+};
+
+export type RestoreMarketInstallationResponses = {
+    200: ApiResponseMarketInstallationStatus;
+};
+
+export type RestoreMarketInstallationResponse = RestoreMarketInstallationResponses[keyof RestoreMarketInstallationResponses];
+
+export type RollbackMarketInstallationData = {
+    body: MarketRollbackRequest;
+    path: {
+        installationId: string;
+    };
+    query?: never;
+    url: '/api/market/installations/{installationId}/rollback';
+};
+
+export type RollbackMarketInstallationResponses = {
+    200: ApiResponseMarketReleaseResponse;
+};
+
+export type RollbackMarketInstallationResponse = RollbackMarketInstallationResponses[keyof RollbackMarketInstallationResponses];
+
+export type UpgradeMarketInstallationData = {
+    body?: never;
+    path: {
+        installationId: string;
+    };
+    query?: never;
+    url: '/api/market/installations/{installationId}/upgrade';
+};
+
+export type UpgradeMarketInstallationResponses = {
+    200: ApiResponseMarketReleaseResponse;
+};
+
+export type UpgradeMarketInstallationResponse = UpgradeMarketInstallationResponses[keyof UpgradeMarketInstallationResponses];
 
 export type EmptyRecycleBinData = {
     body?: never;
@@ -3517,11 +5237,10 @@ export type InstallAiEmployeeData = {
 };
 
 export type InstallAiEmployeeResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+    200: ApiResponseAiEmployeeInstallationStatus;
 };
+
+export type InstallAiEmployeeResponse = InstallAiEmployeeResponses[keyof InstallAiEmployeeResponses];
 
 export type TestPurchaseAiEmployeeData = {
     body?: never;
@@ -3537,6 +5256,21 @@ export type TestPurchaseAiEmployeeResponses = {
 };
 
 export type TestPurchaseAiEmployeeResponse = TestPurchaseAiEmployeeResponses[keyof TestPurchaseAiEmployeeResponses];
+
+export type UninstallAiEmployeeData = {
+    body?: never;
+    path: {
+        employee_id: string;
+    };
+    query?: never;
+    url: '/api/settings/ai-employee-market/{employee_id}/uninstall';
+};
+
+export type UninstallAiEmployeeResponses = {
+    200: ApiResponseAiEmployeeInstallationStatus;
+};
+
+export type UninstallAiEmployeeResponse = UninstallAiEmployeeResponses[keyof UninstallAiEmployeeResponses];
 
 export type GetCommunicationModuleSettingsData = {
     body?: never;
@@ -3598,11 +5332,10 @@ export type GetDatabaseSettingsData = {
 };
 
 export type GetDatabaseSettingsResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+    200: ApiResponseDatabaseSettingsResponse;
 };
+
+export type GetDatabaseSettingsResponse = GetDatabaseSettingsResponses[keyof GetDatabaseSettingsResponses];
 
 export type UpdateDatabaseSettingsData = {
     body: UpdateDatabaseSettingsRequest;
@@ -3747,6 +5480,118 @@ export type ApplyLatestPlatformLicenseResponses = {
 
 export type ApplyLatestPlatformLicenseResponse = ApplyLatestPlatformLicenseResponses[keyof ApplyLatestPlatformLicenseResponses];
 
+export type ClearPlatformLogsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/logs';
+};
+
+export type ClearPlatformLogsResponses = {
+    200: ApiResponseClearPlatformLogsResponse;
+};
+
+export type ClearPlatformLogsResponse2 = ClearPlatformLogsResponses[keyof ClearPlatformLogsResponses];
+
+export type ListPlatformLogsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        level?: string;
+        limit?: number;
+        offset?: number;
+    };
+    url: '/api/settings/logs';
+};
+
+export type ListPlatformLogsResponses = {
+    200: ApiResponsePlatformLogListResponse;
+};
+
+export type ListPlatformLogsResponse = ListPlatformLogsResponses[keyof ListPlatformLogsResponses];
+
+export type ListModelRoutesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/model-routes';
+};
+
+export type ListModelRoutesResponses = {
+    200: ApiResponseVecModelRouteResponse;
+};
+
+export type ListModelRoutesResponse = ListModelRoutesResponses[keyof ListModelRoutesResponses];
+
+export type CreateModelRouteData = {
+    body: ModelRouteRequest;
+    path?: never;
+    query?: never;
+    url: '/api/settings/model-routes';
+};
+
+export type CreateModelRouteResponses = {
+    201: ApiResponseModelRouteResponse;
+};
+
+export type CreateModelRouteResponse = CreateModelRouteResponses[keyof CreateModelRouteResponses];
+
+export type DeleteModelRouteData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/settings/model-routes/{id}';
+};
+
+export type DeleteModelRouteResponses = {
+    200: ApiResponseValue;
+};
+
+export type DeleteModelRouteResponse = DeleteModelRouteResponses[keyof DeleteModelRouteResponses];
+
+export type UpdateModelRouteData = {
+    body: ModelRouteRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/settings/model-routes/{id}';
+};
+
+export type UpdateModelRouteResponses = {
+    200: ApiResponseModelRouteResponse;
+};
+
+export type UpdateModelRouteResponse = UpdateModelRouteResponses[keyof UpdateModelRouteResponses];
+
+export type GetNotificationSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/notifications';
+};
+
+export type GetNotificationSettingsResponses = {
+    200: ApiResponseNotificationSettings;
+};
+
+export type GetNotificationSettingsResponse = GetNotificationSettingsResponses[keyof GetNotificationSettingsResponses];
+
+export type UpdateNotificationSettingsData = {
+    body: NotificationSettings;
+    path?: never;
+    query?: never;
+    url: '/api/settings/notifications';
+};
+
+export type UpdateNotificationSettingsResponses = {
+    200: ApiResponseNotificationSettings;
+};
+
+export type UpdateNotificationSettingsResponse = UpdateNotificationSettingsResponses[keyof UpdateNotificationSettingsResponses];
+
 export type GetRolePermissionsData = {
     body?: never;
     path: {
@@ -3829,6 +5674,19 @@ export type UpdateValkeySettingsResponses = {
 
 export type UpdateValkeySettingsResponse = UpdateValkeySettingsResponses[keyof UpdateValkeySettingsResponses];
 
+export type GetValkeyRuntimeStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/valkey/status';
+};
+
+export type GetValkeyRuntimeStatusResponses = {
+    200: ApiResponseValkeyRuntimeStatusResponse;
+};
+
+export type GetValkeyRuntimeStatusResponse = GetValkeyRuntimeStatusResponses[keyof GetValkeyRuntimeStatusResponses];
+
 export type TestValkeyConnectionData = {
     body: UpdateValkeySettingsRequest;
     path?: never;
@@ -3842,6 +5700,19 @@ export type TestValkeyConnectionResponses = {
 
 export type TestValkeyConnectionResponse = TestValkeyConnectionResponses[keyof TestValkeyConnectionResponses];
 
+export type GetWorkflowNotificationPreferencesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/workflow/notification-preferences';
+};
+
+export type GetWorkflowNotificationPreferencesResponses = {
+    200: ApiResponseWorkflowNotificationPreferences;
+};
+
+export type GetWorkflowNotificationPreferencesResponse = GetWorkflowNotificationPreferencesResponses[keyof GetWorkflowNotificationPreferencesResponses];
+
 export type ListWorkflowNotificationsData = {
     body?: never;
     path?: never;
@@ -3850,7 +5721,7 @@ export type ListWorkflowNotificationsData = {
 };
 
 export type ListWorkflowNotificationsResponses = {
-    200: ApiResponseValue;
+    200: ApiResponseWorkflowNotificationListResponse;
 };
 
 export type ListWorkflowNotificationsResponse = ListWorkflowNotificationsResponses[keyof ListWorkflowNotificationsResponses];
@@ -3939,8 +5810,7 @@ export type HealthCheckData = {
 };
 
 export type HealthCheckResponses = {
-    /**
-     * Successful response
-     */
-    200: unknown;
+    200: HealthResponse;
 };
+
+export type HealthCheckResponse = HealthCheckResponses[keyof HealthCheckResponses];

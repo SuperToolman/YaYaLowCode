@@ -1,16 +1,22 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Button } from "@heroui/react";
-import type { RuntimeFieldProps, RuntimeSchemaField } from "./RuntimeFormRenderer";
-import styles from "./RuntimeFormControls.module.css";
+import { Button, Label, Table } from "@heroui/react";
+import type {
+  RuntimeFieldProps,
+  RuntimeSchemaField,
+} from "./RuntimeFormRenderer";
 
 type RuntimeSubformTableProps = {
   childFields: RuntimeSchemaField[];
   props: RuntimeFieldProps;
   rows: Array<Record<string, unknown>>;
   showActions: boolean;
-  renderCell: (field: RuntimeSchemaField, row: Record<string, unknown>, rowIndex: number) => ReactNode;
+  renderCell: (
+    field: RuntimeSchemaField,
+    row: Record<string, unknown>,
+    rowIndex: number,
+  ) => ReactNode;
   renderActions: (rowIndex: number) => ReactNode;
 };
 
@@ -28,52 +34,137 @@ export function RuntimeSubformTable({
   const activePage = Math.min(page, pageCount);
   const pageStart = (activePage - 1) * pageSize;
   const pageRows = rows.slice(pageStart, pageStart + pageSize);
-  const columnCount = childFields.length + (props.subformShowIndex !== false ? 1 : 0) + (showActions ? 1 : 0);
+  const columns = [
+    ...(props.subformShowIndex !== false
+      ? [{ id: "index", label: "序号" }]
+      : []),
+    ...childFields.map((field) => ({
+      id: `field:${field.id}`,
+      label: field.label,
+      field,
+    })),
+    ...(showActions ? [{ id: "actions", label: "操作" }] : []),
+  ] as Array<{ id: string; label: string; field?: RuntimeSchemaField }>;
+  if (columns.length === 0) columns.push({ id: "empty", label: "子表单" });
 
   return (
     <>
-      <div className={`${styles["form-runtime-controls__subform-horizontal-scroll"]} overflow-x-auto rounded-xl border border-[var(--color-border)] ${props.subformTheme === "border" ? "divide-y divide-[var(--color-border)]" : ""}`}>
-        <table
-          className="w-full border-collapse text-left text-sm"
-          style={{
-            tableLayout: props.subformLayoutMode === "auto" ? "auto" : "fixed",
-            minWidth: Math.max(
-              720,
-              childFields.length * 180 +
-                (props.subformShowIndex !== false ? 56 : 0) +
-                (showActions ? props.subformActionColumnWidth ?? 70 : 0),
-            ),
-          }}
-        >
-          {props.subformShowHeader !== false ? (
-            <thead className="bg-[var(--color-bg-subtle)]">
-              <tr>
-                {props.subformShowIndex !== false ? <th className="w-14 px-3 py-2 text-center font-medium">序号</th> : null}
-                {childFields.map((child) => <th key={child.id} className="px-3 py-2 font-medium">{child.label}</th>)}
-                {showActions ? <th className="sticky right-0 z-20 border-l border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2 text-center font-medium shadow-[-6px_0_12px_-10px_rgba(15,23,42,0.7)]" style={{ width: props.subformActionColumnWidth ?? 70, minWidth: props.subformActionColumnWidth ?? 70 }}>操作</th> : null}
-              </tr>
-            </thead>
-          ) : null}
-          <tbody>
-            {pageRows.map((row, pageRowIndex) => {
-              const rowIndex = pageStart + pageRowIndex;
-              return (
-                <tr key={rowIndex} className={props.subformTheme === "zebra" && rowIndex % 2 === 1 ? "bg-[var(--color-bg-subtle)]" : "border-t border-[var(--color-border)]"}>
-                  {props.subformShowIndex !== false ? <td className="px-3 py-2 text-center text-[var(--color-text-secondary)]">{rowIndex + 1}</td> : null}
-                  {childFields.map((child) => <td key={child.id} className="min-w-36 px-2 py-2 align-top">{renderCell(child, row, rowIndex)}</td>)}
-                  {showActions ? <td className="sticky right-0 z-10 border-l border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2 py-2 align-middle shadow-[-6px_0_12px_-10px_rgba(15,23,42,0.7)]">{renderActions(rowIndex)}</td> : null}
-                </tr>
-              );
-            })}
-            {rows.length === 0 ? <tr><td className="px-4 py-8 text-center text-sm text-[var(--color-text-secondary)]" colSpan={columnCount}>暂无子表单数据，点击“{props.subformAddButtonText ?? "新增一项"}”开始填写。</td></tr> : null}
-          </tbody>
-        </table>
-      </div>
-      <div className="flex items-center justify-between gap-3 text-xs text-[var(--color-text-secondary)]">
+      <Table className="min-w-0">
+        <Table.ScrollContainer className="min-w-0 max-w-full overflow-x-scroll [scrollbar-width:auto]! [scrollbar-color:auto]! [&::-webkit-scrollbar]:block! [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[var(--color-text-secondary)] [&::-webkit-scrollbar-track]:bg-[var(--color-bg-subtle)]">
+          <Table.Content
+            aria-label="子表单数据"
+            className="w-full text-left text-sm"
+            style={{
+              tableLayout:
+                props.subformLayoutMode === "auto" ? "auto" : "fixed",
+              minWidth: Math.max(
+                720,
+                childFields.length * 180 +
+                  (props.subformShowIndex !== false ? 56 : 0) +
+                  (showActions ? (props.subformActionColumnWidth ?? 70) : 0),
+              ),
+            }}
+          >
+            <Table.Header
+              columns={columns}
+              className={
+                props.subformShowHeader === false ? "hidden" : undefined
+              }
+            >
+              {(column) => (
+                <Table.Column
+                  id={column.id}
+                  isRowHeader={column.id === columns[0].id}
+                  textValue={column.label}
+                  className={
+                    column.id === "actions"
+                      ? "sticky right-0 z-20 border-l border-[var(--color-border)] bg-[var(--surface-secondary)]!"
+                      : undefined
+                  }
+                  style={
+                    column.id === "index"
+                      ? { width: 56 }
+                      : column.id === "actions"
+                        ? {
+                            width: props.subformActionColumnWidth ?? 70,
+                            minWidth: props.subformActionColumnWidth ?? 70,
+                          }
+                        : undefined
+                  }
+                >
+                  {column.field ? (
+                    <Label isRequired={column.field.props?.isRequired}>
+                      {column.label}
+                    </Label>
+                  ) : (
+                    column.label
+                  )}
+                </Table.Column>
+              )}
+            </Table.Header>
+            <Table.Body
+              items={pageRows.map((row, index) => ({
+                id: pageStart + index,
+                row,
+              }))}
+              renderEmptyState={() => (
+                <p className="px-4 py-8 text-center text-sm text-[var(--color-text-secondary)]">
+                  暂无子表单数据，点击“
+                  {props.subformAddButtonText ?? "新增一项"}”开始填写。
+                </p>
+              )}
+            >
+              {(item) => (
+                <Table.Row id={item.id} columns={columns}>
+                  {(column) => (
+                    <Table.Cell
+                      className={
+                        column.id === "actions"
+                          ? "sticky right-0 z-10 border-l border-[var(--color-border)] bg-[var(--surface)]!"
+                          : "p-2 align-center"
+                      }
+                    >
+                      {column.field
+                        ? renderCell(column.field, item.row, item.id)
+                        : column.id === "index"
+                          ? item.id + 1
+                          : column.id === "actions"
+                            ? renderActions(item.id)
+                            : null}
+                    </Table.Cell>
+                  )}
+                </Table.Row>
+              )}
+            </Table.Body>
+          </Table.Content>
+        </Table.ScrollContainer>
+      </Table>
+      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-[var(--color-text-secondary)]">
         <span>共 {rows.length} 行</span>
         <div className="flex items-center gap-2">
-          <span>第 {activePage}/{pageCount} 页 · 每页 {pageSize} 行</span>
-          {pageCount > 1 ? <><Button size="sm" variant="ghost" isDisabled={activePage === 1} onPress={() => setPage(activePage - 1)}>上一页</Button><Button size="sm" variant="ghost" isDisabled={activePage === pageCount} onPress={() => setPage(activePage + 1)}>下一页</Button></> : null}
+          <span>
+            第 {activePage}/{pageCount} 页 · 每页 {pageSize} 行
+          </span>
+          {pageCount > 1 ? (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                isDisabled={activePage === 1}
+                onPress={() => setPage(activePage - 1)}
+              >
+                上一页
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                isDisabled={activePage === pageCount}
+                onPress={() => setPage(activePage + 1)}
+              >
+                下一页
+              </Button>
+            </>
+          ) : null}
         </div>
       </div>
     </>

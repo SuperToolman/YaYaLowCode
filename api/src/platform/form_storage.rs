@@ -104,6 +104,16 @@ pub(crate) fn compile_form_storage_plan(
             .and_then(Value::as_str)
             .filter(|parent_id| subform_ids.contains(*parent_id));
         let (base_target, sql_type) = storage_mapping(component_type);
+        // Keep time and optional IANA zone information intact in the stored ISO string.
+        let sql_type = if component_type == "date"
+            && matches!(
+                field.pointer("/props/granularity").and_then(Value::as_str),
+                Some("hour" | "minute" | "second")
+            ) {
+            Some("TEXT")
+        } else {
+            sql_type
+        };
         let target = if parent_subform_id.is_some() {
             if matches!(base_target, StorageTarget::Column) {
                 StorageTarget::ChildColumn
@@ -161,6 +171,34 @@ where
 
     if let Some(existing) = existing {
         let previous_plan = deserialize_storage_plan(&existing)?;
+        for field in &plan.fields {
+            if field.component_type != "date" || !matches!(field.target, StorageTarget::Column) {
+                continue;
+            }
+            let Some(previous) = previous_plan.fields.iter().find(|old| {
+                old.field_id == field.field_id
+                    && old.sql_type != field.sql_type
+                    && matches!(old.target, StorageTarget::Column)
+            }) else {
+                continue;
+            };
+            if let (Some(old_column), Some(new_column)) =
+                (&previous.column_name, &field.column_name)
+            {
+                let expression = if field.sql_type.as_deref() == Some("TEXT") {
+                    format!("\"{old_column}\"::text")
+                } else {
+                    format!(
+                        "CASE WHEN left(\"{old_column}\", 10) ~ '^\\d{{4}}-\\d{{2}}-\\d{{2}}$' THEN left(\"{old_column}\", 10)::date ELSE NULL END"
+                    )
+                };
+                db.execute_unprepared(&format!(
+                    "UPDATE \"{}\" SET \"{}\" = {}",
+                    plan.main_table, new_column, expression
+                ))
+                .await?;
+            }
+        }
         drop_removed_indexes(db, &previous_plan, &plan).await?;
         drop_removed_child_tables(db, &previous_plan, &plan).await?;
         let mut active: form_storage_definition_entity::ActiveModel = existing.into();
@@ -714,6 +752,24 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn date_format_precision_preserves_time_and_zone_in_text_columns() {
+        let plan = compile_form_storage_plan(
+            "date-format",
+            &json!({"fields": [
+                {"id": "day", "type": "date"},
+                {"id": "hour", "type": "date", "props": {"granularity": "hour"}},
+                {"id": "minute", "type": "date", "props": {"granularity": "minute"}},
+                {"id": "second", "type": "date", "props": {"granularity": "second"}}
+            ]}),
+        )
+        .unwrap();
+        assert_eq!(plan.fields[0].sql_type.as_deref(), Some("DATE"));
+        for field in &plan.fields[1..] {
+            assert_eq!(field.sql_type.as_deref(), Some("TEXT"));
+        }
+    }
 
     #[test]
     fn compiles_scalar_complex_container_and_subform_fields() {

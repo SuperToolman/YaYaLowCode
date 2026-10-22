@@ -21,8 +21,8 @@ export function WorkflowConfigGroup({
   const titleId = useId();
 
   return (
-    <MySurface role="region" aria-labelledby={titleId} className="shadow-lg">
-      <div className="p-2">
+    <MySurface role="region" aria-labelledby={titleId} className=" shadow-lg">
+      <div className="p-2 flex justify-between">
         <div className="min-w-0 flex-1">
           <h3 id={titleId} className="text-sm font-semibold break-words">
             {title}

@@ -1,4 +1,6 @@
 "use client";
+import { notifyRequestError } from "@lib/notify";
+import { useAuth } from "@components/AuthProvider";
 import { notify } from "@lib/notify";
 
 import { useEffect, useState } from "react";
@@ -96,6 +98,8 @@ type ModelRoute = Pick<AgentModelProvider, "id" | "name" | "apiBaseUrl" | "defau
 type ModelRoutePayload = Omit<ModelRoute, "id" | "apiKeyConfigured"> & { apiKey?: string };
 
 export default function ModelProvidersPage() {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission("settings.models.manage");
   const [items, setItems] = useState<AgentModelProvider[]>([]);
   const [form, setForm] = useState<ProviderForm>(emptyProvider);
   const [editing, setEditing] = useState<AgentModelProvider | null>(null);
@@ -106,11 +110,11 @@ export default function ModelProvidersPage() {
   const selectedProviderType = providerTypeOptions.find((item) => item.value === form.kind);
 
   async function load() {
-    const routes = await listModelRoutes<ModelRoute[]>();
+    const routes = await listModelRoutes();
     setItems(routes.map((route) => ({ ...route, kind: findProviderPreset({ name: route.name, kind: "" })?.id ?? "compatible", apiKey: "", websiteUrl: "", apiKeyConfigured: route.apiKeyConfigured })));
   }
 
-  useEffect(() => { const timer = window.setTimeout(() => void load().catch((error) => notify.error("无法加载模型提供商", { description: String(error) })), 0); return () => window.clearTimeout(timer); }, []);
+  useEffect(() => { const timer = window.setTimeout(() => void load().catch((error) => notifyRequestError(error, "无法加载模型提供商", { description: String(error) })), 0); return () => window.clearTimeout(timer); }, []);
 
   function openCreate() { setEditing(null); setForm({ ...emptyProvider }); setFormOpen(true); }
   function openEdit(item: AgentModelProvider) { setEditing(item); setForm({ name: item.name, kind: item.kind, enabled: item.enabled, isDefault: item.isDefault, apiBaseUrl: item.apiBaseUrl, apiKey: item.apiKey, defaultChatModel: item.defaultChatModel, models: item.models, websiteUrl: item.websiteUrl }); setFormOpen(true); }
@@ -121,13 +125,13 @@ export default function ModelProvidersPage() {
     setSaving(true);
     try {
       const payload: ModelRoutePayload = { name: form.name, apiBaseUrl: form.apiBaseUrl, defaultChatModel: form.defaultChatModel, models: form.models, enabled: form.enabled, isDefault: form.isDefault, ...(form.apiKey.trim() ? { apiKey: form.apiKey } : {}) };
-      if (editing) await updateModelRoute<ModelRoute>(editing.id, payload);
-      else await createModelRoute<ModelRoute>(payload);
+      if (editing) await updateModelRoute(editing.id, payload);
+      else await createModelRoute(payload);
       notify.success(editing ? "模型提供商已更新" : "模型提供商已创建");
       setFormOpen(false);
       await load();
     } catch (error) {
-      notify.error("无法保存模型提供商", { description: error instanceof Error ? error.message : "请稍后重试。" });
+      notifyRequestError(error, "无法保存模型提供商", { description: error instanceof Error ? error.message : "请稍后重试。" });
     } finally {
       setSaving(false);
     }
@@ -135,11 +139,11 @@ export default function ModelProvidersPage() {
 
   async function toggleProvider(item: AgentModelProvider) {
     try {
-      await updateModelRoute<ModelRoute>(item.id, { name: item.name, apiBaseUrl: item.apiBaseUrl, defaultChatModel: item.defaultChatModel, models: item.models, enabled: !item.enabled, isDefault: item.isDefault });
+      await updateModelRoute(item.id, { name: item.name, apiBaseUrl: item.apiBaseUrl, defaultChatModel: item.defaultChatModel, models: item.models, enabled: !item.enabled, isDefault: item.isDefault });
       notify.success(item.enabled ? "提供商已停用" : "提供商已启动");
       await load();
     } catch (error) {
-      notify.error("无法更新提供商", { description: error instanceof Error ? error.message : "请稍后重试。" });
+      notifyRequestError(error, "无法更新提供商", { description: error instanceof Error ? error.message : "请稍后重试。" });
     }
   }
 
@@ -147,18 +151,18 @@ export default function ModelProvidersPage() {
     if (!deleting) return;
     setDeletingProvider(true);
     try {
-      await deleteModelRoute<{ id: string }>(deleting.id);
+      await deleteModelRoute(deleting.id);
       notify.success("模型提供商已删除");
       setDeleting(null);
       await load();
     } catch (error) {
-      notify.error("无法删除模型提供商", { description: error instanceof Error ? error.message : "正在被配置文件使用的提供商无法删除。" });
+      notifyRequestError(error, "无法删除模型提供商", { description: error instanceof Error ? error.message : "正在被配置文件使用的提供商无法删除。" });
     } finally {
       setDeletingProvider(false);
     }
   }
 
-  return <SettingsContentCard title="模型提供商" subtitle={`管理 Agent 使用的模型服务连接。当前共 ${items.length} 个提供商。`} bodyScrollable={false} headerActions={<Button onPress={openCreate}>新增供应商</Button>}>
+  return <SettingsContentCard title="模型提供商" subtitle={`管理 Agent 使用的模型服务连接。当前共 ${items.length} 个提供商。`} bodyScrollable={false} headerActions={<Button isDisabled={!canManage} onPress={openCreate}>新增供应商</Button>}>
     <Table className="h-full min-h-0">
       <Table.ScrollContainer className="h-full overflow-auto">
         <Table.Content aria-label="模型提供商" className="min-w-[1080px] w-full table-fixed">
@@ -179,7 +183,7 @@ export default function ModelProvidersPage() {
                 <Table.Cell><span className="block truncate font-mono text-xs text-[var(--color-text-secondary)]" title={item.apiBaseUrl}>{item.apiBaseUrl}</span></Table.Cell>
                 <Table.Cell><span className="font-mono text-xs text-[var(--color-text-secondary)]">{maskApiKey(item.apiKeyConfigured)}</span></Table.Cell>
                 <Table.Cell><span className="block truncate font-mono text-xs text-[var(--color-text-secondary)]" title={item.defaultChatModel}>{item.defaultChatModel || "未设置"}</span></Table.Cell>
-                <Table.Cell><div className="flex items-center gap-1"><Tooltip><Tooltip.Trigger><Button isIconOnly size="sm" variant="ghost" aria-label={item.enabled ? `停用 ${item.name}` : `启动 ${item.name}`} onPress={() => void toggleProvider(item)}>{item.enabled ? <CircleStop className="h-4 w-4" /> : <CirclePlay className="h-4 w-4" />}</Button></Tooltip.Trigger><Tooltip.Content>{item.enabled ? "停用" : "启动"}</Tooltip.Content></Tooltip><Tooltip><Tooltip.Trigger><Button isIconOnly size="sm" variant="ghost" aria-label={`编辑 ${item.name}`} onPress={() => openEdit(item)}><Pencil className="h-4 w-4" /></Button></Tooltip.Trigger><Tooltip.Content>编辑</Tooltip.Content></Tooltip><Tooltip><Tooltip.Trigger><Button isIconOnly size="sm" variant="ghost" aria-label={`删除 ${item.name}`} className="text-[var(--color-danger)]" onPress={() => setDeleting(item)}><TrashBin className="h-4 w-4" /></Button></Tooltip.Trigger><Tooltip.Content>删除</Tooltip.Content></Tooltip></div></Table.Cell>
+                <Table.Cell><div className="flex items-center gap-1"><Tooltip><Tooltip.Trigger><Button isDisabled={!canManage} isIconOnly size="sm" variant="ghost" aria-label={item.enabled ? `停用 ${item.name}` : `启动 ${item.name}`} onPress={() => void toggleProvider(item)}>{item.enabled ? <CircleStop className="h-4 w-4" /> : <CirclePlay className="h-4 w-4" />}</Button></Tooltip.Trigger><Tooltip.Content>{item.enabled ? "停用" : "启动"}</Tooltip.Content></Tooltip><Tooltip><Tooltip.Trigger><Button isDisabled={!canManage} isIconOnly size="sm" variant="ghost" aria-label={`编辑 ${item.name}`} onPress={() => openEdit(item)}><Pencil className="h-4 w-4" /></Button></Tooltip.Trigger><Tooltip.Content>编辑</Tooltip.Content></Tooltip><Tooltip><Tooltip.Trigger><Button isDisabled={!canManage} isIconOnly size="sm" variant="ghost" aria-label={`删除 ${item.name}`} className="text-[var(--color-danger)]" onPress={() => setDeleting(item)}><TrashBin className="h-4 w-4" /></Button></Tooltip.Trigger><Tooltip.Content>删除</Tooltip.Content></Tooltip></div></Table.Cell>
               </Table.Row>;
             }}</Table.Collection>
           </Table.Body>
@@ -222,12 +226,12 @@ export default function ModelProvidersPage() {
                 <Switch isSelected={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })} isDisabled={saving}><Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control>启动供应商</Switch.Content></Switch>
                 <Switch isSelected={form.isDefault} onChange={(isDefault) => setForm({ ...form, isDefault })} isDisabled={saving || !form.enabled}><Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control>设为默认模型</Switch.Content></Switch>
               </Modal.Body>
-              <Modal.Footer><Button variant="ghost" isDisabled={saving} onPress={() => setFormOpen(false)}>取消</Button><Button type="submit" isDisabled={saving || !form.name.trim() || !form.apiBaseUrl.trim()}>{saving ? "保存中…" : "保存"}</Button></Modal.Footer>
+              <Modal.Footer><Button variant="ghost" isDisabled={!canManage || saving} onPress={() => setFormOpen(false)}>取消</Button><Button type="submit" isDisabled={!canManage || saving || !form.name.trim() || !form.apiBaseUrl.trim()}>{saving ? "保存中…" : "保存"}</Button></Modal.Footer>
             </form>
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>
     </Modal>
-    <Modal isOpen={Boolean(deleting)} onOpenChange={(open) => !deletingProvider && !open && setDeleting(null)}><Modal.Backdrop className="theme-modal-backdrop" isDismissable={!deletingProvider}><Modal.Container placement="center" size="sm"><Modal.Dialog className="rounded-md bg-[var(--color-bg-surface)]"><Modal.Header><Modal.Heading>删除供应商</Modal.Heading><Modal.CloseTrigger aria-label="关闭" isDisabled={deletingProvider} /></Modal.Header><Modal.Body><p className="text-sm text-[var(--color-text-secondary)]">确认删除“{deleting?.name}”吗？正在被配置文件使用的供应商无法删除。</p></Modal.Body><Modal.Footer><Button variant="ghost" isDisabled={deletingProvider} onPress={() => setDeleting(null)}>取消</Button><Button isDisabled={deletingProvider} className="bg-[var(--color-danger)] text-white" onPress={() => void confirmDelete()}>{deletingProvider ? "删除中…" : "删除"}</Button></Modal.Footer></Modal.Dialog></Modal.Container></Modal.Backdrop></Modal>
+    <Modal isOpen={Boolean(deleting)} onOpenChange={(open) => !deletingProvider && !open && setDeleting(null)}><Modal.Backdrop className="theme-modal-backdrop" isDismissable={!deletingProvider}><Modal.Container placement="center" size="sm"><Modal.Dialog className="rounded-md bg-[var(--color-bg-surface)]"><Modal.Header><Modal.Heading>删除供应商</Modal.Heading><Modal.CloseTrigger aria-label="关闭" isDisabled={deletingProvider} /></Modal.Header><Modal.Body><p className="text-sm text-[var(--color-text-secondary)]">确认删除“{deleting?.name}”吗？正在被配置文件使用的供应商无法删除。</p></Modal.Body><Modal.Footer><Button variant="ghost" isDisabled={!canManage || deletingProvider} onPress={() => setDeleting(null)}>取消</Button><Button isDisabled={!canManage || deletingProvider} className="bg-[var(--color-danger)] text-white" onPress={() => void confirmDelete()}>{deletingProvider ? "删除中…" : "删除"}</Button></Modal.Footer></Modal.Dialog></Modal.Container></Modal.Backdrop></Modal>
   </SettingsContentCard>;
 }

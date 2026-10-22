@@ -108,7 +108,7 @@ pub(crate) struct ApiAgentTransaction {
     pub(crate) expires_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiAgentRuntimeSummary {
     pub(crate) event_generation: String,
@@ -122,7 +122,7 @@ pub(crate) struct ApiAgentRuntimeSummary {
     pub(crate) last_activity_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiAgentWorkbenchSession {
     #[serde(flatten)]
@@ -131,7 +131,7 @@ pub(crate) struct ApiAgentWorkbenchSession {
     pub(crate) runtime: ApiAgentRuntimeSummary,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiAgentWorkbenchSessionPage {
     pub(crate) items: Vec<ApiAgentWorkbenchSession>,

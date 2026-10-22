@@ -8,6 +8,7 @@ import { Badge, Dropdown } from "@heroui/react";
 import {
   ArrowRight,
   Comment,
+  Envelope,
   Gear,
   House,
   SquareListUl,
@@ -20,10 +21,7 @@ import { logoutSession } from "@features/auth/api";
 import { listWorkflowNotifications } from "@features/workflow/api";
 import { getCommunicationAvailability } from "@features/communication/api";
 import { MyAvatar } from "./my-fields/MyAvatar";
-import {
-  listApps,
-  type App,
-} from "@/features/application/api";
+import { listApps, type App } from "@/features/application/api";
 import {
   listCommunicationConversations,
   type CommunicationConversationResponse,
@@ -63,6 +61,12 @@ const primaryNavItems: NavItem[] = [
     icon: Comment,
     match: (pathname) => pathname.startsWith("/messages"),
   },
+  {
+    href: "/mail",
+    label: "邮箱",
+    icon: Envelope,
+    match: (pathname) => pathname === "/mail" || pathname.startsWith("/mail/"),
+  },
 ];
 
 const recycleBinNavItem: NavItem = {
@@ -94,7 +98,8 @@ const secondaryNavItems: NavItem[] = [
 export default function HomeSideBar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { logout, user, permissions, permissionsReady, hasPermission } = useAuth();
+  const { logout, user, permissions, permissionsReady, hasPermission } =
+    useAuth();
   const [messageUnreadCount, setMessageUnreadCount] = useState(0);
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [communicationEnabled, setCommunicationEnabled] = useState(false);
@@ -110,17 +115,25 @@ export default function HomeSideBar() {
         }
       })
       .catch(() => undefined)
-      .finally(() => { if (!cancelled) setAppsLoading(false); });
-    return () => { cancelled = true; };
+      .finally(() => {
+        if (!cancelled) setAppsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [permissionsReady]);
   useEffect(() => {
     if (!permissionsReady) return;
     const reload = (event: Event) => {
-      const deletedAppId = (event as CustomEvent<{ deletedAppId?: string }>).detail?.deletedAppId;
-      if (deletedAppId) setApps((current) => current.filter((app) => app.id !== deletedAppId));
-      void listApps({ responseStyle: "fields" }).then(({ data, error }) => {
-        if (!error && data?.code === 0 && data.data) setApps(data.data);
-      }).catch(() => undefined);
+      const deletedAppId = (event as CustomEvent<{ deletedAppId?: string }>)
+        .detail?.deletedAppId;
+      if (deletedAppId)
+        setApps((current) => current.filter((app) => app.id !== deletedAppId));
+      void listApps({ responseStyle: "fields" })
+        .then(({ data, error }) => {
+          if (!error && data?.code === 0 && data.data) setApps(data.data);
+        })
+        .catch(() => undefined);
     };
     window.addEventListener("yaya-apps-updated", reload);
     return () => window.removeEventListener("yaya-apps-updated", reload);
@@ -130,28 +143,43 @@ export default function HomeSideBar() {
       return;
     }
     let cancelled = false;
-    void getCommunicationAvailability<{ enabled?: boolean }>()
+    void getCommunicationAvailability()
       .then((status) => {
         if (!cancelled) setCommunicationEnabled(status.enabled === true);
       })
-      .catch(() => { if (!cancelled) setCommunicationEnabled(false); });
-    return () => { cancelled = true; };
+      .catch(() => {
+        if (!cancelled) setCommunicationEnabled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [permissionsReady]);
   useEffect(() => {
     if (!permissionsReady || !communicationEnabled) return;
     let cancelled = false;
     let unavailable = false;
-    const load = () => void listCommunicationConversations().then((result) => {
-      const payload = result.data as { data?: CommunicationConversationResponse[] | null } | undefined;
-      if (result.error || !payload?.data) {
-        unavailable = true;
-        if (!cancelled) setMessageUnreadCount(0);
-        return;
-      }
-      if (!cancelled) setMessageUnreadCount(payload.data.reduce((total, item) => total + item.unreadCount, 0));
-    }).catch(() => { unavailable = true; });
+    const load = () =>
+      void listCommunicationConversations()
+        .then((result) => {
+          const payload = result.data as
+            { data?: CommunicationConversationResponse[] | null } | undefined;
+          if (result.error || !payload?.data) {
+            unavailable = true;
+            if (!cancelled) setMessageUnreadCount(0);
+            return;
+          }
+          if (!cancelled)
+            setMessageUnreadCount(
+              payload.data.reduce((total, item) => total + item.unreadCount, 0),
+            );
+        })
+        .catch(() => {
+          unavailable = true;
+        });
     load();
-    const timer = window.setInterval(() => { if (!unavailable) load(); }, 30_000);
+    const timer = window.setInterval(() => {
+      if (!unavailable) load();
+    }, 30_000);
     window.addEventListener("yaya-communication-read-updated", load);
     return () => {
       cancelled = true;
@@ -162,10 +190,15 @@ export default function HomeSideBar() {
   useEffect(() => {
     if (!permissionsReady) return;
     let cancelled = false;
-    const load = () => void listWorkflowNotifications({ responseStyle: "fields" }).then(({ data, error }) => {
-      const result = data as { code?: number; data?: { unread?: number } | null } | undefined;
-      if (!cancelled && !error && result?.code === 0) setNotificationUnreadCount(result.data?.unread ?? 0);
-    }).catch(() => undefined);
+    const load = () =>
+      void listWorkflowNotifications({ responseStyle: "fields" })
+        .then(({ data, error }) => {
+          const result = data as
+            { code?: number; data?: { unread?: number } | null } | undefined;
+          if (!cancelled && !error && result?.code === 0)
+            setNotificationUnreadCount(result.data?.unread ?? 0);
+        })
+        .catch(() => undefined);
     load();
     const timer = window.setInterval(load, 60_000);
     window.addEventListener("yaya-workflow-notifications-updated", load);
@@ -178,17 +211,16 @@ export default function HomeSideBar() {
   const visiblePrimaryNavItems = !permissionsReady
     ? []
     : primaryNavItems.filter((item) => {
-        if (item.href === "/messages") return true;
+        if (item.href === "/market") return hasPermission("market.apps.view") || hasPermission("settings.ai-employees.view");
+        if (item.href === "/myApp") return hasPermission("apps.access") || hasPermission("apps.manage") || permissions.some((permission) => permission.startsWith("app:") && permission.endsWith(":display"));
         return true;
       });
-  const visibleRecycleBinNavItems = permissionsReady && hasPermission("settings.database")
-    ? [recycleBinNavItem]
-    : [];
-  const canUseSettings =
-    permissions.includes("*") || permissions.some((permission) => permission.startsWith("settings."));
-  const visibleSecondaryNavItems = !permissionsReady || !canUseSettings
-    ? []
-    : secondaryNavItems;
+  const visibleRecycleBinNavItems =
+    permissionsReady && hasPermission("settings.recycle-bin.view")
+      ? [recycleBinNavItem]
+      : [];
+  const visibleSecondaryNavItems =
+    !permissionsReady ? [] : secondaryNavItems;
 
   async function handleLogout() {
     await logoutSession().catch(() => undefined);
@@ -197,19 +229,35 @@ export default function HomeSideBar() {
   }
 
   return (
-    <aside >
+    <aside>
       <div className="flex h-full flex-col">
-        <div className="mb-2"><UserMenu user={user} messageUnreadCount={messageUnreadCount + notificationUnreadCount} onLogout={() => void handleLogout()} onTasks={() => router.push("/tasks")} /></div>
+        <div className="mb-2">
+          <UserMenu
+            user={user}
+            messageUnreadCount={messageUnreadCount + notificationUnreadCount}
+            onLogout={() => void handleLogout()}
+            onTasks={() => router.push("/tasks")}
+          />
+        </div>
 
         <div className="flex flex-1 flex-col justify-between">
           <div className="flex flex-col gap-2">
             <NavGroup
               apps={apps}
               appsLoading={appsLoading}
-              items={visiblePrimaryNavItems.map((item) => item.href === "/messages" ? { ...item, badgeCount: messageUnreadCount + notificationUnreadCount } : item)}
+              items={visiblePrimaryNavItems.map((item) =>
+                item.href === "/messages"
+                  ? {
+                      ...item,
+                      badgeCount: messageUnreadCount + notificationUnreadCount,
+                    }
+                  : item,
+              )}
               pathname={pathname}
             />
-            {permissionsReady && hasPermission("agent.window") ? <AgentAssistantTrigger /> : null}
+            {permissionsReady && hasPermission("agent.window") ? (
+              <AgentAssistantTrigger />
+            ) : null}
             <NavGroup items={visibleRecycleBinNavItems} pathname={pathname} />
             <ThemeSwitcherMenu />
           </div>
@@ -241,11 +289,19 @@ function UserMenu({
           aria-label={`打开 ${displayName} 的账户菜单`}
           className="group flex h-11 w-11 items-center justify-center rounded-2xl border border-transparent bg-[var(--sidebar-active-bg)] text-[var(--color-text-primary)] shadow-[var(--shadow-sm)] backdrop-blur-xl transition-colors hover:border-[var(--sidebar-soft-border)] hover:bg-[var(--sidebar-soft-bg)]"
         >
-          {messageUnreadCount > 0 ? (
-            <Badge color="danger" size="sm" content={messageUnreadCount > 99 ? "99+" : String(messageUnreadCount)} className="translate-x-1 -translate-y-1">
-              <MyAvatar name={displayName} size="md" />
-            </Badge>
-          ) : <MyAvatar name={displayName} size="md" />}
+          <span className="relative inline-flex h-9 w-9 items-center justify-center">
+            <MyAvatar name={displayName} size="md" />
+            {messageUnreadCount > 0 ? (
+              <Badge
+                color="danger"
+                size="sm"
+                content={
+                  messageUnreadCount > 99 ? "99+" : String(messageUnreadCount)
+                }
+                className="absolute -right-2 -top-2"
+              />
+            ) : null}
+          </span>
         </Dropdown.Trigger>
         <Dropdown.Popover className="border border-[var(--color-border)] bg-transparent shadow-none">
           <Dropdown.Menu
@@ -256,20 +312,42 @@ function UserMenu({
               if (key === "logout") onLogout();
             }}
           >
-            <Dropdown.Item id="account" textValue={displayName} className="rounded-lg text-[var(--color-text-primary)]">
+            <Dropdown.Item
+              id="account"
+              textValue={displayName}
+              className="rounded-lg text-[var(--color-text-primary)]"
+            >
               <span className="flex items-center gap-3 py-1">
                 <MyAvatar name={displayName} size="sm" />
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-semibold">{displayName}</span>
-                  <span className="mt-0.5 block truncate text-xs text-[var(--color-text-secondary)]">{user?.username ?? "已登录"}</span>
+                  <span className="block truncate text-sm font-semibold">
+                    {displayName}
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs text-[var(--color-text-secondary)]">
+                    {user?.username ?? "已登录"}
+                  </span>
                 </span>
               </span>
             </Dropdown.Item>
-            <Dropdown.Item id="tasks" textValue="我的任务" className="rounded-lg text-[var(--color-text-primary)]">
-              <span className="flex items-center gap-3"><SquareListUl className="h-4 w-4" /><span>我的任务</span></span>
+            <Dropdown.Item
+              id="tasks"
+              textValue="我的任务"
+              className="rounded-lg text-[var(--color-text-primary)]"
+            >
+              <span className="flex items-center gap-3">
+                <SquareListUl className="h-4 w-4" />
+                <span>我的任务</span>
+              </span>
             </Dropdown.Item>
-            <Dropdown.Item id="logout" textValue="退出登录" className="rounded-lg text-[var(--color-danger)] data-[hover=true]:bg-[var(--color-danger-soft)]">
-              <span className="flex items-center gap-3"><LogoutIcon /><span>退出登录</span></span>
+            <Dropdown.Item
+              id="logout"
+              textValue="退出登录"
+              className="rounded-lg text-[var(--color-danger)] data-[hover=true]:bg-[var(--color-danger-soft)]"
+            >
+              <span className="flex items-center gap-3">
+                <LogoutIcon />
+                <span>退出登录</span>
+              </span>
             </Dropdown.Item>
           </Dropdown.Menu>
         </Dropdown.Popover>
@@ -279,7 +357,19 @@ function UserMenu({
 }
 
 function LogoutIcon() {
-  return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M14 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2v-3" /><path d="M10 12h11m-3-3 3 3-3 3" /></svg>;
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      aria-hidden="true"
+    >
+      <path d="M14 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2v-3" />
+      <path d="M10 12h11m-3-3 3 3-3 3" />
+    </svg>
+  );
 }
 
 function NavGroup({
@@ -322,13 +412,24 @@ function NavGroup({
               >
                 <Icon className="h-5 w-5" />
               </span>
-              {item.badgeCount ? <Badge color="danger" size="sm" className="absolute -right-1 -top-1">{item.badgeCount > 99 ? "99+" : item.badgeCount}</Badge> : null}
+              {item.badgeCount ? (
+                <Badge
+                  color="danger"
+                  size="sm"
+                  className="absolute -right-1 -top-1"
+                >
+                  {item.badgeCount > 99 ? "99+" : item.badgeCount}
+                </Badge>
+              ) : null}
             </span>
-            <span className="text-[11px] font-medium leading-4">{item.label}</span>
+            <span className="text-[11px] font-medium leading-4">
+              {item.label}
+            </span>
           </Link>
         );
 
-        if (item.href !== "/myApp") return <div key={item.label}>{navLink}</div>;
+        if (item.href !== "/myApp")
+          return <div key={item.label}>{navLink}</div>;
 
         return (
           <div key={item.label} className="group/home relative">
@@ -337,27 +438,38 @@ function NavGroup({
               <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-menu)] shadow-[var(--shadow-floating)] backdrop-blur-2xl">
                 <div className="max-h-[min(360px,calc(100dvh-32px))] overflow-y-auto p-1">
                   {appsLoading ? (
-                    <p className="px-2 py-3 text-center text-[11px] text-[var(--color-text-secondary)]">正在加载应用…</p>
+                    <p className="px-2 py-3 text-center text-[11px] text-[var(--color-text-secondary)]">
+                      正在加载应用…
+                    </p>
                   ) : apps.length === 0 ? (
-                    <p className="px-2 py-3 text-center text-[11px] text-[var(--color-text-secondary)]">暂无可访问的应用</p>
-                  ) : apps.map((app) => {
-                    const colorClass = appColorToneClass[normalizeAppColorTone(app.color)];
-                    return (
-                      <a
-                        key={app.id}
-                        href={`/${app.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="group/app flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-bg-hover)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]"
-                      >
-                        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md [&>svg]:h-4 [&>svg]:w-4 ${colorClass}`}>
-                          <Box className="h-5 w-5" />
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-xs font-medium text-[var(--color-text-primary)]">{app.name}</span>
-                        <ArrowRight className="h-3.5 w-3.5 shrink-0 text-[var(--color-text-disabled)] transition-transform group-hover/app:translate-x-0.5 group-hover/app:text-[var(--color-primary)]" />
-                      </a>
-                    );
-                  })}
+                    <p className="px-2 py-3 text-center text-[11px] text-[var(--color-text-secondary)]">
+                      暂无可访问的应用
+                    </p>
+                  ) : (
+                    apps.map((app) => {
+                      const colorClass =
+                        appColorToneClass[normalizeAppColorTone(app.color)];
+                      return (
+                        <a
+                          key={app.id}
+                          href={`/${app.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="group/app flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-bg-hover)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]"
+                        >
+                          <span
+                            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md [&>svg]:h-4 [&>svg]:w-4 ${colorClass}`}
+                          >
+                            <Box className="h-5 w-5" />
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-xs font-medium text-[var(--color-text-primary)]">
+                            {app.name}
+                          </span>
+                          <ArrowRight className="h-3.5 w-3.5 shrink-0 text-[var(--color-text-disabled)] transition-transform group-hover/app:translate-x-0.5 group-hover/app:text-[var(--color-primary)]" />
+                        </a>
+                      );
+                    })
+                  )}
                 </div>
               </div>
             </div>

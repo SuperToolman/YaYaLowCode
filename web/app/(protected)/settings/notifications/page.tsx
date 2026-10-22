@@ -1,32 +1,21 @@
 "use client";
-import { notify } from "@lib/notify";
+import { notifyRequestError } from "@lib/notify";
+import { useAuth } from "@components/AuthProvider";
 
 import { useEffect, useState } from "react";
 import { Button, Input, Surface, Switch } from "@heroui/react";
-import { isRequestAborted, jsonRequest, requestApi } from "@lib/api-request";
+import { notify } from "@lib/notify";
+import { isRequestAborted, unwrapApiResult } from "@lib/api-request";
+import { getNotificationSettings, updateNotificationSettings } from "@lib/http";
 import { Field } from "../components/Field";
 import { SettingsContentCard } from "../components/SettingsContentCard";
-import styles from "./notifications.module.css";
 
-type NotificationSettings = {
-  inAppEnabled: boolean;
-  pollIntervalSeconds: number;
-  retentionDays: number;
-  dingtalkEnabled: boolean;
-  dingtalkWebhookUrl: string;
-  emailEnabled: boolean;
-  emailFromAddress: string;
-  websocketEnabled: boolean;
-};
-
-const defaults: NotificationSettings = {
-  inAppEnabled: true, pollIntervalSeconds: 60, retentionDays: 90,
-  dingtalkEnabled: false, dingtalkWebhookUrl: "",
-  emailEnabled: false, emailFromAddress: "", websocketEnabled: false,
-};
+type NotificationSettings = import("@lib/http").NotificationSettings;
 
 export default function NotificationSettingsPage() {
-  const [form, setForm] = useState<NotificationSettings>(defaults);
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission("settings.notifications.manage");
+  const [form, setForm] = useState<NotificationSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -35,14 +24,16 @@ export default function NotificationSettingsPage() {
 
     async function load() {
       try {
-        const settings = await requestApi<NotificationSettings>("/api/settings/notifications", {
+        const settings = await getNotificationSettings({
           cache: "no-store",
           signal: controller.signal,
         });
-        setForm(settings);
+        if (!controller.signal.aborted) setForm(unwrapApiResult(settings));
       } catch (error) {
         if (!controller.signal.aborted && !isRequestAborted(error)) {
-          notify.error("无法加载通知设置", { description: error instanceof Error ? error.message : "请稍后重试。" });
+          notifyRequestError(error, "无法加载通知设置", {
+            description: error instanceof Error ? error.message : "请稍后重试。",
+          });
         }
       } finally {
         if (!controller.signal.aborted) setLoading(false);
@@ -53,46 +44,91 @@ export default function NotificationSettingsPage() {
     return () => controller.abort();
   }, []);
 
+  const intervalValid = form != null
+    && Number.isInteger(form.pollIntervalSeconds)
+    && (form.pollIntervalSeconds ?? 60) >= 15
+    && (form.pollIntervalSeconds ?? 60) <= 3600;
+  const disabled = !canManage || loading || saving || !form;
+
   async function save() {
+    if (!form || !intervalValid || saving) return;
     setSaving(true);
     try {
-      const settings = await requestApi<NotificationSettings>("/api/settings/notifications", jsonRequest(form, { method: "PUT" }));
+      // Preserve stored fields outside this page's editable settings.
+      const settings = unwrapApiResult(await updateNotificationSettings({ body: form }));
       setForm(settings);
       notify.success("通知设置已保存");
     } catch (error) {
-      notify.error("保存失败", { description: error instanceof Error ? error.message : "请稍后重试。" });
-    } finally { setSaving(false); }
+      notifyRequestError(error, "保存失败", {
+        description: error instanceof Error ? error.message : "请稍后重试。",
+      });
+    } finally {
+      setSaving(false);
+    }
   }
 
-  return <section className={styles.page}>
-    <SettingsContentCard
-      title="通知设置"
-      subtitle="管理流程站内通知，并预先维护钉钉、邮件和 WebSocket 渠道的接入配置。"
-      footer={<><p className={styles.footerNote}>外部渠道尚未接入投递器；保存配置不会向钉钉或邮箱发送任何消息。</p><Button isDisabled={loading || saving} onPress={() => void save()}>{saving ? "正在保存…" : "保存设置"}</Button></>}
-    >
-      <div className={styles.sections}>
-        <Surface className={styles.card}>
-          <h3 className={styles.heading}>站内通知</h3>
-          <p className={styles.description}>流程待办和抄送会显示在导航栏用户头像菜单中。</p>
-          <div className={styles.content}>
-            <Switch isSelected={form.inAppEnabled} isDisabled={loading || saving} onChange={(value) => setForm({ ...form, inAppEnabled: value })}><Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control>启用站内流程通知</Switch.Content></Switch>
-            <div className={styles.grid}>
-              <Field label="轮询间隔（秒）" hint="15 至 3600 秒。"><Input type="number" value={String(form.pollIntervalSeconds)} disabled={loading || saving} onChange={(event) => setForm({ ...form, pollIntervalSeconds: Number(event.currentTarget.value) || 0 })} /></Field>
-              <Field label="保留天数" hint="用于后续清理已读历史通知。"><Input type="number" value={String(form.retentionDays)} disabled={loading || saving} onChange={(event) => setForm({ ...form, retentionDays: Number(event.currentTarget.value) || 0 })} /></Field>
+  return (
+    <section className="h-full min-h-0">
+      <SettingsContentCard
+        title="通知设置"
+        subtitle="流程待办与抄送通知"
+      >
+        <Surface className="flex max-w-2xl flex-col gap-5 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="m-0 text-sm font-semibold">站内流程通知</h3>
+              <p className="mt-1 text-sm text-muted">
+                收到新的流程待办或抄送时，在站内显示通知。
+              </p>
             </div>
+            <Switch
+              aria-label="启用站内流程通知"
+              isSelected={form?.inAppEnabled ?? false}
+              isDisabled={disabled}
+              onChange={(value) => setForm((current) => current ? { ...current, inAppEnabled: value } : current)}
+            >
+              <Switch.Content>
+                <Switch.Control><Switch.Thumb /></Switch.Control>
+                启用通知
+              </Switch.Content>
+            </Switch>
           </div>
-        </Surface>
 
-        <Surface className={styles.card}>
-          <h3 className={styles.heading}>外部渠道预留</h3>
-          <p className={styles.description}>渠道参数会安全保存，待投递器、重试和 Outbox 接入后才会实际生效。</p>
-          <div className={styles.content}>
-            <div className={styles.channel}><Switch isSelected={form.dingtalkEnabled} isDisabled={loading || saving} onChange={(value) => setForm({ ...form, dingtalkEnabled: value })}><Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control>预启用钉钉通知</Switch.Content></Switch><Field label="钉钉机器人 Webhook"><Input type="url" value={form.dingtalkWebhookUrl} disabled={loading || saving} onChange={(event) => setForm({ ...form, dingtalkWebhookUrl: event.currentTarget.value })} placeholder="https://oapi.dingtalk.com/robot/send?..." /></Field></div>
-            <div className={styles.channel}><Switch isSelected={form.emailEnabled} isDisabled={loading || saving} onChange={(value) => setForm({ ...form, emailEnabled: value })}><Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control>预启用邮件通知</Switch.Content></Switch><Field label="发件人地址"><Input type="email" value={form.emailFromAddress} disabled={loading || saving} onChange={(event) => setForm({ ...form, emailFromAddress: event.currentTarget.value })} placeholder="no-reply@example.com" /></Field></div>
-            <Switch isSelected={form.websocketEnabled} isDisabled={loading || saving} onChange={(value) => setForm({ ...form, websocketEnabled: value })}><Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control>预启用 WebSocket 实时推送</Switch.Content></Switch>
+          <div className="max-w-xs">
+            <Field label="轮询间隔（秒）" hint="每隔多久检查新通知，允许 15 至 3600 秒。">
+              <Input
+                aria-label="轮询间隔（秒）"
+                type="number"
+                min={15}
+                max={3600}
+                step={1}
+                value={form ? String(form.pollIntervalSeconds) : ""}
+                disabled={disabled || !form?.inAppEnabled}
+                onChange={(event) => {
+                  const value = Number(event.currentTarget.value);
+                  setForm((current) => current ? { ...current, pollIntervalSeconds: value } : current);
+                }}
+              />
+            </Field>
+            {form && !intervalValid ? (
+              <p role="alert" className="mt-2 text-xs text-danger">请输入 15 至 3600 的整数。</p>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="m-0 text-xs text-muted">
+              {loading ? "正在加载通知设置…" : !form
+                ? "加载失败，请刷新页面后重试。"
+                : form.inAppEnabled
+                  ? "关闭后将停止生成新的流程通知，已有通知仍保留。"
+                  : "通知已关闭，保存后生效。"}
+            </p>
+            <Button isDisabled={!canManage || disabled || !intervalValid} onPress={() => void save()}>
+              {saving ? "正在保存…" : "保存设置"}
+            </Button>
           </div>
         </Surface>
-      </div>
-    </SettingsContentCard>
-  </section>;
+      </SettingsContentCard>
+    </section>
+  );
 }

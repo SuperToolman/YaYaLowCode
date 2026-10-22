@@ -1,6 +1,7 @@
 "use client";
 
-import { jsonRequest, requestApi } from "@/app/lib/api-request";
+import { unwrapApiResult } from "@/app/lib/api-request";
+import { submitWorkflowRecord, reverseWorkflowRecord, pauseWorkflowRecord, resumeWorkflowRecord, completeWorkflowExecution } from "@lib/http";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createDetailFormData, createRecord, deleteFormData, deleteRecord, postWorkflowComment, updateRecord } from "./api";
 
@@ -11,17 +12,17 @@ export function runWorkflowRecordAction(
   comment: string,
   signal?: AbortSignal,
 ) {
-  return requestApi<unknown>(
-    `/api/forms/${encodeURIComponent(formUuid)}/records/${encodeURIComponent(recordUuid)}/workflow/${encodeURIComponent(action)}`,
-    jsonRequest({ comment }, { method: "POST", signal }),
-  );
+  const options = { path: { formUuid, recordUuid }, signal };
+  const result = action === "pause" ? pauseWorkflowRecord({ ...options, body: { reason: comment } })
+    : action === "submit" ? submitWorkflowRecord(options)
+    : action === "reverse" ? reverseWorkflowRecord(options)
+    : action === "resume" ? resumeWorkflowRecord(options) : undefined;
+  if (!result) throw new Error("未知流程操作");
+  return result.then(response => unwrapApiResult(response));
 }
 
 export function completeWorkflowExecutionTask(taskUuid: string, changes: Record<string, unknown>) {
-  return requestApi<unknown>(
-    `/api/workflow/tasks/${encodeURIComponent(taskUuid)}/complete`,
-    jsonRequest({ data: changes }, { method: "POST" }),
-  );
+  return completeWorkflowExecution({ path: { taskUuid }, body: { data: changes } }).then(result => unwrapApiResult(result));
 }
 
 export function useRecordMutations(formUuid: string) {

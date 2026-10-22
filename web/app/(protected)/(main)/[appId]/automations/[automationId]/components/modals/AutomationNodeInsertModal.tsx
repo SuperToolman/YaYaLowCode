@@ -1,7 +1,7 @@
 "use client";
 
 import { Modal } from "@heroui/react/modal";
-import { Plus as AddIcon } from "@gravity-ui/icons";
+import { workflowNodeIcons } from "../../../components/AutomationWorkflowNodeRegistry";
 import {
   placeholderNodeGroups,
   type NodeMenuItem,
@@ -33,8 +33,8 @@ export function AutomationNodeInsertModal({
             data-node-insert-modal="true"
             className="w-[min(720px,92vw)] rounded-2xl bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]"
           >
-            <Modal.Header className="border-b border-[var(--color-border)]">
-              <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
+            <Modal.Header>
+              <Modal.Heading>
                 选择要插入的节点
               </Modal.Heading>
             </Modal.Header>
@@ -45,17 +45,19 @@ export function AutomationNodeInsertModal({
                     {group.group}
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {group.items.map((item) => (
+                    {group.items.map((item) => {
+                      const NodeIcon = workflowNodeIcons[item.kind];
+                      return (
                       <button
                         key={item.kind}
                         type="button"
                         onClick={() => onSelect(item.kind)}
-                        className="flex min-h-[72px] items-start gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-control-soft)] px-4 py-3 text-left transition hover:border-[var(--color-primary)] hover:bg-[var(--color-control-soft-hover)]"
+                        className="flex min-h-[72px] items-start gap-3 rounded-xl bg-[var(--color-control-soft)] px-4 py-3 text-left transition hover:border-[var(--color-primary)] hover:bg-[var(--color-control-soft-hover)] shadow-lg"
                       >
                         <span
                           className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${nodeTone[item.kind]}`}
                         >
-                          <AddIcon />
+                          <NodeIcon className="size-5" aria-hidden="true" />
                         </span>
                         <span className="min-w-0">
                           <span className="block text-sm font-semibold text-[var(--color-text-primary)]">
@@ -66,7 +68,8 @@ export function AutomationNodeInsertModal({
                           </span>
                         </span>
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 </section>
               ))}

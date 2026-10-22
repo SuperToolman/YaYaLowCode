@@ -1,5 +1,5 @@
 use axum::body::{Body, to_bytes};
-use axum::extract::{Request, State};
+use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::{HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::Response;
@@ -13,13 +13,14 @@ use tracing::Level;
 
 use crate::modules::{
     agent_config, agent_files, agents, app_market, apps, automations, byom, communication,
-    dingtalk, files, forms, identity, locations, navigation, recycle_bin, settings, workflows,
+    custom_buttons, dingtalk, files, forms, identity, locations, mail, navigation, recycle_bin,
+    settings, workflows,
 };
 use crate::openapi;
 use crate::platform::{authorization, error::AppError, runtime::AppState};
 
-#[derive(Debug, Serialize)]
-struct HealthResponse {
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub(crate) struct HealthResponse {
     status: &'static str,
 }
 
@@ -31,7 +32,12 @@ pub(crate) fn build(state: AppState) -> Router {
             "/api/locations",
             get(locations::list_locations).post(locations::import_locations),
         )
-        .route("/api/files/upload", post(files::upload_file))
+        .route(
+            "/api/files/upload",
+            // The handler enforces the configured file limit while streaming and
+            // removes partial files. Axum's default 2 MB cap would interrupt it.
+            post(files::upload_file).layer(DefaultBodyLimit::disable()),
+        )
         .route("/api/files/{file_id}/download", get(files::download_file))
         .route(
             "/api/recycle-bin",
@@ -51,6 +57,18 @@ pub(crate) fn build(state: AppState) -> Router {
                 .put(recycle_bin::update_recycle_bin_settings),
         )
         .route("/api/authorization/grants", get(authorization::get_grants))
+        .route("/api/mail/messages", get(mail::list_messages))
+        .route("/api/mail/messages/{uid}", get(mail::get_message))
+        .route(
+            "/api/mail/messages/{uid}/attachments/{attachmentId}",
+            get(mail::download_attachment),
+        )
+        .route("/api/mail/compose/context", get(mail::compose_context))
+        .route("/api/mail/contacts/recent", get(mail::recent_contacts))
+        .route(
+            "/api/mail/send",
+            post(mail::send_mail).layer(DefaultBodyLimit::max(10 * 1024 * 1024)),
+        )
         .route(
             "/api/settings/license",
             get(settings::get_platform_license_status).post(settings::activate_platform_license),
@@ -94,6 +112,10 @@ pub(crate) fn build(state: AppState) -> Router {
         .route(
             "/api/settings/valkey/test",
             post(settings::test_valkey_connection),
+        )
+        .route(
+            "/api/settings/valkey/status",
+            get(settings::get_valkey_runtime_status),
         )
         .route(
             "/api/settings/notifications",
@@ -287,7 +309,7 @@ pub(crate) fn build(state: AppState) -> Router {
         )
         .route(
             "/api/agent/runtime-employees",
-            get(settings::list_runtime_ai_employees),
+            get(settings::list_authorized_runtime_ai_employees),
         )
         .route(
             "/api/agent/sessions/{session_uuid}",
@@ -351,11 +373,6 @@ pub(crate) fn build(state: AppState) -> Router {
             get(apps::get_app)
                 .patch(apps::update_app)
                 .delete(apps::delete_app),
-        )
-        .route(
-            "/api/apps/{app_id}/business-context",
-            get(apps::get_application_business_context)
-                .patch(apps::update_application_business_context),
         )
         .route(
             "/api/apps/{app_id}/market-submission",
@@ -465,6 +482,14 @@ pub(crate) fn build(state: AppState) -> Router {
             post(automations::retry_automation_flow_run),
         )
         .route(
+            "/api/automations/{flow_uuid}/runs/{run_uuid}/visits/{log_id}/retry",
+            post(automations::retry_automation_visit),
+        )
+        .route(
+            "/api/automations/{flow_uuid}/runs/{run_uuid}/resolve",
+            post(automations::resolve_automation_execution),
+        )
+        .route(
             "/api/automations/{flow_uuid}/runs/{run_uuid}/nodes/{node_key}/retry",
             post(automations::retry_automation_flow_run_node),
         )
@@ -527,6 +552,44 @@ pub(crate) fn build(state: AppState) -> Router {
             post(workflows::reject_workflow_task),
         )
         .route(
+            "/api/forms/{form_uuid}/custom-button-options",
+            get(crate::modules::view_custom_buttons::list_view_button_options),
+        )
+        .route(
+            "/api/forms/{form_uuid}/custom-buttons/automation-options",
+            get(custom_buttons::list_button_automation_options),
+        )
+        .route(
+            "/api/forms/{form_uuid}/custom-buttons/automations",
+            post(automations::create_button_automation_for_form),
+        )
+        .route(
+            "/api/forms/{form_uuid}/custom-buttons",
+            get(custom_buttons::list_custom_buttons).post(custom_buttons::create_custom_button),
+        )
+        .route(
+            "/api/forms/{form_uuid}/custom-buttons/{button_id}",
+            get(custom_buttons::get_custom_button)
+                .patch(custom_buttons::update_custom_button)
+                .delete(custom_buttons::delete_custom_button),
+        )
+        .route(
+            "/api/forms/{form_uuid}/views/{view_uuid}/custom-buttons",
+            get(crate::modules::view_custom_buttons::list_view_buttons),
+        )
+        .route(
+            "/api/forms/{form_uuid}/views/{view_uuid}/custom-buttons/{button_uuid}/prepare",
+            post(crate::modules::view_custom_buttons::prepare_view_button),
+        )
+        .route(
+            "/api/forms/{form_uuid}/views/{view_uuid}/custom-buttons/{button_uuid}/execute",
+            post(crate::modules::view_custom_buttons::execute_view_button),
+        )
+        .route(
+            "/api/forms/{form_uuid}/views/{view_uuid}/custom-buttons/{button_uuid}/submit",
+            post(crate::modules::view_custom_buttons::submit_view_button),
+        )
+        .route(
             "/api/forms/{form_uuid}/views",
             get(forms::list_form_views).post(forms::create_form_view),
         )
@@ -537,6 +600,10 @@ pub(crate) fn build(state: AppState) -> Router {
         .route(
             "/api/forms/{form_uuid}/records",
             get(forms::list_form_records).post(forms::create_form_record),
+        )
+        .route(
+            "/api/forms/{form_uuid}/records/validate",
+            post(forms::validate_form_record),
         )
         .route(
             "/api/forms/{form_uuid}/records/query",
@@ -634,6 +701,7 @@ async fn require_authenticated(
             | "/api/internal/identity-source"
             | "/api/authorization/grants"
             | "/api/settings/license"
+            | "/api/settings/valkey/status"
     );
     if !exempt_from_license {
         crate::platform::license::validate_license_remotely()
@@ -644,13 +712,13 @@ async fn require_authenticated(
     let request_path = request.uri().path().to_string();
     let category = cache_category(&request_path);
     let cache_key = if request_method == Method::GET {
-        if let Some((category, _)) = category {
+        if let Some((category, ttl)) = category {
             let version = state
                 .cache_version(&format!("yaya:v1:http:{category}:version"))
                 .await;
             Some((
                 response_cache_key(category, version, request.uri(), request.headers()),
-                state.cache_ttl_seconds(),
+                ttl.min(state.cache_ttl_seconds()),
             ))
         } else {
             None
@@ -755,7 +823,7 @@ fn response_cache_key(
         .unwrap_or_default()
         .hash(&mut hasher);
     format!(
-        "yaya:v1:http:{category}:v{version}:u{:x}:{}",
+        "yaya:v2:http:{category}:v{version}:u{:x}:{}",
         hasher.finish(),
         uri.path_and_query()
             .map(|value| value.as_str())
@@ -765,4 +833,60 @@ fn response_cache_key(
 
 async fn health_check() -> Json<HealthResponse> {
     Json(HealthResponse { status: "ok" })
+}
+
+#[cfg(test)]
+mod upload_limit_tests {
+    use super::*;
+    use axum::extract::Multipart;
+
+    async fn read_upload(mut multipart: Multipart) -> Result<String, StatusCode> {
+        let mut field = multipart
+            .next_field()
+            .await
+            .map_err(|_| StatusCode::BAD_REQUEST)?
+            .ok_or(StatusCode::BAD_REQUEST)?;
+        let mut size = 0;
+        while let Some(chunk) = field.chunk().await.map_err(|_| StatusCode::BAD_REQUEST)? {
+            size += chunk.len();
+        }
+        Ok(size.to_string())
+    }
+
+    #[tokio::test]
+    async fn multipart_image_over_two_mb_requires_upload_route_override() {
+        let app = Router::new().route("/default", post(read_upload)).route(
+            "/upload",
+            post(read_upload).layer(DefaultBodyLimit::disable()),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = reqwest::Client::new();
+        for (route, expected) in [
+            ("default", StatusCode::BAD_REQUEST),
+            ("upload", StatusCode::OK),
+        ] {
+            let image = reqwest::multipart::Part::bytes(vec![42; 3 * 1024 * 1024])
+                .file_name("screenshot.png")
+                .mime_str("image/png")
+                .unwrap();
+            let response = client
+                .post(format!("http://{address}/{route}"))
+                .multipart(reqwest::multipart::Form::new().part("file", image))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected);
+            if expected == StatusCode::OK {
+                assert_eq!(
+                    response.text().await.unwrap(),
+                    (3 * 1024 * 1024).to_string()
+                );
+            }
+        }
+        server.abort();
+    }
 }

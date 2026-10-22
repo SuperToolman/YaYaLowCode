@@ -9,6 +9,7 @@ pub struct Model {
     pub task_uuid: String,
     pub instance_id: Uuid,
     pub node_key: String,
+    pub branch_token_id: Option<Uuid>,
     pub node_label: String,
     pub task_type: String,
     pub assignee: String,

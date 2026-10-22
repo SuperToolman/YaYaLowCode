@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::infrastructure::entities::app_entity;
-use crate::platform::config::ApplicationBusinessContext;
 use crate::shared::format_date;
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -37,26 +36,6 @@ pub(crate) struct UpdateAppRequest {
     pub(crate) name: Option<String>,
     pub(crate) description: Option<String>,
     pub(crate) icon: Option<String>,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct UpdateApplicationBusinessContextRequest {
-    pub(crate) business_overview: String,
-    pub(crate) terminology: String,
-    pub(crate) process_description: String,
-    pub(crate) analysis_guidance: String,
-}
-
-impl From<UpdateApplicationBusinessContextRequest> for ApplicationBusinessContext {
-    fn from(value: UpdateApplicationBusinessContextRequest) -> Self {
-        Self {
-            business_overview: value.business_overview,
-            terminology: value.terminology,
-            process_description: value.process_description,
-            analysis_guidance: value.analysis_guidance,
-        }
-    }
 }
 
 impl From<app_entity::Model> for ApiApp {

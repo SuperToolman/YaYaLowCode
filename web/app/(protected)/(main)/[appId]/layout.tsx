@@ -41,10 +41,12 @@ async function loadApp(routeAppId: string): Promise<AppItem | undefined> {
   }
 
   try {
-    const runtimeApp = await getRuntimeApp<AppItem>(routeAppId);
+    const runtimeApp = await getRuntimeApp(routeAppId);
     if (runtimeApp?.id === routeAppId) {
       return {
         ...runtimeApp,
+        badge: runtimeApp.badge ?? undefined,
+        deploymentType: runtimeApp.deploymentType === "online" ? "online" : "local",
         color: normalizeAppColorTone(runtimeApp.color),
       };
     }

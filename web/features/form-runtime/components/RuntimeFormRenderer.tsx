@@ -1,9 +1,16 @@
 "use client";
+import { notifyRequestError } from "@lib/notify";
+import { getFieldDescription } from "./field-description";
+import { normalizeValidationProps } from "../validation-config";
+import { validateFormSubmission } from "../api";
 import { notify } from "@lib/notify";
 
 import dynamic from "next/dynamic";
 import {
   memo,
+  createContext,
+  useContext,
+  useId,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -14,15 +21,20 @@ import {
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import {
   Button,
+  ErrorMessage,
+  FieldError,
+  Label,
   Input,
   InputGroup,
-  Link as HeroLink,
+  Link,
   NumberField,
   Radio,
   RadioGroup,
-  Typography,
+  TextField,
+  ButtonGroup,
 } from "@heroui/react";
 import { Description } from "@heroui/react/description";
+import { TextContext } from "react-aria-components";
 import { normalizeActionPanelCode } from "@lib/action-panel-code";
 import { calculateFormulaValues } from "@lib/form-formula";
 import {
@@ -46,6 +58,7 @@ import {
   RuntimeClearButton,
   RuntimeCountryCitySelect,
   RuntimeDateRangePicker,
+  RuntimeDatePicker,
   RuntimeMultiSelect,
   RuntimeSelect,
   RuntimeUpload,
@@ -77,8 +90,13 @@ import type {
   RuntimePageAsset,
   RuntimeSchemaField,
 } from "./runtime-form-types";
-import { MySurface } from "@shared/ui/MySurface";
-import styles from "./RuntimeFormControls.module.css";
+import { FormGroup } from "./FormGroup";
+import {
+  getSubformValidationKey,
+  validateRuntimeFields,
+} from "./runtime-form-validation";
+
+const ValidationErrorsContext = createContext<Record<string, string>>({});
 export type {
   RuntimeActionPanelState,
   RuntimeDataSource,
@@ -119,6 +137,7 @@ export function RuntimeFormRenderer({
   schema,
   submitLabel,
   formId,
+  recordUuid,
   submitting = false,
   showSubmitButton = true,
   isReadOnly = false,
@@ -129,6 +148,7 @@ export function RuntimeFormRenderer({
   valuePatch,
   onSubmit,
 }: RuntimeFormRendererProps) {
+  const submittingValidationRef = useRef(false);
   const didMountExecutedRef = useRef(false);
   const emittedDebugEventIdRef = useRef<string | null>(null);
   const fields = useMemo(
@@ -136,7 +156,11 @@ export function RuntimeFormRenderer({
       schema.fields.map((field) => ({
         ...field,
         parentGroupId: field.parentGroupId ?? null,
-        props: isReadOnly ? { ...field.props, isReadOnly: true } : field.props,
+        props: normalizeValidationProps({
+          ...field.props,
+          ...(isReadOnly ? { isReadOnly: true } : {}),
+          ...(field.type === "serialNumber" ? { isRequired: true } : {}),
+        }),
       })),
     [isReadOnly, schema.fields],
   );
@@ -152,6 +176,24 @@ export function RuntimeFormRenderer({
     ),
   );
   const values = runtimeState.values;
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [remoteValidation, setRemoteValidation] = useState<{
+    values: Record<string, unknown>;
+    errors: Record<string, string>;
+  } | null>(null);
+  const [validatingSubmission, setValidatingSubmission] = useState(false);
+  const validationErrors = useMemo(
+    () =>
+      hasSubmitted
+        ? {
+            ...validateRuntimeFields(fields, values),
+            ...(remoteValidation?.values === values
+              ? remoteValidation.errors
+              : {}),
+          }
+        : {},
+    [fields, hasSubmitted, values, remoteValidation],
+  );
 
   useEffect(() => {
     onValuesChange?.(runtimeState.values);
@@ -313,7 +355,7 @@ export function RuntimeFormRenderer({
     () =>
       new Set(
         visibleRootFields
-          .filter((field) => field.props?.description?.trim())
+          .filter((field) => getFieldDescription(field.type, field.props ?? {}))
           .map((field) => field.row),
       ),
     [visibleRootFields],
@@ -359,7 +401,11 @@ export function RuntimeFormRenderer({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submittingValidationRef.current || submitting) return;
     const submitValues = calculateFormulaValues(fields, values).values;
+    setHasSubmitted(true);
+    if (Object.keys(validateRuntimeFields(fields, submitValues)).length > 0)
+      return;
     const submitDataSources = { ...dataSources };
     const result = runRuntimeActionHandler({
       actionModule,
@@ -409,6 +455,38 @@ export function RuntimeFormRenderer({
         ? (result as Record<string, unknown>)
         : calculatedSubmit.values;
 
+    const configuredFields = fields.filter(
+      (field) => field.props?.isUnique || field.props?.formatValidation,
+    );
+    if (configuredFields.length) {
+      submittingValidationRef.current = true;
+      setValidatingSubmission(true);
+      try {
+        const errors = await validateFormSubmission(
+          schema,
+          payload,
+          recordUuid,
+        );
+        // Ignore responses if inputs changed while validation was in flight.
+        if (runtimeContextRef.current.values !== calculatedSubmit.values)
+          return;
+        if (Object.keys(errors).length) {
+          setRuntimeState((current) => ({ ...current, values: payload }));
+          setRemoteValidation({ values: payload, errors });
+          return;
+        }
+        await onSubmit(payload);
+      } catch (error) {
+        notifyRequestError(error, "提交校验失败", {
+          description:
+            error instanceof Error ? error.message : "无法完成提交校验",
+        });
+      } finally {
+        submittingValidationRef.current = false;
+        setValidatingSubmission(false);
+      }
+      return;
+    }
     await onSubmit(payload);
   }
 
@@ -473,69 +551,76 @@ export function RuntimeFormRenderer({
   );
 
   return (
-    <form
-      id={formId}
-      onSubmit={handleSubmit}
-      className={isReadOnly ? "runtime-form-readonly" : undefined}
-    >
-      <div
-        className="grid"
-        style={{
-          gridTemplateColumns: `repeat(${schema.columns}, minmax(0, 1fr))`,
-          gridAutoRows: "minmax(68px, auto)",
-          columnGap: DEFAULT_COLUMN_GAP,
-          rowGap: DEFAULT_ROW_GAP,
-        }}
+    <ValidationErrorsContext.Provider value={validationErrors}>
+      <form
+        id={formId}
+        noValidate
+        onSubmit={handleSubmit}
+        className={isReadOnly ? "runtime-form-readonly" : undefined}
       >
-        {visibleRootFields.map((field) => (
-          <div
-            key={field.id}
-            className={[
-              "flex min-w-0",
-              (field.rowSpan ?? 1) > 1 ||
-              field.type === "multiLineText" ||
-              field.type === "richText" ||
-              field.type === "html" ||
-              field.type === "tsx"
-                ? "items-stretch"
-                : isTopAlignedRuntimeField(field.type) ||
-                    descriptionRows.has(field.row)
-                  ? "items-start"
-                  : "items-end",
-            ].join(" ")}
-            style={{
-              gridColumn: `${field.column + 1} / span ${field.colSpan ?? 1}`,
-              gridRow: `${field.row + 1} / span ${field.rowSpan ?? 1}`,
-            }}
-          >
-            <RuntimeFieldNode
-              childFieldsByParent={childFieldsByParent}
-              field={field}
-              formulaErrors={runtimeState.formulaErrors}
-              value={values[field.id]}
-              values={values}
-              definedComponentWritableFieldIds={
-                definedComponentWritableFieldIds
-              }
-              definedAssets={schema.pageProps?.assets ?? []}
-              onFieldAction={setFieldValue}
-            />
-          </div>
-        ))}
-      </div>
-
-      {showSubmitButton ? (
-        <div className="mt-8 flex justify-end">
-          <Button
-            type="submit"
-            isDisabled={submitting}
-            className="bg-[var(--color-primary)] text-[var(--color-text-on-primary)] hover:bg-[var(--color-primary-hover)] active:bg-[var(--color-primary-active)]"
-          >
-            {submitting ? "提交中..." : submitLabel}
-          </Button>
+        <div
+          className="grid"
+          style={{
+            gridTemplateColumns: `repeat(${schema.columns}, minmax(0, 1fr))`,
+            gridAutoRows: "minmax(68px, auto)",
+            columnGap: DEFAULT_COLUMN_GAP,
+            rowGap: DEFAULT_ROW_GAP,
+          }}
+        >
+          {visibleRootFields.map((field) => (
+            <div
+              key={field.id}
+              className={[
+                "flex min-w-0",
+                (field.rowSpan ?? 1) > 1 ||
+                field.type === "multiLineText" ||
+                field.type === "richText" ||
+                field.type === "html" ||
+                field.type === "tsx"
+                  ? "items-stretch"
+                  : isTopAlignedRuntimeField(field.type) ||
+                      descriptionRows.has(field.row)
+                    ? "items-start"
+                    : "items-end",
+              ].join(" ")}
+              style={{
+                gridColumn: `${field.column + 1} / span ${field.colSpan ?? 1}`,
+                gridRow: `${field.row + 1} / span ${field.rowSpan ?? 1}`,
+              }}
+            >
+              <RuntimeFieldNode
+                childFieldsByParent={childFieldsByParent}
+                field={field}
+                formulaErrors={runtimeState.formulaErrors}
+                value={values[field.id]}
+                values={values}
+                definedComponentWritableFieldIds={
+                  definedComponentWritableFieldIds
+                }
+                definedAssets={schema.pageProps?.assets ?? []}
+                onFieldAction={setFieldValue}
+              />
+            </div>
+          ))}
         </div>
-      ) : null}
-    </form>
+
+        {showSubmitButton ? (
+          <div className="mt-8 flex justify-end">
+            <Button
+              type="submit"
+              isDisabled={submitting || validatingSubmission}
+              className="bg-[var(--color-primary)] text-[var(--color-text-on-primary)] hover:bg-[var(--color-primary-hover)] active:bg-[var(--color-primary-active)]"
+            >
+              {validatingSubmission
+                ? "校验中..."
+                : submitting
+                  ? "提交中..."
+                  : submitLabel}
+            </Button>
+          </div>
+        ) : null}
+      </form>
+    </ValidationErrorsContext.Provider>
   );
 }
 
@@ -568,6 +653,7 @@ export function RuntimeFieldNode({
   value,
   values,
 }: SharedFormFieldProps) {
+  const validationErrors = useContext(ValidationErrorsContext);
   const readOnlyField =
     mode === "designer"
       ? {
@@ -592,7 +678,9 @@ export function RuntimeFieldNode({
         childFields={childFields}
         mode={mode}
         value={value}
-        onChange={(nextValue) => emitFieldAction(field.id, nextValue, "onChange")}
+        onChange={(nextValue) =>
+          emitFieldAction(field.id, nextValue, "onChange")
+        }
         isGrouped={Boolean(field.parentGroupId)}
       />
     );
@@ -602,10 +690,11 @@ export function RuntimeFieldNode({
     const childFields = childFieldsByParent.get(field.id) ?? [];
 
     return (
-      <MySurface className="w-full p-2">
-        <Typography type="h5" className="mb-2">
-          {field.label}
-        </Typography>
+      <FormGroup
+        title={field.label}
+        description={field.props?.description}
+        groupStyle={field.props?.groupStyle}
+      >
         <div
           className="grid"
           style={{
@@ -651,7 +740,7 @@ export function RuntimeFieldNode({
             </div>
           ))}
         </div>
-      </MySurface>
+      </FormGroup>
     );
   }
 
@@ -659,10 +748,17 @@ export function RuntimeFieldNode({
     return (
       <RuntimeAssociationField
         field={readOnlyField}
+        errorMessage={validationErrors[field.id]}
         value={value}
-        onChange={(nextValue) => emitFieldAction(field.id, nextValue, "onChange")}
+        onChange={(nextValue) =>
+          emitFieldAction(field.id, nextValue, "onChange")
+        }
         onFill={(source) =>
-          applyAssociationFillRules(readOnlyField.props, source, emitFieldAction)
+          applyAssociationFillRules(
+            readOnlyField.props,
+            source,
+            emitFieldAction,
+          )
         }
       />
     );
@@ -747,6 +843,7 @@ function RuntimeSubform({
   onChange: (value: Array<Record<string, unknown>>) => void;
   isGrouped?: boolean;
 }) {
+  const validationErrors = useContext(ValidationErrorsContext);
   const props = field.props ?? {};
   const description =
     props.description?.trim() === "可拖入普通字段作为表格列。"
@@ -787,11 +884,6 @@ function RuntimeSubform({
 
   function removeRow(rowIndex: number) {
     if (isReadOnly) return;
-    if (
-      props.subformConfirmDelete !== false &&
-      !window.confirm("确认删除这一行吗？")
-    )
-      return;
     onChange(rows.filter((_, index) => index !== rowIndex));
   }
 
@@ -833,7 +925,7 @@ function RuntimeSubform({
             </p>
           ) : null}
         </div>
-        <div className="ml-auto flex flex-wrap justify-end gap-2">
+        <ButtonGroup>
           {props.subformAllowBatchImport ? (
             <Button size="sm" variant="secondary" isDisabled>
               批量导入
@@ -860,7 +952,7 @@ function RuntimeSubform({
               {props.subformAddButtonText ?? "新增一项"}
             </Button>
           ) : null}
-        </div>
+        </ButtonGroup>
       </div>
       <RuntimeSubformTable
         childFields={childFields}
@@ -882,6 +974,11 @@ function RuntimeSubform({
           return renderChild.type === "associationFormField" ? (
             <RuntimeAssociationField
               field={renderChild}
+              errorMessage={
+                validationErrors[
+                  getSubformValidationKey(field.id, rowIndex, child.id)
+                ]
+              }
               value={row[renderChild.id]}
               showLabel={false}
               onChange={(nextValue) =>
@@ -892,6 +989,11 @@ function RuntimeSubform({
           ) : (
             <FormField
               field={renderChild}
+              validationKey={getSubformValidationKey(
+                field.id,
+                rowIndex,
+                child.id,
+              )}
               value={row[renderChild.id]}
               showLabel={false}
               onFieldAction={(_, nextValue) =>
@@ -948,6 +1050,13 @@ function RuntimeSubform({
           </div>
         )}
       />
+      {validationErrors[field.id] ? (
+        <TextContext.Provider value={null}>
+          <ErrorMessage style={{ display: "block" }}>
+            {validationErrors[field.id]}
+          </ErrorMessage>
+        </TextContext.Provider>
+      ) : null}
     </section>
   );
 }
@@ -957,6 +1066,7 @@ const FormField = memo(function FormField({
   formulaError,
   onFieldAction,
   showLabel = true,
+  validationKey,
   value,
 }: {
   field: RuntimeSchemaField;
@@ -967,8 +1077,24 @@ const FormField = memo(function FormField({
     eventName?: string,
   ) => void;
   showLabel?: boolean;
+  validationKey?: string;
   value: unknown;
 }) {
+  const validationErrors = useContext(ValidationErrorsContext);
+  const error = validationErrors[validationKey ?? field.id];
+  const errorId = useId();
+  const usesFieldError = [
+    "singleLineText",
+    "multiLineText",
+    "date",
+    "number",
+    "radio",
+    "select",
+    "multiSelect",
+    "department",
+    "member",
+    "dateRange",
+  ].includes(field.type);
   const props = field.props ?? {};
   const titlePosition = getRuntimeTitlePosition(
     field.type,
@@ -996,19 +1122,24 @@ const FormField = memo(function FormField({
         toOptionalNumber(
           props.defaultValue as string | number | string[] | undefined,
         ));
-  const description = props.description?.trim();
+  const description = getFieldDescription(field.type, props);
   const orientation =
     field.type === "radio" || field.type === "checkbox"
       ? "horizontal"
       : (props.orientation ?? "vertical");
 
   const hasVisibleLabel =
-    showLabel && field.type !== "button" && titlePosition !== "inside";
+    showLabel &&
+    !["button", "description", "link"].includes(field.type) &&
+    titlePosition !== "inside";
   const isLeftTitle = hasVisibleLabel && titlePosition === "left";
   const isInsideTitle = titlePosition === "inside";
+  const fillsFieldHeight =
+    field.type === "multiLineText" || field.type === "richText" ||
+    field.type === "attachment" || field.type === "imageUpload";
   const contentClass =
-    field.type === "multiLineText" || field.type === "richText"
-      ? "flex h-full min-h-0 w-full min-w-0 flex-1 flex-col gap-2"
+    fillsFieldHeight
+      ? "flex min-h-0 w-full min-w-0 flex-1 flex-col gap-2"
       : "w-full min-w-0 space-y-2";
 
   return (
@@ -1016,34 +1147,71 @@ const FormField = memo(function FormField({
       className={
         isLeftTitle
           ? "grid h-full w-full min-w-0 grid-cols-[minmax(0,max-content)_minmax(0,1fr)] items-start gap-3 pt-7"
-          : field.type === "multiLineText" || field.type === "richText"
+          : fillsFieldHeight
             ? "flex h-full min-h-0 w-full min-w-0 flex-col"
             : "w-full min-w-0"
       }
     >
       {hasVisibleLabel ? (
-        <label
-          className={
-            isLeftTitle
-              ? "max-w-28 truncate pt-2 text-sm font-medium text-[var(--color-text-primary)]"
-              : "mb-2 block text-sm font-medium text-[var(--color-text-primary)]"
+        <Label
+          isRequired={
+            Boolean(props.isRequired) &&
+            !["description", "link", "button", "html", "tsx"].includes(
+              field.type,
+            )
           }
+          className={isLeftTitle ? "max-w-28 truncate pt-2" : "mb-2"}
           htmlFor={field.id}
         >
           {field.label}
-        </label>
+        </Label>
       ) : null}
-      <div className={contentClass}>
+      <div
+        className={contentClass}
+        role="group"
+        aria-label={field.label}
+        aria-describedby={error && !usesFieldError ? errorId : undefined}
+      >
         {field.type === "singleLineText" ? (
-          <div className="relative">
-            {isInsideTitle ? (
-              <InputGroup fullWidth>
-                <InputGroup.Prefix className="max-w-28 shrink-0">
-                  <span className="truncate text-sm font-medium text-[var(--color-text-primary)]">
-                    {field.label}
-                  </span>
-                </InputGroup.Prefix>
-                <InputGroup.Input
+          <TextField
+            aria-label={field.label}
+            isInvalid={Boolean(error)}
+            validationBehavior="aria"
+            isRequired={props.isRequired}
+            fullWidth
+          >
+            <div className="relative">
+              {isInsideTitle ? (
+                <InputGroup fullWidth>
+                  <InputGroup.Prefix className="max-w-28 shrink-0">
+                    <Label
+                      htmlFor={field.id}
+                      isRequired={props.isRequired}
+                      className="truncate"
+                    >
+                      {field.label}
+                    </Label>
+                  </InputGroup.Prefix>
+                  <InputGroup.Input
+                    id={field.id}
+                    aria-label={field.label}
+                    disabled={props.isDisabled}
+                    placeholder={placeholder}
+                    readOnly={props.isReadOnly}
+                    required={props.isRequired}
+                    value={textValue}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                      onFieldAction(
+                        field.id,
+                        event.currentTarget.value,
+                        "onChange",
+                      )
+                    }
+                    className="min-w-0 flex-1"
+                  />
+                </InputGroup>
+              ) : (
+                <Input
                   id={field.id}
                   aria-label={field.label}
                   disabled={props.isDisabled}
@@ -1058,74 +1226,74 @@ const FormField = memo(function FormField({
                       "onChange",
                     )
                   }
-                  className="min-w-0 flex-1"
+                  fullWidth
                 />
-              </InputGroup>
-            ) : (
-              <Input
-                id={field.id}
-                aria-label={field.label}
-                disabled={props.isDisabled}
-                placeholder={placeholder}
-                readOnly={props.isReadOnly}
-                required={props.isRequired}
-                value={textValue}
-                onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                  onFieldAction(field.id, event.currentTarget.value, "onChange")
-                }
-                fullWidth
-              />
-            )}
-            {props.showClearButton ? (
-              <RuntimeClearButton
-                isDisabled={Boolean(props.isDisabled || props.isReadOnly)}
-                onClear={() => onFieldAction(field.id, "", "onChange")}
-              />
-            ) : null}
-            {props.showCounter ? <Counter value={textValue} /> : null}
-          </div>
+              )}
+              {props.showClearButton ? (
+                <RuntimeClearButton
+                  isDisabled={Boolean(props.isDisabled || props.isReadOnly)}
+                  onClear={() => onFieldAction(field.id, "", "onChange")}
+                />
+              ) : null}
+              {props.showCounter ? <Counter value={textValue} /> : null}
+            </div>
+            <FieldError>{error}</FieldError>
+          </TextField>
         ) : null}
         {field.type === "description" ? (
-          <p className="rounded-xl bg-[var(--color-bg-subtle)] px-3 py-2 ">
-            {textValue || placeholder}
-          </p>
+          <Description>{textValue || placeholder}</Description>
         ) : null}
         {field.type === "serialNumber" ? (
           <Input
             id={field.id}
             aria-label={field.label}
             readOnly
+            required={props.isRequired}
             placeholder={props.placeholder ?? "自动生成"}
-            value={formatRuntimeSerialNumber(props)}
+            value={textValue || formatRuntimeSerialNumber(props)}
             fullWidth
           />
         ) : null}
         {field.type === "multiLineText" ? (
-          <div className="relative min-h-0 flex-1">
-            <InputGroup fullWidth className="h-full">
-              <InputGroup.TextArea
-                id={field.id}
-                aria-label={field.label}
-                disabled={props.isDisabled}
-                placeholder={placeholder}
-                readOnly={props.isReadOnly}
-                required={props.isRequired}
-                rows={props.rows ?? Math.max(2, field.rowSpan ?? 1)}
-                className="h-full min-h-0 w-full resize-none"
-                value={textValue}
-                onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
-                  onFieldAction(field.id, event.currentTarget.value, "onChange")
-                }
-              />
-            </InputGroup>
-            {props.showClearButton ? (
-              <RuntimeClearButton
-                isDisabled={Boolean(props.isDisabled || props.isReadOnly)}
-                onClear={() => onFieldAction(field.id, "", "onChange")}
-              />
-            ) : null}
-            {props.showCounter ? <Counter value={textValue} /> : null}
-          </div>
+          <TextField
+            aria-label={field.label}
+            isInvalid={Boolean(error)}
+            validationBehavior="aria"
+            isRequired={props.isRequired}
+            fullWidth
+            className="min-h-0 flex-1"
+          >
+            <div className="relative min-h-0 flex-1">
+              <InputGroup fullWidth className="h-full">
+                <InputGroup.TextArea
+                  id={field.id}
+                  aria-label={field.label}
+                  disabled={props.isDisabled}
+                  placeholder={placeholder}
+                  readOnly={props.isReadOnly}
+                  required={props.isRequired}
+                  rows={Math.max(2, field.rowSpan ?? 1)}
+                  className="h-full min-h-0 w-full resize-none"
+                  value={textValue}
+                  onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
+                    onFieldAction(
+                      field.id,
+                      event.currentTarget.value,
+                      "onChange",
+                    )
+                  }
+                />
+              </InputGroup>
+              {props.showClearButton ? (
+                <RuntimeClearButton
+                  isDisabled={Boolean(props.isDisabled || props.isReadOnly)}
+                  onClear={() => onFieldAction(field.id, "", "onChange")}
+                />
+              ) : null}
+              {props.showCounter ? <Counter value={textValue} /> : null}
+            </div>
+            <FieldError>{error}</FieldError>
+          </TextField>
         ) : null}
         {field.type === "richText" ? (
           <RichTextEditor
@@ -1141,7 +1309,9 @@ const FormField = memo(function FormField({
         {field.type === "number" ? (
           <NumberField
             aria-label={field.label}
-            className={styles["form-runtime-controls__number-field"]}
+            isRequired={props.isRequired}
+            isInvalid={Boolean(error)}
+            validationBehavior="aria"
             value={numberValue}
             onChange={(nextValue) =>
               onFieldAction(field.id, nextValue ?? "", "onChange")
@@ -1150,7 +1320,6 @@ const FormField = memo(function FormField({
             isReadOnly={props.isReadOnly}
             maxValue={props.maxValue}
             minValue={props.minValue}
-            step={props.step}
             fullWidth
           >
             <NumberField.Group>
@@ -1158,17 +1327,15 @@ const FormField = memo(function FormField({
               <NumberField.Input id={field.id} placeholder={placeholder} />
               <NumberField.IncrementButton>+</NumberField.IncrementButton>
             </NumberField.Group>
+            <FieldError>{error}</FieldError>
           </NumberField>
         ) : null}
         {field.type === "radio" ? (
           <RadioGroup
             aria-label={field.label}
-            className={[
-              styles["form-runtime-controls__choice-field"],
-              orientation === "horizontal"
-                ? styles["form-runtime-controls__choice-field--horizontal"]
-                : styles["form-runtime-controls__choice-field--vertical"],
-            ].join(" ")}
+            orientation={orientation}
+            isInvalid={Boolean(error)}
+            validationBehavior="aria"
             value={textValue}
             onChange={(nextValue) =>
               onFieldAction(field.id, nextValue, "onChange")
@@ -1187,17 +1354,17 @@ const FormField = memo(function FormField({
                 </Radio.Content>
               </Radio>
             ))}
+            <FieldError>{error}</FieldError>
           </RadioGroup>
         ) : null}
         {field.type === "checkbox" ? (
           <RuntimeCheckboxOptions
             ariaLabel={field.label}
-            className={[
-              styles["form-runtime-controls__choice-field"],
+            className={
               orientation === "horizontal"
-                ? styles["form-runtime-controls__choice-field--horizontal"]
-                : styles["form-runtime-controls__choice-field--vertical"],
-            ].join(" ")}
+                ? "flex flex-row flex-wrap items-center gap-x-3 gap-y-1.5"
+                : "flex flex-col items-start gap-1.5"
+            }
             value={multiValues}
             onChange={(nextValue) =>
               onFieldAction(field.id, nextValue, "onChange")
@@ -1210,6 +1377,7 @@ const FormField = memo(function FormField({
         {field.type === "select" || field.type === "department" ? (
           <RuntimeSelect
             field={field}
+            errorMessage={error}
             options={options}
             placeholder={placeholder}
             props={props}
@@ -1222,6 +1390,7 @@ const FormField = memo(function FormField({
         {field.type === "member" ? (
           <RuntimeMemberSelect
             field={field}
+            errorMessage={error}
             placeholder={placeholder}
             props={props}
             value={props.memberMultiple ? multiValues : textValue}
@@ -1256,6 +1425,7 @@ const FormField = memo(function FormField({
         {field.type === "multiSelect" ? (
           <RuntimeMultiSelect
             field={field}
+            errorMessage={error}
             options={options}
             placeholder={placeholder}
             props={props}
@@ -1266,29 +1436,26 @@ const FormField = memo(function FormField({
           />
         ) : null}
         {field.type === "link" ? (
-          <HeroLink href={props.href || "#"} target={props.target}>
-            {textValue || field.label}
-          </HeroLink>
+          <Link href={props.href || "#"} target={props.target}>
+            {textValue || "打开链接"}
+            <Link.Icon />
+          </Link>
         ) : null}
         {field.type === "date" ? (
-          <Input
-            id={field.id}
-            aria-label={field.label}
-            disabled={props.isDisabled}
-            placeholder={placeholder}
-            readOnly={props.isReadOnly}
-            required={props.isRequired}
-            type="date"
+          <RuntimeDatePicker
+            field={field}
+            errorMessage={error}
+            props={props}
             value={textValue}
-            onChange={(event: ChangeEvent<HTMLInputElement>) =>
-              onFieldAction(field.id, event.currentTarget.value, "onChange")
+            onChange={(nextValue) =>
+              onFieldAction(field.id, nextValue, "onChange")
             }
-            fullWidth
           />
         ) : null}
         {field.type === "dateRange" ? (
           <RuntimeDateRangePicker
             field={field}
+            errorMessage={error}
             props={props}
             value={multiValues}
             onChange={(nextValue) =>
@@ -1319,14 +1486,32 @@ const FormField = memo(function FormField({
           </Button>
         ) : null}
         {description ? (
-          <Description className="text-sm text-[var(--color-text-secondary)]">
-            {description}
-          </Description>
+          <TextContext.Provider value={null}>
+            <Description
+              style={{ display: "block" }}
+              className="text-sm text-[var(--color-text-secondary)]"
+            >
+              {description}
+            </Description>
+          </TextContext.Provider>
+        ) : null}
+        {error && !usesFieldError ? (
+          <TextContext.Provider value={null}>
+            <ErrorMessage
+              style={{ display: "block" }}
+              id={errorId}
+              role="alert"
+            >
+              {error}
+            </ErrorMessage>
+          </TextContext.Provider>
         ) : null}
         {formulaError ? (
-          <Description className="text-sm text-[var(--color-danger)]">
-            公式错误：{formulaError}
-          </Description>
+          <TextContext.Provider value={null}>
+            <ErrorMessage style={{ display: "block" }}>
+              公式错误：{formulaError}
+            </ErrorMessage>
+          </TextContext.Provider>
         ) : null}
       </div>
     </div>

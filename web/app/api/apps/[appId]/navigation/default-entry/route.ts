@@ -1,4 +1,4 @@
-import { setDefaultNavigationEntry, type SetDefaultNavigationEntryRequest } from "../../../../../lib/api-client";
+import { setDefaultNavigationEntry, type SetDefaultNavigationEntryRequest } from "../../../../../lib/http";
 import { createBackendSdkClient, sdkJsonResponse } from "../../../../_lib/backend-sdk-client";
 
 type Context = { params: Promise<{ appId: string }> };

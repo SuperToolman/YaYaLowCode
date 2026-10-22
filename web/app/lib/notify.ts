@@ -1,5 +1,5 @@
+import { ApiRequestError, isRequestAborted, isSystemRequestError } from "./api-request";
 import { toast } from "@heroui/react";
-import { wasSystemErrorRecentlyReported } from "./system-notification";
 
 type ToastOptions = NonNullable<Parameters<typeof toast.success>[1]>;
 type NotifyOptions = ToastOptions & { dedupeKey?: string };
@@ -16,7 +16,6 @@ function show(level: Level, title: string, options: NotifyOptions = {}) {
   const now = Date.now();
   const key = dedupeKey ?? `${level}:${title}:${String(options.description ?? "")}`;
   const dedupeMs = key.startsWith("system:") ? SYSTEM_DEDUPE_MS : DEDUPE_MS;
-  if (level === "error" && !key.startsWith("system:") && wasSystemErrorRecentlyReported()) return;
   if (now - (recent.get(key) ?? 0) < dedupeMs) return;
   if (recent.size > 100) {
     for (const [entry, time] of recent) if (now - time > SYSTEM_DEDUPE_MS) recent.delete(entry);
@@ -41,5 +40,11 @@ export function notifySystemError(kind: "network" | "timeout" | "server" | "auth
     auth: "登录状态已失效",
     "invalid-response": "服务响应异常",
   };
-  notify.error(titles[kind], { description: detail, dedupeKey: `system:${kind}:${detail ?? ""}` });
+  notify.error(titles[kind], { description: detail, dedupeKey: `system:${kind}` });
+}
+
+/** Page business context is shown only when the public layer has no system toast. */
+export function notifyRequestError(error: unknown, title: string, options?: NotifyOptions) {
+  if (isRequestAborted(error) || isSystemRequestError(error) || (error instanceof ApiRequestError && error.status === 401)) return;
+  notify.error(title, options);
 }

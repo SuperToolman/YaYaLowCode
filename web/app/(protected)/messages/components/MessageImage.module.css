@@ -1,0 +1,24 @@
+.image {
+  position: relative;
+}
+.caption {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 1.5rem 0.75rem 0.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: start;
+  color: white;
+  box-shadow: inset 0 -3.5rem 2.5rem -2rem rgb(0 0 0 / 85%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+.image:hover .caption,
+.image:focus-visible .caption {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .caption { transition: none; }
+}

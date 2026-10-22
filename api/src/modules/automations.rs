@@ -1,16 +1,178 @@
 use crate::modules::forms;
 use crate::modules::forms::dto::RestoreVersionRequest;
 use crate::platform::automation_runs::{
-    RetrySource, create_automation_run, create_automation_run_node_log, finalize_automation_run,
-    finalize_automation_run_node_log,
+    RetrySource, create_automation_run, finalize_automation_run, finalize_automation_run_node_log,
 };
 use crate::platform::prelude::*;
 use crate::platform::records::{RecordRepository, StoredFormRecord};
 use crate::shared::*;
 use axum::http::StatusCode;
-use sea_orm::{QuerySelect, sea_query::LockType};
+use sea_orm::{QuerySelect, TransactionSession, sea_query::LockType};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ResolveExecutionRequest {
+    pub action: String,
+    #[serde(default)]
+    pub accept_duplicate_risk: bool,
+}
+
+pub(crate) async fn retry_automation_visit(
+    State(state): State<AppState>,
+    Path((flow_uuid, run_uuid, log_id)): Path<(String, String, String)>,
+) -> Result<Json<ApiResponse<Value>>, AppError> {
+    retry_visit(&state, &flow_uuid, &run_uuid, &log_id, false).await?;
+    Ok(Json(success_response(
+        "已重试该节点访问及其下游",
+        json!({}),
+    )))
+}
+async fn retry_visit(
+    state: &AppState,
+    flow_uuid: &str,
+    run_uuid: &str,
+    log_id: &str,
+    allow_attention: bool,
+) -> Result<(), AppError> {
+    let flow = AutomationFlowEntity::find()
+        .filter(automation_flow_entity::Column::FlowUuid.eq(flow_uuid))
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("flow missing".into()))?;
+    let run = AutomationRunEntity::find()
+        .filter(automation_run_entity::Column::FlowId.eq(flow.id))
+        .filter(automation_run_entity::Column::RunUuid.eq(run_uuid))
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("run missing".into()))?;
+    if run.workflow_instance_id.is_some() {
+        return Err(AppError::BadRequest("人工流程不能使用普通节点重试".into()));
+    }
+    if run.status == "needs_attention" && !allow_attention {
+        return Err(AppError::BadRequest(
+            "请通过管理员核实操作处理不确定结果".into(),
+        ));
+    }
+    if !matches!(
+        run.status.as_str(),
+        "failed" | "success" | "needs_attention"
+    ) {
+        return Err(AppError::BadRequest("运行尚未结束".into()));
+    }
+    let id = Uuid::parse_str(log_id).map_err(|_| AppError::BadRequest("invalid log ID".into()))?;
+    let log = AutomationRunNodeEntity::find_by_id(id)
+        .filter(automation_run_node_entity::Column::RunId.eq(run.id))
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("visit missing".into()))?;
+    let flow = execution::load_version(&state.db, &flow, run.flow_version).await?;
+    let outputs = serde_json::from_value(log.input_json)
+        .map_err(|_| AppError::BadRequest("invalid visit input".into()))?;
+    execute_automation_flow_from_snapshot(
+        &state.db,
+        &flow,
+        &run.trigger_event,
+        &run.trigger_payload,
+        "管理员",
+        &log.node_key,
+        outputs,
+        &run.run_uuid,
+    )
+    .await
+}
+pub(crate) async fn resolve_automation_execution(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path((flow_uuid, run_uuid)): Path<(String, String)>,
+    Json(payload): Json<ResolveExecutionRequest>,
+) -> Result<Json<ApiResponse<Value>>, AppError> {
+    use crate::platform::authorization;
+    let user = authorization::current_user(&headers, &state).await?;
+    if !user.is_admin && !user.is_boss {
+        return Err(AppError::Forbidden("仅管理员可核实外部调用结果".into()));
+    }
+    if !matches!(payload.action.as_str(), "cancel" | "retry")
+        || payload.action == "retry" && !payload.accept_duplicate_risk
+    {
+        return Err(AppError::BadRequest(
+            "重试必须明确接受重复副作用风险".into(),
+        ));
+    }
+    let txn = state.db.begin().await?;
+    let lookup = AutomationRunEntity::find()
+        .filter(automation_run_entity::Column::RunUuid.eq(&run_uuid))
+        .one(&txn)
+        .await?
+        .ok_or_else(|| AppError::NotFound("run missing".into()))?;
+    if let Some(id) = lookup.workflow_instance_id {
+        crate::infrastructure::entities::workflow_instance_entity::Entity::find_by_id(id)
+            .lock_exclusive()
+            .one(&txn)
+            .await?;
+    }
+    let run = AutomationRunEntity::find()
+        .filter(automation_run_entity::Column::RunUuid.eq(&run_uuid))
+        .lock_exclusive()
+        .one(&txn)
+        .await?
+        .ok_or_else(|| AppError::NotFound("run missing".into()))?;
+    let flow = AutomationFlowEntity::find_by_id(run.flow_id)
+        .one(&txn)
+        .await?
+        .ok_or_else(|| AppError::NotFound("flow missing".into()))?;
+    if flow.flow_uuid != flow_uuid || run.status != "needs_attention" {
+        return Err(AppError::BadRequest("运行不是待核实状态".into()));
+    }
+    execution::sql(&txn,"INSERT INTO automation_execution_audits(id,run_id,actor_id,action,detail) VALUES($1,$2,$3,$4,$5)",vec![Uuid::new_v4().into(),run.id.into(),user.id.into(),payload.action.clone().into(),json!({"acceptDuplicateRisk":payload.accept_duplicate_risk}).into()]).await?;
+    if payload.action == "cancel" {
+        execution::sql(&txn,"UPDATE automation_execution_tokens SET status='cancelled' WHERE run_id=$1 AND status<>'completed'",vec![run.id.into()]).await?;
+        if let Some(instance_id) = run.workflow_instance_id {
+            let instance =
+                crate::infrastructure::entities::workflow_instance_entity::Entity::find_by_id(
+                    instance_id,
+                )
+                .one(&txn)
+                .await?
+                .ok_or_else(|| AppError::NotFound("instance missing".into()))?;
+            crate::modules::workflows::skip_pending_tasks(
+                &txn,
+                &instance,
+                None,
+                "管理员取消执行",
+                Utc::now(),
+                None,
+            )
+            .await?;
+            crate::modules::workflows::complete_instance(
+                &txn,
+                &instance,
+                "cancelled",
+                "reviewing",
+                "cancelled",
+                "已取消",
+                "管理员",
+            )
+            .await?;
+        }
+        finalize_automation_run(&txn, run.id, "cancelled", Some("管理员核实后取消".into())).await?;
+    } else {
+        // Continue this exact token; completed siblings and artificial waits are untouched.
+        execution::sql(&txn,"UPDATE automation_execution_tokens SET status='queued',attempt=attempt+1,error_message=NULL WHERE run_id=$1 AND status='needs_attention'",vec![run.id.into()]).await?;
+        execution::sql(
+            &txn,
+            "UPDATE automation_flow_runs SET status='queued',error_message=NULL WHERE id=$1",
+            vec![run.id.into()],
+        )
+        .await?;
+    }
+    txn.commit().await?;
+    Ok(Json(success_response(
+        "已记录核实处理",
+        json!({"runId":run_uuid}),
+    )))
+}
 
 pub(crate) async fn list_automation_flows(
     State(state): State<AppState>,
@@ -40,14 +202,62 @@ pub(crate) async fn list_automation_flows(
 pub(crate) async fn create_automation_flow(
     State(state): State<AppState>,
     Path(app_id): Path<String>,
-    payload: Option<Json<CreateAutomationFlowRequest>>,
+    payload: Result<
+        Option<Json<CreateAutomationFlowRequest>>,
+        axum::extract::rejection::JsonRejection,
+    >,
 ) -> Result<(StatusCode, Json<ApiResponse<ApiAutomationFlow>>), AppError> {
+    let payload = payload.map_err(|error| AppError::BadRequest(error.body_text()))?;
     let flow =
         create_automation_definition(&state, &app_id, payload.map(|Json(value)| value)).await?;
     Ok((
         StatusCode::CREATED,
         Json(success_response(
             "创建集成自动化成功",
+            ApiAutomationFlow::from(flow),
+        )),
+    ))
+}
+
+pub(crate) async fn create_button_automation_for_form(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(form_uuid): Path<String>,
+    Json(payload): Json<CreateButtonAutomationRequest>,
+) -> Result<(StatusCode, Json<ApiResponse<ApiAutomationFlow>>), AppError> {
+    let form = forms::find_form_definition(&state.db, &form_uuid).await?;
+    if !["normal", "workflow"].contains(&form.form_type.as_str()) {
+        return Err(AppError::BadRequest(
+            "按钮触发来源必须为普通或流程表单".into(),
+        ));
+    }
+    let grants = crate::platform::authorization::grants(&headers, &state).await?;
+    if !grants.contains("*")
+        && (!grants.contains(&format!("app:{}:automation", form.app_route_app_id))
+            || !grants.contains(&format!("app:{}:edit_form", form.app_route_app_id)))
+    {
+        return Err(AppError::Forbidden("无权为当前表单创建按钮自动化".into()));
+    }
+    let name = payload.name.trim();
+    if name.is_empty() || name.chars().count() > 100 {
+        return Err(AppError::BadRequest("请填写自动化名称（最多100字）".into()));
+    }
+    let payload = CreateAutomationFlowRequest {
+        name: Some(name.into()),
+        description: None,
+        trigger_form_uuid: Some(form_uuid),
+        trigger_events: Some(vec!["button_click".into()]),
+        operator: Some(
+            crate::platform::authorization::current_user(&headers, &state)
+                .await?
+                .display_name,
+        ),
+    };
+    let flow = create_automation_definition(&state, &form.app_route_app_id, Some(payload)).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(success_response(
+            "创建按钮触发自动化成功",
             ApiAutomationFlow::from(flow),
         )),
     ))
@@ -68,7 +278,6 @@ pub(crate) async fn create_automation_definition(
         name: None,
         description: None,
         trigger_form_uuid: None,
-        trigger_event: None,
         trigger_events: None,
         operator: None,
     });
@@ -76,13 +285,12 @@ pub(crate) async fn create_automation_definition(
     let operator = normalize_operator(payload.operator);
     let trigger_form_uuid = normalize_optional_text(payload.trigger_form_uuid);
     let trigger_events =
-        normalize_automation_trigger_events(payload.trigger_events.unwrap_or_else(|| {
-            vec![
-                payload
-                    .trigger_event
-                    .unwrap_or_else(|| "after_create".to_string()),
-            ]
-        }))?;
+        normalize_automation_trigger_events(payload.trigger_events.unwrap_or_default())?;
+    if trigger_events == ["button_click"] && trigger_form_uuid.is_none() {
+        return Err(AppError::BadRequest(
+            "按钮触发自动化必须绑定来源表单".into(),
+        ));
+    }
     if trigger_events.iter().any(|event| event == "form_submit") {
         return Err(AppError::BadRequest(
             "process flows are created only with workflow forms".to_string(),
@@ -105,17 +313,23 @@ pub(crate) async fn create_automation_definition(
         current_version: Set(1),
         flow_type: Set("trigger".to_string()),
         trigger_form_uuid: Set(trigger_form_uuid),
-        // The database keeps a legacy non-null event column. An explicit empty
-        // triggerEvents array is the source of truth for an unconfigured flow.
-        trigger_event: Set(trigger_events
-            .first()
-            .cloned()
-            .unwrap_or_else(|| "after_create".to_string())),
         trigger_config: Set(with_automation_trigger_events(
             normalize_automation_trigger_config(json!({}), &trigger_events)?,
             &trigger_events,
         )),
-        nodes_json: Set(json!([])),
+        nodes_json: Set(json!([
+            {
+                "id": "trigger-1",
+                "type": "workflow",
+                "position": { "x": 120.0, "y": 80.0 },
+                "data": {
+                    "kind": "trigger",
+                    "label": "自动化触发时",
+                    "description": "自动化触发入口",
+                    "config": {}
+                }
+            }
+        ])),
         edges_json: Set(json!([])),
         created_by: Set(operator.clone()),
         updated_by: Set(operator),
@@ -141,20 +355,20 @@ where
     C: ConnectionTrait,
 {
     let now = Utc::now();
+    let (nodes, edges) = create_process_flow_template();
     let flow = automation_flow_entity::ActiveModel {
         id: Set(Uuid::new_v4()),
         flow_uuid: Set(generate_automation_flow_uuid()),
         app_route_app_id: Set(app_id.to_string()),
         name: Set(format!("{}审批流程", form_name)),
         description: Set(Some("流程表单内置审批流程".to_string())),
-        status: Set("paused".to_string()),
+        status: Set("enabled".to_string()),
         current_version: Set(1),
         flow_type: Set("process".to_string()),
         trigger_form_uuid: Set(Some(form_uuid.to_string())),
-        trigger_event: Set("form_submit".to_string()),
-        trigger_config: Set(json!({ "rootLabel": "表单提交时" })),
-        nodes_json: Set(json!([])),
-        edges_json: Set(json!([])),
+        trigger_config: Set(json!({ "rootLabel": "表单提交时", "triggerEvents": ["form_submit"] })),
+        nodes_json: Set(nodes),
+        edges_json: Set(edges),
         created_by: Set("管理员".to_string()),
         updated_by: Set("管理员".to_string()),
         created_at: Set(now.into()),
@@ -186,6 +400,16 @@ where
     }
 
     create_process_flow_for_form(db, app_id, form_uuid, form_name).await
+}
+
+fn create_process_flow_template() -> (Value, Value) {
+    (
+        json!([
+            { "id": "trigger-1", "type": "workflow", "position": { "x": 120.0, "y": 80.0 }, "data": { "kind": "trigger", "label": "表单提交时", "description": "流程表单提交后启动审批", "config": {} } },
+            { "id": "approval-1", "type": "workflow", "position": { "x": 120.0, "y": 260.0 }, "data": { "kind": "approval", "label": "审批人", "description": "由审批人流程审批", "config": { "assigneeIds": [], "assigneeMode": "self", "roleIds": [], "approvalMode": null } } }
+        ]),
+        json!([{ "id": "edge-trigger-approval", "source": "trigger-1", "target": "approval-1", "sourceHandle": null, "targetHandle": null }]),
+    )
 }
 
 pub(crate) async fn get_automation_flow(
@@ -248,14 +472,26 @@ pub(crate) async fn restore_automation_flow_version(
         .await?
         .ok_or_else(|| AppError::NotFound("automation flow version not found".to_string()))?;
 
+    if snapshot.trigger_form_uuid != flow.trigger_form_uuid
+        || automation_trigger_events(&snapshot.trigger_config)
+            != automation_trigger_events(&flow.trigger_config)
+    {
+        ensure_no_button_references(&txn, &flow.flow_uuid).await?;
+    }
+    let mut restored = flow.clone();
+    restored.trigger_form_uuid = snapshot.trigger_form_uuid.clone();
+    restored.nodes_json = snapshot.nodes_json.clone();
+    restored.edges_json = snapshot.edges_json.clone();
+    restored.trigger_config = snapshot.trigger_config.clone();
+    validate_execution_definition(&restored)?;
+    validate_execution_sources(&state.db, &restored).await?;
     let now = Utc::now();
 
     let mut active_model: automation_flow_entity::ActiveModel = flow.into();
     active_model.name = Set(snapshot.name.clone());
     active_model.description = Set(snapshot.description.clone());
     active_model.current_version = Set(version);
-    active_model.trigger_form_uuid = Set(snapshot.trigger_form_uuid.clone());
-    active_model.trigger_event = Set(snapshot.trigger_event.clone());
+    active_model.trigger_form_uuid = Set(restored.trigger_form_uuid.clone());
     active_model.trigger_config = Set(snapshot.trigger_config.clone());
     active_model.nodes_json = Set(snapshot.nodes_json.clone());
     active_model.edges_json = Set(snapshot.edges_json.clone());
@@ -285,6 +521,35 @@ pub(crate) async fn list_automation_flow_runs(
         .order_by_desc(automation_run_entity::Column::StartedAt)
         .all(&state.db)
         .await?;
+    let instance_ids = runs
+        .iter()
+        .filter_map(|run| run.workflow_instance_id)
+        .collect::<Vec<_>>();
+    let instance_names = if instance_ids.is_empty() {
+        HashMap::new()
+    } else {
+        use crate::infrastructure::entities::workflow_instance_entity;
+        workflow_instance_entity::Entity::find()
+            .filter(workflow_instance_entity::Column::Id.is_in(instance_ids))
+            .all(&state.db)
+            .await?
+            .into_iter()
+            .map(|instance| (instance.id, instance.instance_uuid))
+            .collect::<HashMap<_, _>>()
+    };
+    let metadata=state.db.query_all_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres,"SELECT e.run_id,e.source,e.policy FROM automation_execution_runs e JOIN automation_flow_runs r ON r.id=e.run_id WHERE r.flow_id=$1",vec![flow.id.into()])).await?;
+    let metadata = metadata
+        .into_iter()
+        .map(|row| {
+            Ok((
+                row.try_get::<Uuid>("", "run_id")?,
+                (
+                    row.try_get::<Value>("", "source")?,
+                    row.try_get::<String>("", "policy")?,
+                ),
+            ))
+        })
+        .collect::<Result<HashMap<_, _>, sea_orm::DbErr>>()?;
     let run_ids = runs.iter().map(|item| item.id).collect::<Vec<_>>();
     let node_logs = if run_ids.is_empty() {
         Vec::new()
@@ -308,6 +573,20 @@ pub(crate) async fn list_automation_flow_runs(
         runs.into_iter()
             .map(|run| ApiAutomationRun {
                 id: run.run_uuid.clone(),
+                execution_policy: metadata.get(&run.id).map(|(_, policy)| policy.clone()),
+                trigger_source: metadata.get(&run.id).map(|(source, _)| source.clone()),
+                allowed_actions: if run.status == "needs_attention" {
+                    vec!["resolve".into()]
+                } else if run.workflow_instance_id.is_none()
+                    && matches!(run.status.as_str(), "failed" | "success")
+                {
+                    vec!["retry".into()]
+                } else {
+                    vec![]
+                },
+                workflow_instance_id: run
+                    .workflow_instance_id
+                    .and_then(|id| instance_names.get(&id).cloned()),
                 flow_version: run.flow_version,
                 trigger_event: run.trigger_event.clone(),
                 trigger_payload: run.trigger_payload.clone(),
@@ -350,8 +629,9 @@ pub(crate) async fn retry_automation_flow_run_node(
 pub(crate) async fn update_automation_flow(
     State(state): State<AppState>,
     Path(flow_uuid): Path<String>,
-    Json(payload): Json<UpdateAutomationFlowRequest>,
+    payload: Result<Json<UpdateAutomationFlowRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<ApiResponse<ApiAutomationFlow>>, AppError> {
+    let Json(payload) = payload.map_err(|error| AppError::BadRequest(error.body_text()))?;
     let updated = update_automation_definition(&state, &flow_uuid, payload).await?;
     Ok(Json(success_response(
         "更新集成自动化成功",
@@ -377,9 +657,7 @@ pub(crate) async fn update_automation_definition(
     let process_form_uuid = flow.trigger_form_uuid.clone();
     let existing_nodes_json = flow.nodes_json.clone();
     let existing_edges_json = flow.edges_json.clone();
-    let existing_trigger_events =
-        automation_trigger_events(&flow.trigger_event, &flow.trigger_config);
-    let existing_trigger_event = flow.trigger_event.clone();
+    let existing_trigger_events = automation_trigger_events(&flow.trigger_config);
     let mut active_model: automation_flow_entity::ActiveModel = flow.clone().into();
     let mut next_nodes_json = existing_nodes_json.clone();
     let mut next_edges_json = existing_edges_json.clone();
@@ -387,6 +665,11 @@ pub(crate) async fn update_automation_definition(
     let mut edges_updated = false;
 
     if let Some(name) = payload.name {
+        if is_process_flow {
+            return Err(AppError::BadRequest(
+                "流程表单的自动化名称由表单名称自动同步，不能单独修改".to_string(),
+            ));
+        }
         let next_name = name.trim();
         if !next_name.is_empty() {
             active_model.name = Set(next_name.to_string());
@@ -397,6 +680,7 @@ pub(crate) async fn update_automation_definition(
         active_model.description = Set(normalize_optional_text(payload.description));
     }
 
+    let starting = payload.status.as_deref() == Some("enabled");
     if let Some(status) = payload.status {
         active_model.status = Set(normalize_automation_status(&status)?);
     }
@@ -405,27 +689,38 @@ pub(crate) async fn update_automation_definition(
         .trigger_events
         .map(normalize_automation_trigger_events)
         .transpose()?;
-    let requested_trigger_event = payload
-        .trigger_event
-        .map(|event| normalize_automation_trigger_event(&event))
-        .transpose()?;
-    if let Some(trigger_events) = requested_trigger_events.as_ref() {
-        if is_process_flow && trigger_events.as_slice() != ["form_submit"] {
-            return Err(AppError::BadRequest(
-                "process flow trigger is fixed to form_submit".to_string(),
-            ));
-        }
-        active_model.trigger_event = Set(trigger_events
-            .first()
-            .cloned()
-            .unwrap_or_else(|| existing_trigger_event.clone()));
-    } else if let Some(trigger_event) = requested_trigger_event.as_ref() {
-        if is_process_flow && trigger_event != "form_submit" {
-            return Err(AppError::BadRequest(
-                "process flow trigger is fixed to form_submit".to_string(),
-            ));
-        }
-        active_model.trigger_event = Set(trigger_event.clone());
+    if requested_trigger_events.is_none()
+        && !flow
+            .trigger_config
+            .get("triggerEvents")
+            .is_some_and(Value::is_array)
+    {
+        return Err(AppError::BadRequest(
+            "旧自动化定义不受支持，请重新配置 triggerEvents".into(),
+        ));
+    }
+    if requested_trigger_events
+        .as_ref()
+        .is_some_and(|events| is_process_flow && events.as_slice() != ["form_submit"])
+    {
+        return Err(AppError::BadRequest(
+            "process flow trigger is fixed to form_submit".into(),
+        ));
+    }
+
+    let requested_form_uuid = payload
+        .trigger_form_uuid
+        .as_ref()
+        .map(|value| normalize_optional_text(Some(value.clone())))
+        .unwrap_or_else(|| flow.trigger_form_uuid.clone());
+    if requested_trigger_events
+        .as_ref()
+        .is_some_and(|events| events.as_slice() == ["button_click"])
+        && requested_form_uuid.is_none()
+    {
+        return Err(AppError::BadRequest(
+            "按钮触发自动化必须绑定来源表单".into(),
+        ));
     }
 
     if payload.trigger_form_uuid.is_some() {
@@ -452,13 +747,6 @@ pub(crate) async fn update_automation_definition(
             trigger_events,
         ));
         trigger_events.clone()
-    } else if let Some(trigger_event) = requested_trigger_event.as_ref() {
-        let trigger_config = active_model.trigger_config.clone().unwrap();
-        active_model.trigger_config = Set(with_automation_trigger_events(
-            trigger_config,
-            std::slice::from_ref(trigger_event),
-        ));
-        vec![trigger_event.clone()]
     } else {
         existing_trigger_events
     };
@@ -472,6 +760,7 @@ pub(crate) async fn update_automation_definition(
     }
 
     if let Some(nodes) = payload.nodes {
+        graph::validate_current_protocol(&nodes, &active_model.trigger_config.clone().unwrap())?;
         next_nodes_json = normalize_automation_nodes(nodes)?;
         nodes_updated = true;
     }
@@ -481,9 +770,33 @@ pub(crate) async fn update_automation_definition(
         edges_updated = true;
     }
 
+    // Older freshly-created flows persisted an empty graph. Give them the same
+    // valid entry node as newly-created flows when the user starts them.
+    if starting
+        && json_array_items(&next_nodes_json).is_empty()
+        && json_array_items(&next_edges_json).is_empty()
+    {
+        next_nodes_json = json!([{
+            "id": "trigger-1",
+            "type": "workflow",
+            "position": { "x": 120.0, "y": 80.0 },
+            "data": {
+                "kind": "trigger",
+                "label": "自动化触发时",
+                "description": "自动化触发入口",
+                "config": {}
+            }
+        }]);
+        nodes_updated = true;
+    }
+
     if nodes_updated || edges_updated {
         validate_automation_graph(&next_nodes_json, &next_edges_json)?;
     }
+    graph::validate_current_protocol(
+        &next_nodes_json,
+        &active_model.trigger_config.clone().unwrap(),
+    )?;
     validate_flow_node_kinds(
         &next_nodes_json,
         if is_process_flow {
@@ -492,8 +805,33 @@ pub(crate) async fn update_automation_definition(
             "trigger"
         },
     )?;
+    if is_process_flow {
+        validate_process_reachable_approval(&next_nodes_json, &next_edges_json)?;
+        validate_process_human_node_configs(&next_nodes_json)?;
+    }
+    if starting {
+        validate_automation_graph(&next_nodes_json, &next_edges_json)?;
+    }
     ensure_automation_node_forms_belong_to_app(&state.db, &app_id, &next_nodes_json).await?;
+    let validation_source = active_model.trigger_form_uuid.clone().unwrap();
+    if effective_trigger_events == ["button_click"] && validation_source.is_none() {
+        return Err(AppError::BadRequest(
+            "按钮触发自动化必须绑定来源表单".into(),
+        ));
+    }
+    get_data::validate_get_nodes(
+        &state.db,
+        &next_nodes_json,
+        &next_edges_json,
+        validation_source.as_deref(),
+    )
+    .await?;
 
+    if active_model.trigger_form_uuid.clone().unwrap() != flow.trigger_form_uuid
+        || effective_trigger_events != automation_trigger_events(&flow.trigger_config)
+    {
+        ensure_no_button_references(&txn, &flow.flow_uuid).await?;
+    }
     if nodes_updated {
         active_model.nodes_json = Set(next_nodes_json);
     }
@@ -512,7 +850,6 @@ pub(crate) async fn update_automation_definition(
             "name": active_model.name.clone().unwrap(),
             "description": active_model.description.clone().unwrap(),
             "triggerFormUuid": active_model.trigger_form_uuid.clone().unwrap(),
-            "triggerEvent": active_model.trigger_event.clone().unwrap(),
             "triggerConfig": active_model.trigger_config.clone().unwrap(),
             "nodes": active_model.nodes_json.clone().unwrap(),
             "edges": active_model.edges_json.clone().unwrap(),
@@ -524,7 +861,8 @@ pub(crate) async fn update_automation_definition(
             .order_by_desc(automation_flow_version_entity::Column::Version)
             .one(&txn)
             .await?;
-        let next_version = latest.map_or(flow.current_version, |v| v.version)
+        let next_version = latest
+            .map_or(flow.current_version, |v| v.version)
             .checked_add(1)
             .ok_or_else(|| AppError::BadRequest("automation version limit reached".to_string()))?;
         active_model.current_version = Set(next_version);
@@ -547,7 +885,6 @@ fn automation_schema(flow: &automation_flow_entity::Model) -> Value {
         "name": flow.name,
         "description": flow.description,
         "triggerFormUuid": flow.trigger_form_uuid,
-        "triggerEvent": flow.trigger_event,
         "triggerConfig": flow.trigger_config,
         "nodes": flow.nodes_json,
         "edges": flow.edges_json,
@@ -575,7 +912,19 @@ pub(crate) async fn delete_automation_definition(
         .await?
         .ok_or_else(|| AppError::NotFound("automation flow not found".to_string()))?;
 
+    if flow.flow_type == "process" {
+        return Err(AppError::BadRequest(
+            "workflow form process automation is managed by its form and cannot be deleted"
+                .to_string(),
+        ));
+    }
+
     let txn = state.db.begin().await?;
+    AutomationFlowEntity::find_by_id(flow.id)
+        .lock_exclusive()
+        .one(&txn)
+        .await?;
+    ensure_no_button_references(&txn, &flow.flow_uuid).await?;
     AutomationFlowVersionEntity::delete_many()
         .filter(automation_flow_version_entity::Column::FlowId.eq(flow.id))
         .exec(&txn)
@@ -603,6 +952,7 @@ pub(crate) async fn execute_automation_flows_for_event(
     event: &str,
     trigger_payload: &Value,
     operator: &str,
+    user_id: Option<Uuid>,
     changed_fields: Option<&HashSet<String>>,
 ) -> Result<(), AppError> {
     let flows = AutomationFlowEntity::find()
@@ -619,7 +969,8 @@ pub(crate) async fn execute_automation_flows_for_event(
 
     let mut first_error = None;
     for flow in flows {
-        if !automation_trigger_events(&flow.trigger_event, &flow.trigger_config)
+        validate_execution_definition(&flow)?;
+        if !automation_trigger_events(&flow.trigger_config)
             .iter()
             .any(|configured_event| configured_event == event)
         {
@@ -628,15 +979,17 @@ pub(crate) async fn execute_automation_flows_for_event(
         if !flow_matches_changed_fields(event, &flow.trigger_config, changed_fields) {
             continue;
         }
-        if let Err(err) = execute_automation_flow(
+        if let Err(err) = execute_persistent_trigger(
             db,
             &flow,
             event,
             trigger_payload,
             operator,
+            "trigger-1",
             None,
             None,
             None,
+            user_id,
         )
         .await
         {
@@ -659,12 +1012,25 @@ pub(crate) async fn execute_automation_flows_for_event(
     }
 }
 
-async fn execute_add_data_node(
-    db: &DatabaseConnection,
+async fn execute_add_data_node<C: ConnectionTrait + TransactionTrait>(
+    db: &C,
     flow: &automation_flow_entity::Model,
     config: &Value,
     context: &AutomationExecutionContext,
 ) -> Result<Value, AppError> {
+    if config.get("targetMode").and_then(Value::as_str) == Some("subtable") {
+        let source = config
+            .get("parentDataNodeId")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let parent_form = get_data::source_form(
+            &flow.nodes_json,
+            &flow.edges_json,
+            source,
+            flow.trigger_form_uuid.as_deref(),
+        )?;
+        return execute_add_subform_data(db, config, context, &parent_form).await;
+    }
     let target_form_uuid = read_json_string(config.get("targetFormUuid"))
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| AppError::BadRequest("add-data target form is required".to_string()))?;
@@ -697,7 +1063,7 @@ async fn execute_add_data_node(
             let record = RecordRepository::new(db)
                 .insert(&target_definition, row_data, &context.operator, now)
                 .await?;
-            inserted.push(record.record_data);
+            inserted.push(record_data_with_automation_identity(record));
         }
         return Ok(Value::Array(inserted));
     }
@@ -710,90 +1076,210 @@ async fn execute_add_data_node(
         "automation add-data executed: flow={}, form={}, record={}",
         flow.flow_uuid, target_form_uuid, record.record_uuid
     );
-    Ok(record.record_data)
+    Ok(record_data_with_automation_identity(record))
 }
 
-async fn execute_get_one_node(
-    db: &DatabaseConnection,
+async fn execute_add_subform_data<C: ConnectionTrait + TransactionTrait>(
+    db: &C,
+    config: &Value,
+    context: &AutomationExecutionContext,
+    parent_form: &str,
+) -> Result<Value, AppError> {
+    let subform_id = read_json_string(config.get("subformFieldId"))
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| AppError::BadRequest("请选择目标子表".into()))?;
+    get_data::validate_subform_config(db, parent_form, config).await?;
+    let source = config
+        .get("parentDataNodeId")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let parents = get_data::node_candidates(context.outputs.get(source))?;
+    let mut parent_ids = parents
+        .iter()
+        .map(|record| {
+            record
+                .get("__automationRecordUuid")
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty())
+                .map(str::to_string)
+                .ok_or_else(|| {
+                    AppError::BadRequest(
+                        "来源数据节点缺少持久化主表记录 ID，创建前或删除后的记录不能新增子表"
+                            .into(),
+                    )
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    parent_ids.sort();
+    parent_ids.dedup();
+    if parent_ids.is_empty() {
+        return Ok(json!([]));
+    }
+    let rows = json_array_items(&config.get("rows").cloned().unwrap_or_else(|| json!([])));
+    let multiple = config.get("recordMode").and_then(Value::as_str) == Some("multiple");
+    let multiple_items = if multiple {
+        let source = read_json_string(config.get("multipleSourceNodeId")).unwrap_or_default();
+        let items = context
+            .outputs
+            .get(&source)
+            .and_then(Value::as_array)
+            .ok_or_else(|| AppError::BadRequest("多条新增的数据来源必须为数组".into()))?;
+        Some((source, items))
+    } else {
+        None
+    };
+    // 锁定主记录后追加数组，复用主表更新触发器同步子表物理存储，避免并行追加覆盖。
+    let txn = db.begin().await?;
+    let repository = RecordRepository::new(&txn);
+    let mut inserted = Vec::new();
+    for parent_id in &parent_ids {
+        let parent = repository.find_for_update(parent_form, parent_id).await?;
+        let mut outputs = context.outputs.clone();
+        let source_record = parents
+            .iter()
+            .find(|record| {
+                record.get("__automationRecordUuid").and_then(Value::as_str)
+                    == Some(parent_id.as_str())
+            })
+            .unwrap();
+        outputs.insert(source.to_string(), source_record.clone());
+        let new_rows = if let Some((multiple_source, items)) = &multiple_items {
+            items
+                .iter()
+                .map(|item| {
+                    let mut scoped = outputs.clone();
+                    scoped.insert(multiple_source.clone(), json!([item]));
+                    build_record_data_from_rows(&rows, &scoped)
+                })
+                .collect::<Vec<_>>()
+        } else {
+            vec![build_record_data_from_rows(&rows, &outputs)]
+        };
+        let mut next = parent.record_data.clone();
+        let array = next
+            .as_object_mut()
+            .ok_or_else(|| AppError::BadRequest("主表记录必须为对象".into()))?
+            .entry(subform_id.clone())
+            .or_insert_with(|| json!([]))
+            .as_array_mut()
+            .ok_or_else(|| AppError::BadRequest("子表字段必须为数组".into()))?;
+        array.extend(new_rows.clone());
+        repository
+            .update(&parent, next, &context.operator, Utc::now())
+            .await?;
+        inserted.extend(new_rows.clone());
+    }
+    txn.commit().await?;
+    Ok(
+        if parent_ids.len() == 1
+            && config.get("recordMode").and_then(Value::as_str) != Some("multiple")
+        {
+            inserted.into_iter().next().unwrap()
+        } else {
+            json!(inserted)
+        },
+    )
+}
+
+async fn get_candidates<C: ConnectionTrait + TransactionTrait>(
+    db: &C,
+    config: &Value,
+    context: &AutomationExecutionContext,
+) -> Result<Vec<Value>, AppError> {
+    get_data::validate_query_config(config)?;
+    let candidates = if config.get("sourceMode").and_then(Value::as_str) == Some("data-node") {
+        let id = read_json_string(config.get("dataNodeId")).unwrap_or_default();
+        get_data::node_candidates(context.outputs.get(&id))?
+    } else if config.get("sourceMode").and_then(Value::as_str) == Some("trigger") {
+        vec![
+            context
+                .outputs
+                .get("trigger-1")
+                .cloned()
+                .ok_or_else(|| AppError::BadRequest("按钮触发记录不可用".into()))?,
+        ]
+    } else {
+        let form_uuid = read_json_string(config.get("formUuid"))
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| AppError::BadRequest("请选择来源表单".into()))?;
+        RecordRepository::new(db)
+            .list(&form_uuid)
+            .await?
+            .into_iter()
+            .map(record_data_with_automation_identity)
+            .collect()
+    };
+    Ok(get_data::filter_candidates(candidates, config))
+}
+
+async fn execute_get_one_node<C: ConnectionTrait + TransactionTrait>(
+    db: &C,
     config: &Value,
     context: &AutomationExecutionContext,
 ) -> Result<Value, AppError> {
-    let source_mode = config
-        .get("sourceMode")
-        .and_then(Value::as_str)
-        .unwrap_or("form");
-    if source_mode == "data-node" {
-        let source_node_id = read_json_string(config.get("dataNodeId")).unwrap_or_default();
-        if let Some(value) = context.outputs.get(&source_node_id) {
-            return Ok(match value {
-                Value::Array(items) => items.first().cloned().unwrap_or(Value::Null),
-                _ => value.clone(),
-            });
-        }
-        return Ok(Value::Null);
-    }
-
-    let form_uuid = read_json_string(config.get("formUuid")).unwrap_or_default();
-    if form_uuid.is_empty() {
-        return Ok(Value::Null);
-    }
-
-    let records = RecordRepository::new(db).list(&form_uuid).await?;
-    let matched = filter_records_by_expression(records, config.get("filterExpression"), context);
-    Ok(matched
+    Ok(get_candidates(db, config, context)
+        .await?
         .into_iter()
         .next()
-        .map(record_data_with_automation_identity)
         .unwrap_or(Value::Null))
 }
 
-async fn execute_get_many_node(
-    db: &DatabaseConnection,
+async fn execute_get_many_node<C: ConnectionTrait + TransactionTrait>(
+    db: &C,
     config: &Value,
     context: &AutomationExecutionContext,
 ) -> Result<Value, AppError> {
-    let source_mode = config
-        .get("sourceMode")
-        .and_then(Value::as_str)
-        .unwrap_or("form");
-    if source_mode == "data-node" {
-        let source_node_id = read_json_string(config.get("dataNodeId")).unwrap_or_default();
-        if let Some(value) = context.outputs.get(&source_node_id) {
-            return Ok(match value {
-                Value::Array(_) => value.clone(),
-                Value::Null => Value::Array(vec![]),
-                _ => Value::Array(vec![value.clone()]),
-            });
-        }
-        return Ok(Value::Array(vec![]));
-    }
-
-    let form_uuid = read_json_string(config.get("formUuid")).unwrap_or_default();
-    if form_uuid.is_empty() {
-        return Ok(Value::Array(vec![]));
-    }
-
-    let records = RecordRepository::new(db).list(&form_uuid).await?;
-    let matched = filter_records_by_expression(records, config.get("filterExpression"), context);
-    Ok(Value::Array(
-        matched
-            .into_iter()
-            .map(record_data_with_automation_identity)
-            .collect(),
-    ))
+    Ok(Value::Array(get_candidates(db, config, context).await?))
 }
 
-fn record_data_with_automation_identity(record: StoredFormRecord) -> Value {
+pub(crate) fn record_data_with_automation_identity(record: StoredFormRecord) -> Value {
     let mut data = record.record_data.as_object().cloned().unwrap_or_default();
-    data.insert(
-        "__automationRecordUuid".to_string(),
-        Value::String(record.record_uuid),
+    inject_automation_system_fields(
+        &mut data,
+        &record.record_uuid,
+        Some(record.created_at.to_rfc3339()),
+        Some(record.updated_at.to_rfc3339()),
+        Some(record.created_by.clone()),
     );
     Value::Object(data)
 }
 
-async fn execute_update_data_node(
-    db: &DatabaseConnection,
+/// Add the stable fields exposed by the automation field picker to every
+/// record output. They live alongside form data so the shared expression and
+/// condition evaluators can resolve them using the same `nodeId:fieldId` key.
+pub(crate) fn inject_automation_system_fields(
+    data: &mut serde_json::Map<String, Value>,
+    record_uuid: &str,
+    created_at: Option<String>,
+    updated_at: Option<String>,
+    submitter: Option<String>,
+) {
+    data.insert(
+        "__automationRecordUuid".to_string(),
+        Value::String(record_uuid.to_string()),
+    );
+    data.entry("instanceId")
+        .or_insert_with(|| Value::String(record_uuid.to_string()));
+    data.entry("instanceTitle").or_insert_with(|| {
+        Value::String(format!(
+            "{}发起的记录",
+            submitter.as_deref().unwrap_or("用户")
+        ))
+    });
+    if let Some(value) = submitter {
+        data.entry("submitter").or_insert(Value::String(value));
+    }
+    if let Some(value) = created_at {
+        data.entry("createdAt").or_insert(Value::String(value));
+    }
+    if let Some(value) = updated_at {
+        data.entry("updatedAt").or_insert(Value::String(value));
+    }
+    data.entry("submitterOrganization").or_insert(Value::Null);
+}
+
+async fn execute_update_data_node<C: ConnectionTrait + TransactionTrait>(
+    db: &C,
     flow: &automation_flow_entity::Model,
     config: &Value,
     context: &AutomationExecutionContext,
@@ -830,23 +1316,23 @@ async fn execute_update_data_node(
             .filter(|record| source_record_uuids.contains(record.record_uuid.as_str()))
             .collect()
     } else {
-        filter_records_by_rules(
-            records,
-            config.get("rules"),
-            config.get("matchRule"),
-            context,
-        )
+        filter_records_by_rules(records, config.get("rules"))
     };
     let patch = build_record_data_from_rows(&rows, &context.outputs);
     let now = Utc::now();
     let mut updated_items = Vec::new();
 
+    let mut matched = matched;
+    matched.sort_by(|a, b| a.record_uuid.cmp(&b.record_uuid));
     for record in matched {
+        let record = repository
+            .find_for_update(&target_form_uuid, &record.record_uuid)
+            .await?;
         let merged = merge_record_payload(record.record_data.clone(), &patch);
         let updated = repository
             .update(&record, merged, &context.operator, now)
             .await?;
-        updated_items.push(updated.record_data);
+        updated_items.push(record_data_with_automation_identity(updated));
     }
 
     info!(
@@ -858,8 +1344,8 @@ async fn execute_update_data_node(
     Ok(Value::Array(updated_items))
 }
 
-async fn execute_delete_data_node(
-    db: &DatabaseConnection,
+async fn execute_delete_data_node<C: ConnectionTrait + TransactionTrait>(
+    db: &C,
     flow: &automation_flow_entity::Model,
     config: &Value,
     context: &AutomationExecutionContext,
@@ -911,9 +1397,21 @@ async fn execute_http_request_node(
 
     let parsed_url = reqwest::Url::parse(&url)
         .map_err(|_| AppError::BadRequest("http-request url is invalid".to_string()))?;
+    #[cfg(not(test))]
     validate_http_request_url(&parsed_url).await?;
+    #[cfg(test)]
+    if parsed_url.host_str() != Some("127.0.0.1") {
+        validate_http_request_url(&parsed_url).await?;
+    }
 
-    let client = reqwest::Client::builder()
+    let client_builder = reqwest::Client::builder();
+    #[cfg(test)]
+    let client_builder = if parsed_url.host_str() == Some("127.0.0.1") {
+        client_builder.no_proxy()
+    } else {
+        client_builder
+    };
+    let client = client_builder
         .timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::none())
         .build()
@@ -981,37 +1479,31 @@ async fn execute_http_request_node(
     }))
 }
 
-/// Executes an automation data or connector node from a process flow.
-/// Process flows keep their own human-task traversal, but share the same
-/// implementation for nodes that operate on form data or external services.
-pub(crate) async fn execute_process_automation_node(
-    db: &DatabaseConnection,
+/// Shared node handlers. Human waiting is supplied by the runtime adapter.
+pub(crate) async fn execute_shared_node<C: ConnectionTrait + TransactionTrait>(
+    db: &C,
     flow: &automation_flow_entity::Model,
     node_id: &str,
     kind: &str,
     config: &Value,
-    outputs: &mut HashMap<String, Value>,
-    operator: &str,
+    context: &mut AutomationExecutionContext,
 ) -> Result<(), AppError> {
-    let context = AutomationExecutionContext {
-        outputs: outputs.clone(),
-        operator: operator.to_string(),
-        run_id: None,
-    };
     let output = match kind {
-        "add-data" => execute_add_data_node(db, flow, config, &context).await?,
-        "get-one" => execute_get_one_node(db, config, &context).await?,
-        "get-many" => execute_get_many_node(db, config, &context).await?,
-        "update-data" => execute_update_data_node(db, flow, config, &context).await?,
-        "delete-data" => execute_delete_data_node(db, flow, config, &context).await?,
-        "http-request" => execute_http_request_node(config, &context).await?,
+        "trigger" | "condition" | "parallel-condition" => return Ok(()),
+        "initiate-approval" => initiate_approval::execute(db, config, context).await?,
+        "add-data" => execute_add_data_node(db, flow, config, context).await?,
+        "get-one" => execute_get_one_node(db, config, context).await?,
+        "get-many" => execute_get_many_node(db, config, context).await?,
+        "update-data" => execute_update_data_node(db, flow, config, context).await?,
+        "delete-data" => execute_delete_data_node(db, flow, config, context).await?,
+        "http-request" => execute_http_request_node(config, context).await?,
         _ => {
-            return Err(AppError::BadRequest(
-                "unsupported process automation node kind".to_string(),
-            ));
+            return Err(AppError::BadRequest(format!(
+                "unsupported automation node kind: {kind}"
+            )));
         }
     };
-    outputs.insert(node_id.to_string(), output);
+    context.outputs.insert(node_id.to_string(), output);
     Ok(())
 }
 
@@ -1104,7 +1596,6 @@ where
         description: Set(flow.description.clone()),
         status: Set(flow.status.clone()),
         trigger_form_uuid: Set(flow.trigger_form_uuid.clone()),
-        trigger_event: Set(flow.trigger_event.clone()),
         trigger_config: Set(flow.trigger_config.clone()),
         nodes_json: Set(flow.nodes_json.clone()),
         edges_json: Set(flow.edges_json.clone()),
@@ -1221,6 +1712,9 @@ async fn ensure_automation_node_forms_belong_to_app(
             .and_then(Value::as_object);
 
         match kind {
+            "initiate-approval" => {
+                initiate_approval::validate_target(db, &item.pointer("/data/config").cloned().unwrap_or_else(|| json!({})), false).await?;
+            }
             "get-one" | "get-many" => {
                 if let Some(form_uuid) = config
                     .and_then(|value| value.get("formUuid"))
@@ -1232,6 +1726,14 @@ async fn ensure_automation_node_forms_belong_to_app(
                 }
             }
             "add-data" | "update-data" | "delete-data" => {
+                if kind == "add-data"
+                    && config
+                        .and_then(|value| value.get("targetMode"))
+                        .and_then(Value::as_str)
+                        == Some("subtable")
+                {
+                    continue;
+                }
                 if let Some(form_uuid) = config
                     .and_then(|value| value.get("targetFormUuid"))
                     .and_then(Value::as_str)
@@ -1257,7 +1759,9 @@ fn normalize_automation_node_kind(kind: &str) -> Result<String, AppError> {
     if matches!(
         normalized,
         "trigger"
+            | "initiate-approval"
             | "condition"
+            | "parallel-condition"
             | "add-data"
             | "update-data"
             | "get-one"
@@ -1267,7 +1771,6 @@ fn normalize_automation_node_kind(kind: &str) -> Result<String, AppError> {
             | "approval"
             | "copy"
             | "executor"
-            | "end"
     ) {
         Ok(normalized.to_string())
     } else {
@@ -1280,10 +1783,11 @@ fn normalize_automation_node_kind(kind: &str) -> Result<String, AppError> {
 fn validate_flow_node_kinds(nodes: &Value, flow_type: &str) -> Result<(), AppError> {
     let allowed: &[&str] = if flow_type == "process" {
         // Process flows use the automation nodes as well as their human-task nodes.
-        // `end` remains accepted only so existing process definitions stay editable.
         &[
             "trigger",
             "condition",
+            "parallel-condition",
+            "initiate-approval",
             "add-data",
             "update-data",
             "get-one",
@@ -1293,12 +1797,13 @@ fn validate_flow_node_kinds(nodes: &Value, flow_type: &str) -> Result<(), AppErr
             "approval",
             "copy",
             "executor",
-            "end",
         ]
     } else {
         &[
             "trigger",
             "condition",
+            "parallel-condition",
+            "initiate-approval",
             "add-data",
             "update-data",
             "get-one",
@@ -1321,6 +1826,111 @@ fn validate_flow_node_kinds(nodes: &Value, flow_type: &str) -> Result<(), AppErr
     Ok(())
 }
 
+fn validate_process_human_node_configs(nodes: &Value) -> Result<(), AppError> {
+    for node in json_array_items(nodes) {
+        let node_id = node.get("id").and_then(Value::as_str).unwrap_or("unknown");
+        let kind = node
+            .pointer("/data/kind")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let Some(config) = node.pointer("/data/config").and_then(Value::as_object) else {
+            if matches!(kind, "approval" | "executor" | "copy") {
+                return Err(AppError::BadRequest(format!(
+                    "node {node_id} is missing its human-node configuration"
+                )));
+            }
+            continue;
+        };
+        let old_fields = ["assignees", "recipients", "executorIds", "executors"];
+        if let Some(field) = old_fields.iter().find(|field| config.contains_key(**field)) {
+            return Err(AppError::BadRequest(format!(
+                "node {node_id} uses removed field {field}; configure the node again"
+            )));
+        }
+        if kind == "approval" || kind == "executor" {
+            let mode = config
+                .get("assigneeMode")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    AppError::BadRequest(format!("node {node_id} must define assigneeMode"))
+                })?;
+            if !matches!(mode, "members" | "roles") && !(kind == "approval" && mode == "self") {
+                return Err(AppError::BadRequest(format!(
+                    "node {node_id} has invalid assigneeMode"
+                )));
+            }
+            let member_ids = config
+                .get("assigneeIds")
+                .and_then(Value::as_array)
+                .map(Vec::len)
+                .unwrap_or(0);
+            let role_ids = config
+                .get("roleIds")
+                .and_then(Value::as_array)
+                .map(Vec::len)
+                .unwrap_or(0);
+            if member_ids > 0 && role_ids > 0 {
+                return Err(AppError::BadRequest(format!(
+                    "node {node_id} cannot configure assigneeIds and roleIds together"
+                )));
+            }
+            if mode == "members" && member_ids == 0 || mode == "roles" && role_ids == 0 {
+                return Err(AppError::BadRequest(format!(
+                    "node {node_id} has no configured assignee"
+                )));
+            }
+            if mode == "self" && (member_ids > 0 || role_ids > 0) {
+                return Err(AppError::BadRequest(format!(
+                    "node {node_id} self mode cannot include member or role ids"
+                )));
+            }
+            if mode == "self"
+                && config
+                    .get("approvalMode")
+                    .map(|value| !value.is_null())
+                    .unwrap_or(false)
+            {
+                return Err(AppError::BadRequest(format!(
+                    "node {node_id} self mode cannot configure approvalMode"
+                )));
+            }
+        } else if kind == "copy" {
+            let mode = config
+                .get("recipientMode")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    AppError::BadRequest(format!("node {node_id} must define recipientMode"))
+                })?;
+            if !matches!(mode, "members" | "roles") {
+                return Err(AppError::BadRequest(format!(
+                    "node {node_id} has invalid recipientMode"
+                )));
+            }
+            let member_ids = config
+                .get("recipientIds")
+                .and_then(Value::as_array)
+                .map(Vec::len)
+                .unwrap_or(0);
+            let role_ids = config
+                .get("roleIds")
+                .and_then(Value::as_array)
+                .map(Vec::len)
+                .unwrap_or(0);
+            if member_ids > 0 && role_ids > 0 {
+                return Err(AppError::BadRequest(format!(
+                    "node {node_id} cannot configure recipientIds and roleIds together"
+                )));
+            }
+            if mode == "members" && member_ids == 0 || mode == "roles" && role_ids == 0 {
+                return Err(AppError::BadRequest(format!(
+                    "node {node_id} has no configured recipient"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn normalize_automation_node_config(kind: &str, config: Value) -> Result<Value, AppError> {
     let config = normalize_json_object(config);
     let object = config.as_object().cloned().unwrap_or_default();
@@ -1328,9 +1938,9 @@ fn normalize_automation_node_config(kind: &str, config: Value) -> Result<Value, 
     let normalized = match kind {
         "trigger" => json!({
             "changedFieldMode": if object.get("changedFieldMode").and_then(Value::as_str) == Some("specific") { "specific" } else { "any" },
-            "changedFieldId": read_json_string(object.get("changedFieldId")).or_else(|| read_json_string(object.get("changedFieldsText"))),
+            "changedFieldId": read_json_string(object.get("changedFieldId")),
         }),
-        "condition" => {
+        "condition" | "parallel-condition" => {
             if object
                 .get("branches")
                 .and_then(Value::as_array)
@@ -1340,27 +1950,34 @@ fn normalize_automation_node_config(kind: &str, config: Value) -> Result<Value, 
                 json!({
                     "branches": normalize_condition_branches(
                         object.get("branches").cloned().unwrap_or_else(|| json!([])),
+                        kind != "parallel-condition",
                     )?,
                 })
             } else {
-                json!({
-                    "mode": normalize_condition_mode(object.get("mode").and_then(Value::as_str)),
-                    "priority": normalize_condition_priority(object.get("priority").and_then(Value::as_i64)),
-                    "rules": normalize_branch_rules(object.get("rules").cloned().unwrap_or_else(|| json!([])))?,
-                    "expression": read_json_string(object.get("expression")),
-                    "hitLabel": read_json_string(object.get("hitLabel")),
-                })
+                return Err(AppError::BadRequest("condition requires branches".into()));
             }
         }
-        "get-one" | "get-many" => json!({
-            "sourceMode": normalize_data_source_mode(object.get("sourceMode").and_then(Value::as_str)),
-            "formUuid": read_json_string(object.get("formUuid")),
-            "dataNodeId": read_json_string(object.get("dataNodeId")),
-            "relatedFormPlaceholder": read_json_string(object.get("relatedFormPlaceholder")),
-            "filterExpression": read_json_string(object.get("filterExpression")),
-            "fieldSelection": read_json_string(object.get("fieldSelection")),
+        "get-one" | "get-many" => {
+            get_data::validate_query_config(&Value::Object(object.clone()))?;
+            json!({
+                "sourceMode": if object.get("sourceMode").and_then(Value::as_str) == Some("trigger") { "trigger" } else { normalize_data_source_mode(object.get("sourceMode").and_then(Value::as_str)) },
+                "formUuid": read_json_string(object.get("formUuid")),
+                "dataNodeId": read_json_string(object.get("dataNodeId")),
+                "filterMode": object.get("filterMode").and_then(Value::as_str).unwrap_or("all"),
+                "rules": if object.get("filterMode").and_then(Value::as_str) == Some("rules") { normalize_branch_rules(object.get("rules").cloned().unwrap_or_else(|| json!([])))? } else { json!([]) },
+            })
+        }
+        "initiate-approval" => json!({
+            "targetFormUuid": read_json_string(object.get("targetFormUuid")),
+            "targetAppId": read_json_string(object.get("targetAppId")),
+            "rows": normalize_field_mapping_rows(object.get("rows").cloned().unwrap_or_else(|| json!([]))),
+            "initiatorMode": if object.get("initiatorMode").and_then(Value::as_str) == Some("field") { "field" } else { "member" },
+            "initiatorId": read_json_string(object.get("initiatorId")),
+            "initiatorFieldId": read_json_string(object.get("initiatorFieldId")),
         }),
         "add-data" => json!({
+            "subformFieldId": read_json_string(object.get("subformFieldId")),
+            "parentDataNodeId": read_json_string(object.get("parentDataNodeId")),
             "targetMode": normalize_add_target_mode(object.get("targetMode").and_then(Value::as_str)),
             "targetFormUuid": read_json_string(object.get("targetFormUuid")),
             "recordMode": normalize_add_record_mode(object.get("recordMode").and_then(Value::as_str)),
@@ -1374,7 +1991,6 @@ fn normalize_automation_node_config(kind: &str, config: Value) -> Result<Value, 
             "sourceNodeId": read_json_string(object.get("sourceNodeId")),
             "targetFormUuid": read_json_string(object.get("targetFormUuid")),
             "rules": normalize_branch_rules(object.get("rules").cloned().unwrap_or_else(|| json!([])))?,
-            "matchRule": read_json_string(object.get("matchRule")),
             "rows": normalize_field_mapping_rows(object.get("rows").cloned().unwrap_or_else(|| json!([]))),
             "bodyTemplate": read_json_string(object.get("bodyTemplate")),
             "method": read_json_string(object.get("method")),
@@ -1391,14 +2007,18 @@ fn normalize_automation_node_config(kind: &str, config: Value) -> Result<Value, 
             "headersText": read_json_string(object.get("headersText")),
         }),
         "approval" | "executor" => json!({
-            "assigneeIds": object.get("assigneeIds").or_else(|| object.get("assignees")).and_then(Value::as_array).map(|items| items.iter().filter_map(Value::as_str).map(str::trim).filter(|value| !value.is_empty()).collect::<Vec<_>>()).unwrap_or_default(),
-            "approvalMode": if object.get("approvalMode").and_then(Value::as_str) == Some("any") { "any" } else { "all" },
+            "assigneeIds": object.get("assigneeIds").and_then(Value::as_array).map(|items| items.iter().filter_map(Value::as_str).map(str::trim).filter(|value| !value.is_empty()).collect::<Vec<_>>()).unwrap_or_default(),
+            "assigneeMode": object.get("assigneeMode").and_then(Value::as_str),
+            "roleIds": object.get("roleIds").and_then(Value::as_array).map(|items| items.iter().filter_map(Value::as_str).map(str::trim).filter(|value| !value.is_empty()).collect::<Vec<_>>()).unwrap_or_default(),
+            "approvalMode": if object.get("assigneeMode").and_then(Value::as_str) == Some("self") { Value::Null } else if object.get("approvalMode").and_then(Value::as_str) == Some("any") { json!("any") } else { json!("all") },
             "requiredFieldIds": object.get("requiredFieldIds").and_then(Value::as_array).map(|items| items.iter().filter_map(Value::as_str).map(str::trim).filter(|value| !value.is_empty()).collect::<Vec<_>>()).unwrap_or_default(),
         }),
         "copy" => json!({
-            "recipientIds": object.get("recipientIds").or_else(|| object.get("recipients")).and_then(Value::as_array).map(|items| items.iter().filter_map(Value::as_str).map(str::trim).filter(|value| !value.is_empty()).collect::<Vec<_>>()).unwrap_or_default(),
+            "recipientIds": object.get("recipientIds").and_then(Value::as_array).map(|items| items.iter().filter_map(Value::as_str).map(str::trim).filter(|value| !value.is_empty()).collect::<Vec<_>>()).unwrap_or_default(),
+            "recipientMode": object.get("recipientMode").and_then(Value::as_str),
+            "roleIds": object.get("roleIds").and_then(Value::as_array).map(|items| items.iter().filter_map(Value::as_str).map(str::trim).filter(|value| !value.is_empty()).collect::<Vec<_>>()).unwrap_or_default(),
         }),
-        "end" => json!({}),
+
         _ => json!({}),
     };
 
@@ -1445,11 +2065,13 @@ fn normalize_branch_rules(data: Value) -> Result<Value, AppError> {
     Ok(Value::Array(rules))
 }
 
-fn normalize_condition_branches(data: Value) -> Result<Value, AppError> {
+fn normalize_condition_branches(data: Value, prioritized: bool) -> Result<Value, AppError> {
     let items = normalize_json_array(data);
     let mut seen_ids = HashSet::new();
-    let mut branches = Vec::new();
 
+    let mut otherwise_seen = false;
+    let mut condition_branches = Vec::new();
+    let mut otherwise_branch = None;
     for (index, item) in json_array_items(&items).into_iter().enumerate() {
         let raw = item
             .as_object()
@@ -1463,20 +2085,65 @@ fn normalize_condition_branches(data: Value) -> Result<Value, AppError> {
             ));
         }
 
-        branches.push(json!({
+        let entry_mode = match raw.get("entryMode").and_then(Value::as_str) {
+            Some("condition") => "condition",
+            Some("otherwise") => {
+                if otherwise_seen {
+                    return Err(AppError::BadRequest(
+                        "condition node can have only one otherwise branch".to_string(),
+                    ));
+                }
+                otherwise_seen = true;
+                "otherwise"
+            }
+            Some(_) => {
+                return Err(AppError::BadRequest(format!(
+                    "condition branch {} has invalid entryMode",
+                    branch_id
+                )));
+            }
+            None => {
+                return Err(AppError::BadRequest(format!(
+                    "condition branch {} requires entryMode",
+                    branch_id
+                )));
+            }
+        };
+        let normalized = json!({
             "id": branch_id,
             "name": read_json_string(raw.get("name")).unwrap_or_else(|| format!("条件分支 {}", index + 1)),
-            "mode": normalize_condition_mode(raw.get("mode").and_then(Value::as_str)),
+            "entryMode": entry_mode,
+            "mode": if entry_mode == "otherwise" { "all" } else { normalize_condition_mode(raw.get("mode").and_then(Value::as_str)) },
             "priority": normalize_condition_priority(
                 raw.get("priority").and_then(Value::as_i64).or(Some((index + 1) as i64)),
             ),
             "rules": normalize_branch_rules(raw.get("rules").cloned().unwrap_or_else(|| json!([])))?,
             "expression": read_json_string(raw.get("expression")),
             "hitLabel": read_json_string(raw.get("hitLabel")),
-        }));
+        });
+        if entry_mode == "otherwise" {
+            otherwise_branch = Some(normalized);
+        } else {
+            condition_branches.push(normalized);
+        }
     }
-
-    Ok(Value::Array(branches))
+    if prioritized {
+        condition_branches
+            .sort_by_key(|branch| branch.get("priority").and_then(Value::as_i64).unwrap_or(0));
+    }
+    if let Some(otherwise) = otherwise_branch {
+        condition_branches.push(otherwise);
+    }
+    for (index, branch) in condition_branches.iter_mut().enumerate() {
+        if let Some(object) = branch.as_object_mut() {
+            if prioritized {
+                object.insert("priority".to_string(), json!((index + 1) as i64));
+            } else {
+                object.remove("priority");
+            }
+        }
+    }
+    Ok(Value::Array(condition_branches))
 }
 
 fn normalize_field_mapping_rows(data: Value) -> Value {
@@ -1533,7 +2200,7 @@ fn normalize_branch_rule_operator(value: Option<&str>) -> &'static str {
 fn normalize_data_source_mode(value: Option<&str>) -> &'static str {
     match value.unwrap_or("form").trim() {
         "data-node" => "data-node",
-        "related-form" => "related-form",
+        "trigger" => "trigger",
         _ => "form",
     }
 }
@@ -1577,7 +2244,9 @@ fn normalize_mapping_value_type(value: Option<&str>) -> &'static str {
 fn default_node_label(kind: &str) -> &'static str {
     match kind {
         "trigger" => "表单事件触发",
+        "parallel-condition" => "并行条件分支",
         "condition" => "条件分支",
+        "initiate-approval" => "发起审批",
         "add-data" => "新增数据",
         "update-data" => "更新数据",
         "get-one" => "获取单条数据",
@@ -1587,7 +2256,7 @@ fn default_node_label(kind: &str) -> &'static str {
         "approval" => "审批人",
         "copy" => "抄送人",
         "executor" => "执行人",
-        "end" => "结束",
+
         _ => "未命名节点",
     }
 }
@@ -1595,7 +2264,9 @@ fn default_node_label(kind: &str) -> &'static str {
 fn default_node_description(kind: &str) -> &'static str {
     match kind {
         "trigger" => "根据表单记录事件开始执行工作流",
+        "parallel-condition" => "判断所有条件，并行执行满足条件的分支",
         "condition" => "按优先级和条件规则控制后续走向",
+        "initiate-approval" => "填写流程表单数据，待用户手动提交",
         "add-data" => "向目标表单新增单条或多条数据",
         "update-data" => "根据匹配条件更新目标表单记录",
         "get-one" => "从表单、数据节点或关联表单中获取一条数据",
@@ -1605,7 +2276,7 @@ fn default_node_description(kind: &str) -> &'static str {
         "approval" => "等待审批人同意或拒绝",
         "copy" => "通知抄送人后自动继续",
         "executor" => "等待执行人完成处理",
-        "end" => "结束审批流程",
+
         _ => "",
     }
 }
@@ -1620,63 +2291,20 @@ async fn execute_automation_flow(
     retry_run_uuid: Option<&str>,
     retry_node_key: Option<&str>,
 ) -> Result<(), AppError> {
-    let run = create_automation_run(
+    execute_persistent_trigger(
         db,
         flow,
         trigger_event,
         trigger_data,
+        operator,
+        retry_node_key.unwrap_or("trigger-1"),
+        None,
         retry_source,
         retry_run_uuid,
-        retry_node_key,
+        None,
     )
-    .await?;
-    let nodes = json_array_items(&flow.nodes_json);
-    let edges = json_array_items(&flow.edges_json);
-    if nodes.is_empty() {
-        finalize_automation_run(db, run.id, "success", None).await?;
-        return Ok(());
-    }
-
-    let (node_map, outgoing_map) = build_automation_graph(nodes, edges);
-
-    let mut context = AutomationExecutionContext {
-        outputs: HashMap::from([("trigger-1".to_string(), trigger_data.clone())]),
-        operator: operator.to_string(),
-        run_id: Some(run.id),
-    };
-    let mut path = HashSet::new();
-    let result = if let Some(node_key) = retry_node_key {
-        execute_automation_from_node(
-            db,
-            flow,
-            node_key,
-            &node_map,
-            &outgoing_map,
-            &mut context,
-            &mut path,
-        )
-        .await
-    } else {
-        execute_automation_children(
-            db,
-            flow,
-            "trigger-1",
-            &node_map,
-            &outgoing_map,
-            &mut context,
-            &mut path,
-        )
-        .await
-    };
-
-    match &result {
-        Ok(_) => finalize_automation_run(db, run.id, "success", None).await?,
-        Err(err) => finalize_automation_run(db, run.id, "failed", Some(format!("{err:?}"))).await?,
-    }
-
-    result
+    .await
 }
-
 async fn execute_automation_flow_from_snapshot(
     db: &DatabaseConnection,
     flow: &automation_flow_entity::Model,
@@ -1687,339 +2315,105 @@ async fn execute_automation_flow_from_snapshot(
     outputs_snapshot: HashMap<String, Value>,
     retry_run_uuid: &str,
 ) -> Result<(), AppError> {
-    let run = create_automation_run(
+    execute_persistent_trigger(
         db,
         flow,
         trigger_event,
         trigger_data,
+        operator,
+        start_node_key,
+        Some(outputs_snapshot),
         Some(RetrySource::Node),
         Some(retry_run_uuid),
-        Some(start_node_key),
+        None,
+    )
+    .await
+}
+async fn execute_persistent_trigger(
+    db: &DatabaseConnection,
+    flow: &automation_flow_entity::Model,
+    event: &str,
+    input: &Value,
+    operator: &str,
+    start: &str,
+    outputs: Option<HashMap<String, Value>>,
+    retry_source: Option<RetrySource>,
+    retry_run: Option<&str>,
+    user_id: Option<Uuid>,
+) -> Result<(), AppError> {
+    let txn = db.begin().await?;
+    let run = execution::start_execution(
+        &txn,
+        execution::StartExecutionRequest {
+            flow,
+            source: execution::TriggerSource {
+                button_uuid: None,
+                view_uuid: None,
+                kind: "form_event".into(),
+                event: event.into(),
+                event_id: Uuid::new_v4().to_string(),
+                form_uuid: flow.trigger_form_uuid.clone(),
+                record_uuid: input
+                    .get("__automationRecordUuid")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+            },
+            identity: execution::ExecutionIdentity {
+                user_id,
+                display_name: operator.into(),
+                operator: operator.into(),
+            },
+            policy: if event.starts_with("before_") {
+                execution::ExecutionPolicy::Before
+            } else {
+                execution::ExecutionPolicy::Inline
+            },
+            input,
+            instance_id: None,
+            start_node: start,
+            outputs,
+            retry_source,
+            retry_run,
+        },
     )
     .await?;
-    let nodes = json_array_items(&flow.nodes_json);
-    let edges = json_array_items(&flow.edges_json);
-    let (node_map, outgoing_map) = build_automation_graph(nodes, edges);
-
-    let mut context = AutomationExecutionContext {
-        outputs: outputs_snapshot,
-        operator: operator.to_string(),
-        run_id: Some(run.id),
-    };
-    let mut path = HashSet::new();
-    let result = execute_automation_from_node(
+    txn.commit().await?;
+    let (shutdown, _) = tokio::sync::watch::channel(false);
+    execution::drive_execution(&AppState::new(db.clone(), None, 1, shutdown), run).await?;
+    let result = AutomationRunEntity::find_by_id(run).one(db).await?.unwrap();
+    if matches!(result.status.as_str(), "needs_attention" | "failed") {
+        return Err(AppError::BadRequest(
+            result.error_message.unwrap_or_else(|| "执行未成功".into()),
+        ));
+    }
+    Ok(())
+}
+#[cfg(test)]
+async fn execute_memory_graph(
+    db: &DatabaseConnection,
+    flow: &automation_flow_entity::Model,
+    start: &str,
+    context: &mut AutomationExecutionContext,
+) -> Result<(), AppError> {
+    let runtime = engine::MemoryRuntime {
         db,
         flow,
-        start_node_key,
-        &node_map,
-        &outgoing_map,
-        &mut context,
-        &mut path,
+        outputs: std::sync::Mutex::new(context.outputs.clone()),
+    };
+    let result = engine::drive(
+        &runtime,
+        engine::Cursor {
+            id: Uuid::new_v4(),
+            node: start.into(),
+            context: context.clone(),
+            depth: 0,
+            log_id: None,
+            parallel_group: None,
+        },
     )
     .await;
-
-    match &result {
-        Ok(_) => finalize_automation_run(db, run.id, "success", None).await?,
-        Err(err) => finalize_automation_run(db, run.id, "failed", Some(format!("{err:?}"))).await?,
-    }
-
+    context.outputs = runtime.outputs.into_inner().unwrap();
     result
-}
-
-#[derive(Clone)]
-struct AutomationGraphEdge {
-    target: String,
-    source_handle: Option<String>,
-}
-
-fn build_automation_graph(
-    nodes: Vec<Value>,
-    edges: Vec<Value>,
-) -> (
-    HashMap<String, Value>,
-    HashMap<String, Vec<AutomationGraphEdge>>,
-) {
-    let node_map = nodes
-        .iter()
-        .filter_map(|item| read_json_string(item.get("id")).map(|id| (id, item.clone())))
-        .collect::<HashMap<_, _>>();
-    let mut outgoing_map: HashMap<String, Vec<AutomationGraphEdge>> = HashMap::new();
-    for edge in edges {
-        let Some(source) = read_json_string(edge.get("source")) else {
-            continue;
-        };
-        let Some(target) = read_json_string(edge.get("target")) else {
-            continue;
-        };
-        outgoing_map
-            .entry(source)
-            .or_default()
-            .push(AutomationGraphEdge {
-                target,
-                source_handle: read_json_string(edge.get("sourceHandle")),
-            });
-    }
-    (node_map, outgoing_map)
-}
-
-fn execute_automation_children<'a>(
-    db: &'a DatabaseConnection,
-    flow: &'a automation_flow_entity::Model,
-    node_id: &'a str,
-    node_map: &'a HashMap<String, Value>,
-    outgoing_map: &'a HashMap<String, Vec<AutomationGraphEdge>>,
-    context: &'a mut AutomationExecutionContext,
-    path: &'a mut HashSet<String>,
-) -> Pin<Box<dyn Future<Output = Result<(), AppError>> + Send + 'a>> {
-    Box::pin(async move {
-        let Some(outgoing_edges) = outgoing_map.get(node_id) else {
-            return Ok(());
-        };
-        let branch_filter = node_map
-            .get(node_id)
-            .and_then(|node| select_condition_branch_handle(node, context));
-        let mut normal_nodes = Vec::new();
-        let mut condition_nodes = Vec::new();
-
-        for edge in outgoing_edges {
-            if let Some(selected_handle) = &branch_filter {
-                match selected_handle {
-                    Some(handle) if edge.source_handle.as_ref() == Some(handle) => {}
-                    _ => continue,
-                }
-            }
-            let Some(target_node) = node_map.get(&edge.target) else {
-                continue;
-            };
-            let kind = target_node
-                .get("data")
-                .and_then(|value| value.get("kind"))
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            if kind == "condition" {
-                condition_nodes.push(target_node.clone());
-            } else {
-                normal_nodes.push(target_node.clone());
-            }
-        }
-
-        for target_node in normal_nodes {
-            execute_automation_node(
-                db,
-                flow,
-                &target_node,
-                node_map,
-                outgoing_map,
-                context,
-                path,
-            )
-            .await?;
-        }
-
-        if !condition_nodes.is_empty() {
-            condition_nodes.sort_by_key(|node| condition_node_priority(node));
-
-            for target_node in condition_nodes {
-                if evaluate_condition_node(&target_node, context) {
-                    execute_automation_node(
-                        db,
-                        flow,
-                        &target_node,
-                        node_map,
-                        outgoing_map,
-                        context,
-                        path,
-                    )
-                    .await?;
-                    break;
-                }
-            }
-        }
-
-        Ok(())
-    })
-}
-
-fn execute_automation_from_node<'a>(
-    db: &'a DatabaseConnection,
-    flow: &'a automation_flow_entity::Model,
-    node_key: &'a str,
-    node_map: &'a HashMap<String, Value>,
-    outgoing_map: &'a HashMap<String, Vec<AutomationGraphEdge>>,
-    context: &'a mut AutomationExecutionContext,
-    path: &'a mut HashSet<String>,
-) -> Pin<Box<dyn Future<Output = Result<(), AppError>> + Send + 'a>> {
-    Box::pin(async move {
-        let node = node_map
-            .get(node_key)
-            .ok_or_else(|| AppError::NotFound("automation retry node not found".to_string()))?
-            .clone();
-        execute_automation_node(db, flow, &node, node_map, outgoing_map, context, path).await
-    })
-}
-
-fn execute_automation_node<'a>(
-    db: &'a DatabaseConnection,
-    flow: &'a automation_flow_entity::Model,
-    node: &'a Value,
-    node_map: &'a HashMap<String, Value>,
-    outgoing_map: &'a HashMap<String, Vec<AutomationGraphEdge>>,
-    context: &'a mut AutomationExecutionContext,
-    path: &'a mut HashSet<String>,
-) -> Pin<Box<dyn Future<Output = Result<(), AppError>> + Send + 'a>> {
-    Box::pin(async move {
-        let node_id = read_json_string(node.get("id"))
-            .ok_or_else(|| AppError::BadRequest("automation node id missing".to_string()))?;
-        if !path.insert(node_id.clone()) {
-            return Ok(());
-        }
-
-        let data = node
-            .get("data")
-            .and_then(Value::as_object)
-            .ok_or_else(|| AppError::BadRequest("automation node data missing".to_string()))?;
-        let kind = data.get("kind").and_then(Value::as_str).unwrap_or_default();
-        let label = data
-            .get("label")
-            .and_then(Value::as_str)
-            .unwrap_or("未命名节点");
-        let config = data.get("config").cloned().unwrap_or_else(|| json!({}));
-        let node_log_id = if let Some(run_id) = context.run_id {
-            Some(
-                create_automation_run_node_log(
-                    db,
-                    run_id,
-                    &node_id,
-                    kind,
-                    label,
-                    json!(context.outputs),
-                )
-                .await?,
-            )
-        } else {
-            None
-        };
-
-        let execution_result: Result<(), AppError> = match kind {
-            "condition" => Ok(()),
-            "add-data" => {
-                let output = execute_add_data_node(db, flow, &config, context).await?;
-                context.outputs.insert(node_id.clone(), output);
-                Ok(())
-            }
-            "get-one" => {
-                let output = execute_get_one_node(db, &config, context).await?;
-                context.outputs.insert(node_id.clone(), output);
-                Ok(())
-            }
-            "get-many" => {
-                let output = execute_get_many_node(db, &config, context).await?;
-                context.outputs.insert(node_id.clone(), output);
-                Ok(())
-            }
-            "update-data" => {
-                let output = execute_update_data_node(db, flow, &config, context).await?;
-                context.outputs.insert(node_id.clone(), output);
-                Ok(())
-            }
-            "delete-data" => {
-                let output = execute_delete_data_node(db, flow, &config, context).await?;
-                context.outputs.insert(node_id.clone(), output);
-                Ok(())
-            }
-            "http-request" => {
-                let output = execute_http_request_node(&config, context).await?;
-                context.outputs.insert(node_id.clone(), output);
-                Ok(())
-            }
-            _ => Ok(()),
-        };
-
-        if let Some(log_id) = node_log_id {
-            match &execution_result {
-                Ok(_) => {
-                    finalize_automation_run_node_log(
-                        db,
-                        log_id,
-                        "success",
-                        context.outputs.get(&node_id).cloned(),
-                        None,
-                    )
-                    .await?;
-                }
-                Err(err) => {
-                    finalize_automation_run_node_log(
-                        db,
-                        log_id,
-                        "failed",
-                        None,
-                        Some(format!("{err:?}")),
-                    )
-                    .await?;
-                }
-            }
-        }
-        execution_result?;
-
-        let result =
-            execute_automation_children(db, flow, &node_id, node_map, outgoing_map, context, path)
-                .await;
-        path.remove(&node_id);
-        result
-    })
-}
-
-fn evaluate_condition_node(node: &Value, context: &AutomationExecutionContext) -> bool {
-    let config = node
-        .get("data")
-        .and_then(|value| value.get("config"))
-        .and_then(Value::as_object);
-    if let Some(branches) = config
-        .and_then(|value| value.get("branches"))
-        .and_then(Value::as_array)
-    {
-        return branches
-            .iter()
-            .any(|branch| evaluate_condition_branch(branch, context));
-    }
-    let mode = config
-        .and_then(|value| value.get("mode"))
-        .and_then(Value::as_str)
-        .unwrap_or("all");
-
-    match mode {
-        "rules" => evaluate_branch_rules(
-            config
-                .and_then(|value| value.get("rules"))
-                .cloned()
-                .unwrap_or_else(|| json!([])),
-            context,
-        ),
-        "expression" => config
-            .and_then(|value| value.get("expression"))
-            .and_then(Value::as_str)
-            .map(|value| evaluate_context_expression(value, context))
-            .unwrap_or(false),
-        _ => true,
-    }
-}
-
-fn condition_node_priority(node: &Value) -> i64 {
-    let config = node.get("data").and_then(|value| value.get("config"));
-    if let Some(branches) = config
-        .and_then(|value| value.get("branches"))
-        .and_then(Value::as_array)
-    {
-        return branches
-            .iter()
-            .filter_map(|branch| branch.get("priority").and_then(Value::as_i64))
-            .min()
-            .unwrap_or(1);
-    }
-    config
-        .and_then(|value| value.get("priority"))
-        .and_then(Value::as_i64)
-        .unwrap_or(1)
 }
 
 fn select_condition_branch_handle(
@@ -2038,14 +2432,53 @@ fn select_condition_branch_handle(
     ordered.sort_by_key(|branch| branch.get("priority").and_then(Value::as_i64).unwrap_or(1));
 
     let selected = ordered
-        .into_iter()
-        .find(|branch| evaluate_condition_branch(branch, context))
+        .iter()
+        .find(|branch| {
+            branch.get("entryMode").and_then(Value::as_str) != Some("otherwise")
+                && evaluate_condition_branch(branch, context)
+        })
+        .or_else(|| {
+            ordered
+                .iter()
+                .find(|branch| branch.get("entryMode").and_then(Value::as_str) == Some("otherwise"))
+        })
         .and_then(|branch| read_json_string(branch.get("id")))
         .map(|branch_id| format!("condition-branch:{branch_id}"));
     Some(selected)
 }
 
+fn select_parallel_condition_branch_handles(
+    node: &Value,
+    context: &AutomationExecutionContext,
+) -> HashSet<String> {
+    let Some(branches) = node
+        .pointer("/data/config/branches")
+        .and_then(Value::as_array)
+    else {
+        return HashSet::new();
+    };
+    let handles = branches
+        .iter()
+        .filter(|branch| branch.get("entryMode").and_then(Value::as_str) != Some("otherwise"))
+        .filter(|branch| evaluate_condition_branch(branch, context))
+        .filter_map(|branch| read_json_string(branch.get("id")))
+        .map(|id| format!("condition-branch:{id}"))
+        .collect::<HashSet<_>>();
+    if !handles.is_empty() {
+        return handles;
+    }
+    branches
+        .iter()
+        .filter(|branch| branch.get("entryMode").and_then(Value::as_str) == Some("otherwise"))
+        .filter_map(|branch| read_json_string(branch.get("id")))
+        .map(|id| format!("condition-branch:{id}"))
+        .collect()
+}
+
 fn evaluate_condition_branch(branch: &Value, context: &AutomationExecutionContext) -> bool {
+    if branch.get("entryMode").and_then(Value::as_str) == Some("otherwise") {
+        return true;
+    }
     let mode = branch.get("mode").and_then(Value::as_str).unwrap_or("all");
     match mode {
         "rules" => evaluate_branch_rules(
@@ -2184,6 +2617,11 @@ async fn retry_automation_run_internal(
         .one(db)
         .await?
         .ok_or_else(|| AppError::NotFound("automation flow not found".to_string()))?;
+    if flow.flow_type == "process" {
+        return Err(AppError::BadRequest(
+            "approval runs cannot be retried through automation endpoints".into(),
+        ));
+    }
     let run = AutomationRunEntity::find()
         .filter(automation_run_entity::Column::FlowId.eq(flow.id))
         .filter(automation_run_entity::Column::RunUuid.eq(run_uuid.to_string()))
@@ -2191,13 +2629,29 @@ async fn retry_automation_run_internal(
         .await?
         .ok_or_else(|| AppError::NotFound("automation run not found".to_string()))?;
 
+    if run.workflow_instance_id.is_some() || run.status == "needs_attention" {
+        return Err(AppError::BadRequest(
+            "请使用对应的人工或管理员处理入口".into(),
+        ));
+    }
+    if !matches!(run.status.as_str(), "success" | "failed") {
+        return Err(AppError::BadRequest("运行尚未结束".into()));
+    }
+    let flow = execution::load_version(db, &flow, run.flow_version).await?;
+    validate_execution_definition(&flow)?;
+
     if let Some(node_key) = node_key {
-        let node_log = AutomationRunNodeEntity::find()
+        let node_logs = AutomationRunNodeEntity::find()
             .filter(automation_run_node_entity::Column::RunId.eq(run.id))
             .filter(automation_run_node_entity::Column::NodeKey.eq(node_key.clone()))
-            .one(db)
-            .await?
-            .ok_or_else(|| AppError::NotFound("automation run node log not found".to_string()))?;
+            .all(db)
+            .await?;
+        if node_logs.len() != 1 {
+            return Err(AppError::Conflict(
+                "节点访问不存在或有多条路径，请按日志 ID 重试".into(),
+            ));
+        }
+        let node_log = &node_logs[0];
         let snapshot = node_log
             .input_json
             .as_object()
@@ -2266,7 +2720,6 @@ fn flow_matches_changed_fields(
 
     let configured = trigger_config
         .get("changedFieldId")
-        .or_else(|| trigger_config.get("changedFieldsText"))
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty());
@@ -2284,11 +2737,20 @@ fn normalize_automation_trigger_config(
 ) -> Result<Value, AppError> {
     let object = normalize_json_object(config);
     let source = object.as_object().cloned().unwrap_or_default();
+    if source.contains_key("triggerEvent") {
+        return Err(AppError::BadRequest(
+            "旧字段 triggerEvent 不受支持，请使用 triggerEvents 数组".into(),
+        ));
+    }
+    if source.contains_key("changedFieldsText") {
+        return Err(AppError::BadRequest(
+            "旧字段 changedFieldsText 不受支持".into(),
+        ));
+    }
     let has_update_event = trigger_events
         .iter()
         .any(|event| matches!(event.as_str(), "before_update" | "after_update"));
-    let legacy_field_id = read_json_string(source.get("changedFieldsText"));
-    let requested_field_id = read_json_string(source.get("changedFieldId")).or(legacy_field_id);
+    let requested_field_id = read_json_string(source.get("changedFieldId"));
     let requested_specific = source.get("changedFieldMode").and_then(Value::as_str)
         == Some("specific")
         || requested_field_id.is_some();
@@ -2305,6 +2767,68 @@ fn normalize_automation_trigger_config(
         "changedFieldMode": mode,
         "changedFieldId": changed_field_id,
     }))
+}
+
+#[cfg(test)]
+mod human_node_config_tests {
+    use super::*;
+
+    fn node(kind: &str, config: Value) -> Value {
+        json!({"id": format!("{kind}-1"), "data": {"kind": kind, "config": config}})
+    }
+
+    #[test]
+    fn accepts_new_human_node_ranges() {
+        let nodes = json!([
+            node(
+                "approval",
+                json!({"assigneeMode":"members", "assigneeIds":["u1"], "roleIds":[]})
+            ),
+            node(
+                "executor",
+                json!({"assigneeMode":"roles", "assigneeIds":[], "roleIds":["r1"]})
+            ),
+            node(
+                "copy",
+                json!({"recipientMode":"members", "recipientIds":["u1"], "roleIds":[]})
+            ),
+        ]);
+        assert!(validate_process_human_node_configs(&nodes).is_ok());
+    }
+
+    #[test]
+    fn accepts_self_approval_without_ids() {
+        let nodes = json!([node(
+            "approval",
+            json!({"assigneeMode":"self", "assigneeIds":[], "roleIds":[]})
+        )]);
+        assert!(validate_process_human_node_configs(&nodes).is_ok());
+    }
+
+    #[test]
+    fn rejects_removed_fields_missing_modes_and_mixed_ranges() {
+        assert!(
+            validate_process_human_node_configs(&json!([node(
+                "approval",
+                json!({"assigneeMode":"members", "assignees":["u1"]})
+            )]))
+            .is_err()
+        );
+        assert!(
+            validate_process_human_node_configs(&json!([node(
+                "approval",
+                json!({"assigneeIds":["u1"], "roleIds":[]})
+            )]))
+            .is_err()
+        );
+        assert!(
+            validate_process_human_node_configs(&json!([node(
+                "copy",
+                json!({"recipientMode":"members", "recipientIds":["u1"], "roleIds":["r1"]})
+            )]))
+            .is_err()
+        );
+    }
 }
 
 #[cfg(test)]
@@ -2351,11 +2875,89 @@ mod tests {
     }
 }
 pub(crate) mod dto;
-mod expression;
+pub(crate) mod engine;
+pub(crate) mod execution;
+pub(crate) mod expression;
 mod graph;
 mod runtime;
 
 pub(crate) use dto::*;
 use expression::*;
 use graph::*;
-use runtime::AutomationExecutionContext;
+pub(crate) use runtime::AutomationExecutionContext;
+
+#[cfg(test)]
+#[path = "automations/parallel_condition_tests.rs"]
+mod parallel_condition_tests;
+#[cfg(test)]
+#[path = "automations/subform_tests.rs"]
+mod subform_tests;
+
+mod get_data;
+mod initiate_approval;
+
+#[cfg(test)]
+#[path = "automations/get_data_database_tests.rs"]
+mod get_data_database_tests;
+
+pub(crate) fn validate_execution_definition(
+    flow: &automation_flow_entity::Model,
+) -> Result<(), AppError> {
+    if automation_trigger_events(&flow.trigger_config) == ["button_click"]
+        && flow
+            .trigger_form_uuid
+            .as_deref()
+            .is_none_or(|source| source.trim().is_empty())
+    {
+        return Err(AppError::BadRequest(
+            "按钮触发自动化必须绑定来源表单".into(),
+        ));
+    }
+    graph::validate_current_protocol(&flow.nodes_json, &flow.trigger_config)?;
+    validate_automation_graph(&flow.nodes_json, &flow.edges_json)?;
+    validate_flow_node_kinds(&flow.nodes_json, &flow.flow_type)?;
+    if flow.flow_type == "process" {
+        if automation_trigger_events(&flow.trigger_config) != ["form_submit"] {
+            return Err(AppError::BadRequest(
+                "process trigger must be form_submit".into(),
+            ));
+        }
+        validate_process_reachable_approval(&flow.nodes_json, &flow.edges_json)?;
+        validate_process_human_node_configs(&flow.nodes_json)?;
+    } else if automation_trigger_events(&flow.trigger_config)
+        .iter()
+        .any(|event| event == "form_submit")
+    {
+        return Err(AppError::BadRequest(
+            "trigger flows cannot use form_submit".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) async fn validate_execution_sources<C: ConnectionTrait>(
+    db: &C,
+    flow: &automation_flow_entity::Model,
+) -> Result<(), AppError> {
+    get_data::validate_get_nodes(
+        db,
+        &flow.nodes_json,
+        &flow.edges_json,
+        flow.trigger_form_uuid.as_deref(),
+    )
+    .await
+}
+
+pub(crate) async fn ensure_no_button_references<C: ConnectionTrait>(
+    db: &C,
+    flow_uuid: &str,
+) -> Result<(), AppError> {
+    let row = db.query_one_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres,
+        "SELECT 1 FROM app_custom_buttons WHERE action_type='run_automation' AND action_config->>'automationId'=$1 LIMIT 1", vec![flow_uuid.into()])).await?;
+    if row.is_some() {
+        return Err(AppError::BadRequest(
+            "自动化已被自定义按钮绑定，请先解除绑定".into(),
+        ));
+    }
+    Ok(())
+}

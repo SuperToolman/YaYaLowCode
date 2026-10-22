@@ -1,15 +1,12 @@
 "use client";
 
+import { unwrapApiResult } from "@lib/api-request";
 import { useEffect } from "react";
 import { useAuth } from "./AuthProvider";
 import { getWorkflowNotificationPreferences, listWorkflowNotifications } from "@features/workflow/api";
 import { notify } from "@lib/notify";
-import { collectNewWorkflowNotices, type WorkflowNotice } from "@lib/workflow-toast-state";
+import { collectNewWorkflowNotices } from "@lib/workflow-toast-state";
 
-type NoticeEnvelope = {
-  code: number;
-  data: { items?: WorkflowNotice[] } | null;
-};
 
 export function WorkflowToastListener() {
   const { token, user } = useAuth();
@@ -23,11 +20,9 @@ export function WorkflowToastListener() {
     const seen = new Set<string>();
 
     const poll = async () => {
-      const { data, error } = await listWorkflowNotifications({ responseStyle: "fields" });
-      if (!active || error) return;
-      const result = data as NoticeEnvelope | undefined;
-      if (result?.code !== 0) return;
-      for (const item of collectNewWorkflowNotices(seen, result.data?.items ?? [], startedAt)) {
+      const result = unwrapApiResult(await listWorkflowNotifications());
+      if (!active) return;
+      for (const item of collectNewWorkflowNotices(seen, result.items, startedAt)) {
         notify.info(item.title, { description: item.content, dedupeKey: `workflow:${item.id}` });
       }
     };
@@ -35,7 +30,7 @@ export function WorkflowToastListener() {
     const run = async () => {
       let interval = 60_000;
       try {
-        const preferences = await getWorkflowNotificationPreferences<{ inAppEnabled?: boolean; pollIntervalSeconds?: number }>();
+        const preferences = await getWorkflowNotificationPreferences();
         if (!active) return;
         interval = Math.max(15, Math.min(3_600, preferences.pollIntervalSeconds ?? 60)) * 1_000;
         if (preferences.inAppEnabled !== false) await poll();

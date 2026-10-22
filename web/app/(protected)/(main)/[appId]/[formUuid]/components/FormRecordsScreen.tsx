@@ -1,4 +1,11 @@
 "use client";
+import { notifyRequestError } from "@lib/notify";
+import {
+  getMissingRequiredImportFields,
+  assembleImportRecords,
+  buildImportTemplate,
+  getExcelImportFields,
+} from "@features/records/model/excel-import";
 import { notify } from "@lib/notify";
 
 import {
@@ -22,6 +29,7 @@ import {
   SearchField,
   Select,
   Tabs,
+  ButtonGroup,
 } from "@heroui/react";
 import { AlertDialog } from "@heroui/react/alert-dialog";
 import { Card } from "@heroui/react/card";
@@ -47,13 +55,11 @@ import {
   RuntimeFormSurface,
   type RuntimeFormSchema,
 } from "@features/form-runtime";
-import {
-  getSystemPageBySlug,
-  isSystemPageSlug,
-} from "@lib/system-pages";
+import { getSystemPageBySlug, isSystemPageSlug } from "@lib/system-pages";
 import { FormAgentPanel } from "./FormAgentPanel";
 import { DefinedPageHome } from "./DefinedPageHome";
-import { RecordsTable, RuntimeFormPanel } from "./RecordsTable";
+import { RecordsTable } from "./records-table/RecordsTable";
+import { RuntimeFormPanel } from "./RuntimeFormPanel";
 import { SystemPageView } from "./SystemPageView";
 import {
   buildExcelWorkbook,
@@ -82,15 +88,24 @@ import {
   useRecordMutations,
 } from "@/features/records/mutations";
 import type { FormRecord } from "@/features/records/types";
-import { mergePageSelection, retainAvailableSelection } from "@/features/records/selection";
+import {
+  mergePageSelection,
+  retainAvailableSelection,
+} from "@/features/records/selection";
 import { normalizeDetailFormSchema } from "@features/records/model/schema";
 import { useRecordDrafts, type RecordFormDraft } from "../model/drafts";
 import { useRecordEditor } from "../model/use-record-editor";
 import { useRecordImportExport } from "../model/use-record-import-export";
 import {
-  BUILTIN_RECORD_FIELDS, BUILTIN_RECORD_FIELD_LABELS, WORKFLOW_BUILTIN_RECORD_FIELDS,
-  buildExcelColumns, formatAssociationExportValue, getViewFieldTypeLabel,
-  loadAssociationImportLookup, resolveAssociationImportValue, type AssociationImportLookup,
+  BUILTIN_RECORD_FIELDS,
+  BUILTIN_RECORD_FIELD_LABELS,
+  WORKFLOW_BUILTIN_RECORD_FIELDS,
+  buildExcelColumns,
+  formatAssociationExportValue,
+  getViewFieldTypeLabel,
+  loadAssociationImportLookup,
+  resolveAssociationImportValue,
+  type AssociationImportLookup,
 } from "@features/records/model/excel-association";
 import { useAuth } from "@components/AuthProvider";
 import { notifyAppNavigationChanged } from "../../components/app-navigation-events";
@@ -99,13 +114,13 @@ import {
   IconToolbarButton,
   ReorderableViewFieldRow,
   type ViewFieldOption,
-} from "./ViewConfigComponents";
-import { FormTableSetting } from "./FormTableSetting";
+} from "./view-settings/ViewConfigComponents";
+import { FormTableSetting } from "./view-settings/FormTableSetting";
 import {
   FormDataImportDrawer,
   type ImportWorkbookState,
 } from "./FormDataImportDrawer";
-import styles from "./FormRecordsScreen.module.css";
+
 import {
   useFormViews,
   type FormView,
@@ -146,7 +161,13 @@ const EMPTY_IMPORT_STATE: ImportWorkbookState = {
   completed: false,
 };
 
-export function FormRecordsScreen({ appId, formUuid }: { appId: string; formUuid: string }) {
+export function FormRecordsScreen({
+  appId,
+  formUuid,
+}: {
+  appId: string;
+  formUuid: string;
+}) {
   const [resolvedFormType, setResolvedFormType] = useState<
     "normal" | "workflow" | "defined" | "detail" | null
   >(() => (isSystemPageSlug(formUuid) ? "normal" : null));
@@ -212,11 +233,19 @@ function FormHomeRecords({
   const router = useRouter();
   const queryClient = useQueryClient();
   const recordMutations = useRecordMutations(formUuid);
-  const recordEditor = useRecordEditor(formUuid, {}, {
-    create: (values) => recordMutations.create.mutateAsync(values),
-    update: (recordUuid, values) => recordMutations.update.mutateAsync({ recordUuid, values }),
-  });
-  const importController = useRecordImportExport<{ index: number; data: Record<string, unknown> }>(async (input) => {
+  const recordEditor = useRecordEditor(
+    formUuid,
+    {},
+    {
+      create: (values) => recordMutations.create.mutateAsync(values),
+      update: (recordUuid, values) =>
+        recordMutations.update.mutateAsync({ recordUuid, values }),
+    },
+  );
+  const importController = useRecordImportExport<{
+    index: number;
+    data: Record<string, unknown>;
+  }>(async (input) => {
     await recordMutations.create.mutateAsync(input.data);
     return { index: input.index };
   });
@@ -225,7 +254,11 @@ function FormHomeRecords({
   const [drawerValues, setDrawerValues] = useState<Record<string, unknown>>({});
   const [drawerResetKey, setDrawerResetKey] = useState(0);
   const drawerSubmitModeRef = useRef<"submit" | "continue">("submit");
-  const { drafts, saveDraft: persistDraft, deleteDraft: removeDraft } = useRecordDrafts(formUuid);
+  const {
+    drafts,
+    saveDraft: persistDraft,
+    deleteDraft: removeDraft,
+  } = useRecordDrafts(formUuid);
   const [isDraftsOpen, setIsDraftsOpen] = useState(false);
   const [recordPage, setRecordPage] = useState(1);
   const [recordPageSize, setRecordPageSize] = useState(20);
@@ -502,12 +535,12 @@ function FormHomeRecords({
       setViewConfigDraft((current) => {
         if (!current) return current;
         const frozenIds = new Set(current.frozenFieldIds ?? []);
-        const sourceFieldIds =
-          COMBINED_VIEW_FIELD_GROUPS.find((group) => group.id === sourceId)
-            ?.fieldIds ?? [sourceId];
-        const targetFieldIds =
-          COMBINED_VIEW_FIELD_GROUPS.find((group) => group.id === targetId)
-            ?.fieldIds ?? [targetId];
+        const sourceFieldIds = COMBINED_VIEW_FIELD_GROUPS.find(
+          (group) => group.id === sourceId,
+        )?.fieldIds ?? [sourceId];
+        const targetFieldIds = COMBINED_VIEW_FIELD_GROUPS.find(
+          (group) => group.id === targetId,
+        )?.fieldIds ?? [targetId];
         if (
           sourceFieldIds.some((id) => frozenIds.has(id)) !==
           targetFieldIds.some((id) => frozenIds.has(id))
@@ -741,7 +774,7 @@ function FormHomeRecords({
 
       await loadRecords();
       notify.success("表单数据已保存", {
-        description: `表单 ${formUuid} 已提交成功`,
+        description: "记录已保存，后置自动化将在后台执行",
       });
 
       if (source === "drawer") {
@@ -755,7 +788,7 @@ function FormHomeRecords({
         setDrawerResetKey((current) => current + 1);
       }
     } catch (error) {
-      notify.error("提交失败", {
+      notifyRequestError(error, "提交失败", {
         description:
           error instanceof Error ? error.message : "请确认后端服务正常。",
       });
@@ -785,7 +818,7 @@ function FormHomeRecords({
       notifyAppNavigationChanged(appId);
       router.push(`/${appId}/${detailForm?.detailFormUuid ?? ""}`);
     } catch (error) {
-      notify.error("创建明细表单失败", {
+      notifyRequestError(error, "创建明细表单失败", {
         description: error instanceof Error ? error.message : "请稍后重试。",
       });
     } finally {
@@ -803,12 +836,12 @@ function FormHomeRecords({
       await recordEditor.submitUpdate(recordId, values);
 
       await loadRecords();
-      notify.success("表单数据已更新", {
+      notify.success("表单数据已更新，后置自动化将在后台执行", {
         description: `记录 ${recordId} 已保存`,
       });
       return true;
-    } catch {
-      notify.error("更新失败", {
+    } catch (requestError) {
+      notifyRequestError(requestError, "更新失败", {
         description: "请确认后端服务正常。",
       });
       return false;
@@ -837,7 +870,7 @@ function FormHomeRecords({
       );
       return true;
     } catch (error) {
-      notify.error("流程操作失败", {
+      notifyRequestError(error, "流程操作失败", {
         description: error instanceof Error ? error.message : "请稍后重试",
       });
       return false;
@@ -856,7 +889,7 @@ function FormHomeRecords({
       router.push(`/${appId}/tasks`);
       return true;
     } catch (error) {
-      notify.error("执行任务失败", {
+      notifyRequestError(error, "执行任务失败", {
         description: error instanceof Error ? error.message : "请稍后重试",
       });
       return false;
@@ -872,12 +905,12 @@ function FormHomeRecords({
       await recordMutations.remove.mutateAsync(recordId);
 
       await loadRecords();
-      notify.success("记录已删除", {
+      notify.success("记录已删除，后置自动化将在后台执行", {
         description: `记录 ${recordId} 已移除`,
       });
       return true;
-    } catch {
-      notify.error("删除记录失败", {
+    } catch (requestError) {
+      notifyRequestError(requestError, "删除记录失败", {
         description: "请确认后端服务正常。",
       });
       return false;
@@ -898,14 +931,22 @@ function FormHomeRecords({
       });
       notifyAppNavigationChanged(appId);
       router.replace(`/${appId}`);
-    } catch {
-      notify.error("删除表单失败", {
+    } catch (requestError) {
+      notifyRequestError(requestError, "删除表单失败", {
         description: "请确认后端服务正常。",
       });
     } finally {
       setDeleting(false);
     }
   }
+
+  const importFileBufferRef = useRef<ArrayBuffer | null>(null);
+  const importReadIdRef = useRef(0);
+
+  const importFields = useMemo(
+    () => getExcelImportFields(schema?.fields ?? []),
+    [schema?.fields],
+  );
 
   const excelFields = useMemo(
     () =>
@@ -921,7 +962,9 @@ function FormHomeRecords({
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const availableIds = new Set(displayedRecords.map((record) => record.id));
-      setSelectedRecordIds((current) => retainAvailableSelection(current, availableIds));
+      setSelectedRecordIds((current) =>
+        retainAvailableSelection(current, availableIds),
+      );
     }, 0);
     return () => window.clearTimeout(timer);
   }, [displayedRecords]);
@@ -936,8 +979,13 @@ function FormHomeRecords({
     });
   }
 
-  function updatePageSelection(pageIds: string[], selectedPageIds: Set<string>) {
-    setSelectedRecordIds((current) => mergePageSelection(current, pageIds, selectedPageIds));
+  function updatePageSelection(
+    pageIds: string[],
+    selectedPageIds: Set<string>,
+  ) {
+    setSelectedRecordIds((current) =>
+      mergePageSelection(current, pageIds, selectedPageIds),
+    );
   }
 
   function saveDraft() {
@@ -972,12 +1020,11 @@ function FormHomeRecords({
   }
 
   async function downloadExcelTemplate() {
-    const columns = buildExcelColumns(excelFields);
-    const headers = [
-      ...columns.map((column) => column.header),
-      ...BUILTIN_RECORD_FIELDS.map((field) => field.label),
-    ];
-    const buffer = await buildExcelWorkbook([headers]);
+    const { matrix, merges } = buildImportTemplate(
+      importFields,
+      BUILTIN_RECORD_FIELDS,
+    );
+    const buffer = await buildExcelWorkbook(matrix, "数据", merges);
     downloadExcelBuffer(
       buffer,
       `${sanitizeFileName(formMetadataName || schema?.formName || formUuid)}-导入模板.xlsx`,
@@ -1008,7 +1055,7 @@ function FormHomeRecords({
           }),
       );
     } catch (error) {
-      notify.error("无法导出关联字段", {
+      notifyRequestError(error, "无法导出关联字段", {
         description:
           error instanceof Error ? error.message : "请检查关联表单权限和配置。",
       });
@@ -1042,40 +1089,75 @@ function FormHomeRecords({
   }
 
   function openImportModal() {
+    importFileBufferRef.current = null;
+    importReadIdRef.current += 1;
     setImportState(EMPTY_IMPORT_STATE);
     setIsImportOpen(true);
+  }
+
+  async function readImportSheet(
+    buffer: ArrayBuffer,
+    fileName: string,
+    sheetName?: string,
+  ) {
+    const readId = ++importReadIdRef.current;
+    setImportState((current) => ({ ...current, loading: true }));
+    try {
+      const columns = buildExcelColumns(importFields).map((column) => ({
+        id: column.field.id,
+        label: column.field.label,
+        header: column.header,
+      }));
+      const result = await parseExcelFile(buffer.slice(0), columns, sheetName);
+      if (readId !== importReadIdRef.current) return;
+      setImportState({
+        ...EMPTY_IMPORT_STATE,
+        fileName,
+        ...result,
+        loading: false,
+      });
+    } catch (reason) {
+      if (readId !== importReadIdRef.current) return;
+      notifyRequestError(reason, "无法读取 Excel", {
+        description:
+          reason instanceof Error ? reason.message : "请检查文件格式。",
+      });
+      setImportState((current) => ({ ...current, loading: false }));
+    }
   }
 
   async function handleImportFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
     if (!file) return;
-    try {
-      const excelColumns = buildExcelColumns(excelFields);
-      const { headers, rows, mappings } = await parseExcelFile(
-        await file.arrayBuffer(),
-        excelColumns.map((column) => ({
-          id: column.field.id,
-          label: column.field.label,
-          header: column.header,
-        })),
+    const buffer = await file.arrayBuffer();
+    importFileBufferRef.current = buffer;
+    await readImportSheet(buffer, file.name);
+  }
+
+  async function handleImportSheetChange(sheetName: string) {
+    if (importFileBufferRef.current)
+      await readImportSheet(
+        importFileBufferRef.current,
+        importState.fileName,
+        sheetName,
       );
-      setImportState({
-        ...EMPTY_IMPORT_STATE,
-        fileName: file.name,
-        headers,
-        rows,
-        mappings,
-      });
-    } catch (reason) {
-      notify.error("无法读取 Excel", {
-        description:
-          reason instanceof Error ? reason.message : "请检查文件格式。",
-      });
-      setImportState(EMPTY_IMPORT_STATE);
-    }
   }
 
   async function importExcelRows() {
+    if (importState.loading) return;
+    const missingRequiredIds = getMissingRequiredImportFields(
+      importFields,
+      importState.mappings,
+    );
+    if (missingRequiredIds.length > 0) {
+      notify.error("请匹配所有必填字段", {
+        description: importFields
+          .filter((field) => missingRequiredIds.includes(field.id))
+          .map((field) => field.label)
+          .join("、"),
+      });
+      return;
+    }
     setImportState((current) => ({
       ...current,
       importing: true,
@@ -1084,7 +1166,7 @@ function FormHomeRecords({
       successCount: 0,
       failureCount: 0,
     }));
-    const fieldMap = new Map(excelFields.map((field) => [field.id, field]));
+    const fieldMap = new Map(importFields.map((field) => [field.id, field]));
     const associationFieldIds = [
       ...new Set(
         Object.values(importState.mappings).filter(
@@ -1106,34 +1188,38 @@ function FormHomeRecords({
       );
     } catch (error) {
       setImportState((current) => ({ ...current, importing: false }));
-      notify.error("无法解析关联字段", {
+      notifyRequestError(error, "无法解析关联字段", {
         description:
           error instanceof Error ? error.message : "请检查关联表单权限和配置。",
       });
       return;
     }
 
-    const importItems = importState.rows.map((row, index) => {
-      const data: Record<string, unknown> = {};
-      for (const [columnIndexText, fieldId] of Object.entries(
+    let importItems;
+    try {
+      importItems = assembleImportRecords(
+        importState.rows,
         importState.mappings,
-      )) {
-        if (!fieldId) continue;
-        const field = fieldMap.get(fieldId);
-        if (!field) continue;
-        const cell = row[Number(columnIndexText)];
-        const value =
+        importFields,
+        importState.rowGroups,
+        (field, cell) =>
           field.type === "associationFormField"
             ? resolveAssociationImportValue(
                 cell,
                 associationLookups.get(field.id),
-              )
-            : deserializeExcelValue(field, cell);
-        if (value !== undefined) data[fieldId] = value;
-      }
-      return { index, data };
-    });
-    const { succeeded: successCount, failed: failureCount } = await importController.importAll(importItems, 3);
+              ) || undefined
+            : deserializeExcelValue(field, cell),
+      );
+    } catch (error) {
+      setImportState((current) => ({ ...current, importing: false }));
+      notifyRequestError(error, "无法导入 Excel", {
+        description:
+          error instanceof Error ? error.message : "请检查字段匹配。",
+      });
+      return;
+    }
+    const { succeeded: successCount, failed: failureCount } =
+      await importController.importAll(importItems, 3);
 
     await loadRecords();
     setImportState((current) => ({
@@ -1188,9 +1274,10 @@ function FormHomeRecords({
       <div className="flex h-full min-h-0 flex-col overflow-hidden">
         <div className="flex shrink-0 flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 flex-wrap items-center gap-2 mb-2">
-            <h1 className="mr-1 min-w-0 truncate text-xl font-semibold text-[var(--color-text-primary)]">
+            {/* 表单标题以迁移到头部容器 */}
+            {/* <h1 className="mr-1 min-w-0 truncate text-xl font-semibold text-[var(--color-text-primary)]">
               {formMetadataName || schema?.formName || "表单详情"}
-            </h1>
+            </h1> */}
             {canCreateRecord ? (
               <Button
                 isIconOnly
@@ -1242,8 +1329,8 @@ function FormHomeRecords({
             ) : null}
             {canUseViewDevelopment ? (
               <Dropdown>
-                <Dropdown.Trigger aria-label="更多" className="h-9 w-9">
-                  <Ellipsis className="h-4 w-4" />
+                <Dropdown.Trigger aria-label="更多">
+                  <Ellipsis />
                 </Dropdown.Trigger>
                 <Dropdown.Popover>
                   <Dropdown.Menu aria-label="更多表格操作">
@@ -1282,19 +1369,21 @@ function FormHomeRecords({
                 </Dropdown.Popover>
               </Dropdown>
             ) : null}
-            <SearchField
-              aria-label="搜索数据"
-              className="min-w-[220px] flex-1 sm:max-w-[300px]"
-              value={searchValue}
-              onChange={setSearchValue}
-            >
-              <SearchField.Group>
-                <SearchField.SearchIcon />
-                <SearchField.Input placeholder="搜索数据" />
-                <SearchField.ClearButton aria-label="清除搜索数据" />
-              </SearchField.Group>
-            </SearchField>
           </div>
+
+          <SearchField
+            aria-label="搜索数据"
+            className="min-w-[220px] flex-1 sm:max-w-[300px]"
+            value={searchValue}
+            onChange={setSearchValue}
+          >
+            <SearchField.Group>
+              <SearchField.SearchIcon />
+              <SearchField.Input placeholder="搜索数据" />
+              <SearchField.ClearButton aria-label="清除搜索数据" />
+            </SearchField.Group>
+          </SearchField>
+
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
             <Tabs
               className="min-w-0 max-w-full"
@@ -1307,7 +1396,10 @@ function FormHomeRecords({
               }}
             >
               <Tabs.ListContainer className="max-w-full overflow-x-auto">
-                <Tabs.List aria-label="数据视图" className="w-max min-w-max flex-nowrap">
+                <Tabs.List
+                  aria-label="数据视图"
+                  className="w-max min-w-max flex-nowrap"
+                >
                   {views.map((view) => (
                     <Tabs.Tab
                       key={view.id}
@@ -1366,17 +1458,28 @@ function FormHomeRecords({
           ) : null}
           {isViewConfigReady ? (
             <RecordsTable
+              customButtonViewUuid={
+                formViews.activeFormView?.viewUuid ?? "default"
+              }
+              customButtonBindings={effectiveViewConfig.customButtons ?? []}
+              customButtonConfigDirty={viewConfigDirty}
               fields={configuredFields}
               builtinFields={configuredBuiltinFields}
               columnOrder={orderedViewFieldIds}
-              frozenFieldIds={effectiveViewConfig.frozenFieldIds ?? EMPTY_FROZEN_FIELD_IDS}
+              frozenFieldIds={
+                effectiveViewConfig.frozenFieldIds ?? EMPTY_FROZEN_FIELD_IDS
+              }
               formType={formType}
               sortableFieldIds={sortableFieldIds}
-              columnWidths={effectiveViewConfig.columnWidths ?? EMPTY_COLUMN_WIDTHS}
+              columnWidths={
+                effectiveViewConfig.columnWidths ?? EMPTY_COLUMN_WIDTHS
+              }
               sorts={effectiveViewConfig.sorts}
               formName={formMetadataName || schema.formName || formUuid}
               schema={schema}
-              records={searchedRecords as Parameters<typeof RecordsTable>[0]["records"]}
+              records={
+                searchedRecords as Parameters<typeof RecordsTable>[0]["records"]
+              }
               pagination={{
                 page: recordsQuery.data?.page ?? recordPage,
                 pageSize: recordsQuery.data?.pageSize ?? recordPageSize,
@@ -1395,6 +1498,8 @@ function FormHomeRecords({
               onWorkflowAction={handleWorkflowAction}
               onCompleteExecutionTask={handleCompleteExecutionTask}
               canEditRecord={canEditRecord}
+              canCreateRecord={canCreateRecord}
+              isDetailForm={isDetailForm}
               canDeleteRecord={canDeleteRecord}
               urlParams={{ appId, formUuid }}
               onRecordSelectionChange={toggleRecordSelection}
@@ -1407,6 +1512,9 @@ function FormHomeRecords({
                 }));
               }}
               initialRecordId={searchParams.get("record") ?? undefined}
+              initialPageMode={
+                searchParams.get("buttonPageMode") === "edit" ? "edit" : "view"
+              }
               initialTaskId={executionTaskId}
             />
           ) : (
@@ -1417,654 +1525,673 @@ function FormHomeRecords({
         </div>
       </div>
 
-      <Modal isOpen={detailFormOpen} onOpenChange={setDetailFormOpen}>
-        <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
-          <Modal.Container>
-            <Modal.Dialog>
-              <Modal.Header>
-                <Modal.Heading>创建明细表单</Modal.Heading>
-                <Modal.CloseTrigger aria-label="关闭" />
-              </Modal.Header>
-              <Modal.Body className="space-y-4">
-                <div className="flex flex-col gap-1">
-                  <Label htmlFor="detail-subform-select">子表单</Label>
-                  <Select
-                    id="detail-subform-select"
-                    aria-label="子表单"
-                    selectedKey={detailSubformId}
-                    onSelectionChange={(key) =>
-                      setDetailSubformId(String(key ?? ""))
-                    }
-                  >
-                    <Select.Trigger>
-                      <Select.Value>
-                        {availableDetailSubformFields.find(
-                          (field) => field.id === detailSubformId,
-                        )?.label ?? "选择子表单"}
-                      </Select.Value>
-                    </Select.Trigger>
-                    <Select.Popover>
-                      <ListBox>
-                        {availableDetailSubformFields.map((field) => (
-                          <ListBox.Item key={field.id} id={field.id}>
-                            {field.label}
-                          </ListBox.Item>
-                        ))}
-                        {availableDetailSubformFields.length === 0 ? (
-                          <ListBox.Item id="empty" isDisabled>
-                            所有子表单均已生成明细表单
-                          </ListBox.Item>
-                        ) : null}
-                      </ListBox>
-                    </Select.Popover>
-                  </Select>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <div className="flex flex-col space-y-2">
-                    <Label>主显示字段</Label>
-                    <DetailDisplayFieldSelect
-                      ariaLabel="主显示字段"
-                      options={detailDisplayFieldOptions}
-                      selectedKey={newDetailPrimaryDisplayFieldId}
-                      onSelectionChange={setNewDetailPrimaryDisplayFieldId}
-                    />
-                  </div>
-                  <div className="flex flex-col space-y-2">
-                    <Label>次级显示字段</Label>
-                    <DetailDisplayFieldSelect
-                      ariaLabel="次级显示字段"
-                      options={detailDisplayFieldOptions.filter(
-                        (field) => field.id !== newDetailPrimaryDisplayFieldId,
-                      )}
-                      selectedKey={newDetailSecondaryDisplayFieldId}
-                      onSelectionChange={setNewDetailSecondaryDisplayFieldId}
-                    />
-                  </div>
-                </div>
-              </Modal.Body>
-              <Modal.Footer>
-                <Button
-                  variant="ghost"
-                  isDisabled={creatingDetailForm}
-                  onPress={() => setDetailFormOpen(false)}
-                >
-                  取消
-                </Button>
-                <Button
-                  isDisabled={
-                    creatingDetailForm ||
-                    !detailSubformId ||
-                    existingDetailSubformIds.has(detailSubformId)
+      <Modal.Backdrop
+        isOpen={detailFormOpen}
+        onOpenChange={setDetailFormOpen}
+        className="theme-modal-backdrop"
+        isDismissable
+      >
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>创建明细表单</Modal.Heading>
+              <Modal.CloseTrigger aria-label="关闭" />
+            </Modal.Header>
+            <Modal.Body className="space-y-4">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="detail-subform-select">子表单</Label>
+                <Select
+                  id="detail-subform-select"
+                  aria-label="子表单"
+                  selectedKey={detailSubformId}
+                  onSelectionChange={(key) =>
+                    setDetailSubformId(String(key ?? ""))
                   }
-                  onPress={() => void handleCreateDetailForm()}
                 >
-                  {creatingDetailForm ? "创建中..." : "确定"}
-                </Button>
-              </Modal.Footer>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
+                  <Select.Trigger>
+                    <Select.Value>
+                      {availableDetailSubformFields.find(
+                        (field) => field.id === detailSubformId,
+                      )?.label ?? "选择子表单"}
+                    </Select.Value>
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox>
+                      {availableDetailSubformFields.map((field) => (
+                        <ListBox.Item key={field.id} id={field.id}>
+                          {field.label}
+                        </ListBox.Item>
+                      ))}
+                      {availableDetailSubformFields.length === 0 ? (
+                        <ListBox.Item id="empty" isDisabled>
+                          所有子表单均已生成明细表单
+                        </ListBox.Item>
+                      ) : null}
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+              </div>
 
-      <Drawer isOpen={drawerOpen} onOpenChange={setDrawerOpen}>
-        <Drawer.Backdrop className="theme-modal-backdrop" isDismissable>
-          <Drawer.Content placement="right">
-            <Drawer.Dialog className="w-[1200px]">
-              <Drawer.Header>
-                <div className="flex w-full items-center justify-between gap-4">
-                  <div>
-                    <Drawer.Heading>新增数据</Drawer.Heading>
-                  </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="flex flex-col space-y-2">
+                  <Label>主显示字段</Label>
+                  <DetailDisplayFieldSelect
+                    ariaLabel="主显示字段"
+                    options={detailDisplayFieldOptions}
+                    selectedKey={newDetailPrimaryDisplayFieldId}
+                    onSelectionChange={setNewDetailPrimaryDisplayFieldId}
+                  />
                 </div>
-              </Drawer.Header>
-              <Drawer.Body
-                className={
-                  agentEnabled
-                    ? "min-h-0 flex-1 overflow-hidden"
-                    : "flex-1 overflow-y-auto"
+                <div className="flex flex-col space-y-2">
+                  <Label>次级显示字段</Label>
+                  <DetailDisplayFieldSelect
+                    ariaLabel="次级显示字段"
+                    options={detailDisplayFieldOptions.filter(
+                      (field) => field.id !== newDetailPrimaryDisplayFieldId,
+                    )}
+                    selectedKey={newDetailSecondaryDisplayFieldId}
+                    onSelectionChange={setNewDetailSecondaryDisplayFieldId}
+                  />
+                </div>
+              </div>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button
+                variant="ghost"
+                isDisabled={creatingDetailForm}
+                onPress={() => setDetailFormOpen(false)}
+              >
+                取消
+              </Button>
+              <Button
+                isDisabled={
+                  creatingDetailForm ||
+                  !detailSubformId ||
+                  existingDetailSubformIds.has(detailSubformId)
                 }
+                onPress={() => void handleCreateDetailForm()}
+              >
+                {creatingDetailForm ? "创建中..." : "确定"}
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+
+      <Drawer.Backdrop
+        isOpen={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        className="theme-modal-backdrop"
+        isDismissable
+      >
+        <Drawer.Content placement="right">
+          <Drawer.Dialog className="w-[1200px]">
+            <Drawer.Header>
+              <div className="flex w-full items-center justify-between gap-4">
+                <div>
+                  <Drawer.Heading>新增数据</Drawer.Heading>
+                </div>
+              </div>
+            </Drawer.Header>
+            <Drawer.Body
+              className={
+                agentEnabled
+                  ? "min-h-0 flex-1 overflow-hidden"
+                  : "flex-1 overflow-y-auto"
+              }
+            >
+              <div
+                className={agentEnabled ? "flex h-full min-h-0" : "contents"}
               >
                 <div
-                  className={agentEnabled ? "flex h-full min-h-0" : "contents"}
+                  className={
+                    agentEnabled
+                      ? "min-h-0 min-w-0 flex-1 overflow-y-auto mr-2"
+                      : "contents"
+                  }
                 >
-                  <div
-                    className={
-                      agentEnabled
-                        ? "min-h-0 min-w-0 flex-1 overflow-y-auto mr-2"
-                        : "contents"
-                    }
-                  >
-                    {detailSourceFormUuid ? (
-                      <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 py-2.5">
-                        <div className="min-w-0">
-                          <div className="text-xs font-medium text-[var(--color-text-secondary)]">
-                            归属主记录
-                          </div>
-                          <div className="mt-0.5 truncate text-sm text-[var(--color-text-primary)]">
-                            {detailParentRecordUuid
-                              ? getDetailParentRecordLabel(
-                                  detailParentRecords.find(
-                                    (record) =>
-                                      record.id === detailParentRecordUuid,
-                                  ),
+                  {detailSourceFormUuid ? (
+                    <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-3 py-2.5">
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium text-[var(--color-text-secondary)]">
+                          归属主记录
+                        </div>
+                        <div className="mt-0.5 truncate text-sm text-[var(--color-text-primary)]">
+                          {detailParentRecordUuid
+                            ? getDetailParentRecordLabel(
+                                detailParentRecords.find(
+                                  (record) =>
+                                    record.id === detailParentRecordUuid,
+                                ),
+                                detailPrimaryDisplayFieldId,
+                                detailSecondaryDisplayFieldId,
+                                detailParentRecordUuid,
+                              )
+                            : "请选择此明细数据归属的主记录"}
+                        </div>
+                      </div>
+                      <Dropdown>
+                        <Dropdown.Trigger
+                          aria-label="选择归属主记录"
+                          className="inline-flex h-8 shrink-0 items-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2.5 text-xs text-[var(--color-text-primary)]"
+                        >
+                          选择记录
+                        </Dropdown.Trigger>
+                        <Dropdown.Popover>
+                          <Dropdown.Menu aria-label="选择归属主记录">
+                            {detailParentRecords.map((record) => (
+                              <Dropdown.Item
+                                key={record.id}
+                                id={record.id}
+                                onAction={() =>
+                                  setDetailParentRecordUuid(record.id)
+                                }
+                              >
+                                {getDetailParentRecordLabel(
+                                  record,
                                   detailPrimaryDisplayFieldId,
                                   detailSecondaryDisplayFieldId,
-                                  detailParentRecordUuid,
-                                )
-                              : "请选择此明细数据归属的主记录"}
-                          </div>
-                        </div>
-                        <Dropdown>
-                          <Dropdown.Trigger
-                            aria-label="选择归属主记录"
-                            className="inline-flex h-8 shrink-0 items-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2.5 text-xs text-[var(--color-text-primary)]"
-                          >
-                            选择记录
-                          </Dropdown.Trigger>
-                          <Dropdown.Popover>
-                            <Dropdown.Menu aria-label="选择归属主记录">
-                              {detailParentRecords.map((record) => (
-                                <Dropdown.Item
-                                  key={record.id}
-                                  id={record.id}
-                                  onAction={() =>
-                                    setDetailParentRecordUuid(record.id)
-                                  }
-                                >
-                                  {getDetailParentRecordLabel(
-                                    record,
-                                    detailPrimaryDisplayFieldId,
-                                    detailSecondaryDisplayFieldId,
-                                  )}
-                                </Dropdown.Item>
-                              ))}
-                              {detailParentRecords.length === 0 ? (
-                                <Dropdown.Item id="empty" isDisabled>
-                                  暂无可选主记录
-                                </Dropdown.Item>
-                              ) : null}
-                            </Dropdown.Menu>
-                          </Dropdown.Popover>
-                        </Dropdown>
-                      </div>
-                    ) : null}
-                    <RuntimeFormSurface>
-                      <RuntimeFormPanel
-                        key={drawerResetKey}
-                        formId="create-record-form"
-                        schema={schema}
-                        initialValues={drawerValues}
-                        showSubmitButton={false}
-                        submitLabel={submitButtonText}
-                        submitting={submitting}
-                        urlParams={{ appId, formUuid }}
-                        onValuesChange={handleAgentDraftValuesChange}
-                        valuePatch={agentValuePatch}
-                        onSubmit={(values) =>
-                          handleCreateRecord(
-                            values,
-                            drawerSubmitModeRef.current === "continue"
-                              ? "drawerContinue"
-                              : "drawer",
-                          )
-                        }
-                      />
-                    </RuntimeFormSurface>
-                  </div>
-                  {agentEnabled && drawerOpen ? (
-                    <FormAgentPanel
-                      key={formUuid}
-                      appId={appId}
-                      formName={formMetadataName || schema.formName || formUuid}
-                      formUuid={formUuid}
-                      agentId={agentConfig?.agentId ?? ""}
-                      prompt={agentConfig?.prompt ?? ""}
-                      fields={schema.fields}
-                      currentValues={agentDraftValues}
-                      onApplyValues={(values) =>
-                        setAgentValuePatch({ id: Date.now(), values })
+                                )}
+                              </Dropdown.Item>
+                            ))}
+                            {detailParentRecords.length === 0 ? (
+                              <Dropdown.Item id="empty" isDisabled>
+                                暂无可选主记录
+                              </Dropdown.Item>
+                            ) : null}
+                          </Dropdown.Menu>
+                        </Dropdown.Popover>
+                      </Dropdown>
+                    </div>
+                  ) : null}
+                  <RuntimeFormSurface>
+                    <RuntimeFormPanel
+                      key={drawerResetKey}
+                      formId="create-record-form"
+                      schema={schema}
+                      initialValues={drawerValues}
+                      showSubmitButton={false}
+                      submitLabel={submitButtonText}
+                      submitting={submitting}
+                      urlParams={{ appId, formUuid }}
+                      onValuesChange={handleAgentDraftValuesChange}
+                      valuePatch={agentValuePatch}
+                      onSubmit={(values) =>
+                        handleCreateRecord(
+                          values,
+                          drawerSubmitModeRef.current === "continue"
+                            ? "drawerContinue"
+                            : "drawer",
+                        )
                       }
                     />
-                  ) : null}
+                  </RuntimeFormSurface>
                 </div>
-              </Drawer.Body>
-              <Drawer.Footer className="flex shrink-0 justify-between gap-3">
+                {agentEnabled && drawerOpen ? (
+                  <FormAgentPanel
+                    key={formUuid}
+                    appId={appId}
+                    formName={formMetadataName || schema.formName || formUuid}
+                    formUuid={formUuid}
+                    agentId={agentConfig?.agentId ?? ""}
+                    prompt={agentConfig?.prompt ?? ""}
+                    fields={schema.fields}
+                    currentValues={agentDraftValues}
+                    onApplyValues={(values) =>
+                      setAgentValuePatch({ id: Date.now(), values })
+                    }
+                  />
+                ) : null}
+              </div>
+            </Drawer.Body>
+            <Drawer.Footer className="flex shrink-0 justify-between gap-3">
+              <Button
+                variant="ghost"
+                isDisabled={submitting}
+                onPress={() => setDrawerOpen(false)}
+              >
+                取消
+              </Button>
+              <ButtonGroup>
                 <Button
-                  variant="ghost"
+                  variant="secondary"
                   isDisabled={submitting}
                   onPress={saveDraft}
                 >
                   暂存
                 </Button>
-                <div className="flex items-center gap-3">
-                  <Button
-                    variant="ghost"
-                    isDisabled={submitting}
-                    onPress={() => setDrawerOpen(false)}
-                  >
-                    取消
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    isDisabled={
-                      submitting ||
-                      Boolean(detailSourceFormUuid && !detailParentRecordUuid)
-                    }
-                    onPress={() => submitDrawerForm("continue")}
-                  >
-                    提交并继续
-                  </Button>
-                  <Button
-                    isDisabled={
-                      submitting ||
-                      Boolean(detailSourceFormUuid && !detailParentRecordUuid)
-                    }
-                    onPress={() => submitDrawerForm("submit")}
-                  >
-                    {submitting ? "提交中..." : "提交"}
-                  </Button>
-                </div>
-              </Drawer.Footer>
-            </Drawer.Dialog>
-          </Drawer.Content>
-        </Drawer.Backdrop>
-      </Drawer>
 
-      <Modal isOpen={isDraftsOpen} onOpenChange={setIsDraftsOpen}>
-        <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
-          <Modal.Container placement="center" scroll="inside" size="lg">
-            <Modal.Dialog className="theme-menu-surface flex max-h-[80vh] w-[min(680px,92vw)] flex-col overflow-hidden rounded-2xl shadow-[var(--shadow-dialog)]">
-              <Modal.Header className="border-b border-[var(--color-border)]">
-                <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
-                  草稿箱
-                </Modal.Heading>
-                <Modal.CloseTrigger aria-label="关闭草稿箱" />
-              </Modal.Header>
-              <Modal.Body className="min-h-0 flex-1 space-y-3 overflow-y-auto">
-                {drafts.map((draft) => (
-                  <div
-                    key={draft.id}
-                    className="flex items-center justify-between gap-4 border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-4 py-3"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-[var(--color-text-primary)]">
-                        {formMetadataName || schema.formName || "表单"}草稿
-                      </div>
-                      <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                        暂存于 {formatDateTime(draft.savedAt)} · 已填写{" "}
-                        {
-                          Object.values(draft.values).filter(
-                            (value) =>
-                              value !== "" &&
-                              value !== undefined &&
-                              value !== null,
-                          ).length
-                        }{" "}
-                        项
-                      </div>
+                <Button
+                  variant="secondary"
+                  isDisabled={
+                    submitting ||
+                    Boolean(detailSourceFormUuid && !detailParentRecordUuid)
+                  }
+                  onPress={() => submitDrawerForm("continue")}
+                >
+                  提交并继续
+                </Button>
+                <Button
+                  isDisabled={
+                    submitting ||
+                    Boolean(detailSourceFormUuid && !detailParentRecordUuid)
+                  }
+                  onPress={() => submitDrawerForm("submit")}
+                >
+                  {submitting ? "提交中..." : "提交"}
+                </Button>
+              </ButtonGroup>
+            </Drawer.Footer>
+          </Drawer.Dialog>
+        </Drawer.Content>
+      </Drawer.Backdrop>
+
+      <Modal.Backdrop
+        isOpen={isDraftsOpen}
+        onOpenChange={setIsDraftsOpen}
+        className="theme-modal-backdrop"
+        isDismissable
+      >
+        <Modal.Container placement="center" scroll="inside" size="lg">
+          <Modal.Dialog className="theme-menu-surface flex max-h-[80vh] w-[min(680px,92vw)] flex-col overflow-hidden rounded-2xl shadow-[var(--shadow-dialog)]">
+            <Modal.Header>
+              <Modal.Heading>草稿箱</Modal.Heading>
+              <Modal.CloseTrigger aria-label="关闭草稿箱" />
+            </Modal.Header>
+            <Modal.Body className="min-h-0 flex-1 space-y-3 overflow-y-auto">
+              {drafts.map((draft) => (
+                <div
+                  key={draft.id}
+                  className="flex items-center justify-between gap-4 border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-[var(--color-text-primary)]">
+                      {formMetadataName || schema.formName || "表单"}草稿
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-[var(--color-danger)]"
-                        onPress={() => deleteDraft(draft.id)}
-                      >
-                        删除
-                      </Button>
-                      <Button size="sm" onPress={() => openDraft(draft)}>
-                        继续编辑
-                      </Button>
+                    <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                      暂存于 {formatDateTime(draft.savedAt)} · 已填写{" "}
+                      {
+                        Object.values(draft.values).filter(
+                          (value) =>
+                            value !== "" &&
+                            value !== undefined &&
+                            value !== null,
+                        ).length
+                      }{" "}
+                      项
                     </div>
                   </div>
-                ))}
-              </Modal.Body>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-[var(--color-danger)]"
+                      onPress={() => deleteDraft(draft.id)}
+                    >
+                      删除
+                    </Button>
+                    <Button size="sm" onPress={() => openDraft(draft)}>
+                      继续编辑
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </Modal.Body>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
 
       {false ? (
-        <Drawer
+        <Drawer.Backdrop
           isOpen={viewConfigMode !== null}
           onOpenChange={(open) => {
             if (!open) closeViewConfig();
           }}
+          className="theme-modal-backdrop"
+          isDismissable
         >
-          <Drawer.Backdrop className="theme-modal-backdrop" isDismissable>
-            <Drawer.Content placement="right">
-              <Drawer.Dialog className="theme-menu-surface flex h-[100dvh] w-[min(760px,100vw)] max-w-[100vw] flex-col overflow-hidden shadow-[var(--shadow-dialog)]">
-                <Drawer.Header className="border-b border-[var(--color-border)]">
-                  <Drawer.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
-                    {viewConfigMode === "filters"
-                      ? "筛选"
-                      : viewConfigMode === "fields"
-                        ? "显示列"
-                        : "排序"}
-                  </Drawer.Heading>
-                  <Drawer.CloseTrigger aria-label="关闭配置" />
-                </Drawer.Header>
-                <Drawer.Body className="min-h-0 flex-1 overflow-y-auto">
-                  {viewConfigDraft && viewConfigMode === "filters" ? (
-                    <div className="space-y-3">
-                      {viewConfigDraft!.filters.map((rule) => (
-                        <div
-                          key={rule.id}
-                          className="grid grid-cols-[minmax(0,1fr)_130px_minmax(0,1fr)_36px] items-center gap-2"
-                        >
-                          <Select
-                            selectedKey={rule.fieldId}
-                            aria-label="筛选字段"
-                            onSelectionChange={(key) =>
-                              setViewConfigDraft((current) =>
-                                current
-                                  ? {
-                                      ...current,
-                                      filters: current.filters.map((item) =>
-                                        item.id === rule.id
-                                          ? {
-                                              ...item,
-                                              fieldId: String(key ?? ""),
-                                            }
-                                          : item,
-                                      ),
-                                    }
-                                  : current,
-                              )
-                            }
-                          >
-                            <Select.Trigger>
-                              <Select.Value />
-                            </Select.Trigger>
-                            <Select.Popover>
-                              <ListBox>
-                                {queryableViewFields.map((field) => (
-                                  <ListBox.Item key={field.id} id={field.id}>
-                                    {field.label}
-                                  </ListBox.Item>
-                                ))}
-                              </ListBox>
-                            </Select.Popover>
-                          </Select>
-                          <Select
-                            selectedKey={rule.operator}
-                            aria-label="筛选条件"
-                            onSelectionChange={(key) =>
-                              setViewConfigDraft((current) =>
-                                current
-                                  ? {
-                                      ...current,
-                                      filters: current.filters.map((item) =>
-                                        item.id === rule.id
-                                          ? {
-                                              ...item,
-                                              operator: String(
-                                                key,
-                                              ) as ViewFilterOperator,
-                                            }
-                                          : item,
-                                      ),
-                                    }
-                                  : current,
-                              )
-                            }
-                          >
-                            <Select.Trigger>
-                              <Select.Value />
-                            </Select.Trigger>
-                            <Select.Popover>
-                              <ListBox>
-                                <ListBox.Item id="contains">包含</ListBox.Item>
-                                <ListBox.Item id="equals">等于</ListBox.Item>
-                                <ListBox.Item id="notEquals">
-                                  不等于
-                                </ListBox.Item>
-                                <ListBox.Item id="greaterThan">
-                                  大于
-                                </ListBox.Item>
-                                <ListBox.Item id="lessThan">小于</ListBox.Item>
-                              </ListBox>
-                            </Select.Popover>
-                          </Select>
-                          <Input
-                            aria-label="筛选值"
-                            value={rule.value}
-                            placeholder="请输入值"
-                            onChange={(event) =>
-                              setViewConfigDraft((current) =>
-                                current
-                                  ? {
-                                      ...current,
-                                      filters: current.filters.map((item) =>
-                                        item.id === rule.id
-                                          ? {
-                                              ...item,
-                                              value: event.target.value,
-                                            }
-                                          : item,
-                                      ),
-                                    }
-                                  : current,
-                              )
-                            }
-                          />
-                          <Button
-                            isIconOnly
-                            variant="ghost"
-                            aria-label="删除筛选条件"
-                            onPress={() =>
-                              setViewConfigDraft((current) =>
-                                current
-                                  ? {
-                                      ...current,
-                                      filters: current.filters.filter(
-                                        (item) => item.id !== rule.id,
-                                      ),
-                                    }
-                                  : current,
-                              )
-                            }
-                          >
-                            <TrashBin className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ))}
-                      <Button
-                        variant="ghost"
-                        className="text-[var(--color-primary)]"
-                        onPress={() =>
-                          setViewConfigDraft((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  filters: [
-                                    ...current.filters,
-                                    {
-                                      id: `filter-${Date.now()}`,
-                                      fieldId: queryableViewFields[0]?.id ?? "",
-                                      operator: "contains",
-                                      value: "",
-                                    },
-                                  ],
-                                }
-                              : current,
-                          )
-                        }
+          <Drawer.Content placement="right">
+            <Drawer.Dialog className="theme-menu-surface flex h-[100dvh] w-[min(760px,100vw)] max-w-[100vw] flex-col overflow-hidden shadow-[var(--shadow-dialog)]">
+              <Drawer.Header>
+                <Drawer.Heading>
+                  {viewConfigMode === "filters"
+                    ? "筛选"
+                    : viewConfigMode === "fields"
+                      ? "显示列"
+                      : "排序"}
+                </Drawer.Heading>
+                <Drawer.CloseTrigger aria-label="关闭配置" />
+              </Drawer.Header>
+              <Drawer.Body className="min-h-0 flex-1 overflow-y-auto">
+                {viewConfigDraft && viewConfigMode === "filters" ? (
+                  <div className="space-y-3">
+                    {viewConfigDraft!.filters.map((rule) => (
+                      <div
+                        key={rule.id}
+                        className="grid grid-cols-[minmax(0,1fr)_130px_minmax(0,1fr)_36px] items-center gap-2"
                       >
-                        + 添加筛选条件
-                      </Button>
-                    </div>
-                  ) : null}
-                  {viewConfigDraft && viewConfigMode === "fields" ? (
-                    <div className="space-y-3">
-                      <p className="text-sm text-[var(--color-text-secondary)]">
-                        使用图钉冻结列到左侧；冻结列与普通列只能在各自分组内拖拽排序。
-                      </p>
-                      <Card className="overflow-auto border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-1 shadow-none">
-                        <div className={`${styles["records-screen__view-column-config-grid"]} min-w-[480px]`}>
-                          <div className={`${styles["records-screen__view-column-config-header"]} items-center border-b border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)]`}>
-                            <span>字段</span>
-                            <span>字段类型</span>
-                            <span className="text-center">显示列</span>
-                            <span className="text-center">排序按钮</span>
-                            <span className="text-center">宽</span>
-                            <span className="text-center">操作</span>
-                          </div>
-                          <DndContext
-                            sensors={viewFieldOrderSensors}
-                            onDragEnd={handleViewFieldOrderDragEnd}
-                          >
-                            {orderedDraftViewFields.map((field) => (
-                              <ReorderableViewFieldRow
-                                key={field.id}
-                                field={field}
-                                config={viewConfigDraft!}
-                                onConfigChange={
-                                  setViewConfigDraft as (
-                                    next: ViewConfig,
-                                  ) => void
-                                }
-                              />
-                            ))}
-                          </DndContext>
-                        </div>
-                      </Card>
-                    </div>
-                  ) : null}
-                  {viewConfigDraft && viewConfigMode === "sorts" ? (
-                    <div className="space-y-3">
-                      {viewConfigDraft!.sorts.map((rule) => (
-                        <div
-                          key={rule.id}
-                          className="grid grid-cols-[minmax(0,1fr)_130px_36px] items-center gap-2"
+                        <Select
+                          selectedKey={rule.fieldId}
+                          aria-label="筛选字段"
+                          onSelectionChange={(key) =>
+                            setViewConfigDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    filters: current.filters.map((item) =>
+                                      item.id === rule.id
+                                        ? {
+                                            ...item,
+                                            fieldId: String(key ?? ""),
+                                          }
+                                        : item,
+                                    ),
+                                  }
+                                : current,
+                            )
+                          }
                         >
-                          <Select
-                            selectedKey={rule.fieldId}
-                            aria-label="排序字段"
-                            onSelectionChange={(key) =>
-                              setViewConfigDraft((current) =>
-                                current
-                                  ? {
-                                      ...current,
-                                      sorts: current.sorts.map((item) =>
-                                        item.id === rule.id
-                                          ? {
-                                              ...item,
-                                              fieldId: String(key ?? ""),
-                                            }
-                                          : item,
-                                      ),
-                                    }
-                                  : current,
-                              )
-                            }
-                          >
-                            <Select.Trigger>
-                              <Select.Value />
-                            </Select.Trigger>
-                            <Select.Popover>
-                              <ListBox>
-                                {queryableViewFields.map((field) => (
-                                  <ListBox.Item key={field.id} id={field.id}>
-                                    {field.label}
-                                  </ListBox.Item>
-                                ))}
-                              </ListBox>
-                            </Select.Popover>
-                          </Select>
-                          <Select
-                            selectedKey={rule.direction}
-                            aria-label="排序方向"
-                            onSelectionChange={(key) =>
-                              setViewConfigDraft((current) =>
-                                current
-                                  ? {
-                                      ...current,
-                                      sorts: current.sorts.map((item) =>
-                                        item.id === rule.id
-                                          ? {
-                                              ...item,
-                                              direction: String(key) as
-                                                | "asc"
-                                                | "desc",
-                                            }
-                                          : item,
-                                      ),
-                                    }
-                                  : current,
-                              )
-                            }
-                          >
-                            <Select.Trigger>
-                              <Select.Value />
-                            </Select.Trigger>
-                            <Select.Popover>
-                              <ListBox>
-                                <ListBox.Item id="asc">升序</ListBox.Item>
-                                <ListBox.Item id="desc">降序</ListBox.Item>
-                              </ListBox>
-                            </Select.Popover>
-                          </Select>
-                          <Button
-                            isIconOnly
-                            variant="ghost"
-                            aria-label="删除排序规则"
-                            onPress={() =>
-                              setViewConfigDraft((current) =>
-                                current
-                                  ? {
-                                      ...current,
-                                      sorts: current.sorts.filter(
-                                        (item) => item.id !== rule.id,
-                                      ),
-                                    }
-                                  : current,
-                              )
-                            }
-                          >
-                            <TrashBin className="h-4 w-4" />
-                          </Button>
+                          <Select.Trigger>
+                            <Select.Value />
+                          </Select.Trigger>
+                          <Select.Popover>
+                            <ListBox>
+                              {queryableViewFields.map((field) => (
+                                <ListBox.Item key={field.id} id={field.id}>
+                                  {field.label}
+                                </ListBox.Item>
+                              ))}
+                            </ListBox>
+                          </Select.Popover>
+                        </Select>
+                        <Select
+                          selectedKey={rule.operator}
+                          aria-label="筛选条件"
+                          onSelectionChange={(key) =>
+                            setViewConfigDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    filters: current.filters.map((item) =>
+                                      item.id === rule.id
+                                        ? {
+                                            ...item,
+                                            operator: String(
+                                              key,
+                                            ) as ViewFilterOperator,
+                                          }
+                                        : item,
+                                    ),
+                                  }
+                                : current,
+                            )
+                          }
+                        >
+                          <Select.Trigger>
+                            <Select.Value />
+                          </Select.Trigger>
+                          <Select.Popover>
+                            <ListBox>
+                              <ListBox.Item id="contains">包含</ListBox.Item>
+                              <ListBox.Item id="equals">等于</ListBox.Item>
+                              <ListBox.Item id="notEquals">
+                                不等于
+                              </ListBox.Item>
+                              <ListBox.Item id="greaterThan">
+                                大于
+                              </ListBox.Item>
+                              <ListBox.Item id="lessThan">小于</ListBox.Item>
+                            </ListBox>
+                          </Select.Popover>
+                        </Select>
+                        <Input
+                          aria-label="筛选值"
+                          value={rule.value}
+                          placeholder="请输入值"
+                          onChange={(event) =>
+                            setViewConfigDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    filters: current.filters.map((item) =>
+                                      item.id === rule.id
+                                        ? {
+                                            ...item,
+                                            value: event.target.value,
+                                          }
+                                        : item,
+                                    ),
+                                  }
+                                : current,
+                            )
+                          }
+                        />
+                        <Button
+                          isIconOnly
+                          variant="ghost"
+                          aria-label="删除筛选条件"
+                          onPress={() =>
+                            setViewConfigDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    filters: current.filters.filter(
+                                      (item) => item.id !== rule.id,
+                                    ),
+                                  }
+                                : current,
+                            )
+                          }
+                        >
+                          <TrashBin className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button
+                      variant="ghost"
+                      className="text-[var(--color-primary)]"
+                      onPress={() =>
+                        setViewConfigDraft((current) =>
+                          current
+                            ? {
+                                ...current,
+                                filters: [
+                                  ...current.filters,
+                                  {
+                                    id: `filter-${Date.now()}`,
+                                    fieldId: queryableViewFields[0]?.id ?? "",
+                                    operator: "contains",
+                                    value: "",
+                                  },
+                                ],
+                              }
+                            : current,
+                        )
+                      }
+                    >
+                      + 添加筛选条件
+                    </Button>
+                  </div>
+                ) : null}
+                {viewConfigDraft && viewConfigMode === "fields" ? (
+                  <div className="space-y-3">
+                    <p className="text-sm text-[var(--color-text-secondary)]">
+                      使用图钉冻结列到左侧；冻结列与普通列只能在各自分组内拖拽排序。
+                    </p>
+                    <Card className="overflow-auto border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-1 shadow-none">
+                      <div className="grid min-w-[480px] grid-cols-[minmax(0,1fr)_max-content_max-content_max-content_112px_max-content] gap-x-3">
+                        <div className="col-span-full grid grid-cols-subgrid items-center border-b border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text-secondary)]">
+                          <span>字段</span>
+                          <span>字段类型</span>
+                          <span className="text-center">显示列</span>
+                          <span className="text-center">排序按钮</span>
+                          <span className="text-center">宽</span>
+                          <span className="text-center">操作</span>
                         </div>
-                      ))}
-                      <Button
-                        variant="ghost"
-                        className="text-[var(--color-primary)]"
-                        onPress={() =>
-                          setViewConfigDraft((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  sorts: [
-                                    ...current.sorts,
-                                    {
-                                      id: `sort-${Date.now()}`,
-                                      fieldId: allViewFields[0]?.id ?? "",
-                                      direction: "asc",
-                                    },
-                                  ],
-                                }
-                              : current,
-                          )
-                        }
+                        <DndContext
+                          sensors={viewFieldOrderSensors}
+                          onDragEnd={handleViewFieldOrderDragEnd}
+                        >
+                          {orderedDraftViewFields.map((field) => (
+                            <ReorderableViewFieldRow
+                              key={field.id}
+                              field={field}
+                              config={viewConfigDraft!}
+                              onConfigChange={
+                                setViewConfigDraft as (
+                                  next: ViewConfig,
+                                ) => void
+                              }
+                            />
+                          ))}
+                        </DndContext>
+                      </div>
+                    </Card>
+                  </div>
+                ) : null}
+                {viewConfigDraft && viewConfigMode === "sorts" ? (
+                  <div className="space-y-3">
+                    {viewConfigDraft!.sorts.map((rule) => (
+                      <div
+                        key={rule.id}
+                        className="grid grid-cols-[minmax(0,1fr)_130px_36px] items-center gap-2"
                       >
-                        + 添加排序规则
-                      </Button>
-                    </div>
-                  ) : null}
-                </Drawer.Body>
-                <Drawer.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)]">
-                  <Button variant="ghost" onPress={closeViewConfig}>
-                    取消
-                  </Button>
-                  <Button onPress={applyViewConfigDraft}>应用调整</Button>
-                </Drawer.Footer>
-              </Drawer.Dialog>
-            </Drawer.Content>
-          </Drawer.Backdrop>
-        </Drawer>
+                        <Select
+                          selectedKey={rule.fieldId}
+                          aria-label="排序字段"
+                          onSelectionChange={(key) =>
+                            setViewConfigDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    sorts: current.sorts.map((item) =>
+                                      item.id === rule.id
+                                        ? {
+                                            ...item,
+                                            fieldId: String(key ?? ""),
+                                          }
+                                        : item,
+                                    ),
+                                  }
+                                : current,
+                            )
+                          }
+                        >
+                          <Select.Trigger>
+                            <Select.Value />
+                          </Select.Trigger>
+                          <Select.Popover>
+                            <ListBox>
+                              {queryableViewFields.map((field) => (
+                                <ListBox.Item key={field.id} id={field.id}>
+                                  {field.label}
+                                </ListBox.Item>
+                              ))}
+                            </ListBox>
+                          </Select.Popover>
+                        </Select>
+                        <Select
+                          selectedKey={rule.direction}
+                          aria-label="排序方向"
+                          onSelectionChange={(key) =>
+                            setViewConfigDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    sorts: current.sorts.map((item) =>
+                                      item.id === rule.id
+                                        ? {
+                                            ...item,
+                                            direction: String(key) as
+                                              | "asc"
+                                              | "desc",
+                                          }
+                                        : item,
+                                    ),
+                                  }
+                                : current,
+                            )
+                          }
+                        >
+                          <Select.Trigger>
+                            <Select.Value />
+                          </Select.Trigger>
+                          <Select.Popover>
+                            <ListBox>
+                              <ListBox.Item id="asc">升序</ListBox.Item>
+                              <ListBox.Item id="desc">降序</ListBox.Item>
+                            </ListBox>
+                          </Select.Popover>
+                        </Select>
+                        <Button
+                          isIconOnly
+                          variant="ghost"
+                          aria-label="删除排序规则"
+                          onPress={() =>
+                            setViewConfigDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    sorts: current.sorts.filter(
+                                      (item) => item.id !== rule.id,
+                                    ),
+                                  }
+                                : current,
+                            )
+                          }
+                        >
+                          <TrashBin className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button
+                      variant="ghost"
+                      className="text-[var(--color-primary)]"
+                      onPress={() =>
+                        setViewConfigDraft((current) =>
+                          current
+                            ? {
+                                ...current,
+                                sorts: [
+                                  ...current.sorts,
+                                  {
+                                    id: `sort-${Date.now()}`,
+                                    fieldId: allViewFields[0]?.id ?? "",
+                                    direction: "asc",
+                                  },
+                                ],
+                              }
+                            : current,
+                        )
+                      }
+                    >
+                      + 添加排序规则
+                    </Button>
+                  </div>
+                ) : null}
+              </Drawer.Body>
+              <Drawer.Footer className="flex justify-end gap-3 border-t border-[var(--color-border)]">
+                <Button variant="ghost" onPress={closeViewConfig}>
+                  取消
+                </Button>
+                <Button onPress={applyViewConfigDraft}>应用调整</Button>
+              </Drawer.Footer>
+            </Drawer.Dialog>
+          </Drawer.Content>
+        </Drawer.Backdrop>
       ) : (
         <FormTableSetting
+          appId={appId}
+          viewName={formViews.viewNameDraft}
+          isDefaultView={!formViews.activeFormView || formViews.activeFormView.isDefault}
+          isManagingView={formViews.isRenamingView || formViews.isDeletingView}
+          onViewNameChange={formViews.setViewNameDraft}
+          onSaveViewName={formViews.renameActiveView}
+          canSaveViewName={Boolean(formViews.viewNameDraft.trim()) && formViews.viewNameDraft.trim() !== formViews.activeFormView?.name}
+          onDeleteView={() => {
+            if (formViews.activeFormView) formViews.deleteView(formViews.activeFormView.id);
+          }}
+          formUuid={formUuid}
           isOpen={viewConfigMode !== null}
           mode={viewConfigMode}
           draft={viewConfigDraft}
@@ -2100,81 +2227,77 @@ function FormHomeRecords({
         }}
         state={importState}
         setState={setImportState}
-        fields={excelFields}
+        fields={importFields}
         builtinFieldLabels={BUILTIN_RECORD_FIELD_LABELS}
         onDownloadTemplate={downloadExcelTemplate}
         onFileChange={handleImportFileChange}
+        onSheetChange={handleImportSheetChange}
         onImport={importExcelRows}
       />
 
-      <AlertDialog isOpen={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialog.Backdrop className="theme-modal-backdrop">
-          <AlertDialog.Container placement="center" size="md">
-            <AlertDialog.Dialog className="theme-menu-surface rounded-2xl shadow-[var(--shadow-dialog)]">
-              <AlertDialog.Header className="border-b border-[var(--color-border)]">
-                <AlertDialog.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
-                  删除表单
-                </AlertDialog.Heading>
-              </AlertDialog.Header>
-              <AlertDialog.Body className="">
-                删除后，表单设计、提交记录和导航项都会被移除。
-              </AlertDialog.Body>
-              <AlertDialog.Footer className="">
-                <Button
-                  variant="ghost"
-                  onClick={() => setDeleteOpen(false)}
-                  className="h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-panel)] px-4 text-[var(--color-text-primary)]"
-                >
-                  取消
-                </Button>
-                <Button
-                  onClick={handleDeleteForm}
-                  isDisabled={deleting}
-                  className="h-10 rounded-lg bg-[var(--color-danger)] px-4 text-[var(--color-text-on-primary)]"
-                >
-                  {deleting ? "删除中..." : "确认删除"}
-                </Button>
-              </AlertDialog.Footer>
-            </AlertDialog.Dialog>
-          </AlertDialog.Container>
-        </AlertDialog.Backdrop>
-      </AlertDialog>
-
-      <AlertDialog
-        isOpen={viewDeleteTarget !== null}
-        onOpenChange={(isOpen) => !isOpen && setViewDeleteTarget(null)}
+      <AlertDialog.Backdrop
+        isOpen={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        className="theme-modal-backdrop"
       >
-        <AlertDialog.Backdrop className="theme-modal-backdrop">
-          <AlertDialog.Container placement="center" size="md">
-            <AlertDialog.Dialog>
-              <AlertDialog.Header>
-                <AlertDialog.Heading>
-                  删除视图
-                </AlertDialog.Heading>
-              </AlertDialog.Header>
-              <AlertDialog.Body className="">
-                {viewDeleteTarget
-                  ? `确认删除视图“${viewDeleteTarget.name}”吗？此操作无法恢复。`
-                  : ""}
-              </AlertDialog.Body>
-              <AlertDialog.Footer className="">
-                <Button
-                  variant="ghost"
-                  onPress={() => setViewDeleteTarget(null)}
-                >
-                  取消
-                </Button>
-                <Button
-                  isDisabled={viewDeleteTarget === null}
-                  onPress={handleConfirmDeleteView}
-                >
-                  确认删除
-                </Button>
-              </AlertDialog.Footer>
-            </AlertDialog.Dialog>
-          </AlertDialog.Container>
-        </AlertDialog.Backdrop>
-      </AlertDialog>
+        <AlertDialog.Container>
+          <AlertDialog.Dialog>
+            <AlertDialog.Header>
+              <AlertDialog.Heading>删除表单</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body className="">
+              删除后，表单设计、提交记录和导航项都会被移除。
+            </AlertDialog.Body>
+            <AlertDialog.Footer className="">
+              <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+                取消
+              </Button>
+              <Button
+                variant="danger"
+                onClick={handleDeleteForm}
+                isDisabled={deleting}
+              >
+                {deleting ? "删除中..." : "确认删除"}
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
+
+      <AlertDialog.Backdrop
+        isOpen={viewDeleteTarget !== null}
+        onOpenChange={(isOpen) => !isOpen && !formViews.isDeletingView && setViewDeleteTarget(null)}
+        className="theme-modal-backdrop"
+      >
+        <AlertDialog.Container placement="center" size="md">
+          <AlertDialog.Dialog>
+            <AlertDialog.Header>
+              <AlertDialog.Heading>删除视图</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body className="">
+              {viewDeleteTarget
+                ? `确认删除视图“${viewDeleteTarget.name}”吗？此操作无法恢复。`
+                : ""}
+            </AlertDialog.Body>
+            <AlertDialog.Footer className="">
+              <Button
+                variant="ghost"
+                onPress={() => setViewDeleteTarget(null)}
+                isDisabled={formViews.isDeletingView}
+              >
+                取消
+              </Button>
+              <Button
+                variant="danger"
+                isDisabled={viewDeleteTarget === null || formViews.isDeletingView}
+                onPress={handleConfirmDeleteView}
+              >
+                {formViews.isDeletingView ? "删除中..." : "确认删除"}
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
     </div>
   );
 }

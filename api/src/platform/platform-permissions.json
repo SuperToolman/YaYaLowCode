@@ -1,0 +1,234 @@
+{
+  "groups": [
+    {
+      "key": "apps",
+      "label": "应用与市场",
+      "description": "应用内容访问仍由应用权限单独控制",
+      "items": [
+        {
+          "key": "apps.access",
+          "label": "访问应用工作台",
+          "description": "查看已获授权的应用"
+        },
+        {
+          "key": "apps.manage",
+          "label": "创建应用",
+          "description": "创建平台应用；应用修改和删除仍检查创建者或管理员身份"
+        },
+        {
+          "key": "designer.access",
+          "label": "查看应用字段目录",
+          "description": "读取应用字段概览，具体应用和表单仍需资源访问授权"
+        },
+        {
+          "key": "market.apps.view",
+          "label": "查看应用市场",
+          "description": "查看市场应用及安装记录"
+        },
+        {
+          "key": "market.apps.manage",
+          "label": "管理应用市场",
+          "description": "修改市场应用及安装记录；包含查看权限"
+        }
+      ]
+    },
+    {
+      "key": "ai",
+      "label": "AI 员工",
+      "description": "使用会话还需勾选下方具体 AI 员工",
+      "items": [
+        {
+          "key": "agent.window",
+          "label": "使用 Agent 窗口",
+          "description": "创建和使用本人会话；还需具体 AI 员工使用权限"
+        },
+        {
+          "key": "settings.ai-employees.view",
+          "label": "查看 AI 员工市场",
+          "description": "查看 AI 员工市场、安装与授权信息"
+        },
+        {
+          "key": "settings.ai-employees.manage",
+          "label": "管理 AI 员工市场",
+          "description": "修改 AI 员工市场、安装与授权信息；包含查看权限"
+        },
+        {
+          "key": "settings.models.view",
+          "label": "查看模型与插件",
+          "description": "查看模型供应商、模型路由与插件配置"
+        },
+        {
+          "key": "settings.models.manage",
+          "label": "管理模型与插件",
+          "description": "修改模型供应商、模型路由与插件配置；包含查看权限"
+        },
+        {
+          "key": "settings.agent-archive.view",
+          "label": "查看归档会话",
+          "description": "查看本人归档会话；管理可恢复和永久删除"
+        },
+        {
+          "key": "settings.agent-archive.manage",
+          "label": "管理归档会话",
+          "description": "修改本人归档会话；管理可恢复和永久删除；包含查看权限"
+        }
+      ]
+    },
+    {
+      "key": "infrastructure",
+      "label": "基础设施",
+      "description": "数据库与缓存配置仅本地部署许可证可用",
+      "items": [
+        {
+          "key": "settings.database.view",
+          "label": "查看数据库与缓存",
+          "description": "查看 PostgreSQL、Valkey 连接配置"
+        },
+        {
+          "key": "settings.database.manage",
+          "label": "管理数据库与缓存",
+          "description": "修改 PostgreSQL、Valkey 连接配置；包含查看权限"
+        },
+        {
+          "key": "settings.logs.view",
+          "label": "查看平台日志",
+          "description": "查看平台运行日志；管理可清理日志"
+        },
+        {
+          "key": "settings.logs.manage",
+          "label": "管理平台日志",
+          "description": "修改平台运行日志；管理可清理日志；包含查看权限"
+        },
+        {
+          "key": "settings.recycle-bin.view",
+          "label": "查看回收站",
+          "description": "查看回收站条目及策略；管理可恢复、删除和清空"
+        },
+        {
+          "key": "settings.recycle-bin.manage",
+          "label": "管理回收站",
+          "description": "修改回收站条目及策略；管理可恢复、删除和清空；包含查看权限"
+        }
+      ]
+    },
+    {
+      "key": "communication",
+      "label": "通知与通讯",
+      "description": "管理配置与日常消息、邮件使用相互独立",
+      "items": [
+        {
+          "key": "settings.notifications.view",
+          "label": "查看通知配置",
+          "description": "查看平台通知配置"
+        },
+        {
+          "key": "settings.notifications.manage",
+          "label": "管理通知配置",
+          "description": "修改平台通知配置；包含查看权限"
+        },
+        {
+          "key": "settings.communication.view",
+          "label": "查看通讯配置",
+          "description": "查看通讯模块及存储统计；管理可清理通讯数据"
+        },
+        {
+          "key": "settings.communication.manage",
+          "label": "管理通讯配置",
+          "description": "修改通讯模块及存储统计；管理可清理通讯数据；包含查看权限"
+        }
+      ]
+    },
+    {
+      "key": "identity",
+      "label": "身份与用户",
+      "description": "查看与修改身份源、用户和角色分别授权",
+      "items": [
+        {
+          "key": "settings.identity-source.view",
+          "label": "查看身份源与组织",
+          "description": "查看身份源配置、组织架构和同步"
+        },
+        {
+          "key": "settings.identity-source.manage",
+          "label": "管理身份源与组织",
+          "description": "修改身份源配置、组织架构和同步；包含查看权限"
+        },
+        {
+          "key": "settings.users.view",
+          "label": "查看用户",
+          "description": "查看用户资料、账号状态及角色绑定"
+        },
+        {
+          "key": "settings.users.manage",
+          "label": "管理用户",
+          "description": "管理用户资料与账号状态；角色分配另需权限分配管理权限，不能管理权限高于自己的用户"
+        },
+        {
+          "key": "settings.roles.view",
+          "label": "查看角色",
+          "description": "查看角色定义和状态"
+        },
+        {
+          "key": "settings.roles.manage",
+          "label": "管理角色",
+          "description": "修改角色定义和状态；包含查看权限"
+        },
+        {
+          "key": "settings.permissions.view",
+          "label": "查看权限分配",
+          "description": "查看角色的应用、平台及 AI 员工权限"
+        },
+        {
+          "key": "settings.permissions.manage",
+          "label": "管理权限分配",
+          "description": "分配本人已拥有的权限；不能修改系统管理员及超出本人权限的角色"
+        }
+      ]
+    },
+    {
+      "key": "license",
+      "label": "许可证",
+      "description": "偏好设置和关于平台向所有登录用户开放",
+      "items": [
+        {
+          "key": "settings.license.manage",
+          "label": "管理许可证",
+          "description": "激活、替换或更新平台许可证"
+        }
+      ]
+    }
+  ],
+  "legacy": {
+    "settings.database": [
+      "settings.database.manage",
+      "settings.logs.manage",
+      "settings.recycle-bin.manage"
+    ],
+    "settings.agent": [
+      "settings.ai-employees.manage",
+      "settings.models.manage",
+      "settings.agent-archive.manage",
+      "settings.notifications.manage",
+      "settings.communication.manage"
+    ],
+    "settings.identity-source": [
+      "settings.identity-source.manage"
+    ],
+    "settings.organization": [
+      "settings.identity-source.manage"
+    ],
+    "settings.roles": [
+      "settings.roles.manage",
+      "settings.permissions.manage"
+    ],
+    "settings.users": [
+      "settings.users.manage"
+    ],
+    "settings.license": [
+      "settings.license.manage"
+    ],
+    "apps.import": [
+      "market.apps.manage"
+    ]
+  }
+}

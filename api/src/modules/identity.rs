@@ -1,3 +1,4 @@
+use sea_orm::ConnectionTrait;
 use std::collections::{HashMap, HashSet};
 
 use argon2::{
@@ -6,12 +7,13 @@ use argon2::{
 };
 use axum::Json;
 use axum::extract::{Path, State};
+use axum::http::HeaderMap;
 use hmac::{Hmac, Mac};
 use reqwest::Client;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+    TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
@@ -358,6 +360,10 @@ pub(crate) struct UpdateLocalRoleRequest {
 #[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct UpdateUserRequest {
+    /// Write-only SMTP credential; omitted/empty keeps existing authorization.
+    smtp_password: Option<String>,
+    #[serde(default)]
+    clear_smtp_authorization: bool,
     display_name: Option<String>,
     mobile: Option<String>,
     telephone: Option<String>,
@@ -380,6 +386,12 @@ pub(crate) struct CreateLocalUserRequest {
     email: Option<String>,
     title: Option<String>,
     role_ids: Vec<String>,
+    telephone: Option<String>,
+    job_number: Option<String>,
+    work_place: Option<String>,
+    remark: Option<String>,
+    status: Option<String>,
+    email_addresses: Option<Vec<EmailAddressRequest>>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -408,6 +420,9 @@ pub(crate) struct LocalLoginRequest {
 pub(crate) struct EmailAddressRequest {
     label: String,
     email: String,
+    smtp_password: Option<String>,
+    #[serde(default)]
+    clear_smtp_authorization: bool,
 }
 
 pub(crate) async fn list_organization_units(
@@ -525,6 +540,7 @@ pub(crate) async fn create_local_organization_unit(
 
 pub(crate) async fn create_local_user(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<CreateLocalUserRequest>,
 ) -> Result<Json<ApiResponse<DingTalkLoginUserResponse>>, AppError> {
     let username = payload.username.trim();
@@ -534,7 +550,14 @@ pub(crate) async fn create_local_user(
         return Err(AppError::BadRequest("账号、密码和姓名不能为空".to_string()));
     }
     let roles = validate_role_ids(&payload.role_ids)?;
-    ensure_roles_match_source(&state.db, &roles, "local").await?;
+    ensure_assignable_roles(&state, &headers, &roles).await?;
+    let email_addresses = payload
+        .email_addresses
+        .as_ref()
+        .map(validate_email_addresses)
+        .transpose()?
+        .unwrap_or_default();
+    let status = validate_user_status(payload.status.as_deref().unwrap_or("active"))?;
     // Every local account belongs to the platform's local tenant from its
     // first request. Without both fields runtime identity resolution rejects
     // a newly created user before it can access any tenant-scoped feature.
@@ -553,13 +576,13 @@ pub(crate) async fn create_local_user(
         display_name: Set(name.to_string()),
         mobile: Set(payload.mobile.and_then(|v| optional_text(&v))),
         state_code: Set(None),
-        telephone: Set(None),
+        telephone: Set(payload.telephone.and_then(|v| optional_text(&v))),
         email: Set(payload.email.and_then(|v| optional_text(&v))),
         avatar_url: Set(None),
-        job_number: Set(None),
+        job_number: Set(payload.job_number.and_then(|v| optional_text(&v))),
         title: Set(payload.title.and_then(|v| optional_text(&v))),
-        work_place: Set(None),
-        remark: Set(None),
+        work_place: Set(payload.work_place.and_then(|v| optional_text(&v))),
+        remark: Set(payload.remark.and_then(|v| optional_text(&v))),
         hired_at: Set(None),
         manager_external_user_id: Set(None),
         primary_organization_unit_id: Set(Some(tenant.id)),
@@ -568,7 +591,7 @@ pub(crate) async fn create_local_user(
         is_boss: Set(false),
         real_authed: Set(false),
         extension_json: Set(serde_json::json!({"source":"local"})),
-        status: Set("active".to_string()),
+        status: Set(status.to_string()),
         created_at: Set(now.into()),
         updated_at: Set(now.into()),
     }
@@ -602,6 +625,18 @@ pub(crate) async fn create_local_user(
         .insert(&tx)
         .await?;
     }
+    for address in email_addresses {
+        iam_user_email_address_entity::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            user_id: Set(id),
+            label: Set(address.label),
+            email: Set(address.email),
+            created_at: Set(now.into()),
+            updated_at: Set(now.into()),
+        }
+        .insert(&tx)
+        .await?;
+    }
     tx.commit().await?;
     Ok(Json(success_response(
         "local user created",
@@ -615,7 +650,17 @@ pub(crate) async fn create_local_user(
 
 pub(crate) async fn initialize_local_credentials(
     State(state): State<AppState>,
+    headers: HeaderMap,
 ) -> Result<Json<ApiResponse<InitializeLocalCredentialsResponse>>, AppError> {
+    // Bulk credential initialization may affect privileged accounts.
+    if !crate::platform::authorization::grants(&headers, &state)
+        .await?
+        .contains("*")
+    {
+        return Err(AppError::Forbidden(
+            "仅系统管理员可以批量初始化登录凭据".into(),
+        ));
+    }
     let users = iam_user_entity::Entity::find()
         .order_by_asc(iam_user_entity::Column::DisplayName)
         .all(&state.db)
@@ -906,6 +951,7 @@ pub(crate) async fn list_roles(
 
 pub(crate) async fn update_user(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(user_id): Path<String>,
     Json(payload): Json<UpdateUserRequest>,
 ) -> Result<Json<ApiResponse<UserResponse>>, AppError> {
@@ -915,6 +961,19 @@ pub(crate) async fn update_user(
         .one(&state.db)
         .await?
         .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
+    let current_roles = iam_user_role_entity::Entity::find()
+        .filter(iam_user_role_entity::Column::UserId.eq(id))
+        .all(&state.db)
+        .await?;
+    ensure_manageable_roles(
+        &state,
+        &headers,
+        &current_roles
+            .into_iter()
+            .map(|r| r.role_id)
+            .collect::<Vec<_>>(),
+    )
+    .await?;
     let email_addresses = payload
         .email_addresses
         .as_ref()
@@ -925,16 +984,54 @@ pub(crate) async fn update_user(
         .as_ref()
         .map(|ids| validate_role_ids(ids))
         .transpose()?;
-    let user_source = iam_external_identity_entity::Entity::find()
-        .filter(iam_external_identity_entity::Column::UserId.eq(id))
-        .one(&state.db)
-        .await?
-        .map(|identity| identity.provider)
-        .unwrap_or_else(|| "local".to_string());
-    if let Some(role_ids) = &role_ids {
-        ensure_roles_match_source(&state.db, role_ids, &user_source).await?;
+    if let Some(ref ids) = role_ids {
+        let old = iam_user_role_entity::Entity::find()
+            .filter(iam_user_role_entity::Column::UserId.eq(id))
+            .all(&state.db)
+            .await?;
+        let old_ids = old.into_iter().map(|r| r.role_id).collect::<HashSet<_>>();
+        if ids.iter().copied().collect::<HashSet<_>>() != old_ids {
+            ensure_assignable_roles(&state, &headers, ids).await?;
+            ensure_assignable_roles(&state, &headers, &old_ids.into_iter().collect::<Vec<_>>())
+                .await?;
+        }
     }
     let transaction = state.db.begin().await?;
+    let smtp_email = payload.email.as_deref().or(user.email.as_deref());
+    crate::modules::mail::save_authorization(
+        &transaction,
+        id,
+        smtp_email,
+        payload.smtp_password.as_deref(),
+        payload.clear_smtp_authorization,
+    )
+    .await?;
+    if let Some(addresses) = payload.email_addresses.as_ref() {
+        for address in addresses {
+            crate::modules::mail::save_authorization(
+                &transaction,
+                id,
+                Some(&address.email),
+                address.smtp_password.as_deref(),
+                address.clear_smtp_authorization,
+            )
+            .await?;
+        }
+        let mut retained = addresses
+            .iter()
+            .map(|address| address.email.trim().to_ascii_lowercase())
+            .collect::<Vec<_>>();
+        if let Some(email) = smtp_email {
+            retained.push(email.trim().to_ascii_lowercase());
+        }
+        transaction
+            .execute_raw(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "DELETE FROM user_smtp_authorizations WHERE user_id = $1 AND NOT (email = ANY($2))",
+                vec![id.into(), retained.into()],
+            ))
+            .await?;
+    }
     let mut active: iam_user_entity::ActiveModel = user.into();
     if let Some(value) = payload.display_name {
         if value.trim().is_empty() {
@@ -964,9 +1061,7 @@ pub(crate) async fn update_user(
         active.remark = Set(optional_text(&value));
     }
     if let Some(status) = payload.status {
-        if !matches!(status.as_str(), "active" | "inactive") {
-            return Err(AppError::BadRequest("invalid user status".to_string()));
-        }
+        validate_user_status(&status)?;
         active.status = Set(status);
     }
     active.updated_at = Set(chrono::Utc::now().into());
@@ -1054,6 +1149,13 @@ pub(crate) async fn update_user(
     )))
 }
 
+fn validate_user_status(status: &str) -> Result<&str, AppError> {
+    if !matches!(status, "active" | "inactive") {
+        return Err(AppError::BadRequest("invalid user status".to_string()));
+    }
+    Ok(status)
+}
+
 fn validate_role_ids(ids: &Vec<String>) -> Result<Vec<Uuid>, AppError> {
     let mut result = Vec::with_capacity(ids.len());
     let mut seen = std::collections::HashSet::new();
@@ -1068,30 +1170,6 @@ fn validate_role_ids(ids: &Vec<String>) -> Result<Vec<Uuid>, AppError> {
         result.push(role_id);
     }
     Ok(result)
-}
-
-async fn ensure_roles_match_source<C>(
-    db: &C,
-    role_ids: &[Uuid],
-    expected_source: &str,
-) -> Result<(), AppError>
-where
-    C: ConnectionTrait,
-{
-    if role_ids.is_empty() {
-        return Ok(());
-    }
-    let count = iam_role_entity::Entity::find()
-        .filter(iam_role_entity::Column::Id.is_in(role_ids.to_vec()))
-        .filter(iam_role_entity::Column::SourceType.eq(expected_source))
-        .count(db)
-        .await?;
-    if count != role_ids.len() as u64 {
-        return Err(AppError::BadRequest(
-            "roles must match the user's identity source".to_string(),
-        ));
-    }
-    Ok(())
 }
 
 fn validate_email_addresses(
@@ -1126,6 +1204,7 @@ fn validate_email_addresses(
 
 pub(crate) async fn delete_user(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(user_id): Path<String>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
     if user_id == "00000000-0000-4000-8000-000000000001" {
@@ -1135,6 +1214,16 @@ pub(crate) async fn delete_user(
     }
     let id =
         Uuid::parse_str(&user_id).map_err(|_| AppError::NotFound("user not found".to_string()))?;
+    let roles = iam_user_role_entity::Entity::find()
+        .filter(iam_user_role_entity::Column::UserId.eq(id))
+        .all(&state.db)
+        .await?;
+    ensure_manageable_roles(
+        &state,
+        &headers,
+        &roles.into_iter().map(|r| r.role_id).collect::<Vec<_>>(),
+    )
+    .await?;
     let result = iam_user_entity::Entity::delete_by_id(id)
         .exec(&state.db)
         .await?;
@@ -1193,6 +1282,7 @@ pub(crate) async fn create_local_role(
 
 pub(crate) async fn update_local_role(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(role_id): Path<String>,
     Json(payload): Json<UpdateLocalRoleRequest>,
 ) -> Result<Json<ApiResponse<RoleResponse>>, AppError> {
@@ -1203,6 +1293,7 @@ pub(crate) async fn update_local_role(
         .await?
         .ok_or_else(|| AppError::NotFound("role not found".to_string()))?;
     ensure_editable_local_role(&role)?;
+    ensure_manageable_roles(&state, &headers, &[id]).await?;
     let mut active: iam_role_entity::ActiveModel = role.into();
     if let Some(name) = payload.name {
         let name = name.trim();
@@ -1250,6 +1341,7 @@ pub(crate) async fn update_local_role(
 
 pub(crate) async fn delete_local_role(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(role_id): Path<String>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
     let id =
@@ -1259,6 +1351,7 @@ pub(crate) async fn delete_local_role(
         .await?
         .ok_or_else(|| AppError::NotFound("role not found".to_string()))?;
     ensure_editable_local_role(&role)?;
+    ensure_manageable_roles(&state, &headers, &[id]).await?;
     iam_role_entity::Entity::delete_by_id(id)
         .exec(&state.db)
         .await?;
@@ -1388,4 +1481,100 @@ pub(crate) async fn resolve_dingtalk_login(
 
 fn optional_text(value: &str) -> Option<String> {
     (!value.trim().is_empty()).then(|| value.trim().to_string())
+}
+
+#[cfg(test)]
+mod user_creation_tests {
+    use super::*;
+
+    #[test]
+    fn creation_accepts_the_complete_editable_profile() {
+        let body = serde_json::json!({
+            "username": "alice", "password": "secret", "displayName": "Alice",
+            "mobile": "138", "email": "alice@example.com", "title": "工程师",
+            "telephone": "1001", "jobNumber": "A001", "workPlace": "上海",
+            "remark": "备注", "status": "inactive", "roleIds": [],
+            "emailAddresses": [{"label": " 工作 ", "email": " Alice@Example.COM "}]
+        });
+        let create: CreateLocalUserRequest = serde_json::from_value(body.clone()).unwrap();
+        let edit: UpdateUserRequest = serde_json::from_value(body).unwrap();
+        assert_eq!(create.telephone, edit.telephone);
+        assert_eq!(create.job_number, edit.job_number);
+        assert_eq!(create.work_place, edit.work_place);
+        assert_eq!(create.remark, edit.remark);
+        assert_eq!(create.status, edit.status);
+        let addresses = validate_email_addresses(create.email_addresses.as_ref().unwrap()).unwrap();
+        assert_eq!(addresses[0].label, "工作");
+        assert_eq!(addresses[0].email, "alice@example.com");
+    }
+
+    #[test]
+    fn creation_remains_compatible_with_basic_requests() {
+        let create: CreateLocalUserRequest = serde_json::from_value(serde_json::json!({
+            "username": "alice", "password": "secret", "displayName": "Alice", "roleIds": []
+        }))
+        .unwrap();
+        assert!(create.email_addresses.is_none());
+        assert_eq!(
+            validate_user_status(create.status.as_deref().unwrap_or("active")).unwrap(),
+            "active"
+        );
+        assert!(validate_user_status("deleted").is_err());
+    }
+
+    #[test]
+    fn creation_rejects_invalid_and_duplicate_additional_emails() {
+        for addresses in [
+            serde_json::json!([{ "label": "工作", "email": "invalid" }]),
+            serde_json::json!([{ "label": "工作", "email": "alice@example.com" }, { "label": "备用", "email": "ALICE@example.com" }]),
+        ] {
+            let addresses: Vec<EmailAddressRequest> = serde_json::from_value(addresses).unwrap();
+            assert!(validate_email_addresses(&addresses).is_err());
+        }
+    }
+}
+
+async fn ensure_assignable_roles(
+    state: &AppState,
+    headers: &HeaderMap,
+    ids: &[Uuid],
+) -> Result<(), AppError> {
+    let actor = crate::platform::authorization::grants(headers, state).await?;
+    if actor.contains("*") {
+        return Ok(());
+    }
+    if !ids.is_empty() && !actor.contains("settings.permissions.manage") {
+        return Err(AppError::Forbidden("分配角色需要权限分配管理权限".into()));
+    }
+    ensure_manageable_roles(state, headers, ids).await
+}
+
+async fn ensure_manageable_roles(
+    state: &AppState,
+    headers: &HeaderMap,
+    ids: &[Uuid],
+) -> Result<(), AppError> {
+    let actor = crate::platform::authorization::grants(headers, state).await?;
+    if actor.contains("*") {
+        return Ok(());
+    }
+    let roles = iam_role_entity::Entity::find()
+        .filter(iam_role_entity::Column::Id.is_in(ids.to_vec()))
+        .all(&state.db)
+        .await?;
+    if roles
+        .iter()
+        .any(|r| r.external_id == "system-administrator")
+    {
+        return Err(AppError::Forbidden(
+            "仅系统管理员可管理系统管理员角色及其成员".into(),
+        ));
+    }
+    let target = crate::platform::platform_permissions::effective(
+        crate::platform::rbac::grants_for_roles(&state.db, ids.to_vec()).await?,
+    );
+    if !crate::platform::platform_permissions::can_delegate(&actor, &target) {
+        return Err(AppError::Forbidden("不能分配超出本人权限的角色".into()));
+    }
+    Ok(())
 }

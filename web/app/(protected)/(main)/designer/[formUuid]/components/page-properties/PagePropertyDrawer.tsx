@@ -19,10 +19,11 @@ import {
   PanelSwitch,
   PropertyFold,
   PropertyPanel,
+  PropertyPanelHeader,
   PropertyRow,
+  PropertySection as PageSection,
   TextWithActions,
 } from "../field-properties/PropertyLayout";
-import { MySurface } from "@shared/ui/MySurface";
 
 type PagePropertyPanelProps = {
   formName: string;
@@ -79,12 +80,12 @@ export function PagePropertyPanel({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col text-[12px] text-[var(--color-text-primary)]">
-      <MySurface className="p-1">
-        <h2 className="truncate text-xs font-medium">{formName || "表单属性"}</h2>
-        <div className="text-[10px] text-[var(--color-text-secondary)]">表单属性与校验配置</div>
-      </MySurface>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+    <div className="flex h-full min-h-0 flex-col gap-2 overflow-hidden">
+      <PropertyPanelHeader
+        title={formName || "表单属性"}
+        description="表单属性与校验配置"
+      />
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
         <PropertyFold title="表单校验">
           <PageSection title="公式校验">
             <FormulaValidationList
@@ -532,28 +533,6 @@ function ActionSection({
   );
 }
 
-function PageSection({
-  children,
-  rightIcon,
-  title,
-}: {
-  children: React.ReactNode;
-  rightIcon?: React.ReactNode;
-  title: string;
-}) {
-  return (
-    <section className="space-y-2">
-      <div className="flex h-8 items-center justify-between border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-2 text-sm font-semibold text-[var(--color-text-primary)]">
-        <span>{title}</span>
-        {rightIcon ? (
-          <span className="text-[var(--color-text-disabled)]">{rightIcon}</span>
-        ) : null}
-      </div>
-      <div className="space-y-2 px-1 pb-2">{children}</div>
-    </section>
-  );
-}
-
 function RuleList({
   emphasis,
   rules,
@@ -576,7 +555,7 @@ function RuleList({
       {rules.map((rule) => (
         <div
           key={rule.id}
-          className="flex min-w-0 items-center gap-2 px-1 text-sm text-[var(--color-text-primary)]"
+          className="flex min-w-0 items-center gap-1 text-[11px] text-[var(--color-text-primary)]"
         >
           <Input
             aria-label="规则名称"

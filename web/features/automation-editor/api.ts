@@ -9,11 +9,14 @@ export {
   listDetailForms,
   listForms,
   listUsers,
+  listRoles,
   restoreAutomationFlowVersion,
   retryAutomationFlowRun,
   retryAutomationFlowRunNode,
+  retryAutomationVisit,
+  resolveAutomationExecution,
   updateAutomationFlow,
-} from "@/app/lib/api-client";
+} from "@/app/lib/http";
 export type {
   ApiAutomationRun,
   ApiAutomationRunNode,
@@ -25,6 +28,7 @@ export type {
   FormSummary,
   AutomationFlow,
   UpdateAutomationFlowRequest,
-} from "@/app/lib/api-client";
+  RoleResponse,
+} from "@/app/lib/http";
 
-export type { ApiAutomationFlowList as AutomationFlowList } from "@/app/lib/api-client";
+export type { ApiAutomationFlowList as AutomationFlowList } from "@/app/lib/http";

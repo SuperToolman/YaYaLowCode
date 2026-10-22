@@ -1,11 +1,10 @@
 "use client";
 
-import { Avatar, ListBox, Select } from "@heroui/react";
+import { Avatar, FieldError, ListBox, Select } from "@heroui/react";
 import { useEffect, useMemo, useState, type Key } from "react";
 import { fetchRuntimeIdentityCatalog } from "@/features/form-runtime/api";
 import type { IdentityRole, IdentityUser, RuntimeIdentityCatalog } from "@/features/form-runtime/types";
 import type { RuntimeFieldProps, RuntimeSchemaField } from "./RuntimeFormRenderer";
-import styles from "./RuntimeFormControls.module.css";
 
 let catalogPromise: Promise<RuntimeIdentityCatalog> | null = null;
 
@@ -23,12 +22,14 @@ function loadIdentityCatalog() {
 
 export function RuntimeMemberSelect({
   field,
+  errorMessage,
   onChange,
   placeholder,
   props,
   value,
 }: {
   field: RuntimeSchemaField;
+  errorMessage?: string;
   onChange: (value: string | string[]) => void;
   placeholder: string;
   props: RuntimeFieldProps;
@@ -114,7 +115,8 @@ export function RuntimeMemberSelect({
     return (
       <Select
         aria-label={field.label}
-        className={styles["form-runtime-controls__select-field"]}
+        isInvalid={Boolean(errorMessage)}
+        validationBehavior="aria"
         selectionMode="multiple"
         value={selectedValues}
         onChange={(keys) => onChange(keys.map(String))}
@@ -189,6 +191,7 @@ export function RuntimeMemberSelect({
             })}
           </ListBox>
         </Select.Popover>
+        <FieldError>{errorMessage}</FieldError>
       </Select>
     );
   }
@@ -199,7 +202,8 @@ export function RuntimeMemberSelect({
   return (
     <Select
       aria-label={field.label}
-      className={styles["form-runtime-controls__select-field"]}
+      isInvalid={Boolean(errorMessage)}
+      validationBehavior="aria"
       selectedKey={selectedValue || null}
       onSelectionChange={(key: Key | null) =>
         onChange(key === null ? "" : String(key))
@@ -239,6 +243,7 @@ export function RuntimeMemberSelect({
           })}
         </ListBox>
       </Select.Popover>
+      <FieldError>{errorMessage}</FieldError>
     </Select>
   );
 }

@@ -1,4 +1,6 @@
 "use client";
+import { assertApiEnvelope } from "@lib/api-request";
+
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -42,9 +44,8 @@ export function FieldOutlinePage() {
     setIsLoading(true);
     setErrorMessage("");
     try {
-      const { data, error } = await listApps({ responseStyle: "fields" });
-      if (error || !data || data.code !== 0 || !data.data)
-        throw new Error("load apps failed");
+      const { data, error , response: httpResponse0 } = await listApps({ responseStyle: "fields" });
+      assertApiEnvelope(data, error, httpResponse0);
 
       const appList = data.data;
       const results = await Promise.all(

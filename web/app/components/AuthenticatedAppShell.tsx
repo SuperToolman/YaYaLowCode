@@ -18,7 +18,7 @@ function AuthBoundary({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     const refreshLicense = () => {
-      void getLicenseStatus<{ valid?: boolean; updateAvailable?: boolean }>()
+      void getLicenseStatus()
         .then((payload) => {
             if (!cancelled) {
               setLicenseValid(payload.valid === true);

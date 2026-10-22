@@ -210,6 +210,10 @@ export function AppMainContent({ children }: { children: ReactNode }) {
   const isAutomationEditor = /\/automations\/[^/]+$/.test(pathname);
   const lockOuterScroll = isFormPage || isAutomationList || isAutomationEditor;
 
+  if (/\/settings(?:\/|$)/.test(pathname)) {
+    return <div className="min-h-0 flex-1 overflow-hidden">{children}</div>;
+  }
+
   return (
     <>
       <Card

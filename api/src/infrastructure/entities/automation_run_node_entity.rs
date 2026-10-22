@@ -6,6 +6,9 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub run_id: Uuid,
+    pub branch_id: Option<Uuid>,
+    pub visit_id: Option<Uuid>,
+    pub attempt: i32,
     pub node_key: String,
     pub node_kind: String,
     pub node_label: String,

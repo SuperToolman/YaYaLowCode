@@ -196,3 +196,138 @@ html[data-resolved-theme="dark"] {
   --form-type-defined-icon-color: #e0b5ff;
   --form-type-detail-icon-color: color-mix(in srgb, var(--nav-form-icon) 70%, var(--color-bg-surface));
 }
+
+/* Automation type tags */
+:root,
+html[data-resolved-theme="light"] {
+  --automation-type-trigger-foreground: #1e5ca8;
+  --automation-type-trigger-background: #e6f0ff;
+  --automation-type-manual-foreground: #7c3aad;
+  --automation-type-manual-background: #f3e8ff;
+  --automation-type-process-foreground: #147346;
+  --automation-type-process-background: #e4f6ec;
+}
+
+html[data-resolved-theme="dark"] {
+  --automation-type-trigger-foreground: #9bc7ff;
+  --automation-type-trigger-background: #1d3554;
+  --automation-type-manual-foreground: #d6aff5;
+  --automation-type-manual-background: #3c2850;
+  --automation-type-process-foreground: #8ee6b5;
+  --automation-type-process-background: #173a2a;
+}
+
+/* Field component tags: every component owns its color pair.
+ * Keep these independent of the primary/accent palette so theme switching
+ * does not collapse unrelated component types to the same color.
+ */
+:root,
+html[data-resolved-theme="light"] {
+  --field-type-default-foreground: #526174;
+  --field-type-default-background: #e9eef4;
+  --field-type-singleLineText-foreground: hsl(215 68% 33%);
+  --field-type-singleLineText-background: hsl(215 76% 94%);
+  --field-type-multiLineText-foreground: hsl(185 68% 33%);
+  --field-type-multiLineText-background: hsl(185 76% 94%);
+  --field-type-richText-foreground: hsl(310 68% 33%);
+  --field-type-richText-background: hsl(310 76% 94%);
+  --field-type-number-foreground: hsl(145 68% 33%);
+  --field-type-number-background: hsl(145 76% 94%);
+  --field-type-radio-foreground: hsl(32 68% 33%);
+  --field-type-radio-background: hsl(32 76% 94%);
+  --field-type-checkbox-foreground: hsl(55 68% 33%);
+  --field-type-checkbox-background: hsl(55 76% 94%);
+  --field-type-select-foreground: hsl(270 68% 33%);
+  --field-type-select-background: hsl(270 76% 94%);
+  --field-type-multiSelect-foreground: hsl(290 68% 33%);
+  --field-type-multiSelect-background: hsl(290 76% 94%);
+  --field-type-date-foreground: hsl(345 68% 33%);
+  --field-type-date-background: hsl(345 76% 94%);
+  --field-type-dateRange-foreground: hsl(15 68% 33%);
+  --field-type-dateRange-background: hsl(15 76% 94%);
+  --field-type-member-foreground: hsl(165 68% 33%);
+  --field-type-member-background: hsl(165 76% 94%);
+  --field-type-department-foreground: hsl(90 68% 33%);
+  --field-type-department-background: hsl(90 76% 94%);
+  --field-type-countryCity-foreground: hsl(195 68% 33%);
+  --field-type-countryCity-background: hsl(195 76% 94%);
+  --field-type-cascader-foreground: hsl(245 68% 33%);
+  --field-type-cascader-background: hsl(245 76% 94%);
+  --field-type-attachment-foreground: hsl(25 68% 33%);
+  --field-type-attachment-background: hsl(25 76% 94%);
+  --field-type-imageUpload-foreground: hsl(325 68% 33%);
+  --field-type-imageUpload-background: hsl(325 76% 94%);
+  --field-type-serialNumber-foreground: hsl(65 68% 33%);
+  --field-type-serialNumber-background: hsl(65 76% 94%);
+  --field-type-subform-foreground: hsl(280 68% 33%);
+  --field-type-subform-background: hsl(280 76% 94%);
+  --field-type-associationFormField-foreground: hsl(170 68% 33%);
+  --field-type-associationFormField-background: hsl(170 76% 94%);
+  --field-type-groupContainer-foreground: hsl(225 68% 33%);
+  --field-type-groupContainer-background: hsl(225 76% 94%);
+  --field-type-description-foreground: hsl(210 68% 33%);
+  --field-type-description-background: hsl(210 76% 94%);
+  --field-type-html-foreground: hsl(5 68% 33%);
+  --field-type-html-background: hsl(5 76% 94%);
+  --field-type-tsx-foreground: hsl(255 68% 33%);
+  --field-type-tsx-background: hsl(255 76% 94%);
+  --field-type-link-foreground: hsl(205 68% 33%);
+  --field-type-link-background: hsl(205 76% 94%);
+  --field-type-button-foreground: hsl(355 68% 33%);
+  --field-type-button-background: hsl(355 76% 94%);
+}
+
+html[data-resolved-theme="dark"] {
+  --field-type-default-foreground: #c3cedd;
+  --field-type-default-background: #303641;
+  --field-type-singleLineText-foreground: hsl(215 82% 78%);
+  --field-type-singleLineText-background: hsl(215 34% 22%);
+  --field-type-multiLineText-foreground: hsl(185 82% 78%);
+  --field-type-multiLineText-background: hsl(185 34% 22%);
+  --field-type-richText-foreground: hsl(310 82% 78%);
+  --field-type-richText-background: hsl(310 34% 22%);
+  --field-type-number-foreground: hsl(145 82% 78%);
+  --field-type-number-background: hsl(145 34% 22%);
+  --field-type-radio-foreground: hsl(32 82% 78%);
+  --field-type-radio-background: hsl(32 34% 22%);
+  --field-type-checkbox-foreground: hsl(55 82% 78%);
+  --field-type-checkbox-background: hsl(55 34% 22%);
+  --field-type-select-foreground: hsl(270 82% 78%);
+  --field-type-select-background: hsl(270 34% 22%);
+  --field-type-multiSelect-foreground: hsl(290 82% 78%);
+  --field-type-multiSelect-background: hsl(290 34% 22%);
+  --field-type-date-foreground: hsl(345 82% 78%);
+  --field-type-date-background: hsl(345 34% 22%);
+  --field-type-dateRange-foreground: hsl(15 82% 78%);
+  --field-type-dateRange-background: hsl(15 34% 22%);
+  --field-type-member-foreground: hsl(165 82% 78%);
+  --field-type-member-background: hsl(165 34% 22%);
+  --field-type-department-foreground: hsl(90 82% 78%);
+  --field-type-department-background: hsl(90 34% 22%);
+  --field-type-countryCity-foreground: hsl(195 82% 78%);
+  --field-type-countryCity-background: hsl(195 34% 22%);
+  --field-type-cascader-foreground: hsl(245 82% 78%);
+  --field-type-cascader-background: hsl(245 34% 22%);
+  --field-type-attachment-foreground: hsl(25 82% 78%);
+  --field-type-attachment-background: hsl(25 34% 22%);
+  --field-type-imageUpload-foreground: hsl(325 82% 78%);
+  --field-type-imageUpload-background: hsl(325 34% 22%);
+  --field-type-serialNumber-foreground: hsl(65 82% 78%);
+  --field-type-serialNumber-background: hsl(65 34% 22%);
+  --field-type-subform-foreground: hsl(280 82% 78%);
+  --field-type-subform-background: hsl(280 34% 22%);
+  --field-type-associationFormField-foreground: hsl(170 82% 78%);
+  --field-type-associationFormField-background: hsl(170 34% 22%);
+  --field-type-groupContainer-foreground: hsl(225 82% 78%);
+  --field-type-groupContainer-background: hsl(225 34% 22%);
+  --field-type-description-foreground: hsl(210 82% 78%);
+  --field-type-description-background: hsl(210 34% 22%);
+  --field-type-html-foreground: hsl(5 82% 78%);
+  --field-type-html-background: hsl(5 34% 22%);
+  --field-type-tsx-foreground: hsl(255 82% 78%);
+  --field-type-tsx-background: hsl(255 34% 22%);
+  --field-type-link-foreground: hsl(205 82% 78%);
+  --field-type-link-background: hsl(205 34% 22%);
+  --field-type-button-foreground: hsl(355 82% 78%);
+  --field-type-button-background: hsl(355 34% 22%);
+}

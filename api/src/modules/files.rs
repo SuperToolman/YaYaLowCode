@@ -1,7 +1,7 @@
 use axum::{
     body::Body,
     extract::{Multipart, Path, State},
-    http::{HeaderMap, HeaderValue, header},
+    http::{HeaderMap, header},
     response::Response,
 };
 use chrono::Utc;
@@ -84,7 +84,7 @@ pub(crate) async fn upload_file(
             drop(target);
             let _ = tokio::fs::remove_file(&path).await;
             return Err(AppError::BadRequest(format!(
-                "file exceeds the {} MB limit",
+                "文件超过当前单文件 {} MB 上传上限",
                 max_upload_bytes / 1024 / 1024
             )));
         }
@@ -168,14 +168,11 @@ pub(crate) async fn download_file(
     let file = tokio::fs::File::open(std::path::PathBuf::from(root).join(storage_key))
         .await
         .map_err(|_| AppError::NotFound("stored file not found".to_string()))?;
-    let disposition = format!("attachment; filename=\"{}\"", name.replace('"', "_"));
+    let disposition = crate::shared::download_content_disposition(&name);
     Ok(Response::builder()
         .header(header::CONTENT_TYPE, mime_type)
         .header(header::CONTENT_LENGTH, byte_size)
-        .header(
-            header::CONTENT_DISPOSITION,
-            HeaderValue::from_str(&disposition).unwrap_or(HeaderValue::from_static("attachment")),
-        )
+        .header(header::CONTENT_DISPOSITION, disposition)
         .body(Body::from_stream(ReaderStream::new(file)))
         .unwrap())
 }

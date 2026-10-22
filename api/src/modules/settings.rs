@@ -1,10 +1,10 @@
 //! Local platform settings persisted by the Rust backend.
 
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::{Json, body::Body, response::Response};
 use sea_orm::{
-    ConnectOptions, ConnectionTrait, Database, DbBackend, Statement, TransactionTrait,
+    ConnectOptions, ConnectionTrait, Database, DbBackend, EntityTrait, Statement, TransactionTrait,
     Value as SeaValue,
 };
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,68 @@ use crate::platform::license::{
 use crate::platform::prelude::{ApiResponse, AppError, AppState};
 
 const MAX_SKILL_ARCHIVE_BYTES: u64 = 10 * 1024 * 1024;
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ValkeyRuntimeStatusResponse {
+    status: String,
+    latency_ms: Option<f64>,
+    message: String,
+}
+
+/// Report the connection used by cache operations, without exposing configuration or secrets.
+pub(crate) async fn get_valkey_runtime_status(
+    State(state): State<AppState>,
+) -> Json<ApiResponse<ValkeyRuntimeStatusResponse>> {
+    let Some(mut connection) = state.valkey.clone() else {
+        let configured = crate::platform::config::AppConfig::from_env()
+            .valkey_url
+            .is_some();
+        return Json(success_response(
+            "Valkey runtime status loaded",
+            ValkeyRuntimeStatusResponse {
+                status: if configured {
+                    "disconnected"
+                } else {
+                    "disabled"
+                }
+                .to_string(),
+                latency_ms: None,
+                message: if configured {
+                    "缓存连接未建立，请检查服务与配置后重启后端"
+                } else {
+                    "未启用 Valkey 缓存"
+                }
+                .to_string(),
+            },
+        ));
+    };
+    let started = std::time::Instant::now();
+    let result = tokio::time::timeout(
+        Duration::from_secs(3),
+        redis::cmd("PING").query_async::<String>(&mut connection),
+    )
+    .await;
+    let connected = matches!(result, Ok(Ok(ref reply)) if reply == "PONG");
+    Json(success_response(
+        "Valkey runtime status loaded",
+        ValkeyRuntimeStatusResponse {
+            status: if connected {
+                "connected"
+            } else {
+                "disconnected"
+            }
+            .to_string(),
+            latency_ms: connected.then(|| started.elapsed().as_secs_f64() * 1000.0),
+            message: if connected {
+                "缓存连接正常"
+            } else {
+                "缓存连接异常或检查超时"
+            }
+            .to_string(),
+        },
+    ))
+}
 
 #[derive(Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -379,6 +441,20 @@ pub(crate) async fn get_ai_employee_market()
         })
         .collect();
     Ok(Json(success_response("AI 员工市场已读取", items)))
+}
+
+pub(crate) async fn list_authorized_runtime_ai_employees(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<ApiResponse<Vec<RuntimeAiEmployee>>>, AppError> {
+    let grants = crate::platform::authorization::grants(&headers, &state).await?;
+    let Json(mut response) = list_runtime_ai_employees().await?;
+    if !grants.contains("*") {
+        if let Some(ref mut employees) = response.data {
+            employees.retain(|employee| grants.contains(&format!("agent:{}:use", employee.id)));
+        }
+    }
+    Ok(Json(response))
 }
 
 pub(crate) async fn list_runtime_ai_employees()
@@ -876,7 +952,8 @@ pub(crate) async fn update_notification_settings(
 }
 
 pub(crate) async fn get_database_settings(
-    axum::extract::State(_state): axum::extract::State<AppState>,
+    axum::extract::State(state): axum::extract::State<AppState>,
+    headers: HeaderMap,
 ) -> Result<Json<ApiResponse<DatabaseSettingsResponse>>, AppError> {
     require_local_deployment()?;
     let (settings, database_url) = match runtime_database_settings() {
@@ -886,8 +963,12 @@ pub(crate) async fn get_database_settings(
             None,
         ),
     };
-    let response = database_settings_response(settings, database_url.as_deref()).await;
+    let mut response = database_settings_response(settings, database_url.as_deref()).await;
 
+    let grants = authorization::grants(&headers, &state).await?;
+    if !grants.contains("*") && !grants.contains("settings.database.manage") {
+        response.password.clear();
+    }
     Ok(Json(success_response("database settings loaded", response)))
 }
 
@@ -1003,11 +1084,16 @@ async fn verify_database_url(database_url: &str) -> Result<(), sea_orm::DbErr> {
 }
 
 pub(crate) async fn get_valkey_settings(
-    axum::extract::State(_state): axum::extract::State<AppState>,
+    axum::extract::State(state): axum::extract::State<AppState>,
+    headers: HeaderMap,
 ) -> Result<Json<ApiResponse<ValkeySettingsResponse>>, AppError> {
     require_local_deployment()?;
     let settings = load_valkey_settings().unwrap_or_else(default_valkey_settings);
-    let response = valkey_settings_response(settings).await;
+    let mut response = valkey_settings_response(settings).await;
+    let grants = authorization::grants(&headers, &state).await?;
+    if !grants.contains("*") && !grants.contains("settings.database.manage") {
+        response.password.clear();
+    }
     Ok(Json(success_response("Valkey settings loaded", response)))
 }
 
@@ -1131,9 +1217,16 @@ async fn verify_valkey_connection(settings: &ValkeySettings) -> Result<(), AppEr
 }
 
 pub(crate) async fn get_identity_source_settings(
-    axum::extract::State(_state): axum::extract::State<AppState>,
+    axum::extract::State(state): axum::extract::State<AppState>,
+    headers: HeaderMap,
 ) -> Result<Json<ApiResponse<IdentitySourceSettings>>, AppError> {
-    let settings = load_identity_source_settings().unwrap_or_else(default_identity_source_settings);
+    let mut settings =
+        load_identity_source_settings().unwrap_or_else(default_identity_source_settings);
+    let grants = authorization::grants(&headers, &state).await?;
+    if !grants.contains("*") && !grants.contains("settings.identity-source.manage") {
+        settings.dingtalk.client_secret.clear();
+        settings.dingtalk.access_token.clear();
+    }
     Ok(Json(success_response(
         "identity source settings loaded",
         settings,
@@ -1199,6 +1292,7 @@ pub(crate) async fn get_role_permissions(
 
 pub(crate) async fn update_role_permissions(
     axum::extract::State(state): axum::extract::State<AppState>,
+    headers: HeaderMap,
     Path(role_id): Path<String>,
     Json(payload): Json<UpdateRolePermissionsRequest>,
 ) -> Result<Json<ApiResponse<RolePermissionsResponse>>, AppError> {
@@ -1217,10 +1311,28 @@ pub(crate) async fn update_role_permissions(
         .map(|grant| grant.trim().to_string())
         .filter(|grant| !grant.is_empty())
         .collect::<Vec<_>>();
-    grants.sort();
-    grants.dedup();
+    let normalized = crate::platform::platform_permissions::normalize(grants);
+    crate::platform::platform_permissions::validate_grants(&normalized)?;
+    let actor = authorization::grants(&headers, &state).await?;
     let parsed_role_id = uuid::Uuid::parse_str(&role_id)
         .map_err(|_| AppError::BadRequest("invalid role id".to_string()))?;
+    let role = crate::infrastructure::entities::iam_role_entity::Entity::find_by_id(parsed_role_id)
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("role not found".into()))?;
+    if role.external_id == "system-administrator" {
+        return Err(AppError::Forbidden("系统管理员权限不可修改".into()));
+    }
+    let existing = crate::platform::platform_permissions::effective(
+        crate::platform::rbac::grants_for_role(&state.db, parsed_role_id).await?,
+    );
+    if !crate::platform::platform_permissions::can_delegate(&actor, &existing)
+        || !crate::platform::platform_permissions::can_delegate(&actor, &normalized)
+    {
+        return Err(AppError::Forbidden("只能管理和分配本人已有的权限".into()));
+    }
+    grants = normalized.into_iter().collect();
+    grants.sort();
     crate::platform::rbac::replace_role_grants(&state.db, parsed_role_id, grants.clone()).await?;
     Ok(Json(success_response(
         "role permissions saved",

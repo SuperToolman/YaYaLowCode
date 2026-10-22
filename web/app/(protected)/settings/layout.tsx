@@ -8,6 +8,7 @@ import { ScrollShadow } from "@heroui/react";
 import { useAuth } from "@components/AuthProvider";
 import { PageContentLayout } from "@components/PageContentLayout";
 import { getLicenseStatus } from "@features/settings/api";
+import { settingsPagePermission } from "@features/identity-access/platform-permissions";
 import { Typography } from "@heroui/react";
 
 const settingsGroups = [
@@ -16,32 +17,32 @@ const settingsGroups = [
     items: [
       {
         href: "/settings/theme",
-        permission: "settings.license",
+        permission: "",
         label: "偏好设置",
         description: "主题模式与界面外观",
       },
       {
         href: "/settings/database",
-        permission: "settings.database",
+        permission: "settings.database.view",
         label: "数据库连接",
         description: "PostgreSQL 连接与凭据",
         localOnly: true,
       },
       {
         href: "/settings/notifications",
-        permission: "settings.agent",
+        permission: "settings.notifications.view",
         label: "通知设置",
         description: "站内通知与外部渠道预留",
       },
       {
         href: "/settings/logs",
-        permission: "settings.database",
+        permission: "settings.logs.view",
         label: "平台日志",
         description: "查看平台运行与异常事件",
       },
       {
         href: "/settings/about",
-        permission: "settings.license",
+        permission: "",
         label: "关于平台",
         description: "版本与许可证状态",
       },
@@ -52,25 +53,25 @@ const settingsGroups = [
     items: [
       {
         href: "/settings/identity-source",
-        permission: "settings.identity-source",
+        permission: "settings.identity-source.view",
         label: "身份源与组织架构",
         description: "平台账号、第三方身份源与组织层级",
       },
       {
         href: "/settings/roles",
-        permission: "settings.roles",
+        permission: "settings.roles.view",
         label: "角色管理",
         description: "角色与权限范围",
       },
       {
         href: "/settings/users",
-        permission: "settings.users",
+        permission: "settings.users.view",
         label: "用户管理",
         description: "账号、状态与归属",
       },
       {
         href: "/settings/permissions",
-        permission: "settings.roles",
+        permission: "settings.permissions.view",
         label: "权限设置",
         description: "按角色分配 RBAC 权限",
       },
@@ -80,14 +81,20 @@ const settingsGroups = [
     label: "AI员工",
     items: [
       {
+        href: "/settings/ai-employee-market",
+        permission: "settings.ai-employees.view",
+        label: "AI 员工市场",
+        description: "安装与管理已授权的 AI 员工",
+      },
+      {
         href: "/settings/model-providers",
-        permission: "settings.agent",
+        permission: "settings.models.view",
         label: "模型",
         description: "配置 Agent 使用的模型供应商与默认路由",
       },
       {
         href: "/settings/agent-archive",
-        permission: "settings.agent",
+        permission: "settings.agent-archive.view",
         label: "归档会话",
         description: "查看、恢复或永久移除已归档会话",
       },
@@ -98,7 +105,7 @@ const settingsGroups = [
     items: [
       {
         href: "/settings/communication",
-        permission: "settings.agent",
+        permission: "settings.communication.view",
         label: "通讯设置",
         description: "安装和管理通讯模块",
       },
@@ -112,12 +119,12 @@ export default function SettingsLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { permissions, permissionsReady } = useAuth();
+  const { permissionsReady, hasPermission } = useAuth();
   const [deploymentType, setDeploymentType] = useState<"saas" | "local">(
     "saas",
   );
   useEffect(() => {
-    void getLicenseStatus<{ deploymentType?: string }>()
+    void getLicenseStatus()
       .then((license) => {
         setDeploymentType(
           license.deploymentType === "local" ? "local" : "saas",
@@ -126,10 +133,9 @@ export default function SettingsLayout({
       .catch(() => setDeploymentType("saas"));
   }, []);
   const canView = (permission: string) =>
-    permissions.includes("*") ||
-    permissions.includes(permission) ||
-    (permission === "settings.identity-source" &&
-      permissions.includes("settings.organization"));
+    !permission || hasPermission(permission);
+  const currentPermission = settingsPagePermission(pathname);
+  const canOpenPage = !currentPermission || hasPermission(currentPermission);
 
   return (
     <PageContentLayout
@@ -198,7 +204,15 @@ export default function SettingsLayout({
           </ScrollShadow>
 
           <section className="flex min-h-0 min-w-0 flex-col overflow-hidden">
-            <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              {!permissionsReady ? (
+                <Typography>正在加载权限…</Typography>
+              ) : canOpenPage ? (
+                children
+              ) : (
+                <Typography>没有访问此设置页面的权限。</Typography>
+              )}
+            </div>
           </section>
         </main>
       </div>

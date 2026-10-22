@@ -1,4 +1,4 @@
-import { getAppFieldOutline } from "../../../../lib/api-client";
+import { getAppFieldOutline } from "../../../../lib/http";
 import { createBackendSdkClient, sdkJsonResponse } from "../../../_lib/backend-sdk-client";
 
 type Context = { params: Promise<{ appId: string }> };

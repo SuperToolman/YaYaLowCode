@@ -23,18 +23,15 @@ body,
   box-sizing: border-box;
 }
 
-/*
- * Keep every scroll container scrollable while removing the visual scrollbar.
- * Components that intentionally expose a horizontal rail (for example,
- * subforms and record tables) override these defaults in their CSS Modules.
- */
-* {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+/* Hide vertical rails while preserving wheel scrolling and horizontal rails. */
+*::-webkit-scrollbar {
+  width: 0;
+  height: 10px;
 }
 
-*::-webkit-scrollbar {
-  display: none;
+*::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 999px;
 }
 
 html {

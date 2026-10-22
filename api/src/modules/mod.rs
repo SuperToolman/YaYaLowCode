@@ -17,7 +17,12 @@ pub mod forms;
 pub mod identity;
 pub mod locations;
 pub mod logs;
+pub mod mail;
 pub mod navigation;
 pub mod recycle_bin;
 pub mod settings;
 pub mod workflows;
+
+pub mod custom_buttons;
+
+pub mod view_custom_buttons;

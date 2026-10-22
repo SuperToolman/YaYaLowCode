@@ -1,4 +1,6 @@
 "use client";
+import { notifyRequestError } from "@lib/notify";
+import { updateValidationProps } from "@/features/form-runtime/validation-config";
 import { notify } from "@lib/notify";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -16,7 +18,8 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { Card } from "@heroui/react";
+import { Button, Card } from "@heroui/react";
+import { AlertDialog } from "@heroui/react/alert-dialog";
 import { useRouter } from "next/navigation";
 import {
   getDefaultDesignerFieldProps,
@@ -47,9 +50,10 @@ import {
   resizeField,
 } from "../designer-layout";
 import { buildSchema, normalizeDesignerFields } from "../designer-schema";
-import type { FormDesignerSchema } from "../designer-schema";
+import { normalizeSubformChildLayouts, placePastedFields } from "../designer-clipboard";
 import { getDefaultPageDesignerProps, normalizePageDesignerProps } from "../designer-schema";
 import { validateDesignerSchema } from "../designer-validation";
+import { parseDesignerSource } from "../designer-source";
 import type {
   DesignerDragData,
   DesignerDropData,
@@ -110,6 +114,8 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isLeaveDialogOpen, setIsLeaveDialogOpen] = useState(false);
+  const [isSavingForLeave, setIsSavingForLeave] = useState(false);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
 
   const rowCount = useMemo(() => getRowCount(fields), [fields]);
@@ -123,6 +129,7 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
     [fields, selectedFieldId],
   );
   const [saveMessage, setSaveMessage] = useState("");
+  const [schemaSource, setSchemaSource] = useState<string | null>(null);
   const [latestVersion, setLatestVersion] = useState(1);
   const [currentVersion, setCurrentVersion] = useState(1);
   const [versions, setVersions] = useState<FormVersionSummary[]>([]);
@@ -137,6 +144,8 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
     }),
   );
   const historyRef = useRef<HistoryState<DesignerSnapshot> | null>(null);
+  const savedSnapshotRef = useRef<string | null>(null);
+  const pendingNavigationRef = useRef<(() => void) | null>(null);
   const historyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isApplyingHistoryRef = useRef(false);
   const copiedFieldsRef = useRef<PlacedField[]>([]);
@@ -207,16 +216,26 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
 
     async function loadSchema() {
       try {
-        const payload = await getDesignerSchema<FormDesignerSchema>(formUuid);
+        const payload = await getDesignerSchema(formUuid, schema => schema ? parseDesignerSource(JSON.stringify(schema), formUuid) : null);
 
-        if (cancelled || !payload.schema) {
+        if (cancelled) {
+          return;
+        }
+
+        if (!payload.schema) {
+          savedSnapshotRef.current = serializeDesignerSnapshot(
+            "New Page",
+            [],
+            getDefaultPageDesignerProps(),
+          );
           return;
         }
 
         const nextSchema = payload.schema;
-        const nextFields = normalizeDesignerFields(nextSchema.fields as PlacedField[]);
+        const nextFields = normalizeSubformChildLayouts(normalizeDesignerFields(nextSchema.fields as PlacedField[]));
         const nextPageProps = normalizePageDesignerProps(nextSchema.pageProps);
         const nextFormName = nextSchema.formName || "New Page";
+        savedSnapshotRef.current = serializeDesignerSnapshot(nextFormName, nextFields, nextPageProps);
         resetDesignerHistory(nextFormName, nextFields, nextPageProps);
         setFormName(nextFormName);
         setFields(nextFields);
@@ -230,7 +249,7 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
 
     async function loadVersions() {
       try {
-        const versions = await listDesignerVersions<FormVersionSummary>(formUuid);
+        const versions = await listDesignerVersions(formUuid);
 
         if (!cancelled) {
           setVersions(versions.slice(0, 20));
@@ -626,7 +645,7 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
     setFields((currentFields) =>
       currentFields.map((field) =>
         field.id === fieldId
-          ? { ...field, props: { ...field.props, ...props } }
+          ? { ...field, props: updateValidationProps(field.props, props) }
           : field,
       ),
     );
@@ -700,18 +719,12 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
     const idMap = new Map(
       copiedFields.map((field) => [field.id, createPastedFieldId(field.type)]),
     );
-    const minimumCopiedRow = Math.min(...copiedFields.map((field) => field.row));
-    const pasteStartRow = getRowCount(fields);
-    const pastedFields = copiedFields.map((field) => {
+    const remappedFields = copiedFields.map((field) => {
       const clonedField = cloneSnapshot(field);
       return {
         ...clonedField,
         id: idMap.get(field.id)!,
         label: `${field.label} 副本`,
-        row: pasteStartRow + field.row - minimumCopiedRow,
-        column: field.parentGroupId
-          ? field.column
-          : Math.min(field.column, COLUMN_COUNT - field.colSpan),
         props: {
           ...clonedField.props,
           defaultValueFormula: remapCopiedFormula(
@@ -719,13 +732,16 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
             idMap,
           ),
         },
-        parentGroupId: field.parentGroupId
-          ? (idMap.get(field.parentGroupId) ?? null)
-          : null,
+        parentGroupId: idMap.get(field.parentGroupId ?? "") ?? field.parentGroupId ?? null,
       };
     });
-    setFields((currentFields) => [...currentFields, ...pastedFields]);
-    setSelectedFieldId(pastedFields[0]?.id ?? null);
+    const nextFields = placePastedFields(fields, remappedFields);
+    if (!nextFields) {
+      notify.warning("无法粘贴组件", { description: "当前容器没有可用位置。" });
+      return;
+    }
+    setFields(nextFields);
+    setSelectedFieldId(remappedFields[0]?.id ?? null);
   }
 
   function validateBeforePersist() {
@@ -745,22 +761,38 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
     return false;
   }
 
-  function handleSave() {
-    if (!validateBeforePersist()) return;
+  async function persistCurrentSchema() {
+    let schemaToSave = currentSchema;
+    if (schemaSource !== null) {
+      try {
+        schemaToSave = parseDesignerSource(schemaSource, formUuid);
+      } catch (error) {
+        notifyRequestError(error, "Schema 校验失败", { description: error instanceof Error ? error.message : "源码无效" });
+        return false;
+      }
+    } else if (!validateBeforePersist()) return false;
 
     setSaveMessage("保存中...");
-
-    void (async () => {
-      try {
+    try {
         const result = await saveDesignerSchema(formUuid, {
-          schema: currentSchema,
+          schema: schemaToSave,
           change_log: `saved at ${new Date().toISOString()}`,
           base_version: currentVersion,
         });
         setLatestVersion(result.latestVersion);
         setCurrentVersion(result.version);
-        const versions = await listDesignerVersions<FormVersionSummary>(formUuid);
-        setVersions(versions.slice(0, 20));
+        savedSnapshotRef.current = serializeDesignerSnapshot(schemaToSave.formName, schemaToSave.fields, schemaToSave.pageProps);
+        if (schemaSource !== null) {
+          flushDesignerHistory();
+          setFormName(schemaToSave.formName);
+          setFields(schemaToSave.fields);
+          setPageProps(schemaToSave.pageProps);
+          setSelectedFieldId(null);
+          setSchemaSource(null);
+        }
+        void listDesignerVersions(formUuid)
+          .then((items) => setVersions(items.slice(0, 20)))
+          .catch(() => undefined);
         const hasEffectiveSchemaChange =
           result.message !== NO_EFFECTIVE_SCHEMA_CHANGE_MESSAGE;
         setSaveMessage(
@@ -775,13 +807,46 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
         } else {
           notify.warning(NO_EFFECTIVE_SCHEMA_CHANGE_MESSAGE);
         }
-      } catch {
+        return true;
+    } catch (requestError) {
         setSaveMessage("保存失败");
-        notify.error("保存失败", {
+        notifyRequestError(requestError, "保存失败", {
           description: "请稍后重试。",
         });
-      }
-    })();
+        return false;
+    }
+  }
+
+  function handleSave() {
+    void persistCurrentSchema();
+  }
+
+  function navigateWithUnsavedCheck(navigate: () => void) {
+    const savedSnapshot = savedSnapshotRef.current;
+    if (schemaSource === null && (!savedSnapshot || savedSnapshot === serializeDesignerSnapshot(formName, fields, pageProps))) {
+      navigate();
+      return;
+    }
+    pendingNavigationRef.current = navigate;
+    setIsLeaveDialogOpen(true);
+  }
+
+  async function handleSaveAndLeave() {
+    setIsSavingForLeave(true);
+    const saved = await persistCurrentSchema();
+    setIsSavingForLeave(false);
+    if (!saved) return;
+    setIsLeaveDialogOpen(false);
+    const navigate = pendingNavigationRef.current;
+    pendingNavigationRef.current = null;
+    navigate?.();
+  }
+
+  function handleLeaveWithoutSaving() {
+    setIsLeaveDialogOpen(false);
+    const navigate = pendingNavigationRef.current;
+    pendingNavigationRef.current = null;
+    navigate?.();
   }
 
   function handleRestore(version: number) {
@@ -789,9 +854,9 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
 
     void (async () => {
       try {
-        const result = await restoreDesignerVersion<FormDesignerSchema>(formUuid, version);
+        const result = await restoreDesignerVersion(formUuid, version, schema => parseDesignerSource(JSON.stringify(schema), formUuid));
         setFormName(result.schema.formName || "New Page");
-        setFields(normalizeDesignerFields(result.schema.fields as PlacedField[]));
+        setFields(normalizeSubformChildLayouts(normalizeDesignerFields(result.schema.fields as PlacedField[])));
         setPageProps(normalizePageDesignerProps(result.schema.pageProps));
         setLatestVersion(result.latestVersion);
         setCurrentVersion(version);
@@ -799,9 +864,9 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
         notify.success("历史版本已载入", {
           description: `已读取 v${version}，保存后将生成新版本`,
         });
-      } catch {
+      } catch (requestError) {
         setSaveMessage("读取失败");
-        notify.error("读取失败", {
+        notifyRequestError(requestError, "读取失败", {
           description: "请稍后重试。",
         });
       }
@@ -817,12 +882,13 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
   }
 
   function handleBackToApp() {
-    if (appId) {
-      router.push(`/${appId}`);
-      return;
-    }
-
-    router.push("/");
+    navigateWithUnsavedCheck(() => {
+      if (appId) {
+        router.push(`/${appId}`);
+        return;
+      }
+      router.push("/");
+    });
   }
 
   async function handleWorkflowDesign() {
@@ -832,12 +898,12 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
       let workflow = automations.items?.find((item) => item.flowType === "process" && item.triggerFormUuid === formUuid);
       if (!workflow) {
         const restored = await restoreProcessAutomation(formUuid);
-        workflow = { id: restored.id };
+        workflow = restored;
         notify.success("已重新创建流程自动化");
       }
-      router.push(`/${appId}/automations/${workflow.id}`);
-    } catch {
-      notify.error("流程设计暂不可用", { description: "流程自动化恢复失败，请稍后重试。" });
+      navigateWithUnsavedCheck(() => router.push(`/${appId}/automations/${workflow.id}`));
+    } catch (requestError) {
+      notifyRequestError(requestError, "流程设计暂不可用", { description: "流程自动化恢复失败，请稍后重试。" });
     }
   }
 
@@ -880,6 +946,9 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
           formType={formType}
           pageProps={pageProps}
           schema={currentSchema}
+          schemaSource={schemaSource}
+          onSchemaSourceChange={setSchemaSource}
+          onSchemaSave={persistCurrentSchema}
           onActivePanelChange={setActiveDesignerPanel}
           onBeforeDesignerActionRegister={(handler) => {
             beforeDesignerActionRef.current = handler;
@@ -900,8 +969,8 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
           <FormDesignerHeader
             appName={appName}
             formName={formName}
-            formType={formType}
             formUuid={formUuid}
+            currentVersion={currentVersion}
             isEditingFormName={isEditingFormName}
             versions={versions}
             onBackToApp={handleBackToApp}
@@ -929,7 +998,7 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
               onResizePointerMove={handleResizePointerMove}
               onResizePointerUp={endResizing}
             />
-            <Card className="h-full w-[300px] shrink-0 overflow-hidden p-2">
+            <Card className="h-full w-[300px] shrink-0 overflow-hidden p-1">
               {selectedField ? (
                 <FieldPropertyPanel
                   fields={fields}
@@ -959,6 +1028,38 @@ const DESIGNER_WORKBENCH_MIN_WIDTH = 300;
         }
         onOpenChange={setIsPreviewOpen}
       />
+      <AlertDialog.Backdrop
+        isOpen={isLeaveDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && !isSavingForLeave) {
+            setIsLeaveDialogOpen(false);
+            pendingNavigationRef.current = null;
+          }
+        }}
+        className="theme-modal-backdrop"
+      >
+        <AlertDialog.Container placement="center" size="md">
+          <AlertDialog.Dialog>
+            <AlertDialog.Header>
+              <AlertDialog.Heading>Schema 尚未保存</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              当前表单 Schema 已修改，离开前是否保存？
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button variant="ghost" isDisabled={isSavingForLeave} onPress={() => setIsLeaveDialogOpen(false)}>
+                留在此页
+              </Button>
+              <Button variant="secondary" isDisabled={isSavingForLeave} onPress={handleLeaveWithoutSaving}>
+                不保存离开
+              </Button>
+              <Button variant="primary" isDisabled={isSavingForLeave} onPress={() => void handleSaveAndLeave()}>
+                {isSavingForLeave ? "保存中..." : "保存并离开"}
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
       </div>
       <DragOverlay dropAnimation={null}>
         {activeDragData ? (
@@ -1059,6 +1160,14 @@ function createDesignerSnapshot(
     fields: cloneSnapshot(fields),
     pageProps: cloneSnapshot(pageProps),
   };
+}
+
+function serializeDesignerSnapshot(
+  formName: string,
+  fields: PlacedField[],
+  pageProps: PageDesignerProps,
+) {
+  return JSON.stringify(createDesignerSnapshot(formName, fields, pageProps));
 }
 
 

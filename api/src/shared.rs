@@ -37,6 +37,7 @@ pub(crate) enum AutomationTriggerEvent {
     BeforeDelete,
     AfterDelete,
     FormSubmit,
+    ButtonClick,
 }
 
 pub(crate) fn format_date(value: DateTime<Utc>) -> String {
@@ -199,6 +200,7 @@ pub(crate) fn normalize_automation_trigger_event(event: &str) -> Result<String, 
             | "before_delete"
             | "after_delete"
             | "form_submit"
+            | "button_click"
     ) {
         Ok(normalized.to_string())
     } else {
@@ -217,6 +219,12 @@ pub(crate) fn normalize_automation_trigger_events(
         if !normalized.contains(&event) {
             normalized.push(event);
         }
+    }
+
+    if normalized.iter().any(|event| event == "button_click") && normalized.len() != 1 {
+        return Err(AppError::BadRequest(
+            "按钮触发不能与其他触发事件混用".into(),
+        ));
     }
 
     // A record operation has one execution point. Different operations may
@@ -238,29 +246,15 @@ pub(crate) fn normalize_automation_trigger_events(
     Ok(normalized)
 }
 
-pub(crate) fn automation_trigger_events(
-    trigger_event: &str,
-    trigger_config: &Value,
-) -> Vec<String> {
-    let configured_events = trigger_config
+pub(crate) fn automation_trigger_events(trigger_config: &Value) -> Vec<String> {
+    trigger_config
         .get("triggerEvents")
         .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(Value::as_str)
-                .filter_map(|event| normalize_automation_trigger_event(event).ok())
-                .fold(Vec::new(), |mut events, event| {
-                    if !events.contains(&event) {
-                        events.push(event);
-                    }
-                    events
-                })
-        });
-
-    // An explicit empty array means this automation has no enabled record
-    // event. Only older configurations without this key use the legacy value.
-    configured_events.unwrap_or_else(|| vec![trigger_event.to_string()])
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_string)
+        .collect()
 }
 
 pub(crate) fn with_automation_trigger_events(
@@ -277,6 +271,7 @@ pub(crate) fn with_automation_trigger_events(
 
 pub(crate) fn automation_trigger_label(event: &str) -> &'static str {
     match event {
+        "button_click" => "按钮触发",
         "before_create" => "创建成功前",
         "after_create" => "创建成功后",
         "before_update" => "编辑成功前",
@@ -294,19 +289,14 @@ mod automation_trigger_event_tests {
     use serde_json::json;
 
     #[test]
-    fn reads_unique_configured_trigger_events_and_falls_back_to_legacy_value() {
-        let config = json!({ "triggerEvents": ["before_create", "after_create", "before_create"] });
+    fn reads_only_configured_trigger_events() {
+        let config = json!({ "triggerEvents": ["before_create", "after_create"] });
         assert_eq!(
-            automation_trigger_events("after_create", &config),
+            automation_trigger_events(&config),
             vec!["before_create", "after_create"]
         );
-        assert_eq!(
-            automation_trigger_events("after_update", &json!({})),
-            vec!["after_update"]
-        );
-        assert!(
-            automation_trigger_events("after_update", &json!({ "triggerEvents": [] })).is_empty()
-        );
+        assert_eq!(automation_trigger_events(&json!({})), Vec::<String>::new());
+        assert!(automation_trigger_events(&json!({ "triggerEvents": [] })).is_empty());
     }
 
     #[test]
@@ -347,5 +337,77 @@ pub(crate) fn build_group_slug(title: &str) -> String {
         format!("group-{}", Uuid::new_v4().simple())
     } else {
         format!("group-{collapsed}")
+    }
+}
+
+/// Build an RFC 6266-compatible disposition without putting non-ASCII bytes
+/// directly into an HTTP header. The ASCII filename keeps older clients
+/// working while filename* preserves the original UTF-8 name.
+pub(crate) fn download_content_disposition(name: &str) -> axum::http::HeaderValue {
+    let fallback: String = name
+        .chars()
+        .map(|value| {
+            if value.is_ascii_alphanumeric() || matches!(value, '.' | '_' | '-' | ' ') {
+                value
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let fallback = if fallback.trim().is_empty() {
+        "download".to_string()
+    } else {
+        fallback
+    };
+    let encoded = name
+        .as_bytes()
+        .iter()
+        .flat_map(|byte| {
+            if byte.is_ascii_alphanumeric() || matches!(*byte, b'.' | b'_' | b'-') {
+                vec![*byte as char]
+            } else {
+                let hex = format!("%{:02X}", byte);
+                hex.chars().collect()
+            }
+        })
+        .collect::<String>();
+    axum::http::HeaderValue::from_str(&format!(
+        "attachment; filename=\"{}\"; filename*=UTF-8''{}",
+        fallback.replace('"', "_"),
+        encoded
+    ))
+    .unwrap_or_else(|_| axum::http::HeaderValue::from_static("attachment; filename=\"download\""))
+}
+
+#[cfg(test)]
+mod download_filename_tests {
+    use super::download_content_disposition;
+
+    #[test]
+    fn download_header_encodes_utf8_and_spaces() {
+        let header = download_content_disposition("安富利PO (1).docx");
+        let value = header.to_str().unwrap();
+        assert!(value.is_ascii());
+        assert!(value.contains("filename*=UTF-8''%E5%AE%89%E5%AF%8C%E5%88%A9PO%20%281%29.docx"));
+        assert!(value.contains("filename=\"___PO _1_.docx\""));
+    }
+
+    #[test]
+    fn download_header_safely_encodes_special_characters() {
+        let header = download_content_disposition("报告\";100%+😀\r\n.xlsx");
+        let value = header.to_str().unwrap();
+        assert!(!value.contains('\r'));
+        assert!(!value.contains('\n'));
+        assert!(value.contains("%22%3B100%25%2B%F0%9F%98%80%0D%0A.xlsx"));
+    }
+
+    #[test]
+    fn download_header_preserves_ascii_names() {
+        assert_eq!(
+            download_content_disposition("report.xlsx")
+                .to_str()
+                .unwrap(),
+            "attachment; filename=\"report.xlsx\"; filename*=UTF-8''report.xlsx"
+        );
     }
 }

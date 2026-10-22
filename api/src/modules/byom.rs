@@ -57,7 +57,10 @@ pub(crate) struct RuntimeModelRoute {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct RuntimeModelRouteQuery { pub route_id: Option<String>, pub model: Option<String> }
+pub(crate) struct RuntimeModelRouteQuery {
+    pub route_id: Option<String>,
+    pub model: Option<String>,
+}
 
 fn default_enabled() -> bool {
     true
@@ -194,10 +197,20 @@ pub(crate) async fn runtime_model_route(
     let routes = list_raw(&state, tenant, user_id).await?;
     let route = routes
         .into_iter()
-        .find(|item| item.enabled && query.route_id.as_deref().map_or(item.is_default, |id| item.id == id))
+        .find(|item| {
+            item.enabled
+                && query
+                    .route_id
+                    .as_deref()
+                    .map_or(item.is_default, |id| item.id == id)
+        })
         .ok_or_else(|| AppError::BadRequest("请先在自有模型中配置并启用默认模型".to_string()))?;
-    let chat_model = query.model.unwrap_or_else(|| route.default_chat_model.clone());
-    if !route.models.iter().any(|item| item == &chat_model) { return Err(AppError::BadRequest("所选模型不属于该模型路由".to_string())); }
+    let chat_model = query
+        .model
+        .unwrap_or_else(|| route.default_chat_model.clone());
+    if !route.models.iter().any(|item| item == &chat_model) {
+        return Err(AppError::BadRequest("所选模型不属于该模型路由".to_string()));
+    }
     Ok(Json(success_response(
         "runtime model route loaded",
         RuntimeModelRoute {
@@ -353,7 +366,7 @@ fn cipher() -> Result<Aes256Gcm, AppError> {
         )
     })
 }
-fn encrypt(plain: &str) -> Result<String, AppError> {
+pub(crate) fn encrypt(plain: &str) -> Result<String, AppError> {
     let mut nonce = [0_u8; 12];
     OsRng.fill_bytes(&mut nonce);
     let encrypted = cipher()?

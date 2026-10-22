@@ -1,16 +1,4 @@
-export type FormRecord = {
-  id: string;
-  formUuid: string;
-  schemaVersion: number;
-  data: Record<string, unknown>;
-  createdBy: string;
-  createdByUserId?: string | null;
-  createdByAvatarUrl?: string | null;
-  submitterOrganization?: string | null;
-  updatedBy: string;
-  createdAt: string;
-  updatedAt: string;
-};
+export type FormRecord = Omit<import("@lib/http").ApiFormRecord, "data"> & { data: Record<string, unknown> };
 
 export type RecordFilter = {
   fieldId: string;
@@ -34,11 +22,4 @@ export type AssociationFormData<TSchema = unknown> = {
 
 export type WorkflowAction = { action: string; operator: string; comment: string | null; createdAt: string };
 export type WorkflowComment = { id: string; author: string; content: string; createdAt: string };
-export type DetailForm = {
-  detailFormUuid: string;
-  sourceFormUuid: string;
-  subformFieldId: string;
-  title: string;
-  primaryDisplayFieldId?: string | null;
-  secondaryDisplayFieldId?: string | null;
-};
+export type DetailForm = import("@lib/http").ApiDetailForm;

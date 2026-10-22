@@ -58,23 +58,24 @@ pub(super) fn filter_records_by_expression(
 pub(super) fn filter_records_by_rules(
     records: Vec<StoredFormRecord>,
     rules: Option<&Value>,
-    legacy_expression: Option<&Value>,
-    context: &AutomationExecutionContext,
 ) -> Vec<StoredFormRecord> {
-    let Some(rules) = rules.and_then(Value::as_array) else {
-        return filter_records_by_expression(records, legacy_expression, context);
-    };
-    if rules.is_empty() {
-        return filter_records_by_expression(records, legacy_expression, context);
-    }
-
+    let rules = rules
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
     records
         .into_iter()
-        .filter(|record| evaluate_record_rule_group(rules, None, &record.record_data))
+        .filter(|record| {
+            evaluate_record_rule_group(
+                rules,
+                None,
+                &super::record_data_with_automation_identity(record.clone()),
+            )
+        })
         .collect()
 }
 
-fn evaluate_record_rule_group(
+pub(crate) fn evaluate_record_rule_group(
     rules: &[Value],
     parent_id: Option<&str>,
     record_data: &Value,
@@ -137,7 +138,16 @@ fn evaluate_record_rule_group(
 fn evaluate_record_rule(rule: &Value, record_data: &Value) -> bool {
     let field_key = read_json_string(rule.get("fieldKey")).unwrap_or_default();
     let operator = read_json_string(rule.get("operator")).unwrap_or_else(|| "eq".to_string());
-    let expected = read_json_string(rule.get("rawValue")).unwrap_or_default();
+    let expected = if rule["valueType"] == "field" {
+        normalize_scalar(
+            &record_data
+                .get(rule["sourceFieldKey"].as_str().unwrap_or(""))
+                .cloned()
+                .unwrap_or(Value::Null),
+        )
+    } else {
+        read_json_string(rule.get("rawValue")).unwrap_or_default()
+    };
     let actual_values = record_data
         .get(&field_key)
         .cloned()

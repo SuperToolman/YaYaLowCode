@@ -10,12 +10,8 @@ const UTILITIES_PATH = "styles/utilities.css";
 const CSS_MODULE_CLASS_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)+__[a-z][a-z0-9-]*(?:--[a-z][a-z0-9-]*)?$/;
 
 const LEGACY_CSS_MODULES = new Set([
-  "app/(protected)/(main)/[appId]/[formUuid]/components/SystemPageView.module.css",
   "app/(protected)/messages/messages.module.css",
-  "app/(protected)/settings/about/about.module.css",
   "app/(protected)/settings/logs/logs.module.css",
-  "app/(protected)/settings/notifications/notifications.module.css",
-  "app/components/my-fields/MyAvatar.module.css",
 ]);
 
 function normalizeSelector(selector) {
@@ -34,6 +30,7 @@ function isThemeRootSelector(selector) {
 export const GLOBAL_SELECTOR_ALLOWLIST = new Set([
   "*",
   "*::-webkit-scrollbar",
+  "*::-webkit-scrollbar-thumb",
   ".app-main-glass",
   ".app-main-region",
   ".app-root-shell",

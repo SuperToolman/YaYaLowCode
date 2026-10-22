@@ -8,6 +8,7 @@ export type PendingImMessage = {
   fileIds: string[];
   emailSubject?: string;
   createdAt: string;
+  queueOrder?: number;
 };
 
 type StoredMessage = CommunicationMessageResponse;
@@ -121,14 +122,21 @@ export class ImStore {
 
   async putPending(item: PendingImMessage): Promise<void> {
     const db = await this.open();
-    const tx = db.transaction("pending", "readwrite");
-    tx.objectStore("pending").put(item);
+    const tx = db.transaction(["pending", "meta"], "readwrite");
+    const pending = tx.objectStore("pending");
+    const meta = tx.objectStore("meta");
+    const existing = await request(pending.get(item.localId)) as PendingImMessage | undefined;
+    const last = await request(meta.get("queueOrder")) as MetaValue | undefined;
+    const order = existing?.queueOrder ?? (typeof last?.value === "number" ? last.value : 0) + 1;
+    pending.put({ ...item, queueOrder: order });
+    meta.put({ key: "queueOrder", value: Math.max(order, typeof last?.value === "number" ? last.value : 0) });
     await completed(tx);
   }
 
   async getPending(): Promise<PendingImMessage[]> {
     const db = await this.open();
-    return request(db.transaction("pending", "readonly").objectStore("pending").getAll());
+    const items = await request(db.transaction("pending", "readonly").objectStore("pending").getAll()) as PendingImMessage[];
+    return items.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || (a.queueOrder ?? 0) - (b.queueOrder ?? 0) || a.localId.localeCompare(b.localId));
   }
 
   async deletePending(localId: string): Promise<void> {

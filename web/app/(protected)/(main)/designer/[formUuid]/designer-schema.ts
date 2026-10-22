@@ -1,6 +1,6 @@
-﻿import { COLUMN_COUNT } from "./designer-constants";
+import { COLUMN_COUNT } from "./designer-constants";
 import { getRowCount, normalizeRichTextLayouts } from "./designer-layout";
-import { getDefaultDesignerFieldProps } from "./components/CompTool";
+import { cleanDesignerFieldProps, getDefaultDesignerFieldProps } from "./components/CompTool";
 import type { PageDesignerProps, PlacedField } from "./designer-types";
 import {
   getDefaultActionPanelCode,
@@ -94,10 +94,11 @@ export function normalizeDesignerFields(fields?: PlacedField[] | null): PlacedFi
       .map((field) => ({
         ...field,
         parentGroupId: field.parentGroupId ?? null,
-        props: {
+        props: cleanDesignerFieldProps({
           ...getDefaultDesignerFieldProps(field.type),
           ...(field.props ?? {}),
-        },
+          ...(field.type === "serialNumber" ? { isRequired: true } : {}),
+        }),
       })),
   );
 }
@@ -126,7 +127,7 @@ export function buildSchema(
         rowSpan: field.rowSpan,
         colSpan: field.colSpan,
         parentGroupId: field.parentGroupId ?? null,
-        props: field.props,
+        props: cleanDesignerFieldProps(field.type === "serialNumber" ? { ...field.props, isRequired: true } : field.props),
       })),
   };
 }

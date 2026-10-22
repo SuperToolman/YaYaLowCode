@@ -4,8 +4,15 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { Button, Input, ListBox, Select } from "@heroui/react";
 import type { ApiFormSummary } from "@/features/automation-editor/api";
-import { AutomationFormulaEditorModal, type AutomationFormulaField } from "../../components/AutomationFormulaEditorModal";
-import { extractExpressionTokens, type FormFieldDescriptor } from "../automation-editor-model";
+import { FieldSelect as GlobalFieldSelect, type FieldSelectOption } from "@/components/FieldSelect";
+import {
+  AutomationFormulaEditorModal,
+  type AutomationFormulaField,
+} from "../../components/AutomationFormulaEditorModal";
+import {
+  extractExpressionTokens,
+  type FormFieldDescriptor,
+} from "../automation-editor-model";
 
 export { WorkflowConfigGroup as PropertyPanelSection } from "@components/workflow-editor/WorkflowConfigGroup";
 
@@ -57,7 +64,9 @@ export function PropertyField({
         alignStart ? "md:items-start" : "md:items-center",
       ].join(" ")}
     >
-      <div className="automation-property-label font-medium text-[var(--color-text-primary)] md:pt-0.5">{label}</div>
+      <div className="automation-property-label font-medium text-[var(--color-text-primary)] md:pt-0.5">
+        {label}
+      </div>
       <div className="min-w-0">{children}</div>
     </div>
   );
@@ -159,10 +168,19 @@ export function ExpressionEditor({
       token,
       option: optionMap.get(token),
     }))
-    .filter((item, index, array) => array.findIndex((candidate) => candidate.token === item.token) === index);
+    .filter(
+      (item, index, array) =>
+        array.findIndex((candidate) => candidate.token === item.token) ===
+        index,
+    );
   const invalidTokens = resolvedTokens.filter((item) => !item.option);
-  const validTokens = resolvedTokens.filter((item): item is { token: string; option: { key: string; label: string; fieldType: string } } =>
-    Boolean(item.option),
+  const validTokens = resolvedTokens.filter(
+    (
+      item,
+    ): item is {
+      token: string;
+      option: { key: string; label: string; fieldType: string };
+    } => Boolean(item.option),
   );
 
   const insertToken = (token: string) => {
@@ -181,10 +199,14 @@ export function ExpressionEditor({
         onChange={(event) => onChange(event.currentTarget.value)}
       />
       {helperText ? (
-        <div className="text-xs leading-5 text-[var(--color-text-secondary)]">{helperText}</div>
+        <div className="text-xs leading-5 text-[var(--color-text-secondary)]">
+          {helperText}
+        </div>
       ) : null}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-control-soft)] p-3">
-        <div className="text-xs font-medium text-[var(--color-text-primary)]">表达式检查</div>
+        <div className="text-xs font-medium text-[var(--color-text-primary)]">
+          表达式检查
+        </div>
         {value.trim().length === 0 ? (
           <div className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">
             直接输入表达式，字段引用格式为 <code>{`{{nodeId:fieldId}}`}</code>。
@@ -193,7 +215,9 @@ export function ExpressionEditor({
           <div className="mt-2 space-y-2">
             {validTokens.length > 0 ? (
               <div>
-                <div className="text-xs text-[var(--color-text-secondary)]">已引用字段</div>
+                <div className="text-xs text-[var(--color-text-secondary)]">
+                  已引用字段
+                </div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {validTokens.map((item) => (
                     <span
@@ -206,11 +230,14 @@ export function ExpressionEditor({
                 </div>
               </div>
             ) : (
-              <div className="text-xs text-[var(--color-text-secondary)]">当前表达式未引用字段。</div>
+              <div className="text-xs text-[var(--color-text-secondary)]">
+                当前表达式未引用字段。
+              </div>
             )}
             {invalidTokens.length > 0 ? (
               <div className="rounded-md border border-[var(--color-danger)] bg-[var(--color-danger-soft)] px-3 py-2 text-xs leading-5 text-[var(--color-danger)]">
-                无效字段引用：{invalidTokens.map((item) => `{{${item.token}}}`).join("、")}
+                无效字段引用：
+                {invalidTokens.map((item) => `{{${item.token}}}`).join("、")}
               </div>
             ) : null}
           </div>
@@ -218,7 +245,9 @@ export function ExpressionEditor({
       </div>
       {options.length > 0 ? (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-control-soft)] p-3">
-          <div className="text-xs font-medium text-[var(--color-text-primary)]">插入字段引用</div>
+          <div className="text-xs font-medium text-[var(--color-text-primary)]">
+            插入字段引用
+          </div>
           <div className="mt-2 flex flex-wrap gap-2">
             {options.map((option) => (
               <button
@@ -252,7 +281,9 @@ export function FormSelect({
     <Select
       aria-label={placeholder}
       selectedKey={value || "none"}
-      onSelectionChange={(key) => onChange(String(key === "none" ? "" : key ?? ""))}
+      onSelectionChange={(key) =>
+        onChange(String(key === "none" ? "" : (key ?? "")))
+      }
     >
       <Select.Trigger>
         <Select.Value>
@@ -289,11 +320,14 @@ export function UpdateTargetFormSelect({
     <Select
       aria-label="选择更新目标表单"
       selectedKey={value || "none"}
-      onSelectionChange={(key) => onChange(String(key === "none" ? "" : key ?? ""))}
+      onSelectionChange={(key) =>
+        onChange(String(key === "none" ? "" : (key ?? "")))
+      }
     >
       <Select.Trigger>
         <Select.Value>
-          {options.find((option) => option.id === value)?.label ?? "选择目标表单"}
+          {options.find((option) => option.id === value)?.label ??
+            "选择目标表单"}
         </Select.Value>
         <Select.Indicator />
       </Select.Trigger>
@@ -303,7 +337,11 @@ export function UpdateTargetFormSelect({
             未配置
           </ListBox.Item>
           {options.map((option) => (
-            <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
+            <ListBox.Item
+              key={option.id}
+              id={option.id}
+              textValue={option.label}
+            >
               {option.label}
             </ListBox.Item>
           ))}
@@ -314,33 +352,38 @@ export function UpdateTargetFormSelect({
 }
 
 export function FieldSelect({
+  isDisabled,
   fields,
   value,
   onChange,
 }: {
+  isDisabled?: boolean;
   fields: FormFieldDescriptor[];
   value: string;
   onChange: (value: string) => void;
 }) {
   return (
     <Select
+      isDisabled={isDisabled}
       aria-label="字段名"
       fullWidth
       className="min-w-0"
-      selectedKey={value || "none"}
-      onSelectionChange={(key) => onChange(String(key === "none" ? "" : key ?? ""))}
+      placeholder="选择目标字段"
+      selectedKey={fields.some((field) => field.id === value) ? value : null}
+      onSelectionChange={(key) => {
+        if (key != null && fields.some((field) => field.id === String(key))) {
+          onChange(String(key));
+        }
+      }}
     >
       <Select.Trigger>
         <Select.Value>
-          {fields.find((field) => field.id === value)?.label ?? "字段名"}
+          {fields.find((field) => field.id === value)?.label}
         </Select.Value>
         <Select.Indicator />
       </Select.Trigger>
       <Select.Popover>
         <ListBox>
-          <ListBox.Item id="none" textValue="未配置">
-            未配置
-          </ListBox.Item>
           {fields.map((field) => (
             <ListBox.Item key={field.id} id={field.id} textValue={field.label}>
               {field.label}
@@ -352,43 +395,12 @@ export function FieldSelect({
   );
 }
 
-export function SourceFieldSelect({
-  options,
-  value,
-  onChange,
-}: {
-  options: Array<{ key: string; label: string }>;
+export function SourceFieldSelect({ options, value, onChange }: {
+  options: readonly FieldSelectOption[];
   value: string;
   onChange: (value: string) => void;
 }) {
-  return (
-    <Select
-      aria-label="来源字段"
-      fullWidth
-      className="min-w-0"
-      selectedKey={value || "none"}
-      onSelectionChange={(key) => onChange(String(key === "none" ? "" : key ?? ""))}
-    >
-      <Select.Trigger>
-        <Select.Value>
-          {options.find((option) => option.key === value)?.label ?? "字段值"}
-        </Select.Value>
-        <Select.Indicator />
-      </Select.Trigger>
-      <Select.Popover>
-        <ListBox>
-          <ListBox.Item id="none" textValue="未配置">
-            未配置
-          </ListBox.Item>
-          {options.map((option) => (
-            <ListBox.Item key={option.key} id={option.key} textValue={option.label}>
-              {option.label}
-            </ListBox.Item>
-          ))}
-        </ListBox>
-      </Select.Popover>
-    </Select>
-  );
+  return <GlobalFieldSelect options={options} value={value} onChange={onChange} ariaLabel="来源字段" placeholder="" />;
 }
 
 export function FieldValueInput({
@@ -407,11 +419,14 @@ export function FieldValueInput({
         fullWidth
         className="min-w-0"
         selectedKey={value || "none"}
-        onSelectionChange={(key) => onChange(String(key === "none" ? "" : key ?? ""))}
+        onSelectionChange={(key) =>
+          onChange(String(key === "none" ? "" : (key ?? "")))
+        }
       >
         <Select.Trigger>
           <Select.Value>
-            {field.options.find((option) => option.value === value)?.label ?? "字段值"}
+            {field.options.find((option) => option.value === value)?.label ??
+              "字段值"}
           </Select.Value>
           <Select.Indicator />
         </Select.Trigger>
@@ -421,7 +436,11 @@ export function FieldValueInput({
               未配置
             </ListBox.Item>
             {field.options.map((option) => (
-              <ListBox.Item key={option.value} id={option.value} textValue={option.label}>
+              <ListBox.Item
+                key={option.value}
+                id={option.value}
+                textValue={option.label}
+              >
                 {option.label}
               </ListBox.Item>
             ))}

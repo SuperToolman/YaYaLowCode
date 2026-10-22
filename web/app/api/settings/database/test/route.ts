@@ -1,4 +1,4 @@
-import { testDatabaseConnection } from "../../../../lib/api-client";
+import { testDatabaseConnection } from "../../../../lib/http";
 import { createBackendSdkClient, sdkJsonResponse } from "../../../_lib/backend-sdk-client";
 
 export async function POST(request: Request) {

@@ -1,4 +1,6 @@
 "use client";
+import { notifyRequestError } from "@lib/notify";
+import { useAuth } from "@components/AuthProvider";
 import { notify } from "@lib/notify";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
@@ -21,38 +23,21 @@ import {
   upgradeMarketplaceInstallation,
 } from "@features/application/api";
 
-type Product = {
-  productId: string;
-  publisherAppId: string;
-  publisherOwned?: boolean;
-  name: string;
-  description: string;
-  version: string;
-  releaseId: string;
-  resourceSummary?: {
-    forms?: number;
-    automations?: number;
-    navigation?: number;
-  };
-};
-type Installation = {
-  installationId: string;
-  productId: string;
-  releaseId: string;
-  localAppId: string;
-  status: "installed" | "archived";
-  legacyMapping: boolean;
-  versions?: Array<{ releaseId: string; version: string }>;
-};
+type Product = Pick<import("@lib/http").MarketProduct, "productId" | "publisherAppId" | "publisherOwned" | "name" | "description" | "version" | "releaseId" | "resourceSummary">;
+type Installation = import("@lib/http").MarketInstallation;
 
 export default function MarketPage() {
   return <Suspense><MarketPageContent /></Suspense>;
 }
 
 function MarketPageContent() {
+  const { hasPermission, permissionsReady } = useAuth();
+  const canViewApps = hasPermission("market.apps.view");
+  const canViewAi = hasPermission("settings.ai-employees.view");
+  const canManage = hasPermission("market.apps.manage");
   const router = useRouter();
   const searchParams = useSearchParams();
-  const activeMarket = searchParams.get("tab") === "ai" ? "ai" : "apps";
+  const activeMarket = searchParams.get("tab") === "ai" || (!canViewApps && canViewAi) ? "ai" : "apps";
   const [products, setProducts] = useState<Product[]>([]);
   const [installations, setInstallations] = useState<Installation[]>([]);
   const [query, setQuery] = useState("");
@@ -62,13 +47,13 @@ function MarketPageContent() {
     setLoading(true);
     try {
       const [market, installed] = await Promise.all([
-        listMarketplaceApplications<Product[]>(),
-        listMarketplaceInstallations<Installation[]>(),
+        listMarketplaceApplications(),
+        listMarketplaceInstallations(),
       ]);
       setProducts(market);
       setInstallations(installed);
     } catch (error) {
-      notify.error("应用市场不可用", {
+      notifyRequestError(error, "应用市场不可用", {
         description: error instanceof Error ? error.message : "请稍后重试",
       });
     } finally {
@@ -76,8 +61,10 @@ function MarketPageContent() {
     }
   };
   useEffect(() => {
-    void load();
-  }, []);
+    if (!permissionsReady || !canViewApps) return;
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
+  }, [permissionsReady, canViewApps]);
   const cards = useMemo(() => {
     const mapped = new Map(installations.map((item) => [item.productId, item]));
     const known = new Set(products.map((item) => item.productId));
@@ -113,10 +100,7 @@ function MarketPageContent() {
   async function install(product: Product) {
     setBusy(product.productId);
     try {
-      const check = await preflightMarketplaceApplication<{
-        alreadyInstalled: boolean;
-        blockingIssues: string[];
-      }>(product.productId);
+      const check = await preflightMarketplaceApplication(product.productId);
       if (check.alreadyInstalled)
         throw new Error(check.blockingIssues[0] || "该应用已安装");
       await installMarketplaceApplication(product.productId);
@@ -125,7 +109,7 @@ function MarketPageContent() {
       });
       await reloadApps();
     } catch (error) {
-      notify.error("安装失败", {
+      notifyRequestError(error, "安装失败", {
         description: error instanceof Error ? error.message : "请稍后重试",
       });
     } finally {
@@ -140,7 +124,7 @@ function MarketPageContent() {
         description: "审核通过后将更新线上版本。",
       });
     } catch (error) {
-      notify.error("提交失败", {
+      notifyRequestError(error, "提交失败", {
         description: error instanceof Error ? error.message : "请稍后重试",
       });
     } finally {
@@ -161,10 +145,7 @@ function MarketPageContent() {
     setBusy(item.installationId);
     try {
       if (action === "preflight") {
-        const result = await preflightMarketplaceInstallation<{
-          blockingIssues: string[];
-          targetVersion?: string;
-        }>(item.installationId);
+        const result = await preflightMarketplaceInstallation(item.installationId);
         notify.info(
           result.blockingIssues?.length
             ? "更新存在阻断项"
@@ -193,21 +174,23 @@ function MarketPageContent() {
         await reloadApps();
       }
     } catch (error) {
-      notify.error("操作失败", {
+      notifyRequestError(error, "操作失败", {
         description: error instanceof Error ? error.message : "请稍后重试",
       });
     } finally {
       setBusy(null);
     }
   }
+  if (!permissionsReady) return null;
+  if (activeMarket === "ai" ? !canViewAi : !canViewApps) return <p>没有访问此市场的权限。请切换到已授权的市场入口。</p>;
   return (
     <PageContentLayout
       title="市场"
       subtitle={activeMarket === "ai" ? "浏览、购买和安装 AI 员工。" : "浏览线上应用，安装、更新和管理已授权应用。"}
       center={
         <div className="flex items-center gap-2">
-          <Button size="sm" variant={activeMarket === "apps" ? "primary" : "secondary"} onPress={() => router.replace("/market")}>应用市场</Button>
-          <Button size="sm" variant={activeMarket === "ai" ? "primary" : "secondary"} onPress={() => router.replace("/market?tab=ai")}>AI员工市场</Button>
+          <Button isDisabled={!canViewApps} size="sm" variant={activeMarket === "apps" ? "primary" : "secondary"} onPress={() => router.replace("/market")}>应用市场</Button>
+          <Button isDisabled={!canViewAi} size="sm" variant={activeMarket === "ai" ? "primary" : "secondary"} onPress={() => router.replace("/market?tab=ai")}>AI员工市场</Button>
           <SearchField aria-label={activeMarket === "ai" ? "搜索 AI 员工市场" : "搜索应用市场"} value={query} onChange={setQuery}>
             <SearchField.Group>
               <SearchField.SearchIcon />
@@ -257,14 +240,14 @@ function MarketPageContent() {
                     <Button
                       className="flex-1"
                       variant="secondary"
-                      isDisabled={busy !== null}
+                      isDisabled={!canManage || busy !== null}
                       onPress={() => router.push(`/${product.publisherAppId}`)}
                     >
                       打开应用
                     </Button>
                     <Button
                       className="flex-1"
-                      isDisabled={busy !== null}
+                      isDisabled={!canManage || busy !== null}
                       onPress={() => void publish(product)}
                     >
                       发布新版本
@@ -274,7 +257,7 @@ function MarketPageContent() {
               ) : !installation ? (
                 <Button
                   className="mt-4 w-full"
-                  isDisabled={loading || busy !== null}
+                  isDisabled={!canManage || loading || busy !== null}
                   onPress={() => void install(product)}
                 >
                   <ArrowDownToLine className="h-4 w-4" />
@@ -296,7 +279,7 @@ function MarketPageContent() {
                         <Button
                           size="sm"
                           variant="secondary"
-                          isDisabled={busy !== null}
+                          isDisabled={!canManage || busy !== null}
                           onPress={() => void manage("preflight", installation)}
                         >
                           预检
@@ -304,7 +287,7 @@ function MarketPageContent() {
                         <Button
                           size="sm"
                           isDisabled={
-                            busy !== null ||
+                            !canManage || busy !== null ||
                             !updateAvailable ||
                             installation.legacyMapping
                           }
@@ -323,7 +306,7 @@ function MarketPageContent() {
                               size="sm"
                               variant="secondary"
                               isDisabled={
-                                busy !== null || installation.legacyMapping
+                                !canManage || busy !== null || installation.legacyMapping
                               }
                               onPress={() =>
                                 void manage(
@@ -339,7 +322,7 @@ function MarketPageContent() {
                         <Button
                           size="sm"
                           variant="secondary"
-                          isDisabled={busy !== null}
+                          isDisabled={!canManage || busy !== null}
                           onPress={() => void manage("archive", installation)}
                         >
                           归档
@@ -349,7 +332,7 @@ function MarketPageContent() {
                       <>
                         <Button
                           size="sm"
-                          isDisabled={busy !== null}
+                          isDisabled={!canManage || busy !== null}
                           onPress={() => void manage("restore", installation)}
                         >
                           恢复
@@ -357,7 +340,7 @@ function MarketPageContent() {
                         <Button
                           size="sm"
                           variant="danger"
-                          isDisabled={busy !== null}
+                          isDisabled={!canManage || busy !== null}
                           onPress={() => void manage("purge", installation)}
                         >
                           永久清理

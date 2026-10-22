@@ -13,6 +13,7 @@ export type ViewFilterOperator = "contains" | "equals" | "notEquals" | "greaterT
 export type ViewFilterRule = { id: string; fieldId: string; operator: ViewFilterOperator; value: string };
 export type ViewSortRule = { id: string; fieldId: string; direction: "asc" | "desc" };
 export type ViewConfig = {
+  customButtons?: import("@/features/custom-buttons/bindings").ButtonBinding[];
   visibleFieldIds: string[];
   sortableFieldIds: string[];
   filters: ViewFilterRule[];
@@ -44,6 +45,9 @@ export function useFormViews({
   const [viewConfigDraft, setViewConfigDraft] = useState<ViewConfig | null>(null);
   const [pendingViewConfig, setPendingViewConfig] = useState<ViewConfig | null>(null);
   const [viewDeleteTarget, setViewDeleteTarget] = useState<FormView | null>(null);
+  const [viewNameDraft, setViewNameDraft] = useState("");
+  const [isRenamingView, setIsRenamingView] = useState(false);
+  const [isDeletingView, setIsDeletingView] = useState(false);
 
   const activeFormView = useMemo(
     () => views.find((view) => view.id === activeViewId) ?? views[0],
@@ -85,6 +89,7 @@ export function useFormViews({
   }, [defaultViewConfig, enabled, formUuid]);
 
   function openViewConfig(mode: ViewConfigMode) {
+    setViewNameDraft(activeFormView?.name ?? "");
     setViewConfigDraft(cloneViewConfig(effectiveViewConfig));
     setViewConfigMode(mode);
   }
@@ -140,17 +145,57 @@ export function useFormViews({
     setViewDeleteTarget(view);
   }
 
+  async function renameActiveView() {
+    if (!activeFormView?.viewUuid || activeFormView.isDefault || isRenamingView || isDeletingView) return;
+    const name = viewNameDraft.trim();
+    if (!name) {
+      notify.error("视图名称不能为空");
+      return;
+    }
+    if (name === activeFormView.name) return;
+    setIsRenamingView(true);
+    try {
+      const { data, error } = await updateFormView({
+        path: { formUuid, viewUuid: activeFormView.viewUuid },
+        body: { name, config: activeFormView.config },
+        responseStyle: "fields",
+      });
+      if (error || !data || data.code !== 0 || !data.data) {
+        notify.error(data?.message || "修改视图名称失败");
+        return;
+      }
+      const saved = data.data;
+      setViews(current => current.map(view => view.id === activeFormView.id ? { ...view, name: saved.name, updatedAt: saved.updatedAt } : view));
+      setViewNameDraft(saved.name);
+      notify.success("视图名称已更新");
+    } catch {
+      notify.error("修改视图名称失败");
+    } finally {
+      setIsRenamingView(false);
+    }
+  }
+
   async function confirmDeleteView() {
-    if (!viewDeleteTarget?.viewUuid) return null;
-    const { error } = await deleteFormView({ path: { formUuid, viewUuid: viewDeleteTarget.viewUuid }, responseStyle: "fields" });
-    if (error) {
+    if (!viewDeleteTarget?.viewUuid || viewDeleteTarget.isDefault || isDeletingView || isRenamingView) return null;
+    setIsDeletingView(true);
+    try {
+      const { data, error } = await deleteFormView({ path: { formUuid, viewUuid: viewDeleteTarget.viewUuid }, responseStyle: "fields" });
+      const response = data && typeof data === "object" ? data : null;
+      if (error || !response || ("code" in response && response.code !== 0)) {
+        notify.error(response && "message" in response && typeof response.message === "string" ? response.message : "删除视图失败");
+        return null;
+      }
+      setViews(current => current.filter(item => item.id !== viewDeleteTarget.id));
+      setViewDeleteTarget(null);
+      closeViewConfig();
+      notify.success("视图已删除");
+      return views.find(view => view.isDefault) ?? null;
+    } catch {
       notify.error("删除视图失败");
       return null;
+    } finally {
+      setIsDeletingView(false);
     }
-    const nextViews = views.filter((item) => item.id !== viewDeleteTarget.id);
-    setViews(nextViews);
-    setViewDeleteTarget(null);
-    return nextViews.find((view) => view.isDefault) ?? null;
   }
 
   async function duplicateView(viewId: string) {
@@ -179,6 +224,11 @@ export function useFormViews({
     confirmDeleteView,
     createTableView,
     deleteView,
+    renameActiveView,
+    viewNameDraft,
+    setViewNameDraft,
+    isRenamingView,
+    isDeletingView,
     effectiveViewConfig,
     openViewConfig,
     pendingViewConfig,

@@ -168,6 +168,35 @@ export function validateWorkflowGraph<
   return issues;
 }
 
+/** Potential process paths; condition outcomes are evaluated only at runtime. */
+export function hasReachableProcessApproval<Kind extends string, Config>(
+  nodes: readonly WorkflowGraphNode<Kind, Config>[],
+  edges: readonly Edge[],
+): boolean {
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+  const pending = ["trigger-1"];
+  const visited = new Set<string>();
+  while (pending.length) {
+    const id = pending.pop()!;
+    if (visited.has(id)) continue;
+    visited.add(id);
+    const node = nodeMap.get(id);
+    if (!node) continue;
+    if (node.data.kind === "approval") return true;
+    const outgoing = edges.filter((edge) => edge.source === id);
+    if (node.data.kind === "condition" || node.data.kind === "parallel-condition") {
+      const config = node.data.config as { branches?: { id: string }[] } | null;
+      const handles = new Set((config?.branches ?? []).map((branch) => `condition-branch:${branch.id}`));
+      for (const edge of outgoing) {
+        if (edge.sourceHandle && handles.has(edge.sourceHandle)) pending.push(edge.target);
+      }
+    } else {
+      for (const edge of outgoing) pending.push(edge.target);
+    }
+  }
+  return false;
+}
+
 export function validateWorkflowNodeConfigs<Kind extends string, Config>(
   nodes: readonly WorkflowGraphNode<Kind, Config>[],
   definitions: readonly WorkflowNodeDefinition<Kind>[],

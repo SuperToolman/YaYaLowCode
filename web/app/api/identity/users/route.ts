@@ -1,4 +1,4 @@
-import { createLocalUser, listUsers } from "../../../lib/api-client";
+import { createLocalUser, listUsers } from "../../../lib/http";
 import { createBackendSdkClient, sdkJsonResponse } from "../../_lib/backend-sdk-client";
 
 export async function GET(request: Request) {

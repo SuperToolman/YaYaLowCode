@@ -2,13 +2,17 @@
  * 字段默认值编辑器
  * */
 
-
-
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import { Button, Input, InputGroup } from "@heroui/react";
+import {
+  Button,
+  Input,
+  InputGroup,
+  ToggleButton,
+  ToggleButtonGroup,
+} from "@heroui/react";
 import { Modal } from "@heroui/react/modal";
 import {
   type DesignerDefaultValueType,
@@ -16,13 +20,17 @@ import {
   type DesignerFieldOption,
 } from "../CompTool";
 import { toOptionalNumber } from "../../designer-options";
+import { RuntimeDatePicker, RuntimeDateRangePicker } from "@features/form-runtime/components/RuntimeFormFieldControls";
 import type {
   FieldPropsChangeHandler,
   PlacedField,
 } from "../../designer-types";
-import { FormulaEditor } from "./FormulaEditor";
+import {
+  FormulaEditor,
+  type FormulaEditorHandle,
+} from "@global-components/formula-editor/FormulaEditor";
 import { useTheme } from "@shared/ThemeProvider";
-import { FORMULA_FUNCTION_ITEMS } from "./formula-definitions";
+import { FORMULA_FUNCTION_ITEMS } from "@global-components/formula-editor/formula-definitions";
 import { NumberWithActions } from "./PropertyLayout";
 import {
   findDuplicateFormulaLabels,
@@ -44,8 +52,8 @@ const DEFAULT_VALUE_TYPE_OPTIONS: Array<{
 }> = [
   { label: "无", value: "none" },
   { label: "自定义", value: "custom" },
-  { label: "公式编辑", value: "formula" },
-  { label: "数据联动", value: "linkage" },
+  { label: "公式", value: "formula" },
+  { label: "联动", value: "linkage" },
 ];
 
 export function DefaultValueEditor({
@@ -121,7 +129,9 @@ function CustomDefaultValueEditor({
   if (field.type === "number") {
     return (
       <NumberWithActions
-        value={toOptionalNumber(field.props.defaultValue as string | number | string[] | undefined)}
+        value={toOptionalNumber(
+          field.props.defaultValue as string | number | string[] | undefined,
+        )}
         onChange={(value) =>
           onPropsChange(field.id, { defaultValue: value ?? 0 })
         }
@@ -174,13 +184,12 @@ function CustomDefaultValueEditor({
         : "";
 
     return (
-      <Input
-        aria-label="默认日期"
-        className="min-w-0 flex-1"
-        type="date"
+      <RuntimeDatePicker
+        field={{ id: field.id, label: "默认日期" }}
+        props={{ ...field.props, isRequired: false, isDisabled: false, isReadOnly: false }}
         value={value}
-        onChange={(event: ChangeEvent<HTMLInputElement>) =>
-          onPropsChange(field.id, { defaultValue: event.currentTarget.value })
+        onChange={(nextValue) =>
+          onPropsChange(field.id, { defaultValue: nextValue })
         }
       />
     );
@@ -192,37 +201,27 @@ function CustomDefaultValueEditor({
       : ["", ""];
 
     return (
-      <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
-        <Input
-          aria-label="默认开始日期"
-          type="date"
-          value={value[0] ?? ""}
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            onPropsChange(field.id, {
-              defaultValue: [event.currentTarget.value, value[1] ?? ""],
-            })
-          }
-        />
-        <Input
-          aria-label="默认结束日期"
-          type="date"
-          value={value[1] ?? ""}
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            onPropsChange(field.id, {
-              defaultValue: [value[0] ?? "", event.currentTarget.value],
-            })
-          }
-        />
-      </div>
+      <RuntimeDateRangePicker
+        field={{ id: field.id, label: "默认日期区间" }}
+        props={{ ...field.props, isRequired: false, isDisabled: false, isReadOnly: false }}
+        value={value}
+        onChange={(nextValue) =>
+          onPropsChange(field.id, { defaultValue: nextValue })
+        }
+      />
     );
   }
 
   if (field.type === "countryCity") {
-    return <CountryCityDefaultEditor field={field} onPropsChange={onPropsChange} />;
+    return (
+      <CountryCityDefaultEditor field={field} onPropsChange={onPropsChange} />
+    );
   }
 
   const value =
-    typeof field.props.defaultValue === "string" ? field.props.defaultValue : "";
+    typeof field.props.defaultValue === "string"
+      ? field.props.defaultValue
+      : "";
 
   return (
     <div className="min-w-0 space-y-2">
@@ -239,7 +238,9 @@ function CustomDefaultValueEditor({
           }
         />
       </InputGroup>
-      <div className="text-right text-xs text-[var(--color-text-secondary)]">{value.length}/500</div>
+      <div className="text-right text-xs text-[var(--color-text-secondary)]">
+        {value.length}/500
+      </div>
     </div>
   );
 }
@@ -253,30 +254,74 @@ function CountryCityDefaultEditor({
 }) {
   const [columns, setColumns] = useState<LocationCatalogItem[][]>([]);
   const value = normalizeCountryCityValue(field.props.defaultValue);
-  const maxDepth = Math.min(4, Math.max(1, Math.round(field.props.locationDepth ?? 3)));
+  const maxDepth = Math.min(
+    4,
+    Math.max(1, Math.round(field.props.locationDepth ?? 3)),
+  );
 
   useEffect(() => {
     let active = true;
-    void listLocationChildren(undefined, 1).then((items) => active && setColumns([items])).catch(() => active && setColumns([[]]));
-    return () => { active = false; };
+    void listLocationChildren(undefined, 1)
+      .then((items) => active && setColumns([items]))
+      .catch(() => active && setColumns([[]]));
+    return () => {
+      active = false;
+    };
   }, []);
 
   function selectItem(item: LocationCatalogItem | null, columnIndex: number) {
-    const path = item ? [...value.path.slice(0, columnIndex), toStoredLocationItem(item)] : value.path.slice(0, columnIndex);
+    const path = item
+      ? [...value.path.slice(0, columnIndex), toStoredLocationItem(item)]
+      : value.path.slice(0, columnIndex);
     const selected = path.at(-1);
-    onPropsChange(field.id, { defaultValue: selected ? { code: selected.code, depth: selected.depth, path } : { code: "", depth: 0, path: [] } });
+    onPropsChange(field.id, {
+      defaultValue: selected
+        ? { code: selected.code, depth: selected.depth, path }
+        : { code: "", depth: 0, path: [] },
+    });
     if (!item || item.depth >= maxDepth) {
       setColumns((current) => current.slice(0, columnIndex + 1));
       return;
     }
     void listLocationChildren(item.code, item.depth + 1)
-      .then((children) => setColumns((current) => [...current.slice(0, columnIndex + 1), children]))
+      .then((children) =>
+        setColumns((current) => [
+          ...current.slice(0, columnIndex + 1),
+          children,
+        ]),
+      )
       .catch(() => setColumns((current) => current.slice(0, columnIndex + 1)));
   }
 
   return (
-    <div className="grid min-w-0 flex-1 gap-1" style={{ gridTemplateColumns: `repeat(${maxDepth}, minmax(0, 1fr))` }}>
-      {columns.map((items, columnIndex) => <select key={columnIndex} aria-label={`默认地区第${columnIndex + 1}级`} className="h-7 min-w-0 rounded-sm border border-[var(--designer-border)] bg-[var(--color-bg-input)] px-1 text-[11px]" value={value.path[columnIndex]?.code ?? ""} onChange={(event) => selectItem(items.find((item) => item.code === event.currentTarget.value) ?? null, columnIndex)}><option value="">{columnIndex === 0 ? "默认国家" : "默认地区"}</option>{items.map((item) => <option key={item.id || item.code} value={item.code}>{getLocationLabel(item)}</option>)}</select>)}
+    <div
+      className="grid min-w-0 flex-1 gap-1"
+      style={{ gridTemplateColumns: `repeat(${maxDepth}, minmax(0, 1fr))` }}
+    >
+      {columns.map((items, columnIndex) => (
+        <select
+          key={columnIndex}
+          aria-label={`默认地区第${columnIndex + 1}级`}
+          className="h-7 min-w-0 rounded-sm border border-[var(--designer-border)] bg-[var(--color-bg-input)] px-1 text-[11px]"
+          value={value.path[columnIndex]?.code ?? ""}
+          onChange={(event) =>
+            selectItem(
+              items.find((item) => item.code === event.currentTarget.value) ??
+                null,
+              columnIndex,
+            )
+          }
+        >
+          <option value="">
+            {columnIndex === 0 ? "默认国家" : "默认地区"}
+          </option>
+          {items.map((item) => (
+            <option key={item.id || item.code} value={item.code}>
+              {getLocationLabel(item)}
+            </option>
+          ))}
+        </select>
+      ))}
     </div>
   );
 }
@@ -344,8 +389,10 @@ export function FormulaEditorModal({
   value: string;
 }) {
   const { resolvedTheme } = useTheme();
-  const [draftValue, setDraftValue] = useState(() => formulaToDisplay(value, fields));
-  const formulaInputRef = useRef<HTMLTextAreaElement>(null);
+  const [draftValue, setDraftValue] = useState(() =>
+    formulaToDisplay(value, fields),
+  );
+  const formulaInputRef = useRef<FormulaEditorHandle>(null);
 
   function handleOpenChange(nextIsOpen: boolean) {
     if (nextIsOpen) {
@@ -356,26 +403,7 @@ export function FormulaEditorModal({
   }
 
   function insertFormulaText(text: string) {
-    const textarea = formulaInputRef.current;
-
-    if (!textarea) {
-      setDraftValue((currentValue) => `${currentValue}${text}`);
-      return;
-    }
-
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const currentValue = textarea.value;
-    const nextValue = `${currentValue.slice(0, start)}${text}${currentValue.slice(
-      end,
-    )}`;
-    const nextPosition = start + text.length;
-
-    setDraftValue(nextValue);
-    requestAnimationFrame(() => {
-      textarea.focus();
-      textarea.setSelectionRange(nextPosition, nextPosition);
-    });
+    formulaInputRef.current?.insertText(text);
   }
 
   function confirmFormula() {
@@ -385,29 +413,20 @@ export function FormulaEditorModal({
 
   return (
     <Modal isOpen={isOpen} onOpenChange={handleOpenChange}>
-      <Modal.Backdrop className={styles["designer-theme__modal-backdrop"]} isDismissable>
+      <Modal.Backdrop
+        className={styles["designer-theme__modal-backdrop"]}
+        isDismissable
+      >
         <Modal.Container placement="center" scroll="inside" size="cover">
           <Modal.Dialog
             data-theme={resolvedTheme}
             className={`${styles["designer-theme__surface"]} flex h-[84vh] w-[min(1240px,92vw)] max-w-[92vw] flex-col overflow-hidden rounded-2xl bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]`}
           >
-            <Modal.Header className="border-b border-[var(--designer-border)] bg-[var(--designer-surface-solid)]">
-              <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
-                <div className="flex min-w-0 items-center gap-3">
-                  <Modal.Heading className="truncate text-xl font-semibold text-[var(--color-text-primary)]">
-                    公式编辑
-                  </Modal.Heading>
-                  <span className="text-sm text-[var(--color-text-secondary)]">
-                    使用数学运算符编辑公式
-                  </span>
-                </div>
-                <Modal.CloseTrigger
-                  aria-label="关闭公式编辑"
-                  className="shrink-0"
-                />
-              </div>
+            <Modal.Header>
+              <Modal.Heading>公式编辑</Modal.Heading>
+              <Modal.CloseTrigger />
             </Modal.Header>
-            <Modal.Body className="min-h-0 flex-1 overflow-hidden bg-[var(--designer-surface-soft)] p-4">
+            <Modal.Body>
               <div className="flex min-h-full flex-col overflow-hidden rounded-lg border border-[var(--designer-border)] bg-[var(--designer-surface-solid)]">
                 <div className="border-b border-[var(--designer-border)] bg-[var(--designer-surface-muted)] px-3 py-2">
                   <div className="flex items-center justify-between gap-3">
@@ -415,7 +434,11 @@ export function FormulaEditorModal({
                       {fieldLabel} =
                     </div>
                     <div className="flex shrink-0 items-center gap-2 text-xs text-[var(--color-text-secondary)]">
-                      <ToolbarButton onPress={() => navigator.clipboard?.writeText(draftValue)}>
+                      <ToolbarButton
+                        onPress={() =>
+                          navigator.clipboard?.writeText(draftValue)
+                        }
+                      >
                         复制
                       </ToolbarButton>
                       <ToolbarButton onPress={() => setDraftValue("")}>
@@ -433,6 +456,7 @@ export function FormulaEditorModal({
                     ref={formulaInputRef}
                     value={draftValue}
                     onChange={setDraftValue}
+                    className="h-full min-h-[220px] w-full resize-none rounded-lg border border-[var(--designer-border)] bg-[var(--color-bg-input)] px-3 py-3 font-mono text-[15px] leading-6 text-[var(--color-text-primary)] outline-none transition placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-soft)]"
                   />
                 </div>
 
@@ -497,12 +521,16 @@ function FormulaVariablePanel({
     .filter((field) => field.id !== currentFieldId && !field.parentGroupId)
     .sort((left, right) => left.row - right.row || left.column - right.column);
   const matchesField = (field: PlacedField) =>
-    !normalizedKeyword || field.label.toLocaleLowerCase().includes(normalizedKeyword);
+    !normalizedKeyword ||
+    field.label.toLocaleLowerCase().includes(normalizedKeyword);
   const visibleRoots = rootFields.filter(
     (field) =>
       matchesField(field) ||
       fields.some(
-        (child) => child.parentGroupId === field.id && child.id !== currentFieldId && matchesField(child),
+        (child) =>
+          child.parentGroupId === field.id &&
+          child.id !== currentFieldId &&
+          matchesField(child),
       ),
   );
 
@@ -520,8 +548,12 @@ function FormulaVariablePanel({
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
         <div className="mb-2 rounded-md bg-[var(--designer-surface-soft)] px-2 py-1.5 text-sm">
-          <span className="font-medium text-[var(--color-text-primary)]">当前设计器组件</span>
-          <span className="ml-2 text-xs text-[var(--color-text-secondary)]">按组件名称搜索</span>
+          <span className="font-medium text-[var(--color-text-primary)]">
+            当前设计器组件
+          </span>
+          <span className="ml-2 text-xs text-[var(--color-text-secondary)]">
+            按组件名称搜索
+          </span>
         </div>
         <div className="space-y-1">
           {visibleRoots.length > 0 ? (
@@ -565,14 +597,19 @@ function FormulaFieldTreeNode({
   level: number;
   onInsert: (value: string) => void;
 }) {
-  const parentMatches = !keyword || field.label.toLocaleLowerCase().includes(keyword);
+  const parentMatches =
+    !keyword || field.label.toLocaleLowerCase().includes(keyword);
   const children = fields
-    .filter((item) => item.parentGroupId === field.id && item.id !== currentFieldId)
     .filter(
-      (item) => parentMatches || item.label.toLocaleLowerCase().includes(keyword),
+      (item) => item.parentGroupId === field.id && item.id !== currentFieldId,
+    )
+    .filter(
+      (item) =>
+        parentMatches || item.label.toLocaleLowerCase().includes(keyword),
     )
     .sort((left, right) => left.row - right.row || left.column - right.column);
-  const isContainer = field.type === "groupContainer" || field.type === "subform";
+  const isContainer =
+    field.type === "groupContainer" || field.type === "subform";
   const hasDuplicateLabel = duplicateLabels.has(field.label);
 
   return (
@@ -580,7 +617,9 @@ function FormulaFieldTreeNode({
       <button
         type="button"
         disabled={isContainer || hasDuplicateLabel}
-        title={hasDuplicateLabel ? "组件名称重复，请先修改为唯一名称" : undefined}
+        title={
+          hasDuplicateLabel ? "组件名称重复，请先修改为唯一名称" : undefined
+        }
         onClick={() => onInsert(`[${field.label}]`)}
         className="flex min-h-10 w-full items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 text-left transition enabled:hover:border-[var(--designer-border)] enabled:hover:bg-[var(--color-bg-hover)] disabled:cursor-default"
         style={{ paddingLeft: `${8 + level * 16}px` }}
@@ -592,7 +631,9 @@ function FormulaFieldTreeNode({
           {field.label}
         </span>
         <span className="shrink-0 rounded-full bg-[var(--color-bg-subtle)] px-2 py-0.5 text-[10px] text-[var(--color-text-secondary)]">
-          {hasDuplicateLabel ? "名称重复" : getFormulaVariableTypeLabel(field.type)}
+          {hasDuplicateLabel
+            ? "名称重复"
+            : getFormulaVariableTypeLabel(field.type)}
         </span>
       </button>
       {children.map((child) => (
@@ -661,7 +702,9 @@ function FormulaFunctionPanel({
     () =>
       functions.reduce<Array<{ group: string; items: typeof functions }>>(
         (groups, item) => {
-          const currentGroup = groups.find((group) => group.group === item.group);
+          const currentGroup = groups.find(
+            (group) => group.group === item.group,
+          );
           if (currentGroup) currentGroup.items.push(item);
           else groups.push({ group: item.group, items: [item] });
           return groups;
@@ -684,7 +727,9 @@ function FormulaFunctionPanel({
         />
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
-        <div className="mb-2 text-sm font-medium text-[var(--color-text-primary)]">函数</div>
+        <div className="mb-2 text-sm font-medium text-[var(--color-text-primary)]">
+          函数
+        </div>
         <div className="space-y-1">
           {groupedFunctions.length > 0 ? (
             groupedFunctions.map((group) => (
@@ -702,7 +747,9 @@ function FormulaFunctionPanel({
                       className="block h-auto min-h-[58px] w-full overflow-hidden whitespace-normal rounded-lg border border-transparent px-2.5 py-2 text-left transition hover:border-[var(--designer-border)] hover:bg-[var(--color-bg-hover)]"
                     >
                       <div className="flex min-w-0 items-start justify-between gap-2 text-sm text-[var(--color-text-primary)]">
-                        <span className="min-w-0 break-all font-medium leading-5">{formulaFunction.name}</span>
+                        <span className="min-w-0 break-all font-medium leading-5">
+                          {formulaFunction.name}
+                        </span>
                         <span className="shrink-0 rounded-full bg-[var(--color-bg-subtle)] px-2 py-0.5 text-[10px] leading-4 text-[var(--color-text-secondary)]">
                           {formulaFunction.label}
                         </span>
@@ -763,30 +810,25 @@ function DefaultValueTypeSegmented({
   value: DesignerDefaultValueType;
 }) {
   return (
-    <div
-      role="tablist"
+    <ToggleButtonGroup
       aria-label="默认值类型"
-      className="grid h-7 w-full min-w-0 overflow-hidden rounded-md bg-[var(--color-bg-subtle)] p-0.5"
-      style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+      selectionMode="single"
+      size="sm"
+      disallowEmptySelection
+      selectedKeys={[value]}
+      onSelectionChange={(keys) => {
+        const selected = options.find((option) => keys.has(option));
+        if (selected) onChange(selected);
+      }}
     >
-      {DEFAULT_VALUE_TYPE_OPTIONS.filter((option) => options.includes(option.value)).map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          role="tab"
-          aria-selected={value === option.value}
-          onClick={() => onChange(option.value)}
-          className={[
-            "min-w-0 overflow-hidden truncate whitespace-nowrap rounded-sm px-1 text-[10px] transition",
-            value === option.value
-              ? "bg-[var(--designer-surface-solid)] text-[var(--color-text-primary)]"
-              : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]",
-          ].join(" ")}
-        >
+      {DEFAULT_VALUE_TYPE_OPTIONS.filter((option) =>
+        options.includes(option.value),
+      ).map((option) => (
+        <ToggleButton key={option.value} id={option.value}>
           {option.label}
-        </button>
+        </ToggleButton>
       ))}
-    </div>
+    </ToggleButtonGroup>
   );
 }
 

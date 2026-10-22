@@ -1,15 +1,9 @@
 "use client";
 
-import {
-  forwardRef,
-  useImperativeHandle,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Button, Input } from "@heroui/react";
+import { FormulaEditor, type FormulaEditorHandle } from "@global-components/formula-editor/FormulaEditor";
+import { FORMULA_FUNCTION_ITEMS } from "@global-components/formula-editor/formula-definitions";
 import { Modal } from "@heroui/react/modal";
 
 export type AutomationFormulaField = {
@@ -18,51 +12,7 @@ export type AutomationFormulaField = {
   fieldType: string;
 };
 
-type FormulaFunction = {
-  name: string;
-  category: string;
-  description: string;
-  example: string;
-};
 
-const formulaFunctions: FormulaFunction[] = [
-  {
-    name: "SUM",
-    category: "常用函数",
-    description: "计算一组数值的总和。",
-    example: "SUM($amount, 100)",
-  },
-  {
-    name: "AVERAGE",
-    category: "常用函数",
-    description: "计算一组数值的平均值。",
-    example: "AVERAGE($score_a, $score_b)",
-  },
-  {
-    name: "IF",
-    category: "逻辑函数",
-    description: "根据条件返回两个结果之一。",
-    example: 'IF($status == "通过", 1, 0)',
-  },
-  {
-    name: "AND",
-    category: "逻辑函数",
-    description: "所有条件为真时返回真。",
-    example: "AND($amount > 0, $enabled == true)",
-  },
-  {
-    name: "OR",
-    category: "逻辑函数",
-    description: "任一条件为真时返回真。",
-    example: "OR($level == 1, $level == 2)",
-  },
-  {
-    name: "CONCAT",
-    category: "文本函数",
-    description: "按顺序拼接多个文本值。",
-    example: 'CONCAT($first_name, " ", $last_name)',
-  },
-];
 
 export function AutomationFormulaEditorModal({
   fields,
@@ -81,10 +31,10 @@ export function AutomationFormulaEditorModal({
   onConfirm: () => void;
   onOpenChange: (isOpen: boolean) => void;
 }) {
-  const formulaInputRef = useRef<FormulaTokenEditorHandle>(null);
+  const formulaInputRef = useRef<FormulaEditorHandle>(null);
   const [fieldKeyword, setFieldKeyword] = useState("");
   const [functionKeyword, setFunctionKeyword] = useState("");
-  const [activeFunction, setActiveFunction] = useState(formulaFunctions[0]);
+  const [activeFunction, setActiveFunction] = useState(FORMULA_FUNCTION_ITEMS[0]);
 
   const visibleFields = useMemo(() => {
     const keyword = fieldKeyword.trim().toLocaleLowerCase();
@@ -94,16 +44,16 @@ export function AutomationFormulaEditorModal({
   }, [fieldKeyword, fields]);
   const visibleFunctions = useMemo(() => {
     const keyword = functionKeyword.trim().toLocaleLowerCase();
-    if (!keyword) return formulaFunctions;
+    if (!keyword) return FORMULA_FUNCTION_ITEMS;
 
-    return formulaFunctions.filter((item) => item.name.toLocaleLowerCase().includes(keyword));
+    return FORMULA_FUNCTION_ITEMS.filter((item) => item.name.toLocaleLowerCase().includes(keyword));
   }, [functionKeyword]);
 
   function insertText(text: string, selectionOffset = 0) {
     formulaInputRef.current?.insertText(text, selectionOffset);
   }
 
-  function selectFunction(item: FormulaFunction) {
+  function selectFunction(item: (typeof FORMULA_FUNCTION_ITEMS)[number]) {
     setActiveFunction(item);
     insertText(`${item.name}()`, -1);
   }
@@ -125,11 +75,11 @@ export function AutomationFormulaEditorModal({
                     <span className="text-[var(--color-text-secondary)]">使用数学运算符编辑公式</span>
                   </div>
                   <div className="min-h-0 flex-1 bg-[var(--color-bg-input)] p-2">
-                    <FormulaTokenEditor
+                    <FormulaEditor
                       ref={formulaInputRef}
-                      fields={fields}
                       value={value}
                       onChange={onChange}
+                      className="h-full min-h-[220px] w-full overflow-y-auto rounded-md border border-[var(--designer-border)] bg-[var(--color-bg-input)] px-3 py-3 font-mono text-sm leading-6 text-[var(--color-text-primary)] outline-none focus:border-[var(--color-primary)]"
                     />
                   </div>
                 </section>
@@ -181,7 +131,7 @@ export function AutomationFormulaEditorModal({
                           fullWidth
                           variant="ghost"
                           className="h-8 justify-start px-2 text-xs"
-                          onPress={() => selectFunction(item)}
+                          onPress={() => { setActiveFunction(item); insertText(`${item.name}()`, -1); }}
                         >
                           {item.name}
                         </Button>
@@ -193,10 +143,10 @@ export function AutomationFormulaEditorModal({
                     <div className="font-semibold text-[var(--color-text-primary)]">{activeFunction.name}</div>
                     <p className="mt-2">{activeFunction.description}</p>
                     <p className="mt-2">
-                      用法：<code className="font-mono text-[var(--color-primary)]">{activeFunction.name}(参数1, 参数2)</code>
+                          用法：<code className="font-mono text-[var(--color-primary)]">{activeFunction.name}(参数1, 参数2)</code>
                     </p>
                     <p>
-                      示例：<code className="font-mono text-[var(--color-primary)]">{activeFunction.example}</code>
+                          示例：<code className="font-mono text-[var(--color-primary)]">{activeFunction.name}(...)</code>
                     </p>
                     <div className="mt-4 border-t border-[var(--color-border)] pt-3">
                       <div className="font-medium text-[var(--color-text-primary)]">{fieldLabel}</div>
@@ -217,166 +167,6 @@ export function AutomationFormulaEditorModal({
       </Modal.Backdrop>
     </Modal>
   );
-}
-
-type FormulaTokenEditorHandle = {
-  insertText: (text: string, selectionOffset?: number) => void;
-};
-
-const FormulaTokenEditor = forwardRef<FormulaTokenEditorHandle, {
-  fields: AutomationFormulaField[];
-  value: string;
-  onChange: (value: string) => void;
-}>(function FormulaTokenEditor({ fields, value, onChange }, ref) {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const pendingCaretOffset = useRef<number | null>(null);
-  const fieldLabels = useMemo(
-    () => new Map(fields.map((field) => [`$${field.key}`, field.label])),
-    [fields],
-  );
-
-  useImperativeHandle(ref, () => ({
-    insertText(text, selectionOffset = 0) {
-      const editor = editorRef.current;
-      const selection = window.getSelection();
-      const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
-      const start = editor && range && editor.contains(range.startContainer)
-        ? getFormulaOffset(editor, range.startContainer, range.startOffset)
-        : value.length;
-      const end = editor && range && editor.contains(range.endContainer)
-        ? getFormulaOffset(editor, range.endContainer, range.endOffset)
-        : value.length;
-      const nextValue = `${value.slice(0, start)}${text}${value.slice(end)}`;
-
-      pendingCaretOffset.current = start + text.length + selectionOffset;
-      onChange(nextValue);
-    },
-  }), [onChange, value]);
-
-  useLayoutEffect(() => {
-    const editor = editorRef.current;
-    const caretOffset = pendingCaretOffset.current;
-    if (!editor) return;
-
-    pendingCaretOffset.current = null;
-    if (serializeFormulaNode(editor) !== value) {
-      renderFormulaDom(editor, value, fieldLabels);
-      if (caretOffset !== null) {
-        placeFormulaCaret(editor, caretOffset);
-      }
-    }
-  }, [fieldLabels, value]);
-
-  function handleInput() {
-    const editor = editorRef.current;
-    if (!editor) return;
-
-    const selection = window.getSelection();
-    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
-    pendingCaretOffset.current = range && editor.contains(range.startContainer)
-      ? getFormulaOffset(editor, range.startContainer, range.startOffset)
-      : null;
-    onChange(serializeFormulaNode(editor));
-  }
-
-  return (
-    <div
-      ref={editorRef}
-      aria-label="公式编辑器"
-      aria-multiline="true"
-      className="h-full min-h-[220px] w-full overflow-y-auto rounded-md border border-[var(--designer-border)] bg-[var(--color-bg-input)] px-3 py-3 font-mono text-sm leading-6 text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-soft)]"
-      contentEditable
-      role="textbox"
-      spellCheck={false}
-      suppressContentEditableWarning
-      onInput={handleInput}
-    />
-  );
-});
-
-function renderFormulaDom(editor: HTMLElement, value: string, fieldLabels: Map<string, string>) {
-  const fragment = document.createDocumentFragment();
-  const tokenPattern = /\$[A-Za-z0-9:_-]+/g;
-  let lastIndex = 0;
-
-  for (const match of value.matchAll(tokenPattern)) {
-    const token = match[0];
-    const start = match.index ?? 0;
-    if (start > lastIndex) {
-      fragment.append(document.createTextNode(value.slice(lastIndex, start)));
-    }
-
-    const label = fieldLabels.get(token);
-    if (label) {
-      const tag = document.createElement("span");
-      tag.className = "mx-0.5 inline-flex rounded bg-[var(--color-primary-soft)] px-1.5 py-0.5 font-sans text-xs leading-5 text-[var(--color-primary)]";
-      tag.contentEditable = "false";
-      tag.dataset.formulaToken = token;
-      tag.textContent = label;
-      fragment.append(tag);
-    } else {
-      fragment.append(document.createTextNode(token));
-    }
-    lastIndex = start + token.length;
-  }
-
-  if (lastIndex < value.length || fragment.childNodes.length === 0) {
-    fragment.append(document.createTextNode(value.slice(lastIndex)));
-  }
-
-  editor.replaceChildren(fragment);
-}
-
-function serializeFormulaNode(node: Node): string {
-  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
-  if (node instanceof HTMLElement && node.dataset.formulaToken) {
-    return node.dataset.formulaToken;
-  }
-
-  return Array.from(node.childNodes).map(serializeFormulaNode).join("");
-}
-
-function getFormulaOffset(editor: HTMLElement, node: Node, offset: number) {
-  const range = document.createRange();
-  range.selectNodeContents(editor);
-  range.setEnd(node, offset);
-  return serializeFormulaNode(range.cloneContents()).length;
-}
-
-function placeFormulaCaret(editor: HTMLElement, offset: number) {
-  const range = document.createRange();
-  let remaining = offset;
-  let isPlaced = false;
-
-  for (const node of Array.from(editor.childNodes)) {
-    const length = serializeFormulaNode(node).length;
-    if (node.nodeType === Node.TEXT_NODE) {
-      const textLength = node.textContent?.length ?? 0;
-      if (remaining <= textLength) {
-        range.setStart(node, remaining);
-        range.collapse(true);
-        isPlaced = true;
-        break;
-      }
-    } else if (remaining <= length) {
-      if (remaining === 0) range.setStartBefore(node);
-      else range.setStartAfter(node);
-      range.collapse(true);
-      isPlaced = true;
-      break;
-    }
-    remaining -= length;
-  }
-
-  if (!isPlaced) {
-    range.selectNodeContents(editor);
-    range.collapse(false);
-  }
-
-  const selection = window.getSelection();
-  selection?.removeAllRanges();
-  selection?.addRange(range);
-  editor.focus();
 }
 
 function FormulaPanel({ title, children }: { title: string; children: ReactNode }) {

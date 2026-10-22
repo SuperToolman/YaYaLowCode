@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
+import { ApiRequestError } from "../../lib/api-request";
 
-import { createClient } from "../../lib/api-client/client/client.gen";
-import { backendAuthorizationHeaders } from "./backend-json-proxy";
+export { createBackendSdkClient } from "../../lib/backend-client";
 
-const backendBaseUrl =
-  process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8788";
 
 type SdkResult = {
   data?: unknown;
@@ -12,20 +10,14 @@ type SdkResult = {
   response?: Response;
 };
 
-export function createBackendSdkClient(request: Request) {
-  return createClient({
-    baseUrl: backendBaseUrl,
-    headers: backendAuthorizationHeaders(request),
-  });
-}
-
 export async function sdkJsonResponse(result: Promise<SdkResult>) {
-  const resolved = await result;
-  const status = resolved.response?.status ?? 502;
-  const payload = resolved.data ?? resolved.error ?? {
-    code: status,
+  const resolved = await result.catch((error: unknown): SdkResult => ({ error }));
+  const status = resolved.error instanceof Error && resolved.response?.ok ? 502 : resolved.response?.status ?? 503;
+  if (status === 204) return new NextResponse(null, { status });
+  const payload = resolved.data ?? (resolved.error instanceof Error ? undefined : resolved.error) ?? {
+    code: resolved.error instanceof ApiRequestError ? resolved.error.code ?? status : status,
     data: null,
-    message: "backend unavailable",
+    message: resolved.error instanceof ApiRequestError && resolved.response ? resolved.error.message : "backend unavailable",
   };
   return NextResponse.json(payload, { status });
 }

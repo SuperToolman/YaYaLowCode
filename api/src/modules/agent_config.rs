@@ -1,6 +1,6 @@
 use axum::Json;
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -185,12 +185,24 @@ pub(crate) async fn get_system_ai_status(
 
 pub(crate) async fn list_providers(
     State(state): State<AppState>,
+    headers: HeaderMap,
 ) -> Result<Json<ApiResponse<Vec<ProviderResponse>>>, AppError> {
+    let grants = crate::platform::authorization::grants(&headers, &state).await?;
+    let can_manage = grants.contains("*") || grants.contains("settings.models.manage");
     let providers = AgentModelProviderEntity::find().all(&state.db).await?;
     let models = AgentProviderModelEntity::find().all(&state.db).await?;
     Ok(Json(success_response(
         "providers loaded",
-        providers.iter().map(|provider| provider_response(provider, &models)).collect(),
+        providers
+            .iter()
+            .map(|provider| {
+                let mut response = provider_response(provider, &models);
+                if !can_manage {
+                    response.api_key.clear();
+                }
+                response
+            })
+            .collect(),
     )))
 }
 

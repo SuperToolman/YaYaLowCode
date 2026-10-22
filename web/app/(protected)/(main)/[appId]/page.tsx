@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getFormsByRouteAppId, isRuntimeAppId } from "@lib/apps";
 import { getRuntimeAppNavigation } from "@features/application/server-api";
@@ -22,7 +22,7 @@ export default async function AppEntryPage({
 
   if (!defaultForm && isRuntimeAppId(routeAppId)) {
     try {
-      const navigation = await getRuntimeAppNavigation<NavigationItem[]>(routeAppId);
+      const navigation = await getRuntimeAppNavigation(routeAppId);
       if (navigation) {
         const defaultEntry = navigation.find((item) => item.isDefaultEntry);
         defaultForm =

@@ -1,13 +1,7 @@
 use crate::infrastructure::entities::iam_user_entity;
 use crate::modules::navigation::ensure_system_navigation_for_app;
 use crate::platform::authorization;
-use crate::platform::config::{
-    ApplicationBusinessContext, load_application_business_context_settings,
-    save_application_business_context_settings,
-};
-use crate::platform::form_storage::delete_storage_definition;
 use crate::platform::prelude::*;
-use crate::platform::records::RecordRepository;
 use crate::shared::*;
 use axum::http::HeaderMap;
 use axum::http::StatusCode;
@@ -135,49 +129,6 @@ pub(crate) async fn get_app(
     )))
 }
 
-pub(crate) async fn get_application_business_context(
-    State(state): State<AppState>,
-    Path(app_id): Path<String>,
-) -> Result<Json<ApiResponse<ApplicationBusinessContext>>, AppError> {
-    AppEntity::find()
-        .filter(app_entity::Column::RouteAppId.eq(app_id.clone()))
-        .one(&state.db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("app not found".to_string()))?;
-    let context = load_application_business_context_settings()
-        .and_then(|settings| settings.applications.get(&app_id).cloned())
-        .unwrap_or_default();
-    Ok(Json(success_response(
-        "application business context loaded",
-        context,
-    )))
-}
-
-pub(crate) async fn update_application_business_context(
-    State(state): State<AppState>,
-    Path(app_id): Path<String>,
-    Json(payload): Json<UpdateApplicationBusinessContextRequest>,
-) -> Result<Json<ApiResponse<ApplicationBusinessContext>>, AppError> {
-    AppEntity::find()
-        .filter(app_entity::Column::RouteAppId.eq(app_id.clone()))
-        .one(&state.db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("app not found".to_string()))?;
-    let context = ApplicationBusinessContext::from(payload);
-    context.validate().map_err(AppError::BadRequest)?;
-    let mut settings = load_application_business_context_settings().unwrap_or_default();
-    if context.is_empty() {
-        settings.applications.remove(&app_id);
-    } else {
-        settings.applications.insert(app_id, context.clone());
-    }
-    save_application_business_context_settings(&settings).map_err(AppError::Server)?;
-    Ok(Json(success_response(
-        "application business context saved",
-        context,
-    )))
-}
-
 pub(crate) async fn update_app(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -284,72 +235,16 @@ pub(crate) async fn delete_app_definition(
         ));
     }
 
-    let form_uuids = FormDefinitionEntity::find()
-        .filter(form_definition_entity::Column::AppRouteAppId.eq(app_id))
-        .all(&state.db)
-        .await?
-        .into_iter()
-        .map(|item| item.form_uuid)
-        .collect::<Vec<_>>();
-
     let txn = state.db.begin().await?;
-    let record_repository = RecordRepository::new(&txn);
-
-    for form_uuid in form_uuids {
-        record_repository.delete_by_form(&form_uuid).await?;
-        delete_storage_definition(&txn, &form_uuid).await?;
-        FormSchemaEntity::delete_many()
-            .filter(form_schema_entity::Column::FormUuid.eq(form_uuid.clone()))
-            .exec(&txn)
-            .await?;
-        FormDefinitionEntity::delete_many()
-            .filter(form_definition_entity::Column::FormUuid.eq(form_uuid))
-            .exec(&txn)
-            .await?;
-    }
-
-    AppNavigationEntity::delete_many()
-        .filter(app_navigation_entity::Column::AppRouteAppId.eq(app_id))
-        .exec(&txn)
-        .await?;
-
-    let flow_ids = AutomationFlowEntity::find()
-        .filter(automation_flow_entity::Column::AppRouteAppId.eq(app.route_app_id.clone()))
-        .all(&txn)
-        .await?
-        .into_iter()
-        .map(|item| item.id)
-        .collect::<Vec<_>>();
-
-    if !flow_ids.is_empty() {
-        AutomationFlowVersionEntity::delete_many()
-            .filter(automation_flow_version_entity::Column::FlowId.is_in(flow_ids.clone()))
-            .exec(&txn)
-            .await?;
-        AutomationNodeEntity::delete_many()
-            .filter(automation_node_entity::Column::FlowId.is_in(flow_ids.clone()))
-            .exec(&txn)
-            .await?;
-        AutomationEdgeEntity::delete_many()
-            .filter(automation_edge_entity::Column::FlowId.is_in(flow_ids))
-            .exec(&txn)
-            .await?;
-    }
-
-    AutomationFlowEntity::delete_many()
-        .filter(automation_flow_entity::Column::AppRouteAppId.eq(app.route_app_id.clone()))
-        .exec(&txn)
-        .await?;
-
-    AppEntity::delete_many()
-        .filter(app_entity::Column::Id.eq(app.id))
-        .exec(&txn)
-        .await?;
-
+    deletion::delete_app_contents(&txn, app_id).await?;
     txn.commit().await?;
 
     Ok(())
 }
+pub(crate) mod deletion;
 pub(crate) mod dto;
+
+#[cfg(test)]
+mod delete_tests;
 
 pub(crate) use dto::*;

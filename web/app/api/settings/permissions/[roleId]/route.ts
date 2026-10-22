@@ -1,4 +1,4 @@
-import { getRolePermissions, updateRolePermissions } from "../../../../lib/api-client";
+import { getRolePermissions, updateRolePermissions } from "../../../../lib/http";
 import { createBackendSdkClient, sdkJsonResponse } from "../../../_lib/backend-sdk-client";
 
 type Context = { params: Promise<{ roleId: string }> };

@@ -1,29 +1,26 @@
-import { getFormSchema, listFormRecords, listRoles, listUsers } from "@/app/lib/api-client";
-import { ApiRequestError } from "@/app/lib/api-request";
+import { getFormSchema, listFormRecords, listRoles, listUsers, validateFormRecord } from "@/app/lib/http";
+import { ApiRequestError, unwrapApiResult } from "@/app/lib/api-request";
 import type { AssociationRecord, RuntimeFormSchema, RuntimeIdentityCatalog } from "./types";
 
 export async function fetchCurrentFormSchema(formUuid: string): Promise<RuntimeFormSchema> {
-  const { data, error } = await getFormSchema({
+  const result = await getFormSchema({
     path: { formUuid },
     responseStyle: "fields",
   });
-  if (error || data?.code !== 0 || !data.data?.schema) {
-    throw new ApiRequestError(data?.message || "无法加载表单 Schema", 0, "business", data?.code, { cause: error });
-  }
-  return data.data.schema as RuntimeFormSchema;
+  const { schema } = unwrapApiResult(result, "无法加载表单 Schema");
+  if (!schema || typeof schema !== "object" || !("fields" in schema) || !Array.isArray(schema.fields)) throw new ApiRequestError("表单 Schema 格式无效", result.response?.status ?? 200, "invalid-response");
+  return schema as RuntimeFormSchema;
 }
 
 export async function fetchAssociationRecords(formUuid: string, signal?: AbortSignal): Promise<AssociationRecord[]> {
-  const { data, error } = await listFormRecords({
+  const result = await listFormRecords({
     path: { formUuid },
     query: { page: 1, pageSize: 100 },
     responseStyle: "fields",
     signal,
   });
-  if (error || data?.code !== 0 || !data.data) {
-    throw new ApiRequestError(data?.message || "无法加载关联记录", 0, "business", data?.code, { cause: error });
-  }
-  return data.data.items.map((record) => ({
+  const page = unwrapApiResult(result, "无法加载关联记录");
+  return page.items.map((record) => ({
     id: record.id,
     data: isRecordData(record.data) ? record.data : {},
   }));
@@ -34,13 +31,10 @@ export async function fetchRuntimeIdentityCatalog(signal?: AbortSignal): Promise
     listUsers({ responseStyle: "fields", signal }),
     listRoles({ responseStyle: "fields", signal }),
   ]);
-  const usersData = usersResult.data;
-  const rolesData = rolesResult.data;
-  if (usersResult.error || usersData?.code !== 0 || !usersData.data || rolesResult.error || rolesData?.code !== 0 || !rolesData.data) {
-    throw new ApiRequestError("无法加载成员目录", 0, "business", undefined, { cause: usersResult.error ?? rolesResult.error });
-  }
+  const users = unwrapApiResult(usersResult, "无法加载成员目录");
+  const roles = unwrapApiResult(rolesResult, "无法加载成员目录");
   return {
-    users: usersData.data.map((user) => ({
+    users: users.map((user) => ({
       avatarUrl: user.avatarUrl ?? null,
       displayName: user.displayName,
       id: user.id,
@@ -49,7 +43,7 @@ export async function fetchRuntimeIdentityCatalog(signal?: AbortSignal): Promise
       sourceType: user.sourceType,
       status: user.status,
     })),
-    roles: rolesData.data,
+    roles,
   };
 }
 
@@ -64,4 +58,13 @@ export {
   getFormSchema,
   listFormViews,
   updateFormView,
-} from "@/app/lib/api-client";
+} from "@/app/lib/http";
+
+export async function validateFormSubmission(schema: RuntimeFormSchema, values: Record<string, unknown>, recordUuid?: string) {
+  const result = await validateFormRecord({
+    path: { formUuid: schema.formUuid },
+    body: { data: values, recordUuid, schema },
+    responseStyle: "fields",
+  });
+  return unwrapApiResult(result, "无法完成提交校验");
+}

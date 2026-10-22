@@ -1,22 +1,36 @@
 "use client";
+import { notifyRequestError } from "@lib/notify";
 import { notify } from "@lib/notify";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, Key } from "react";
+import type { ChangeEvent, ComponentProps, Key } from "react";
 import Image from "next/image";
 import {
   Button,
+  Calendar,
+  DatePicker,
+  FieldError,
   DateRangePicker,
   Input,
   ListBox,
   Popover,
   RangeCalendar,
   Select,
+  TimeField,
+  Label,
+  Link,
+  Spinner,
 } from "@heroui/react";
-import styles from "./RuntimeFormControls.module.css";
 import { DateInputGroup } from "@heroui/react/date-input-group";
-import { ChevronDown } from "@gravity-ui/icons";
-import { parseDate } from "@internationalized/date";
+import { ChevronDown, Paperclip, Picture, TrashBin } from "@gravity-ui/icons";
+import {
+  parseDate,
+  parseDateTime,
+  parseZonedDateTime,
+  toCalendarDate,
+  toCalendarDateTime,
+} from "@internationalized/date";
+import { getDateBounds, getDateValidation } from "./date-validation";
 import { uploadFile } from "@features/files/api";
 import {
   getLocationLabel,
@@ -31,6 +45,7 @@ import type {
   RuntimeFieldProps,
   RuntimeSchemaField,
 } from "./runtime-form-types";
+import { MySurface } from "@/components/ui/MySurface";
 
 function getOptionLabel(options: RuntimeFieldOption[], value: string) {
   return options.find((option) => option.value === value)?.label ?? "";
@@ -46,8 +61,144 @@ function getDateRangeValue(value: string[]) {
   }
 }
 
+function getDateValue(
+  value: string,
+  granularity: RuntimeFieldProps["granularity"] = "day",
+) {
+  try {
+    if (!value) return null;
+    const parsed = value.includes("[")
+      ? parseZonedDateTime(value)
+      : value.includes("T")
+        ? parseDateTime(value)
+        : parseDate(value);
+    return granularity === "day"
+      ? toCalendarDate(parsed)
+      : "hour" in parsed
+        ? parsed
+        : toCalendarDateTime(parsed);
+  } catch {
+    return null;
+  }
+}
+
+export function RuntimeDatePicker({
+  field,
+  errorMessage,
+  props,
+  value,
+  onChange,
+}: {
+  field: Pick<RuntimeSchemaField, "id" | "label">;
+  errorMessage?: string;
+  props: RuntimeFieldProps;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const bounds = getDateBounds(getDateValidation(props));
+  return (
+    <DatePicker
+      style={{ width: "100%", minWidth: 0, maxWidth: "100%" }}
+      minValue={
+        bounds.minValue as unknown as ComponentProps<
+          typeof DatePicker
+        >["minValue"]
+      }
+      maxValue={
+        bounds.maxValue as unknown as ComponentProps<
+          typeof DatePicker
+        >["maxValue"]
+      }
+      key={props.granularity ?? "day"}
+      aria-label={field.label}
+      isRequired={props.isRequired}
+      isInvalid={Boolean(errorMessage)}
+      validationBehavior="aria"
+      value={
+        getDateValue(value, props.granularity) as ComponentProps<
+          typeof DatePicker
+        >["value"]
+      }
+      granularity={props.granularity ?? "day"}
+      hourCycle={props.hourCycle}
+      hideTimeZone={props.hideTimeZone}
+      shouldForceLeadingZeros={props.shouldForceLeadingZeros}
+      onChange={(nextValue) => onChange(nextValue?.toString() ?? "")}
+      isDisabled={props.isDisabled}
+      isReadOnly={props.isReadOnly}
+      shouldCloseOnSelect={(props.granularity ?? "day") === "day"}
+    >
+      {({ state }) => (
+        <>
+          <DateInputGroup fullWidth>
+            <DateInputGroup.InputContainer style={{ minWidth: 0, width: 0 }}>
+              <DateInputGroup.Input>
+                {(segment) => <DateInputGroup.Segment segment={segment} />}
+              </DateInputGroup.Input>
+            </DateInputGroup.InputContainer>
+            <DateInputGroup.Suffix>
+              <DatePicker.Trigger>
+                <DatePicker.TriggerIndicator />
+              </DatePicker.Trigger>
+            </DateInputGroup.Suffix>
+          </DateInputGroup>
+          <DatePicker.Popover>
+            <Calendar>
+              <Calendar.Header>
+                <Calendar.NavButton slot="previous" />
+                <Calendar.YearPickerTrigger>
+                  <Calendar.YearPickerTriggerHeading />
+                  <Calendar.YearPickerTriggerIndicator />
+                </Calendar.YearPickerTrigger>
+                <Calendar.NavButton slot="next" />
+              </Calendar.Header>
+              <Calendar.YearPickerGrid>
+                <Calendar.YearPickerGridBody>
+                  {({ year }) => <Calendar.YearPickerCell year={year} />}
+                </Calendar.YearPickerGridBody>
+              </Calendar.YearPickerGrid>
+              <Calendar.Grid>
+                <Calendar.GridHeader>
+                  {(day) => <Calendar.HeaderCell>{day}</Calendar.HeaderCell>}
+                </Calendar.GridHeader>
+                <Calendar.GridBody>
+                  {(date) => <Calendar.Cell date={date} />}
+                </Calendar.GridBody>
+              </Calendar.Grid>
+            </Calendar>
+            {props.granularity && props.granularity !== "day" ? (
+              <TimeField
+                aria-label={`${field.label}时间`}
+                granularity={props.granularity}
+                hourCycle={props.hourCycle}
+                hideTimeZone={props.hideTimeZone}
+                shouldForceLeadingZeros={props.shouldForceLeadingZeros}
+                value={state.timeValue}
+                onChange={(time) => {
+                  if (time) state.setTimeValue(time);
+                }}
+                isDisabled={props.isDisabled}
+                isReadOnly={props.isReadOnly}
+              >
+                <Label>时间</Label>
+                <TimeField.Group>
+                  <TimeField.Input>
+                    {(segment) => <TimeField.Segment segment={segment} />}
+                  </TimeField.Input>
+                </TimeField.Group>
+              </TimeField>
+            ) : null}
+          </DatePicker.Popover>
+          <FieldError>{errorMessage}</FieldError>
+        </>
+      )}
+    </DatePicker>
+  );
+}
+
 export function RuntimeSelect({
   field,
+  errorMessage,
   onChange,
   options,
   placeholder,
@@ -55,6 +206,7 @@ export function RuntimeSelect({
   value,
 }: {
   field: RuntimeSchemaField;
+  errorMessage?: string;
   onChange: (value: string) => void;
   options: RuntimeFieldOption[];
   placeholder: string;
@@ -64,7 +216,8 @@ export function RuntimeSelect({
   return (
     <Select
       aria-label={field.label}
-      className={styles["form-runtime-controls__select-field"]}
+      isInvalid={Boolean(errorMessage)}
+      validationBehavior="aria"
       selectedKey={value || null}
       onSelectionChange={(key: Key | null) =>
         onChange(key === null ? "" : String(key))
@@ -92,6 +245,7 @@ export function RuntimeSelect({
           ))}
         </ListBox>
       </Select.Popover>
+      <FieldError>{errorMessage}</FieldError>
     </Select>
   );
 }
@@ -111,7 +265,6 @@ export function RuntimeCountryCitySelect({
     4,
     Math.max(1, Math.round(props.locationDepth ?? 3)),
   );
-  const popoverWidth = `${maxDepth === 1 ? 18 : maxDepth * 14}rem`;
   const [isOpen, setIsOpen] = useState(false);
   const [columns, setColumns] = useState<LocationCatalogItem[][]>([]);
   const [activePath, setActivePath] = useState<LocationCatalogItem[]>([]);
@@ -188,50 +341,46 @@ export function RuntimeCountryCitySelect({
       isOpen={isOpen}
       onOpenChange={(next) => !isDisabled && setIsOpen(next)}
     >
-      <Popover.Trigger aria-label={field.label} className="block w-full">
-        <div
-          style={{ backgroundColor: "var(--field-background)" }}
-          className={[
-            "flex h-10 w-full min-w-0 items-center gap-2 rounded-xl bg-[var(--field-background)] px-3 text-sm text-[var(--color-text-primary)] shadow-[var(--shadow-card-glass)]",
-            isDisabled ? "cursor-not-allowed opacity-60" : "",
-          ].join(" ")}
-        >
-          <span
-            className={[
-              "min-w-0 flex-1 truncate leading-5",
-              selectedPath.length === 0
-                ? "text-[var(--color-text-disabled)]"
-                : "",
-            ].join(" ")}
-          >
-            {selectedPath.length > 0
-              ? selectedPath.map((item) => getLocationLabel(item)).join(" / ")
-              : props.placeholder || "请选择国家/地区"}
-          </span>
+      <Popover.Trigger
+        aria-label={field.label}
+        className="block w-full"
+        tabIndex={isDisabled ? -1 : 0}
+      >
+        <div className="relative w-full">
+          <Input
+            aria-expanded={isOpen}
+            aria-haspopup="listbox"
+            aria-label={field.label}
+            className="pointer-events-none h-9 pr-10"
+            disabled={isDisabled}
+            placeholder={props.placeholder || "请选择国家/地区"}
+            readOnly
+            value={
+              selectedPath.length > 0
+                ? selectedPath.map((item) => getLocationLabel(item)).join(" / ")
+                : ""
+            }
+            fullWidth
+          />
           <ChevronDown
             aria-hidden="true"
-            className="h-4 w-4 shrink-0 text-[var(--color-text-disabled)]"
+            className="pointer-events-none absolute inset-y-0 right-3 my-auto h-4 w-4 text-[var(--color-text-disabled)]"
           />
         </div>
       </Popover.Trigger>
-      <Popover.Content
-        className="max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl bg-[var(--color-bg-surface)] p-0 shadow-[var(--shadow-floating)]"
-        style={{ width: `min(${popoverWidth}, calc(100vw - 2rem))` }}
-      >
+      <Popover.Content className="w-max max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl bg-[var(--color-bg-surface)] p-0 shadow-[var(--shadow-floating)]">
         <Popover.Dialog
           aria-label={`${field.label}国家地区选择`}
-          className="w-full min-w-0"
+          className="min-w-0 max-w-[calc(100vw-2rem)]"
         >
-          <div className="flex min-w-0 overflow-x-auto" role="listbox">
+          <div className="flex min-w-0 max-w-full overflow-x-auto" role="listbox">
             {filteredColumns.map(({ items, columnIndex }) => (
               <div
                 key={columnIndex}
-                className={[
-                  "flex h-72 shrink-0 flex-col border-r border-[var(--color-border)] last:border-r-0",
-                  maxDepth === 1 ? "w-full" : "w-56",
-                ].join(" ")}
+                className="flex h-72 w-max min-w-36 max-w-[min(12rem,calc(100vw-4rem))] shrink-0 flex-col border-r border-[var(--color-border)] last:border-r-0"
               >
-                <div className="border-b border-[var(--color-border)] p-2">
+                <div className="relative h-13 shrink-0">
+                  <div className="absolute inset-x-1.5 inset-y-2">
                   <Input
                     aria-label={`搜索第${columnIndex + 1}级地区`}
                     placeholder={`搜索第${columnIndex + 1}级地区`}
@@ -245,6 +394,7 @@ export function RuntimeCountryCitySelect({
                     }
                     fullWidth
                   />
+                  </div>
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto p-1">
                   {items.map((item) => (
@@ -253,7 +403,7 @@ export function RuntimeCountryCitySelect({
                       type="button"
                       variant="ghost"
                       className={[
-                        "h-auto min-h-10 w-full justify-between rounded-lg px-2 py-1 text-left focus-visible:outline-none focus-visible:ring-0",
+                        "h-auto min-h-10 w-full min-w-0 justify-between gap-1 rounded-lg px-1.5 py-1 text-left focus-visible:outline-none focus-visible:ring-0",
                         activePath[columnIndex]?.code === item.code
                           ? "bg-[var(--color-bg-hover)]"
                           : "",
@@ -264,7 +414,7 @@ export function RuntimeCountryCitySelect({
                       {item.depth < maxDepth ? (
                         <span
                           aria-hidden="true"
-                          className="ml-2 text-[var(--color-text-secondary)]"
+                          className="ml-1 shrink-0 text-[var(--color-text-secondary)]"
                         >
                           &gt;
                         </span>
@@ -283,14 +433,15 @@ export function RuntimeCountryCitySelect({
               </div>
             ))}
           </div>
-          <div className="flex items-center justify-between border-t border-[var(--color-border)] p-2">
-            <span className="min-w-0 truncate text-xs text-[var(--color-text-secondary)]">
+          <MySurface className="mt-2 flex items-center justify-between gap-3 p-2 [contain:inline-size]">
+            <span className="min-w-0 flex-1 truncate text-xs text-[var(--color-text-secondary)]">
               {activePath.map((item) => getLocationLabel(item)).join(" / ") ||
                 `请选择第 ${maxDepth} 级地区`}
             </span>
             <Button
               type="button"
               size="sm"
+              className="shrink-0"
               isDisabled={
                 activePath.length === 0 ||
                 (activePath.length < maxDepth && !selectionIsLeaf)
@@ -311,7 +462,7 @@ export function RuntimeCountryCitySelect({
             >
               确认
             </Button>
-          </div>
+          </MySurface>
         </Popover.Dialog>
       </Popover.Content>
     </Popover>
@@ -398,6 +549,7 @@ export function RuntimeCheckboxOptions({
 
 export function RuntimeMultiSelect({
   field,
+  errorMessage,
   onChange,
   options,
   placeholder,
@@ -405,40 +557,60 @@ export function RuntimeMultiSelect({
   value,
 }: {
   field: RuntimeSchemaField;
+  errorMessage?: string;
   onChange: (value: string[]) => void;
   options: RuntimeFieldOption[];
   placeholder: string;
   props: RuntimeFieldProps;
   value: string[];
 }) {
-  const [isOpen, setIsOpen] = useState(false);
   const selectedLabels = value
     .map((item) => getOptionLabel(options, item))
     .filter(Boolean);
 
   return (
-    <div className="relative">
-      <Button
-        type="button"
-        variant="ghost"
-        isDisabled={Boolean(props.isDisabled || props.isReadOnly)}
-        onClick={() => setIsOpen((current) => !current)}
-        className="min-h-10 w-full justify-start rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-2 text-left text-sm text-[var(--color-text-primary)]"
-      >
-        {selectedLabels.length > 0 ? selectedLabels.join("、") : placeholder}
-      </Button>
-      {isOpen ? (
-        <div className="absolute z-30 mt-2 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-3 shadow-[var(--shadow-floating)]">
-          <RuntimeCheckboxOptions
-            ariaLabel={field.label}
-            value={value}
-            onChange={onChange}
-            options={options}
-            isDisabled={Boolean(props.isDisabled || props.isReadOnly)}
-            isRequired={props.isRequired}
-          />
-        </div>
-      ) : null}
+    <Select
+      aria-label={field.label}
+      isInvalid={Boolean(errorMessage)}
+      validationBehavior="aria"
+      selectionMode="multiple"
+      value={value}
+      onChange={(keys) => onChange(keys.map(String))}
+      shouldCloseOnSelect={false}
+      isDisabled={Boolean(props.isDisabled || props.isReadOnly)}
+      isRequired={props.isRequired}
+      placeholder={placeholder}
+      fullWidth
+    >
+      <Select.Trigger className="min-w-0">
+        <Select.Value className="min-w-0 flex-1 truncate">
+          {selectedLabels.length > 0 ? selectedLabels.join("、") : placeholder}
+        </Select.Value>
+        <Select.Indicator />
+      </Select.Trigger>
+      <Select.Popover>
+        <ListBox selectionMode="multiple">
+          {options.map((option) => (
+            <ListBox.Item
+              key={option.value}
+              id={option.value}
+              textValue={option.label}
+            >
+              {option.label}
+              <ListBox.ItemIndicator />
+            </ListBox.Item>
+          ))}
+        </ListBox>
+      </Select.Popover>
+      <FieldError>{errorMessage}</FieldError>
+    </Select>
+  );
+}
+
+export function UploadSurface({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
+      {children}
     </div>
   );
 }
@@ -458,6 +630,8 @@ export function RuntimeUpload({
   const isDisabled = Boolean(props.isDisabled || props.isReadOnly);
   const [isUploading, setIsUploading] = useState(false);
   const files = normalizeUploadedRuntimeFiles(value);
+  const fillsImageHeight =
+    field.type === "imageUpload" && (field.rowSpan ?? 1) > 1;
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const selectedFiles = Array.from(event.currentTarget.files ?? []);
@@ -484,7 +658,7 @@ export function RuntimeUpload({
         props.multiple ? [...files, ...uploaded] : uploaded.slice(0, 1),
       );
     } catch (error) {
-      notify.error("文件上传失败", {
+      notifyRequestError(error, "文件上传失败", {
         description: error instanceof Error ? error.message : "请稍后重试。",
       });
     } finally {
@@ -493,25 +667,41 @@ export function RuntimeUpload({
   }
 
   return (
-    <div className="block rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-3">
+    <UploadSurface>
       <Button
         type="button"
-        variant="ghost"
+        variant="secondary"
         isDisabled={isDisabled || isUploading}
-        onClick={() => inputRef.current?.click()}
-        className="h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 text-sm text-[var(--color-text-primary)]"
+        onPress={() => inputRef.current?.click()}
+        className={
+          fillsImageHeight && files.length === 0
+            ? "h-auto min-h-9 w-full max-w-full flex-1"
+            : "max-w-full shrink-0 self-start"
+        }
       >
-        {props.buttonText || props.placeholder || "上传"}
+        {isUploading ? (
+          <Spinner size="sm" />
+        ) : field.type === "imageUpload" ? (
+          <Picture />
+        ) : (
+          <Paperclip />
+        )}
+        <span className="truncate">
+          {isUploading
+            ? "正在上传…"
+            : props.buttonText || props.placeholder || "上传"}
+        </span>
       </Button>
       <input
         ref={inputRef}
         className="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0"
         type="file"
         name={field.id}
-        accept={props.accept}
+        accept={
+          props.accept || (field.type === "imageUpload" ? "image/*" : undefined)
+        }
         multiple={props.multiple}
         disabled={isDisabled}
-        required={props.isRequired}
         tabIndex={-1}
         onChange={handleFileChange}
       />
@@ -519,15 +709,19 @@ export function RuntimeUpload({
         <div
           className={
             field.type === "imageUpload"
-              ? "mt-3 grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2"
-              : "mt-2 space-y-1"
+              ? "mt-2 min-h-0 flex-1 grid grid-cols-[repeat(auto-fill,minmax(min(112px,100%),1fr))] gap-2"
+              : "mt-2 min-h-0 flex-1 space-y-1"
           }
         >
           {files.map((file) =>
             field.type === "imageUpload" ? (
               <div
                 key={file.fileId}
-                className="relative min-w-0 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)]"
+                className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+                style={{
+                  borderRadius: "var(--radius)",
+                  background: "var(--surface)",
+                }}
               >
                 <Image
                   src={`/api/files/${encodeURIComponent(file.fileId)}/download`}
@@ -535,61 +729,82 @@ export function RuntimeUpload({
                   width={112}
                   height={80}
                   unoptimized
-                  className="h-20 w-full object-cover"
-                />
-                <div
-                  className="truncate px-2 py-1 text-xs text-[var(--color-text-secondary)]"
-                  title={file.name}
-                >
-                  {file.name}
-                </div>
-                <button
-                  type="button"
-                  aria-label={`删除${file.name}`}
-                  className="absolute right-1 top-1 h-5 w-5 rounded bg-black/60 text-xs text-white"
-                  disabled={isDisabled || isUploading}
-                  onClick={() =>
-                    onFilesCommitted(
-                      files.filter((item) => item.fileId !== file.fileId),
-                    )
+                  className={
+                    fillsImageHeight
+                      ? "min-h-20 w-full flex-1 object-contain h-0"
+                      : "h-20 w-full object-cover"
                   }
-                >
-                  ×
-                </button>
+                />
+                <div className="flex min-w-0 shrink-0 items-center gap-1 px-1 py-0.5">
+                  <Link
+                    className="min-w-0 flex-1 truncate text-xs"
+                    href={`/api/files/${encodeURIComponent(file.fileId)}/download`}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={file.name}
+                  >
+                    {file.name}
+                  </Link>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    isIconOnly
+                    aria-label={`删除${file.name}`}
+                    style={{ color: "var(--danger)" }}
+                    isDisabled={isDisabled || isUploading}
+                    onPress={() =>
+                      onFilesCommitted(
+                        files.filter((item) => item.fileId !== file.fileId),
+                      )
+                    }
+                  >
+                    <TrashBin />
+                  </Button>
+                </div>
               </div>
             ) : (
               <div
                 key={file.fileId}
-                className="flex items-center justify-between gap-2 text-xs text-[var(--color-text-secondary)]"
+                className="flex min-w-0 items-center gap-1 px-1 py-0.5 text-xs"
+                style={{
+                  background: "var(--surface)",
+                  borderRadius: "var(--radius)",
+                  color: "var(--muted)",
+                }}
               >
-                <a
-                  className="min-w-0 truncate text-[var(--color-primary)]"
+                <Paperclip className="shrink-0" />
+                <Link
+                  className="min-w-0 flex-1 truncate text-xs"
                   href={`/api/files/${encodeURIComponent(file.fileId)}/download`}
                   target="_blank"
                   rel="noreferrer"
                 >
                   {file.name}
-                </a>
+                </Link>
                 <span className="shrink-0">{formatFileSize(file.size)}</span>
-                <button
+                <Button
                   type="button"
+                  size="sm"
+                  variant="ghost"
+                  isIconOnly
                   aria-label={`删除${file.name}`}
-                  className="shrink-0 text-[var(--color-danger)]"
-                  disabled={isDisabled || isUploading}
-                  onClick={() =>
+                  style={{ color: "var(--danger)" }}
+                  isDisabled={isDisabled || isUploading}
+                  onPress={() =>
                     onFilesCommitted(
                       files.filter((item) => item.fileId !== file.fileId),
                     )
                   }
                 >
-                  删除
-                </button>
+                  <TrashBin />
+                </Button>
               </div>
             ),
           )}
         </div>
       ) : null}
-    </div>
+    </UploadSurface>
   );
 }
 
@@ -601,7 +816,7 @@ type UploadedRuntimeFile = {
 };
 
 async function uploadRuntimeFile(file: File): Promise<UploadedRuntimeFile> {
-  return uploadFile<UploadedRuntimeFile>(file);
+  return uploadFile(file);
 }
 
 function normalizeUploadedRuntimeFiles(value: unknown): UploadedRuntimeFile[] {
@@ -623,22 +838,42 @@ function formatFileSize(size: number) {
 
 export function RuntimeDateRangePicker({
   field,
+  errorMessage,
   props,
   value,
   onChange,
 }: {
-  field: RuntimeSchemaField;
+  field: Pick<RuntimeSchemaField, "id" | "label">;
+  errorMessage?: string;
   props: RuntimeFieldProps;
   value: string[];
   onChange: (value: string[]) => void;
 }) {
-  const defaultValue = getDateRangeValue(value);
+  const selectedValue = getDateRangeValue(value);
+  const bounds = getDateBounds(getDateValidation(props));
 
   return (
     <DateRangePicker
+      style={{ width: "100%", minWidth: 0, maxWidth: "100%" }}
+      minValue={
+        bounds.minValue as unknown as ComponentProps<
+          typeof DateRangePicker
+        >["minValue"]
+      }
+      maxValue={
+        bounds.maxValue as unknown as ComponentProps<
+          typeof DateRangePicker
+        >["maxValue"]
+      }
       aria-label={field.label}
-      className={styles["form-runtime-controls__date-range-picker"]}
-      defaultValue={defaultValue as never}
+      isRequired={props.isRequired}
+      isInvalid={Boolean(errorMessage)}
+      validationBehavior="aria"
+      value={
+        (selectedValue ?? null) as ComponentProps<
+          typeof DateRangePicker
+        >["value"]
+      }
       isDisabled={props.isDisabled}
       isReadOnly={props.isReadOnly}
       onChange={(
@@ -655,7 +890,7 @@ export function RuntimeDateRangePicker({
       }
     >
       <DateInputGroup fullWidth>
-        <DateInputGroup.InputContainer>
+        <DateInputGroup.InputContainer style={{ minWidth: 0, width: 0 }}>
           <DateInputGroup.Input slot="start">
             {(segment) => <DateInputGroup.Segment segment={segment} />}
           </DateInputGroup.Input>
@@ -674,9 +909,17 @@ export function RuntimeDateRangePicker({
         <RangeCalendar>
           <RangeCalendar.Header>
             <RangeCalendar.NavButton slot="previous" />
-            <RangeCalendar.Heading />
+            <RangeCalendar.YearPickerTrigger>
+              <RangeCalendar.YearPickerTriggerHeading />
+              <RangeCalendar.YearPickerTriggerIndicator />
+            </RangeCalendar.YearPickerTrigger>
             <RangeCalendar.NavButton slot="next" />
           </RangeCalendar.Header>
+          <RangeCalendar.YearPickerGrid>
+            <RangeCalendar.YearPickerGridBody>
+              {({ year }) => <RangeCalendar.YearPickerCell year={year} />}
+            </RangeCalendar.YearPickerGridBody>
+          </RangeCalendar.YearPickerGrid>
           <RangeCalendar.Grid>
             <RangeCalendar.GridHeader>
               {(day) => (
@@ -689,6 +932,7 @@ export function RuntimeDateRangePicker({
           </RangeCalendar.Grid>
         </RangeCalendar>
       </DateRangePicker.Popover>
+      <FieldError>{errorMessage}</FieldError>
     </DateRangePicker>
   );
 }

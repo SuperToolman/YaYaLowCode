@@ -7,7 +7,7 @@ use axum::{
     Json,
     body::Body,
     extract::{Multipart, Path, State},
-    http::{HeaderMap, HeaderValue, header},
+    http::{HeaderMap, header},
     response::Response,
 };
 use chrono::Utc;
@@ -17,6 +17,20 @@ use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
 use uuid::Uuid;
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AgentFileUploadResponse {
+    pub(crate) id: Uuid, pub(crate) name: String, pub(crate) size: i64,
+    pub(crate) mime_type: String, pub(crate) checksum: String,
+}
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AgentFileResponse {
+    pub(crate) id: Uuid, pub(crate) name: String, pub(crate) storage_key: String,
+    pub(crate) mime_type: String, pub(crate) size: i64, pub(crate) kind: String,
+    pub(crate) checksum: String, pub(crate) created_at: String,
+}
 
 #[derive(Deserialize)]
 pub(crate) struct LinkRequest {
@@ -70,7 +84,7 @@ pub(crate) async fn upload(
     headers: HeaderMap,
     Path(session_uuid): Path<String>,
     mut multipart: Multipart,
-) -> Result<Json<crate::platform::api::ApiResponse<serde_json::Value>>, AppError> {
+) -> Result<Json<crate::platform::api::ApiResponse<AgentFileUploadResponse>>, AppError> {
     let user = authorization::current_user(&headers, &state).await?;
     let session = find_owned_session(&state.db, &session_uuid, user.id).await?;
     let mut field = multipart
@@ -142,7 +156,7 @@ pub(crate) async fn upload(
     state.db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres, "INSERT INTO agent_files (id,session_id,owner_user_id,agent_id,original_name,storage_key,mime_type,byte_size,checksum,kind,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'input',$10)", vec![SeaValue::Uuid(Some(id)),SeaValue::Uuid(Some(session.id)),SeaValue::Uuid(Some(user.id)),SeaValue::String(Some(session.agent_id)),SeaValue::String(Some(original.clone())),SeaValue::String(Some(storage_key)),SeaValue::String(Some(mime.clone())),SeaValue::BigInt(Some(size)),SeaValue::String(Some(checksum.clone())),SeaValue::ChronoDateTimeUtc(Some(now))])).await?;
     Ok(Json(success_response(
         "agent file uploaded",
-        serde_json::json!({"id":id,"name":original,"size":size,"mimeType":mime,"checksum":checksum}),
+        AgentFileUploadResponse { id, name: original, size, mime_type: mime, checksum },
     )))
 }
 
@@ -188,7 +202,7 @@ pub(crate) async fn list(
     headers: HeaderMap,
     Path(session_uuid): Path<String>,
     axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<crate::platform::api::ApiResponse<Vec<serde_json::Value>>>, AppError> {
+) -> Result<Json<crate::platform::api::ApiResponse<Vec<AgentFileResponse>>>, AppError> {
     let user = authorization::current_user(&headers, &state).await?;
     let session = find_owned_session(&state.db, &session_uuid, user.id).await?;
     let kind = query.get("kind").cloned();
@@ -218,7 +232,16 @@ pub(crate) async fn list(
             values,
         ))
         .await?;
-    let data: Vec<_> = rows.into_iter().map(|r| serde_json::json!({"id":r.try_get::<Uuid>("","id").unwrap_or_default(),"name":r.try_get::<String>("","original_name").unwrap_or_default(),"storageKey":r.try_get::<String>("","storage_key").unwrap_or_default(),"mimeType":r.try_get::<String>("","mime_type").unwrap_or_default(),"size":r.try_get::<i64>("","byte_size").unwrap_or_default(),"kind":r.try_get::<String>("","kind").unwrap_or_default(),"checksum":r.try_get::<String>("","checksum").unwrap_or_default(),"createdAt":r.try_get::<chrono::DateTime<Utc>>("","created_at").map(|v| v.to_rfc3339()).unwrap_or_default()})).collect();
+    let data: Vec<_> = rows.into_iter().map(|r| AgentFileResponse {
+        id: r.try_get::<Uuid>("", "id").unwrap_or_default(),
+        name: r.try_get::<String>("", "original_name").unwrap_or_default(),
+        storage_key: r.try_get::<String>("", "storage_key").unwrap_or_default(),
+        mime_type: r.try_get::<String>("", "mime_type").unwrap_or_default(),
+        size: r.try_get::<i64>("", "byte_size").unwrap_or_default(),
+        kind: r.try_get::<String>("", "kind").unwrap_or_default(),
+        checksum: r.try_get::<String>("", "checksum").unwrap_or_default(),
+        created_at: r.try_get::<chrono::DateTime<Utc>>("", "created_at").map(|v| v.to_rfc3339()).unwrap_or_default(),
+    }).collect();
     Ok(Json(success_response("agent files loaded", data)))
 }
 
@@ -250,7 +273,7 @@ pub(crate) async fn download(
     }
     let mime = row.try_get::<String>("", "mime_type")?;
     let name = row.try_get::<String>("", "original_name")?;
-    let disposition = content_disposition(&name);
+    let disposition = crate::shared::download_content_disposition(&name);
     Ok(Response::builder()
         .header(header::CONTENT_TYPE, mime)
         // Use the size observed from the opened file. A stale or zero DB
@@ -260,45 +283,6 @@ pub(crate) async fn download(
         .header(header::CONTENT_DISPOSITION, disposition)
         .body(Body::from_stream(ReaderStream::new(file)))
         .unwrap())
-}
-
-/// Build an RFC 6266-compatible disposition without putting non-ASCII bytes
-/// directly into an HTTP header. The ASCII filename keeps older clients
-/// working while filename* preserves the original UTF-8 name.
-fn content_disposition(name: &str) -> HeaderValue {
-    let fallback: String = name
-        .chars()
-        .map(|value| {
-            if value.is_ascii_alphanumeric() || matches!(value, '.' | '_' | '-' | ' ') {
-                value
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let fallback = if fallback.trim().is_empty() {
-        "download".to_string()
-    } else {
-        fallback
-    };
-    let encoded = name
-        .as_bytes()
-        .iter()
-        .flat_map(|byte| {
-            if byte.is_ascii_alphanumeric() || matches!(*byte, b'.' | b'_' | b'-' | b' ') {
-                vec![*byte as char]
-            } else {
-                let hex = format!("%{:02X}", byte);
-                hex.chars().collect()
-            }
-        })
-        .collect::<String>();
-    HeaderValue::from_str(&format!(
-        "attachment; filename=\"{}\"; filename*=UTF-8''{}",
-        fallback.replace('"', "_"),
-        encoded
-    ))
-    .unwrap_or_else(|_| HeaderValue::from_static("attachment; filename=\"download\""))
 }
 
 pub(crate) async fn delete(
@@ -388,7 +372,7 @@ pub(crate) async fn register_output(
 
 #[cfg(test)]
 mod tests {
-    use super::content_disposition;
+    use crate::shared::download_content_disposition as content_disposition;
 
     #[test]
     fn content_disposition_supports_utf8_names() {

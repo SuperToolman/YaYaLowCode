@@ -1,4 +1,8 @@
-﻿"use client";
+"use client";
+import { getFieldDescription } from "@features/form-runtime/components/field-description";
+
+import { normalizeValidationProps } from "@/features/form-runtime/validation-config";
+import { RuntimeDatePicker, UploadSurface } from "@features/form-runtime/components/RuntimeFormFieldControls";
 
 import { useMemo, useState } from "react";
 import type { Key } from "react";
@@ -10,6 +14,7 @@ import {
   DateRangePicker,
   Input,
   InputGroup,
+  Label,
   Link,
   ListBox,
   NumberField,
@@ -22,9 +27,14 @@ import { MySurface } from "@shared/ui/MySurface";
 import { DateInputGroup } from "@heroui/react/date-input-group";
 import { Description } from "@heroui/react/description";
 import { parseDate } from "@internationalized/date";
-import { FileText as FormIcon, Folder as FolderIcon, LayoutCellsLarge as GridIcon, Link as AppLinkIcon, Comment as MessageIcon } from "@gravity-ui/icons";
+import { getDateBounds, getDateValidation, type DateValidation } from "@features/form-runtime/components/date-validation";
+import {
+  Calendar, Calculator, ChevronDown, Circle, Code,
+  Comment, FileCode, Folder, FolderTree, Font, FontCase, Globe, Hashtag,
+  LayoutCellsLarge, Link as LinkIcon, ListCheck, Paperclip, Person,
+  Persons, Picture, SquareArticle, SquareCheck, SquarePlus, Text,
+} from "@gravity-ui/icons";
 import type { CountryCityValue } from "@lib/location-catalog";
-import runtimeStyles from "@features/form-runtime/components/RuntimeFormControls.module.css";
 import {
   DEFAULT_CASCADER_DATA_SOURCE,
   getCascaderLabel,
@@ -242,9 +252,15 @@ export type SerialNumberRule =
   | { id: string; type: "formField"; fieldId: string; fallback: string };
 
 export type DesignerFieldProps = {
+  groupStyle?: import("@features/form-runtime/components/FormGroup").GroupStyle;
+  dateValidation?: DateValidation;
   titlePosition?: DesignerTitlePosition;
   placeholder?: string;
   description?: string;
+  granularity?: "day" | "hour" | "minute" | "second";
+  hourCycle?: 12 | 24;
+  hideTimeZone?: boolean;
+  shouldForceLeadingZeros?: boolean;
   defaultValueType?: DesignerDefaultValueType;
   defaultValue?: string | number | string[] | CountryCityValue;
   defaultValueFormula?: string;
@@ -253,12 +269,13 @@ export type DesignerFieldProps = {
   isHidden?: boolean;
   isReadOnly?: boolean;
   isRequired?: boolean;
+  dateTodayOrFuture?: boolean;
+  isUnique?: boolean;
+  formatValidation?: "email" | "phoneCN" | "idCardCN";
   showClearButton?: boolean;
   showCounter?: boolean;
   minValue?: number;
   maxValue?: number;
-  step?: number;
-  rows?: number;
   options?: DesignerFieldOption[];
   orientation?: "horizontal" | "vertical";
   href?: string;
@@ -267,6 +284,7 @@ export type DesignerFieldProps = {
   accept?: string;
   multiple?: boolean;
   maxFileSizeMb?: number;
+  showUploadLimitHint?: boolean;
   subformAddButtonText?: string;
   subformButtonState?: "normal" | "disabled" | "hidden";
   subformAllowBatchImport?: boolean;
@@ -303,6 +321,7 @@ export type DesignerFieldProps = {
   associationPrimaryFieldId?: string;
   associationSecondaryFieldId?: string;
   associationTableFieldIds?: string[];
+  associationTableFieldMode?: "default" | "custom";
   associationFilters?: Array<{ fieldId: string; operator: string; value: string }>;
   associationFiltersEnabled?: boolean;
   associationFills?: Array<{ sourceFieldId: string; targetFieldId: string }>;
@@ -324,9 +343,16 @@ export type DesignerFieldProps = {
   dataSource?: CascaderOption[];
   code?: string;
   allowedResourceOrigins?: string[];
-  /** Controls whether this field may be included in an Agent tool result. */
-  agentDataAccess?: "allow" | "mask" | "deny";
 };
+
+/** Drop removed configuration when opening or saving historical schemas. */
+export function cleanDesignerFieldProps(props: DesignerFieldProps): DesignerFieldProps {
+  const cleaned = { ...props } as DesignerFieldProps & Record<string, unknown>;
+  delete cleaned.agentDataAccess;
+  delete cleaned.rows;
+  delete cleaned.step;
+  return normalizeValidationProps(cleaned);
+}
 
 const DEFAULT_OPTIONS: DesignerFieldOption[] = [
   { label: "选项一", value: "选项一" },
@@ -390,14 +416,14 @@ export function getDefaultDesignerFieldProps(
       placeholder: component.placeholder,
       showClearButton: false,
       showCounter: false,
-      step: 1,
     };
   }
 
   if (type === "groupContainer") {
     return {
+      groupStyle: "simple",
       titlePosition: "top" as DesignerTitlePosition,
-      description: "用于收纳子组件的分组容器。",
+      description: "",
       isDisabled: false,
       isHidden: false,
       isReadOnly: false,
@@ -419,7 +445,6 @@ export function getDefaultDesignerFieldProps(
       subformShowCopyButton: false,
       subformShowDeleteButton: true,
       subformDeleteButtonText: "删除",
-      subformConfirmDelete: true,
       subformShowSort: false,
       subformDisplayMode: "desktop",
       subformArrangement: "table",
@@ -449,7 +474,7 @@ export function getDefaultDesignerFieldProps(
 
   if (type === "html") {
     return {
-      description: "在隔离运行时中执行。外部 script 与 stylesheet 需要显式授权来源。",
+      description: "",
       code: "<div class=\"custom-html-card\">\n  <strong>HTML 组件</strong>\n  <p>可通过 ctx.form 读写表单字段。</p>\n</div>",
       allowedResourceOrigins: [],
     };
@@ -457,7 +482,7 @@ export function getDefaultDesignerFieldProps(
 
   if (type === "tsx") {
     return {
-      description: "TSX 会在隔离运行时中执行，并只能通过 ctx.form 操作表单字段。",
+      description: "",
       code: "function render(ctx) {\n  return <div className=\"custom-tsx-card\">\n    <strong>TSX 组件</strong>\n    <button onClick={() => ctx.form.setValue('singleLineText-1', '已更新')}>更新字段</button>\n  </div>;\n}",
       allowedResourceOrigins: [],
     };
@@ -466,6 +491,7 @@ export function getDefaultDesignerFieldProps(
   if (type === "serialNumber") {
     return {
       ...commonProps,
+      isRequired: true,
       defaultValueType: "none",
       placeholder: component.placeholder,
       serialNumberDigits: 4,
@@ -526,6 +552,7 @@ export function getDefaultDesignerFieldProps(
       buttonText: type === "imageUpload" ? "上传图片" : "上传附件",
       multiple: false,
       maxFileSizeMb: 20,
+      showUploadLimitHint: true,
       placeholder: component.placeholder,
     };
   }
@@ -537,7 +564,6 @@ export function getDefaultDesignerFieldProps(
       placeholder: component.placeholder,
       showClearButton: false,
       showCounter: false,
-      rows: 2,
     };
   }
 
@@ -736,8 +762,8 @@ function DraggableComponentCard({
         className={`h-auto min-h-10 cursor-grab justify-start gap-1.5 px-1.5 text-[11px] font-normal active:cursor-grabbing ${isDragging ? "opacity-40" : ""}`}
         style={{ touchAction: "none" }}
       >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-soft)] text-[11px] text-[var(--color-primary)]">
-          <ComponentPaletteIcon type={component.type} fallback={component.icon} />
+        <span aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-soft)] text-[11px] text-[var(--color-primary)]">
+          <ComponentPaletteIcon type={component.type} />
         </span>
         <span className="truncate text-[11px] text-[var(--color-text-primary)]">
           {component.label}
@@ -746,46 +772,37 @@ function DraggableComponentCard({
   );
 }
 
-function ComponentPaletteIcon({
-  type,
-  fallback,
-}: {
-  type: DesignerComponentType;
-  fallback: string;
-}) {
-  if (type === "groupContainer") {
-    return <FolderIcon />;
-  }
+const COMPONENT_PALETTE_ICONS = {
+  groupContainer: Folder,
+  subform: LayoutCellsLarge,
+  richText: Font,
+  html: Code,
+  tsx: FileCode,
+  serialNumber: Hashtag,
+  associationFormField: SquareArticle,
+  countryCity: Globe,
+  cascader: FolderTree,
+  singleLineText: FontCase,
+  description: Comment,
+  multiLineText: Text,
+  number: Calculator,
+  radio: Circle,
+  checkbox: SquareCheck,
+  select: ChevronDown,
+  multiSelect: ListCheck,
+  link: LinkIcon,
+  date: Calendar,
+  dateRange: Calendar,
+  attachment: Paperclip,
+  imageUpload: Picture,
+  member: Person,
+  department: Persons,
+  button: SquarePlus,
+} satisfies Record<DesignerComponentType, typeof FontCase>;
 
-  if (type === "subform") {
-    return <GridIcon />;
-  }
-
-  if (type === "serialNumber") {
-    return <span className="text-[11px] font-semibold">#</span>;
-  }
-
-  if (type === "associationFormField") {
-    return <FormIcon />;
-  }
-
-  if (type === "description") {
-    return <MessageIcon />;
-  }
-
-  if (type === "link") {
-    return <AppLinkIcon />;
-  }
-
-  if (type === "attachment" || type === "imageUpload") {
-    return <GridIcon />;
-  }
-
-  if (type === "date" || type === "dateRange") {
-    return <FormIcon />;
-  }
-
-  return <span>{fallback}</span>;
+function ComponentPaletteIcon({ type }: { type: DesignerComponentType }) {
+  const Icon = COMPONENT_PALETTE_ICONS[type];
+  return <Icon width={16} height={16} />;
 }
 
 export function FieldPreview({
@@ -808,7 +825,7 @@ export function FieldPreview({
   };
   const placeholder =
     fieldProps.placeholder ?? (showLabel ? component.placeholder : "请输入");
-  const description = fieldProps.description?.trim();
+  const description = getFieldDescription(type, fieldProps);
   const textDefaultValue =
     typeof fieldProps.defaultValue === "string"
       ? fieldProps.defaultValue
@@ -833,10 +850,10 @@ export function FieldPreview({
         fieldProps.isHidden ? "opacity-40" : "",
       ].join(" ")}
     >
-      {showLabel && type !== "button" ? (
-        <label className="block text-sm font-medium text-[var(--color-text-primary)]">
+      {showLabel && !["button", "description", "link"].includes(type) ? (
+        <Label isRequired={fieldProps.isRequired && !["link", "description", "groupContainer", "html", "tsx"].includes(type)}>
           {label}
-        </label>
+        </Label>
       ) : null}
       {type === "groupContainer" ? (
         <div className="rounded-2xl border border-dashed border-[var(--color-primary)] bg-[var(--color-bg-subtle)] p-1">
@@ -883,9 +900,9 @@ export function FieldPreview({
         </div>
       ) : null}
       {type === "description" ? (
-        <p className="rounded-xl bg-[var(--color-bg-subtle)] px-3 py-2 ">
+        <Description>
           {textDefaultValue || placeholder}
-        </p>
+        </Description>
       ) : null}
       {type === "html" || type === "tsx" ? (
         <div className="rounded-md border border-dashed border-[var(--color-primary)] bg-[var(--color-bg-subtle)] px-3 py-4 text-xs text-[var(--color-text-secondary)]">
@@ -903,7 +920,7 @@ export function FieldPreview({
               placeholder={placeholder}
               readOnly={fieldProps.isReadOnly}
               required={fieldProps.isRequired}
-              rows={fieldProps.rows ?? (compact ? 2 : 3)}
+              rows={compact ? 2 : 3}
               className="h-full min-h-0 w-full resize-none"
             />
           </InputGroup>
@@ -916,14 +933,12 @@ export function FieldPreview({
       {type === "number" ? (
         <NumberField
           aria-label={label}
-          className={runtimeStyles["form-runtime-controls__number-field"]}
           defaultValue={numberDefaultValue}
           isDisabled={fieldProps.isDisabled}
           isReadOnly={fieldProps.isReadOnly}
           isRequired={fieldProps.isRequired}
           maxValue={fieldProps.maxValue}
           minValue={fieldProps.minValue}
-          step={fieldProps.step}
           fullWidth
         >
           <NumberField.Group>
@@ -936,12 +951,7 @@ export function FieldPreview({
       {type === "radio" ? (
         <RadioGroup
           aria-label={label}
-          className={[
-            runtimeStyles["form-runtime-controls__choice-field"],
-            orientation === "horizontal"
-              ? runtimeStyles["form-runtime-controls__choice-field--horizontal"]
-              : runtimeStyles["form-runtime-controls__choice-field--vertical"],
-          ].join(" ")}
+          orientation={orientation}
           defaultValue={choiceDefaultValue}
           isDisabled={fieldProps.isDisabled}
           isReadOnly={fieldProps.isReadOnly}
@@ -962,12 +972,9 @@ export function FieldPreview({
       {type === "checkbox" ? (
         <CheckboxGroup
           aria-label={label}
-          className={[
-            runtimeStyles["form-runtime-controls__choice-field"],
-            orientation === "horizontal"
-              ? runtimeStyles["form-runtime-controls__choice-field--horizontal"]
-              : runtimeStyles["form-runtime-controls__choice-field--vertical"],
-          ].join(" ")}
+          className={orientation === "horizontal"
+            ? "flex flex-row flex-wrap items-center gap-x-3 gap-y-1.5 [&>[data-slot=checkbox]]:mt-0"
+            : undefined}
           defaultValue={multiDefaultValue}
           isDisabled={fieldProps.isDisabled}
           isReadOnly={fieldProps.isReadOnly}
@@ -1018,26 +1025,31 @@ export function FieldPreview({
         <Link
           href={fieldProps.href || "#"}
           target={fieldProps.target}
-          className="text-sm font-medium text-[var(--color-primary)]"
         >
-          {textDefaultValue || label}
+          {textDefaultValue || "打开链接"}
+          <Link.Icon />
         </Link>
       ) : null}
       {type === "date" ? (
-        <Input
-          aria-label={label}
-          defaultValue={textDefaultValue}
-          disabled={fieldProps.isDisabled}
-          placeholder={placeholder}
-          readOnly={fieldProps.isReadOnly}
-          required={fieldProps.isRequired}
-          type="date"
-          fullWidth
+        <DatePickerPreview
+          label={label}
+          initialValue={textDefaultValue ?? ""}
+          isDisabled={fieldProps.isDisabled}
+          isReadOnly={fieldProps.isReadOnly}
+          isRequired={fieldProps.isRequired}
+          granularity={fieldProps.granularity}
+          hourCycle={fieldProps.hourCycle}
+          hideTimeZone={fieldProps.hideTimeZone}
+          shouldForceLeadingZeros={fieldProps.shouldForceLeadingZeros}
+          dateTodayOrFuture={fieldProps.dateTodayOrFuture}
+          dateValidation={fieldProps.dateValidation}
         />
       ) : null}
       {type === "dateRange" ? (
         <DateRangePickerPreview
           label={label}
+          dateTodayOrFuture={fieldProps.dateTodayOrFuture}
+          dateValidation={fieldProps.dateValidation}
           value={multiDefaultValue}
           isDisabled={fieldProps.isDisabled}
           isReadOnly={fieldProps.isReadOnly}
@@ -1047,7 +1059,6 @@ export function FieldPreview({
         <UploadPreview
           accept={fieldProps.accept}
           buttonText={fieldProps.buttonText || placeholder}
-          imageOnly={type === "imageUpload"}
         />
       ) : null}
       {type === "button" ? (
@@ -1119,6 +1130,8 @@ function SelectPreview({
 }: {
   isDisabled?: boolean;
   isRequired?: boolean;
+  isUnique?: boolean;
+  formatValidation?: "email" | "phoneCN" | "idCardCN";
   label: string;
   options: DesignerFieldOption[];
   placeholder: string;
@@ -1129,7 +1142,6 @@ function SelectPreview({
   return (
     <Select
       aria-label={label}
-      className={runtimeStyles["form-runtime-controls__select-field"]}
       selectedKey={selectedValue || null}
       onSelectionChange={(key: Key | null) =>
         setSelectedValue(key === null ? "" : String(key))
@@ -1171,6 +1183,8 @@ function MultiSelectPreview({
 }: {
   isDisabled?: boolean;
   isRequired?: boolean;
+  isUnique?: boolean;
+  formatValidation?: "email" | "phoneCN" | "idCardCN";
   label: string;
   options: DesignerFieldOption[];
   placeholder: string;
@@ -1184,7 +1198,7 @@ function MultiSelectPreview({
     .filter(Boolean);
 
   return (
-    <div className={`relative ${runtimeStyles["form-runtime-controls__select-field"]}`}>
+    <div className="relative">
       <button
         type="button"
         aria-label={label}
@@ -1233,47 +1247,66 @@ function MultiSelectPreview({
 
 function UploadPreview({
   buttonText,
-  imageOnly,
 }: {
   accept?: string;
   buttonText: string;
-  imageOnly: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-3">
-      <Button size="sm" variant="ghost">
-        {buttonText}
+    <UploadSurface>
+      <Button variant="secondary" className="max-w-full">
+        <span className="truncate">{buttonText}</span>
       </Button>
-      <p className="mt-2 text-xs text-[var(--color-text-disabled)]">
-        {imageOnly ? "支持图片上传" : "支持附件上传"}
-      </p>
-    </div>
+    </UploadSurface>
   );
 }
 
+function DatePickerPreview({ label, initialValue, ...props }: {
+  dateValidation?: DateValidation;
+  label: string;
+  initialValue: string;
+  isDisabled?: boolean;
+  isReadOnly?: boolean;
+  isRequired?: boolean;
+  dateTodayOrFuture?: boolean;
+  granularity?: DesignerFieldProps["granularity"];
+  hourCycle?: DesignerFieldProps["hourCycle"];
+  hideTimeZone?: boolean;
+  shouldForceLeadingZeros?: boolean;
+}) {
+  const [value, setValue] = useState(initialValue);
+  return <RuntimeDatePicker field={{ id: "date-preview", label }} props={props} value={value} onChange={setValue} />;
+}
+
 function DateRangePickerPreview({
+  dateValidation,
+  dateTodayOrFuture,
   isDisabled,
   isReadOnly,
   label,
   value,
 }: {
+  dateValidation?: DateValidation;
   isDisabled?: boolean;
   isReadOnly?: boolean;
   label: string;
+  dateTodayOrFuture?: boolean;
   value: string[];
 }) {
   const defaultValue = getDateRangeValue(value);
+  const bounds = getDateBounds(getDateValidation({ dateValidation, dateTodayOrFuture }));
 
   return (
     <DateRangePicker
+      style={{ width: "100%", minWidth: 0, maxWidth: "100%" }}
+      minValue={bounds.minValue as never}
+      maxValue={bounds.maxValue as never}
       aria-label={label}
-      className={`${runtimeStyles["form-runtime-controls__date-range-picker"]} w-full`}
       defaultValue={defaultValue as never}
       isDisabled={isDisabled}
       isReadOnly={isReadOnly}
     >
       <DateInputGroup fullWidth>
-        <DateInputGroup.InputContainer>
+        <DateInputGroup.InputContainer style={{ minWidth: 0, width: 0 }}>
           <DateInputGroup.Input slot="start">
             {(segment) => <DateInputGroup.Segment segment={segment} />}
           </DateInputGroup.Input>
@@ -1292,9 +1325,17 @@ function DateRangePickerPreview({
         <RangeCalendar>
           <RangeCalendar.Header>
             <RangeCalendar.NavButton slot="previous" />
-            <RangeCalendar.Heading />
+            <RangeCalendar.YearPickerTrigger>
+              <RangeCalendar.YearPickerTriggerHeading />
+              <RangeCalendar.YearPickerTriggerIndicator />
+            </RangeCalendar.YearPickerTrigger>
             <RangeCalendar.NavButton slot="next" />
           </RangeCalendar.Header>
+          <RangeCalendar.YearPickerGrid>
+            <RangeCalendar.YearPickerGridBody>
+              {({ year }) => <RangeCalendar.YearPickerCell year={year} />}
+            </RangeCalendar.YearPickerGridBody>
+          </RangeCalendar.YearPickerGrid>
           <RangeCalendar.Grid>
             <RangeCalendar.GridHeader>
               {(day) => (

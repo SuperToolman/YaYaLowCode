@@ -1,6 +1,6 @@
 import type { UserResponse } from "../api";
 
-export type EmailAddressItem = { label: string; email: string };
+export type EmailAddressItem = { label: string; email: string; smtpPassword?: string; clearSmtpAuthorization?: boolean };
 export type RoleItem = { id: string; name: string; sourceType: string; status: string };
 export type UserItem = UserResponse & { username: string | null; email: string | null; mobile: string | null; title: string | null; jobNumber: string | null; telephone: string | null; workPlace: string | null; remark: string | null; avatarUrl: string | null; roleIds: string[]; tenureMonths: number | null };
 export function normalizeUser(user: UserResponse): UserItem { return { ...user, avatarUrl: user.avatarUrl ?? null, email: user.email ?? null, mobile: user.mobile ?? null, title: user.title ?? null, jobNumber: user.jobNumber ?? null, telephone: user.telephone ?? null, workPlace: user.workPlace ?? null, remark: user.remark ?? null, username: user.username ?? null, roleIds: user.roleIds ?? [], tenureMonths: user.tenureMonths ?? null }; }

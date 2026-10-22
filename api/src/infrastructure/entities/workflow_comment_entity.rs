@@ -9,7 +9,7 @@ pub struct Model {
     pub comment_uuid: String,
     pub form_uuid: String,
     pub record_uuid: String,
-    pub author_user_id: Uuid,
+    pub author_user_id: Option<Uuid>,
     pub author: String,
     pub content: String,
     pub created_at: DateTimeUtc,

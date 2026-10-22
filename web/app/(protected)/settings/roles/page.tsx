@@ -1,8 +1,20 @@
-﻿"use client";
+"use client";
+import { assertApiEnvelope } from "@lib/api-request";
+
+import { notifyRequestError } from "@lib/notify";
+import { useAuth } from "@components/AuthProvider";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { notify } from "@lib/notify";
-import { Button, Input, Modal, Tabs } from "@heroui/react";
-import { Card } from "@heroui/react/card";
+import {
+  ButtonGroup,
+  Button,
+  Input,
+  Modal,
+  Tabs,
+  TagGroup,
+  Tag,
+} from "@heroui/react";
+import { MySurface } from "@/components/ui/MySurface";
 import {
   createLocalRole,
   deleteLocalRole,
@@ -10,6 +22,7 @@ import {
   updateLocalRole,
 } from "@/features/identity-access/api";
 import { SettingsContentCard } from "../components/SettingsContentCard";
+import { ArrowRotateRight } from "@gravity-ui/icons";
 
 type Role = {
   id: string;
@@ -22,6 +35,8 @@ type Role = {
 type RoleSourceFilter = "all" | "local" | "dingtalk";
 
 export default function RolesSettingsPage() {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission("settings.roles.manage");
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -37,9 +52,8 @@ export default function RolesSettingsPage() {
     setLoading(true);
     setError("");
     try {
-      const { data, error } = await listRoles({ responseStyle: "fields" });
-      if (error || !data || data.code !== 0 || !data.data)
-        throw new Error(data?.message || "无法加载角色");
+      const { data, error , response: httpResponse0 } = await listRoles({ responseStyle: "fields" });
+      assertApiEnvelope(data, error, httpResponse0);
       setRoles(data.data);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法加载角色");
@@ -70,20 +84,21 @@ export default function RolesSettingsPage() {
     setSaving(true);
     setError("");
     try {
-      const { data, error } = editing
+      const { data, error, response } = editing
         ? await updateLocalRole({
             path: { roleId: editing.id },
             body: { name },
             responseStyle: "fields",
           })
         : await createLocalRole({ body: { name }, responseStyle: "fields" });
-      if (error || !data || data.code !== 0 || !data.data)
-        throw new Error(data?.message || "保存失败");
+      assertApiEnvelope(data, error, response);
       setOpen(false);
       notify.success(editing ? "角色已更新" : "角色已创建");
       await load();
     } catch (reason) {
-      notify.error("保存角色失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
+      notifyRequestError(reason, "保存角色失败", {
+        description: reason instanceof Error ? reason.message : "请稍后重试",
+      });
     } finally {
       setSaving(false);
     }
@@ -106,7 +121,9 @@ export default function RolesSettingsPage() {
       notify.success("角色已删除");
       await load();
     } catch (reason) {
-      notify.error("删除角色失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
+      notifyRequestError(reason, "删除角色失败", {
+        description: reason instanceof Error ? reason.message : "请稍后重试",
+      });
     } finally {
       setDeletingRole(false);
     }
@@ -114,17 +131,18 @@ export default function RolesSettingsPage() {
   async function mutate(role: Role, data: { name?: string; status?: string }) {
     setError("");
     try {
-      const { data: response, error } = await updateLocalRole({
+      const { data: response, error , response: httpResponse1 } = await updateLocalRole({
         path: { roleId: role.id },
         body: data,
         responseStyle: "fields",
       });
-      if (error || !response || response.code !== 0 || !response.data)
-        throw new Error(response?.message || "更新失败");
+      assertApiEnvelope(response, error, httpResponse1);
       notify.success(data.status ? "角色状态已更新" : "角色已更新");
       await load();
     } catch (reason) {
-      notify.error("更新角色失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
+      notifyRequestError(reason, "更新角色失败", {
+        description: reason instanceof Error ? reason.message : "请稍后重试",
+      });
     }
   }
   return (
@@ -140,17 +158,19 @@ export default function RolesSettingsPage() {
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
           />
-          <Button variant="secondary" onPress={() => edit()}>
-            添加角色
-          </Button>
-          <Button
-            variant="secondary"
-            isDisabled={loading}
-            onPress={() => void load()}
-          >
-            <RefreshIcon />
-            {loading ? "刷新中…" : "刷新"}
-          </Button>
+          <ButtonGroup>
+            <Button isDisabled={!canManage} variant="secondary" onPress={() => edit()}>
+              添加角色
+            </Button>
+            <Button
+              variant="secondary"
+              isDisabled={loading}
+              onPress={() => void load()}
+            >
+              <ArrowRotateRight />
+              {loading ? "刷新中…" : "刷新"}
+            </Button>
+          </ButtonGroup>
         </div>
       }
     >
@@ -170,6 +190,7 @@ export default function RolesSettingsPage() {
           {filteredRoles.map((role) => (
             <RoleCard
               key={role.id}
+              canManage={canManage}
               role={role}
               onEdit={edit}
               onStatus={status}
@@ -202,46 +223,39 @@ export default function RolesSettingsPage() {
   );
 }
 function RoleCard({
+  canManage,
   role,
   onEdit,
   onStatus,
   onDelete,
 }: {
+  canManage: boolean;
   role: Role;
   onEdit: (role: Role) => void;
   onStatus: (role: Role) => void;
   onDelete: (role: Role) => void;
 }) {
   const editable =
-    role.sourceType === "local" && role.externalId !== "system-administrator";
-  const reason =
-    role.sourceType !== "local"
-      ? "钉钉同步角色不可修改"
-      : "系统管理员角色受保护";
+    canManage && role.sourceType === "local" && role.externalId !== "system-administrator";
+  const reason = !canManage ? "没有管理角色的权限" :
+    role.sourceType !== "local" ? "同步角色不可修改" : "系统管理员角色受保护";
   return (
-    <Card className="flex min-h-48 flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-5 shadow-none">
+    <MySurface className="p-2 shadow-lg">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <h3 className="break-words text-base font-semibold text-[var(--color-text-primary)]">
-            {role.name}
-          </h3>
-          <p className="mt-1 break-all text-xs leading-5 text-[var(--color-text-secondary)]">
-            标识：{role.externalId}
-          </p>
+        <div className="min-w-0 flex-1 flex gap-2">
+          <h3 className="truncate">{role.name}</h3>
         </div>
-        <span className="shrink-0">
+        <span className="flex gap-2 shrink-0">
+          <SourceTag source={role.sourceType} />
           <StatusTag status={role.status} />
         </span>
       </div>
-      <div className="mt-5 flex items-center gap-2">
-        <SourceTag source={role.sourceType} />
-        <span className="text-xs text-[var(--color-text-secondary)]">
-          {role.memberCount} 名成员
-        </span>
-      </div>
-      <div className="mt-auto flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-4">
+      <p className="break-all text-xs leading-5 text-[var(--color-text-secondary)] truncate">
+        {role.externalId}
+      </p>
+      <div className="flex items-center justify-between">
         <span className="min-w-0 flex-1 break-words text-xs leading-5 text-[var(--color-text-secondary)]">
-          {editable ? "平台自定义角色" : reason}
+          {editable ? "" : reason}
         </span>
         <div className="flex shrink-0 gap-1">
           <IconAction
@@ -274,7 +288,7 @@ function RoleCard({
           </IconAction>
         </div>
       </div>
-    </Card>
+    </MySurface>
   );
 }
 function SourceFilterTabs({
@@ -382,7 +396,7 @@ function RoleDeleteModal({
         isDismissable={!deleting}
       >
         <Modal.Container placement="center" size="sm">
-          <Modal.Dialog className="rounded-2xl bg-[var(--color-bg-surface)]">
+          <Modal.Dialog>
             <Modal.Header>
               <Modal.Heading>删除角色</Modal.Heading>
               <Modal.CloseTrigger aria-label="关闭" />
@@ -396,11 +410,7 @@ function RoleDeleteModal({
               <Button variant="ghost" isDisabled={deleting} onPress={onClose}>
                 取消
               </Button>
-              <Button
-                className="bg-[var(--color-danger)] text-white"
-                isDisabled={deleting}
-                onPress={onConfirm}
-              >
+              <Button isDisabled={deleting} onPress={onConfirm}>
                 {deleting ? "正在删除…" : "确认删除"}
               </Button>
             </Modal.Footer>
@@ -413,36 +423,29 @@ function RoleDeleteModal({
 function SourceTag({ source }: { source: string }) {
   const ding = source === "dingtalk";
   return (
-    <span
-      className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${ding ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]" : "border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]"}`}
-    >
-      {ding ? "钉钉" : "平台"}
-    </span>
+    <TagGroup aria-label="来源标签">
+      <TagGroup.List>
+        <Tag className="bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+          {ding ? "钉钉" : "平台"}
+        </Tag>
+      </TagGroup.List>
+    </TagGroup>
   );
 }
 function StatusTag({ status }: { status: string }) {
   return (
-    <span
-      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${status === "active" ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]"}`}
-    >
-      {status === "active" ? "启用" : "停用"}
-    </span>
+    <TagGroup aria-label="状态标签">
+      <TagGroup.List>
+        <Tag
+          className={`${status === "active" ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]"}`}
+        >
+          {status === "active" ? "启用" : "停用"}
+        </Tag>
+      </TagGroup.List>
+    </TagGroup>
   );
 }
-function RefreshIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-4 w-4"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-    >
-      <path d="M20 11a8 8 0 1 0 2 5.3" />
-      <path d="M20 4v7h-7" />
-    </svg>
-  );
-}
+
 function IconAction({
   title,
   disabled,

@@ -1,11 +1,9 @@
+import { unwrapApiResult } from "./api-request";
 import {
   listAppNavigation,
   listApps,
   listForms,
-  type App,
-  type FormSummary,
-  type NavigationItem,
-} from "./api-client";
+} from "./http";
 
 type ResourceKind = "app" | "forms" | "navigation";
 
@@ -31,39 +29,30 @@ function loadCached<T>(appId: string, kind: ResourceKind, loader: () => Promise<
 
 export function getAppResource(appId: string, force = false) {
   return loadCached(appId, "app", async () => {
-    const { data, error } = await listApps({ responseStyle: "fields" });
-    if (error || !data || data.code !== 0 || !data.data) {
-      throw new Error(data?.message || "无法加载应用");
-    }
-    const app = data.data.find((item) => item.id === appId);
+    const result = await listApps({ responseStyle: "fields" });
+    const app = unwrapApiResult(result, "无法加载应用").find((item) => item.id === appId);
     if (!app) throw new Error("应用不存在");
-    return app as App;
+    return app;
   }, force);
 }
 
 export function getAppForms(appId: string, force = false) {
   return loadCached(appId, "forms", async () => {
-    const { data, error } = await listForms({
+    const result = await listForms({
       path: { appId },
       responseStyle: "fields",
     });
-    if (error || !data || data.code !== 0 || !data.data) {
-      throw new Error(data?.message || "无法加载表单");
-    }
-    return data.data as FormSummary[];
+    return unwrapApiResult(result, "无法加载表单");
   }, force);
 }
 
 export function getAppNavigation(appId: string, force = false) {
   return loadCached(appId, "navigation", async () => {
-    const { data, error } = await listAppNavigation({
+    const result = await listAppNavigation({
       path: { appId },
       responseStyle: "fields",
     });
-    if (error || !data || data.code !== 0 || !data.data) {
-      throw new Error(data?.message || "无法加载导航");
-    }
-    return data.data as NavigationItem[];
+    return unwrapApiResult(result, "无法加载导航");
   }, force);
 }
 

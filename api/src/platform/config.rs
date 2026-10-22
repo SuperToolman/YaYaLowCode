@@ -38,48 +38,6 @@ pub struct ValkeySettings {
     pub cache_ttl_hours: u8,
 }
 
-#[derive(Clone, Default, Deserialize, Serialize)]
-pub struct ApplicationBusinessContextSettings {
-    #[serde(default)]
-    pub applications: HashMap<String, ApplicationBusinessContext>,
-}
-
-#[derive(Clone, Default, Deserialize, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ApplicationBusinessContext {
-    #[serde(default)]
-    pub business_overview: String,
-    #[serde(default)]
-    pub terminology: String,
-    #[serde(default)]
-    pub process_description: String,
-    #[serde(default)]
-    pub analysis_guidance: String,
-}
-
-impl ApplicationBusinessContext {
-    pub fn validate(&self) -> Result<(), String> {
-        for (name, value) in [
-            ("businessOverview", &self.business_overview),
-            ("terminology", &self.terminology),
-            ("processDescription", &self.process_description),
-            ("analysisGuidance", &self.analysis_guidance),
-        ] {
-            if value.chars().count() > 4_000 {
-                return Err(format!("{name} must not exceed 4000 characters"));
-            }
-        }
-        Ok(())
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.business_overview.trim().is_empty()
-            && self.terminology.trim().is_empty()
-            && self.process_description.trim().is_empty()
-            && self.analysis_guidance.trim().is_empty()
-    }
-}
-
 #[derive(Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentPluginDefinition {
@@ -627,25 +585,6 @@ pub fn save_identity_source_settings(
     fs::rename(temporary_path, path)
 }
 
-pub fn load_application_business_context_settings() -> Option<ApplicationBusinessContextSettings> {
-    let content = fs::read_to_string(application_business_context_settings_path()).ok()?;
-    serde_json::from_str::<ApplicationBusinessContextSettings>(&content).ok()
-}
-
-pub fn save_application_business_context_settings(
-    settings: &ApplicationBusinessContextSettings,
-) -> Result<(), std::io::Error> {
-    let path = application_business_context_settings_path();
-    let temporary_path = path.with_extension("tmp");
-    let content = serde_json::to_vec_pretty(settings)
-        .expect("application business context settings are serializable");
-    fs::write(&temporary_path, content)?;
-    if path.exists() {
-        fs::remove_file(&path)?;
-    }
-    fs::rename(temporary_path, path)
-}
-
 pub fn load_notification_settings() -> Option<NotificationSettings> {
     let content = fs::read_to_string(notification_settings_path()).ok()?;
     serde_json::from_str::<NotificationSettings>(&content).ok()
@@ -760,7 +699,7 @@ fn default_notification_retention_days() -> u32 {
     90
 }
 fn default_communication_max_file_upload_mb() -> u32 {
-    20
+    50
 }
 fn default_communication_retention_days() -> u32 {
     0
@@ -772,13 +711,6 @@ fn settings_path() -> PathBuf {
 
 fn valkey_settings_path() -> PathBuf {
     runtime_state_path("YAYA_VALKEY_SETTINGS_PATH", "valkey.json")
-}
-
-fn application_business_context_settings_path() -> PathBuf {
-    runtime_state_path(
-        "YAYA_APPLICATION_BUSINESS_CONTEXT_PATH",
-        "application-business-context.json",
-    )
 }
 
 fn identity_settings_path() -> PathBuf {
@@ -941,11 +873,6 @@ pub fn migrate_legacy_runtime_layout() -> Result<(), std::io::Error> {
             "YAYA_VALKEY_SETTINGS_PATH",
             ".yaya-valkey-settings.json",
             "valkey.json",
-        ),
-        (
-            "YAYA_APPLICATION_BUSINESS_CONTEXT_PATH",
-            ".yaya-application-business-context.json",
-            "application-business-context.json",
         ),
         (
             "YAYA_IDENTITY_SETTINGS_PATH",

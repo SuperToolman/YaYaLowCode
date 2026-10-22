@@ -787,7 +787,7 @@ export function canPlaceField(
       !parentGroup ||
       !isContainerFieldType(parentGroup.type) ||
       (parentGroup.type === "subform"
-        ? row !== parentGroup.row || rowSpan !== 1 || colSpan !== 1
+        ? row < parentGroup.row || rowSpan !== 1 || colSpan !== 1 || column + colSpan > COLUMN_COUNT
         : row < parentGroup.row ||
           column < parentGroup.column ||
           row + rowSpan > parentGroup.row + parentGroup.rowSpan ||

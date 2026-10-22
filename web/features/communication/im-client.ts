@@ -32,7 +32,9 @@ export class ImClientAdapter {
   private syncRequested = false;
   private snapshotComplete = false;
   private snapshotTarget = 0;
-  private sending = new Set<string>();
+  private submitted = new Set<string>();
+  private flushPromise: Promise<void> | null = null;
+  private flushRequested = false;
   private connectionGeneration = 0;
   readonly store: ImStore;
 
@@ -43,7 +45,7 @@ export class ImClientAdapter {
   async getCachedMessages(conversationId: string, beforeSequence?: number) { return this.store.getMessages(conversationId, beforeSequence); }
   async getQueuedMessages() { return this.store.getPending(); }
   async clearLocalHistory() {
-    await this.store.clear(); this.cursor = 0; this.buffered.clear(); this.snapshotComplete = false;
+    await this.store.clear(); this.submitted.clear(); this.cursor = 0; this.buffered.clear(); this.snapshotComplete = false;
     if (this.socket?.readyState === WebSocket.OPEN) this.sendRaw("sync", { deviceId: this.options.deviceId ?? "web", lastMailboxSeq: 0 });
   }
 
@@ -184,7 +186,7 @@ export class ImClientAdapter {
   }
   private completeSnapshot() {
     if (this.snapshotComplete && this.cursor >= this.snapshotTarget && this.state !== "online") {
-      this.reconnectAttempt = 0; this.setState("online"); void this.flushPending();
+      this.reconnectAttempt = 0; this.submitted.clear(); this.setState("online"); void this.flushPending();
     }
   }
   private resolvePending(envelope: ImEnvelope) {
@@ -194,15 +196,29 @@ export class ImClientAdapter {
     if (envelope.ok === false) item.reject(new Error("IM 请求失败"));
     else item.resolve(envelope.data);
   }
-  private async flushPending() {
-    if (this.state !== "online") return;
-    const pending = await this.store.getPending();
-    for (const item of pending) {
-      if (this.sending.has(item.localId)) continue;
-      this.sending.add(item.localId);
-      try { await this.sendCommand("send", item); this.emit({ type: "event", event: "message.submitted", localId: item.localId, conversationId: item.conversationId }); }
-      catch (error) { this.emit({ type: "event", event: "message.retry_pending", localId: item.localId, conversationId: item.conversationId, data: error }); }
-      finally { this.sending.delete(item.localId); }
+  private flushPending(): Promise<void> {
+    this.flushRequested = true;
+    if (this.flushPromise) return this.flushPromise;
+    this.flushPromise = this.drainPending().catch(error => { this.emit({ type: "event", event: "storage.error", data: error }); }).finally(() => { this.flushPromise = null; });
+    return this.flushPromise;
+  }
+  private async drainPending() {
+    while (this.flushRequested && this.state === "online") {
+      this.flushRequested = false;
+      const pending = await this.store.getPending();
+      for (const item of pending) {
+        if (this.state !== "online") return;
+        if (this.submitted.has(item.localId)) continue;
+        try {
+          await this.sendCommand("send", item);
+          this.submitted.add(item.localId);
+          this.emit({ type: "event", event: "message.submitted", localId: item.localId, conversationId: item.conversationId });
+        } catch (error) {
+          this.emit({ type: "event", event: "message.retry_pending", localId: item.localId, conversationId: item.conversationId, data: error });
+          this.flushRequested = false;
+          return;
+        }
+      }
     }
   }
   private scheduleReconnect() {

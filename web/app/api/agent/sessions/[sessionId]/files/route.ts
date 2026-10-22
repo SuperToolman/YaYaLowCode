@@ -1,5 +1,4 @@
-import { backendAuthorizationHeaders, backendBaseUrl } from "../../../../_lib/backend-json-proxy";
-
+import { proxyBackendFile, proxyBackendJson } from "../../../../_lib/backend-json-proxy";
 type Context = { params: Promise<{ sessionId: string }> };
-export async function GET(request: Request, { params }: Context) { const { sessionId } = await params; const response = await fetch(`${backendBaseUrl}/api/agent/sessions/${encodeURIComponent(sessionId)}/files`, { headers: backendAuthorizationHeaders(request), cache: "no-store" }); return new Response(await response.arrayBuffer(), { status: response.status, headers: { "content-type": response.headers.get("content-type") ?? "application/json" } }); }
-export async function POST(request: Request, { params }: Context) { const { sessionId } = await params; const response = await fetch(`${backendBaseUrl}/api/agent/sessions/${encodeURIComponent(sessionId)}/files`, { method: "POST", body: await request.arrayBuffer(), headers: { ...backendAuthorizationHeaders(request), "content-type": request.headers.get("content-type") ?? "multipart/form-data" } }); return new Response(await response.arrayBuffer(), { status: response.status, headers: { "content-type": response.headers.get("content-type") ?? "application/json" } }); }
+export async function GET(request: Request, { params }: Context) { const { sessionId } = await params; return proxyBackendJson(request, `/api/agent/sessions/${encodeURIComponent(sessionId)}/files${new URL(request.url).search}`); }
+export async function POST(request: Request, { params }: Context) { const { sessionId } = await params; return proxyBackendFile(request, `/api/agent/sessions/${encodeURIComponent(sessionId)}/files`); }

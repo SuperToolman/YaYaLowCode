@@ -8,6 +8,7 @@ pub struct Model {
     #[sea_orm(unique)]
     pub run_uuid: String,
     pub flow_id: Uuid,
+    pub workflow_instance_id: Option<Uuid>,
     pub flow_version: i32,
     pub trigger_event: String,
     pub trigger_payload: Json,

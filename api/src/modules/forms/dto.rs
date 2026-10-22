@@ -36,6 +36,7 @@ pub(crate) struct ApiSchemaPayload {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiFormVersionSummary {
     pub(crate) version: i32,
+    pub(crate) component_count: usize,
     pub(crate) change_log: Option<String>,
     pub(crate) created_at: String,
 }

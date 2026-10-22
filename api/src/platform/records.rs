@@ -6,7 +6,7 @@
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, QueryFilter, QueryResult, Statement,
-    Value as SeaValue, sea_query::Expr,
+    TransactionSession, TransactionTrait, Value as SeaValue, sea_query::Expr,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -21,7 +21,9 @@ use crate::platform::form_storage::{
     DYNAMIC_TABLE_STORAGE_MODE, FormStoragePlan, StorageTarget, deserialize_storage_plan,
     is_safe_identifier, load_storage_definition,
 };
+use crate::platform::record_validation::{field_checks, local_errors};
 use crate::shared::{generate_record_uuid, normalize_record_payload};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug)]
 pub(crate) struct StoredFormRecord {
@@ -298,7 +300,110 @@ where
         Ok(stored_record_from_row(&row, form_uuid)?)
     }
 
+    pub(crate) async fn validate_values(
+        &self,
+        form_uuid: &str,
+        data: &Value,
+        exclude: Option<&str>,
+    ) -> Result<BTreeMap<String, String>, AppError> {
+        let definition = form_definition_entity::Entity::find()
+            .filter(form_definition_entity::Column::FormUuid.eq(form_uuid))
+            .one(self.db)
+            .await?
+            .ok_or_else(|| AppError::NotFound("form not found".into()))?;
+        let schema = forms::load_schema_version_for_connection(
+            self.db,
+            form_uuid,
+            definition.current_schema_version,
+        )
+        .await?;
+        self.validate_schema_values(form_uuid, &schema.schema_json, data, exclude)
+            .await
+    }
+
+    pub(crate) async fn validate_schema_values(
+        &self,
+        form_uuid: &str,
+        schema: &Value,
+        data: &Value,
+        exclude: Option<&str>,
+    ) -> Result<BTreeMap<String, String>, AppError> {
+        let checks = field_checks(schema, data);
+        let mut errors = local_errors(&checks);
+        if !checks.iter().any(|check| check.unique) {
+            return Ok(errors);
+        }
+        let plan = self.storage_plan(form_uuid).await?;
+        for check in checks.iter().filter(|check| check.unique) {
+            for (key, value) in &check.values {
+                let Some(text) = value.as_str().filter(|v| !v.trim().is_empty()) else {
+                    continue;
+                };
+                let row = self.db.query_one_raw(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    format!("SELECT EXISTS (SELECT 1 FROM (SELECT record_uuid, {} AS data FROM \"{}\" WHERE deleted_at IS NULL) records WHERE ($3::text IS NULL OR record_uuid <> $3) AND jsonb_path_exists(data, $1::jsonpath, jsonb_build_object('value', $2::text))) AS duplicate", reconstructed_record_expression(&plan), plan.main_table),
+                    vec![SeaValue::String(Some(check.path.clone())), SeaValue::String(Some(text.to_owned())), SeaValue::String(exclude.map(str::to_owned))],
+                )).await?.ok_or_else(|| AppError::BadRequest("去重查询失败".into()))?;
+                if row.try_get::<bool>("", "duplicate")? {
+                    errors.insert(key.clone(), format!("{}已存在，不允许重复", check.label));
+                }
+            }
+        }
+        Ok(errors)
+    }
+
+    async fn lock_validation_scope(&self, form_uuid: &str) -> Result<(), AppError> {
+        self.db
+            .execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+                vec![SeaValue::String(Some(format!(
+                    "record-validation:{form_uuid}"
+                )))],
+            ))
+            .await?;
+        Ok(())
+    }
+
+    async fn enforce_values(
+        &self,
+        form_uuid: &str,
+        data: &Value,
+        exclude: Option<&str>,
+    ) -> Result<(), AppError> {
+        let errors = self.validate_values(form_uuid, data, exclude).await?;
+        if let Some(error) = errors.values().next() {
+            return Err(AppError::BadRequest(error.clone()));
+        }
+        Ok(())
+    }
+
     pub(crate) async fn insert(
+        &self,
+        definition: &form_definition_entity::Model,
+        data: Value,
+        operator: &str,
+        now: DateTime<Utc>,
+    ) -> Result<StoredFormRecord, AppError>
+    where
+        C: TransactionTrait,
+    {
+        let txn = self.db.begin().await?;
+        let repository = RecordRepository::new(&txn);
+        repository
+            .lock_validation_scope(&definition.form_uuid)
+            .await?;
+        repository
+            .enforce_values(&definition.form_uuid, &data, None)
+            .await?;
+        let record = repository
+            .insert_validated(definition, data, operator, now)
+            .await?;
+        txn.commit().await?;
+        Ok(record)
+    }
+
+    async fn insert_validated(
         &self,
         definition: &form_definition_entity::Model,
         data: Value,
@@ -363,6 +468,29 @@ where
     }
 
     pub(crate) async fn update(
+        &self,
+        record: &StoredFormRecord,
+        data: Value,
+        operator: &str,
+        now: DateTime<Utc>,
+    ) -> Result<StoredFormRecord, AppError>
+    where
+        C: TransactionTrait,
+    {
+        let txn = self.db.begin().await?;
+        let repository = RecordRepository::new(&txn);
+        repository.lock_validation_scope(&record.form_uuid).await?;
+        repository
+            .enforce_values(&record.form_uuid, &data, Some(&record.record_uuid))
+            .await?;
+        let record = repository
+            .update_validated(record, data, operator, now)
+            .await?;
+        txn.commit().await?;
+        Ok(record)
+    }
+
+    async fn update_validated(
         &self,
         record: &StoredFormRecord,
         data: Value,

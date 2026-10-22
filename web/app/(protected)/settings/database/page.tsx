@@ -1,4 +1,6 @@
 "use client";
+import { notifyRequestError } from "@lib/notify";
+import { useAuth } from "@components/AuthProvider";
 import { notify } from "@lib/notify";
 
 import { useEffect, useState } from "react";
@@ -58,6 +60,8 @@ type ValkeyFormState = {
 };
 
 export default function DatabaseSettingsPage() {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission("settings.database.manage");
   const router = useRouter();
   const [form, setForm] = useState<FormState>({
     host: "localhost",
@@ -94,7 +98,7 @@ export default function DatabaseSettingsPage() {
   async function loadSettings() {
     setLoading(true);
     try {
-      const payload = await loadDatabaseSettings<DatabaseSettings>();
+      const payload = await loadDatabaseSettings();
       setForm((current) => ({
         ...current,
         host: payload.host,
@@ -113,7 +117,7 @@ export default function DatabaseSettingsPage() {
             ? "当前后端未返回连接状态，请重启后端后重试。"
             : null),
       );
-      const valkeyPayload = await loadValkeySettings<ValkeySettings>();
+      const valkeyPayload = await loadValkeySettings();
       setValkeyForm({
         enabled: valkeyPayload.enabled,
         host: valkeyPayload.host,
@@ -123,14 +127,14 @@ export default function DatabaseSettingsPage() {
         password: valkeyPayload.password ?? "",
         cacheTtlHours: String(valkeyPayload.cacheTtlHours),
       });
-      setValkeyStatus(valkeyPayload.connectionStatus);
-      setValkeyError(valkeyPayload.connectionError);
+      setValkeyStatus(valkeyPayload.connectionStatus === "connected" ? "connected" : valkeyPayload.connectionStatus === "disabled" ? "disabled" : "disconnected");
+      setValkeyError(valkeyPayload.connectionError ?? null);
     } catch (reason) {
       const message =
         reason instanceof Error ? reason.message : "无法加载数据库配置";
       setConnectionStatus("disconnected");
       setConnectionError(message);
-      notify.error("无法加载数据库配置", { description: message });
+      notifyRequestError(reason, "无法加载数据库配置", { description: message });
     } finally {
       setLoading(false);
     }
@@ -138,7 +142,7 @@ export default function DatabaseSettingsPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void getLicenseStatus<{ deploymentType?: string }>()
+      void getLicenseStatus()
         .then((payload) => {
           if (payload.deploymentType !== "local") {
             router.replace("/settings/about");
@@ -166,7 +170,7 @@ export default function DatabaseSettingsPage() {
     for (let attempt = 0; attempt < 12; attempt += 1) {
       await new Promise((resolve) => window.setTimeout(resolve, 1000));
       try {
-        await loadDatabaseSettings<DatabaseSettings>();
+        await loadDatabaseSettings();
         return;
       } catch {
         // The replacement backend has not bound its port yet.
@@ -177,23 +181,24 @@ export default function DatabaseSettingsPage() {
 
   async function saveSettings(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canManage) return;
     setSaving(true);
     try {
-      const payload = await saveDatabaseSettings<DatabaseSettings>({
+      const payload = await saveDatabaseSettings({
         host: form.host,
         port: Number(form.port),
         database: form.database,
         username: form.username,
         password: form.password,
       });
-      setConnectionStatus(payload.connectionStatus ?? "connected");
+      setConnectionStatus(payload.connectionStatus === "disconnected" ? "disconnected" : "connected");
       setConnectionError(payload.connectionError ?? null);
       await waitForBackend();
       notify.success("数据库配置已保存", {
         description: "后端已重启，新的连接配置已生效。",
       });
     } catch (reason) {
-      notify.error("保存失败", {
+      notifyRequestError(reason, "保存失败", {
         description: reason instanceof Error ? reason.message : "请稍后重试。",
       });
     } finally {
@@ -204,7 +209,7 @@ export default function DatabaseSettingsPage() {
   async function testConnection() {
     setTesting(true);
     try {
-      await testDatabase<unknown>({
+      await testDatabase({
         host: form.host,
         port: Number(form.port),
         database: form.database,
@@ -215,7 +220,7 @@ export default function DatabaseSettingsPage() {
         description: "当前输入的配置尚未保存。",
       });
     } catch (reason) {
-      notify.error("连接测试失败", {
+      notifyRequestError(reason, "连接测试失败", {
         description: reason instanceof Error ? reason.message : "请稍后重试。",
       });
     } finally {
@@ -225,9 +230,10 @@ export default function DatabaseSettingsPage() {
 
   async function saveValkeySettings(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canManage) return;
     setSavingValkey(true);
     try {
-      const payload = await persistValkeySettings<ValkeySettings>({
+      const payload = await persistValkeySettings({
         enabled: valkeyForm.enabled,
         host: valkeyForm.host,
         port: Number(valkeyForm.port),
@@ -237,8 +243,7 @@ export default function DatabaseSettingsPage() {
         cacheTtlHours: Number(valkeyForm.cacheTtlHours),
       });
       setValkeyStatus(
-        payload.connectionStatus ??
-          (valkeyForm.enabled ? "connected" : "disabled"),
+        (payload.connectionStatus === "connected" ? "connected" : payload.connectionStatus === "disabled" ? "disabled" : "disconnected"),
       );
       setValkeyError(payload.connectionError ?? null);
       await waitForBackend();
@@ -246,7 +251,7 @@ export default function DatabaseSettingsPage() {
         description: "后端已重启，缓存连接已生效。",
       });
     } catch (reason) {
-      notify.error("保存失败", {
+      notifyRequestError(reason, "保存失败", {
         description: reason instanceof Error ? reason.message : "请稍后重试。",
       });
     } finally {
@@ -257,7 +262,7 @@ export default function DatabaseSettingsPage() {
   async function testValkeyConnection() {
     setTestingValkey(true);
     try {
-      await testValkey<unknown>({
+      await testValkey({
         enabled: valkeyForm.enabled,
         host: valkeyForm.host,
         port: Number(valkeyForm.port),
@@ -270,7 +275,7 @@ export default function DatabaseSettingsPage() {
         description: "当前输入的配置尚未保存。",
       });
     } catch (reason) {
-      notify.error("连接测试失败", {
+      notifyRequestError(reason, "连接测试失败", {
         description: reason instanceof Error ? reason.message : "请稍后重试。",
       });
     } finally {
@@ -324,7 +329,7 @@ export default function DatabaseSettingsPage() {
                     }
                     required
                     disabled={
-                      loading || saving || testing || managedByEnvironment
+                      !canManage || loading || saving || testing || managedByEnvironment
                     }
                   />
                 </Field>
@@ -340,7 +345,7 @@ export default function DatabaseSettingsPage() {
                     }
                     required
                     disabled={
-                      loading || saving || testing || managedByEnvironment
+                      !canManage || loading || saving || testing || managedByEnvironment
                     }
                   />
                 </Field>
@@ -355,7 +360,7 @@ export default function DatabaseSettingsPage() {
                     }
                     required
                     disabled={
-                      loading || saving || testing || managedByEnvironment
+                      !canManage || loading || saving || testing || managedByEnvironment
                     }
                   />
                 </Field>
@@ -368,7 +373,7 @@ export default function DatabaseSettingsPage() {
                     }
                     required
                     disabled={
-                      loading || saving || testing || managedByEnvironment
+                      !canManage || loading || saving || testing || managedByEnvironment
                     }
                   />
                 </Field>
@@ -389,7 +394,7 @@ export default function DatabaseSettingsPage() {
                       updateField("password", event.target.value)
                     }
                     disabled={
-                      loading || saving || testing || managedByEnvironment
+                      !canManage || loading || saving || testing || managedByEnvironment
                     }
                   />
                 </Field>
@@ -411,7 +416,7 @@ export default function DatabaseSettingsPage() {
                   <Button
                     type="button"
                     variant="secondary"
-                    isDisabled={
+                    isDisabled={!canManage ||
                       loading || saving || testing || managedByEnvironment
                     }
                     onPress={() => void testConnection()}
@@ -420,7 +425,7 @@ export default function DatabaseSettingsPage() {
                   </Button>
                   <Button
                     type="submit"
-                    isDisabled={
+                    isDisabled={!canManage ||
                       loading || saving || testing || managedByEnvironment
                     }
                   >
@@ -464,7 +469,7 @@ export default function DatabaseSettingsPage() {
               <Switch
                 isSelected={valkeyForm.enabled}
                 onChange={(value) => updateValkeyField("enabled", value)}
-                isDisabled={loading || savingValkey || testingValkey}
+                isDisabled={!canManage || loading || savingValkey || testingValkey}
               >
                 <Switch.Content>
                   <Switch.Control>
@@ -483,7 +488,7 @@ export default function DatabaseSettingsPage() {
                     }
                     required
                     disabled={
-                      loading ||
+                      !canManage || loading ||
                       savingValkey ||
                       testingValkey ||
                       !valkeyForm.enabled
@@ -502,7 +507,7 @@ export default function DatabaseSettingsPage() {
                     }
                     required
                     disabled={
-                      loading ||
+                      !canManage || loading ||
                       savingValkey ||
                       testingValkey ||
                       !valkeyForm.enabled
@@ -521,7 +526,7 @@ export default function DatabaseSettingsPage() {
                     }
                     required
                     disabled={
-                      loading ||
+                      !canManage || loading ||
                       savingValkey ||
                       testingValkey ||
                       !valkeyForm.enabled
@@ -539,7 +544,7 @@ export default function DatabaseSettingsPage() {
                       updateValkeyField("username", event.target.value)
                     }
                     disabled={
-                      loading ||
+                      !canManage || loading ||
                       savingValkey ||
                       testingValkey ||
                       !valkeyForm.enabled
@@ -556,7 +561,7 @@ export default function DatabaseSettingsPage() {
                       updateValkeyField("password", event.target.value)
                     }
                     disabled={
-                      loading ||
+                      !canManage || loading ||
                       savingValkey ||
                       testingValkey ||
                       !valkeyForm.enabled
@@ -564,7 +569,7 @@ export default function DatabaseSettingsPage() {
                   />
                 </Field>
               </div>
-              <Field label="缓存 TTL（小时）">
+              <Field label="缓存 TTL 上限（小时）">
                 <Input
                   fullWidth
                   type="number"
@@ -590,13 +595,13 @@ export default function DatabaseSettingsPage() {
               ) : null}
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] pt-5">
                 <p className="text-xs leading-5 text-[var(--color-text-secondary)]">
-                  Valkey 仅用于缓存与实时能力，PostgreSQL 仍是业务数据主库。
+                  各类接口按业务使用较短的 TTL，并受此上限约束。PostgreSQL 仍是业务数据主库。
                 </p>
                 <div className="flex items-center gap-2">
                   <Button
                     type="button"
                     variant="secondary"
-                    isDisabled={
+                    isDisabled={!canManage ||
                       loading ||
                       savingValkey ||
                       testingValkey ||
@@ -608,7 +613,7 @@ export default function DatabaseSettingsPage() {
                   </Button>
                   <Button
                     type="submit"
-                    isDisabled={loading || savingValkey || testingValkey}
+                    isDisabled={!canManage || loading || savingValkey || testingValkey}
                   >
                     {savingValkey ? "正在验证并重启…" : "保存并重启后端"}
                   </Button>

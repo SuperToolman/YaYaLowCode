@@ -1,11 +1,24 @@
-﻿/**
+/**
  * 字段属性抽屉
  * */
 
 "use client";
+import {
+  dateValidationOptions,
+  getDateValidation,
+} from "@features/form-runtime/components/date-validation";
 
-import { MySurface } from "@shared/ui/MySurface";
+import {
+  ArrowLeftToLine,
+  ArrowUpToLine,
+  CircleInfo,
+  SquareLetterT,
+  TrashBin,
+} from "@gravity-ui/icons";
+import { FormSelect, type FormSelectOption } from "@shared/FormSelect";
+import { FieldSelect } from "@shared/FieldSelect";
 import { MyTabs } from "@shared/ui/MyTabs";
+import { groupStyleOptions } from "@features/form-runtime/components/FormGroup";
 import { useEffect, useMemo, useState } from "react";
 import type { Key } from "react";
 import {
@@ -20,6 +33,9 @@ import {
 import {
   Button,
   Checkbox,
+  Label,
+  Radio,
+  RadioGroup,
   Input,
   ListBox,
   Select,
@@ -27,6 +43,9 @@ import {
   Tabs,
   TextArea,
   Popover,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
 } from "@heroui/react";
 import { Modal } from "@heroui/react/modal";
 import type {
@@ -41,12 +60,10 @@ import type {
 } from "../../designer-types";
 import {
   getFormSchema,
-  listApps,
   listRoles,
   listUsers,
 } from "@features/form-designer";
 import { getAppForms } from "@lib/app-resources";
-import { mapWithConcurrency } from "@lib/async";
 import { DefaultValueEditor } from "./DefaultValueEditor";
 import { OptionsEditor } from "./OptionsEditor";
 import { CascaderDataSourceEditor } from "./CascaderDataSourceEditor";
@@ -56,6 +73,7 @@ import {
   NumberWithActions,
   PanelSwitch,
   PropertyFold,
+  PropertyPanelHeader,
   PropertyRow,
   TextWithActions,
 } from "./PropertyLayout";
@@ -137,15 +155,11 @@ export function FieldPropertyPanel({
     TITLE_POSITION_FIELD_TYPES.has(field.type) && !isSubformChild;
 
   return (
-    <div className="flex flex-col gap-2 overflow-hidden">
-      <div className="text-[12px]">
-        <h2 className="truncate">
-          {field.label}（<span className="shrink-0">{field.type}</span>）
-        </h2>
-        <div className="flex min-w-0 items-center">
-          <span className="truncate text-gray-500">{field.id}</span>
-        </div>
-      </div>
+    <div className="flex h-full min-h-0 flex-col gap-2 overflow-hidden">
+      <PropertyPanelHeader
+        title={<>{field.label}（{field.type}）</>}
+        description={field.id}
+      />
 
       <div className="flex flex-1 flex-col min-h-0 gap-2 overflow-y-auto">
         <PropertyFold title="基础属性">
@@ -174,6 +188,26 @@ export function FieldPropertyPanel({
               }
             />
           </PropertyRow>
+          {field.type === "groupContainer" ? (
+            <PropertyRow label="风格">
+              <Select
+                aria-label="分组风格"
+                fullWidth
+                selectedKey={field.props.groupStyle ?? "simple"}
+                onSelectionChange={(key) => {
+                  const option = groupStyleOptions.find((item) => item.value === key);
+                  if (option) onPropsChange(field.id, { groupStyle: option.value });
+                }}
+              >
+                <Select.Trigger><Select.Value /><Select.Indicator /></Select.Trigger>
+                <Select.Popover>
+                  <ListBox>{groupStyleOptions.map((option) => (
+                    <ListBox.Item key={option.value} id={option.value} textValue={option.label}>{option.label}</ListBox.Item>
+                  ))}</ListBox>
+                </Select.Popover>
+              </Select>
+            </PropertyRow>
+          ) : null}
           {supportsPlaceholder ? (
             <PropertyRow label="占位提示">
               <TextWithActions
@@ -201,7 +235,29 @@ export function FieldPropertyPanel({
             </PropertyRow>
           ) : null}
           {supportsOptions ? (
-            <PropertyRow label="选项" align="start">
+            <PropertyRow
+              label={
+                <span className="inline-flex items-center gap-1">
+                  选项
+                  <Tooltip>
+                    <Tooltip.Trigger>
+                      <button
+                        type="button"
+                        aria-label="选项填写说明"
+                        className="inline-flex items-center justify-center"
+                      >
+                        <CircleInfo width={14} height={14} />
+                      </button>
+                    </Tooltip.Trigger>
+                    <Tooltip.Content>
+                      每行一个选项；不写 | 时 value 与 label 一致，写成
+                      label|value 时二者分开。
+                    </Tooltip.Content>
+                  </Tooltip>
+                </span>
+              }
+              align="start"
+            >
               <OptionsEditor
                 key={field.id}
                 field={field}
@@ -266,16 +322,112 @@ export function FieldPropertyPanel({
           />
         ) : null}
 
-        {field.type !== "subform" && field.type !== "serialNumber" ? (
+        {![
+          "subform",
+          "link",
+          "description",
+          "button",
+          "groupContainer",
+        ].includes(field.type) ? (
           <PropertyFold title="校验">
-            <PropertyRow label="必填">
-              <PanelSwitch
-                isSelected={Boolean(field.props.isRequired)}
-                onChange={(value) =>
-                  onPropsChange(field.id, { isRequired: value })
-                }
-              />
-            </PropertyRow>
+            {field.type === "date" || field.type === "dateRange" ? (
+              <PropertyRow label="日期范围" align="start">
+                <Select
+                  aria-label="日期范围"
+                  fullWidth
+                  selectedKey={getDateValidation(field.props)}
+                  onSelectionChange={(key) => {
+                    const selected = dateValidationOptions.find(
+                      (option) => option.value === key,
+                    );
+                    if (selected)
+                      onPropsChange(field.id, {
+                        dateValidation: selected.value,
+                        dateTodayOrFuture: false,
+                      });
+                  }}
+                >
+                  <Select.Trigger>
+                    <Select.Value />
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox>
+                      {dateValidationOptions.map((option) => (
+                        <ListBox.Item
+                          key={option.value}
+                          id={option.value}
+                          textValue={option.label}
+                        >
+                          {option.label}
+                        </ListBox.Item>
+                      ))}
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+              </PropertyRow>
+            ) : null}
+            {field.type !== "serialNumber" ? (
+              <PropertyRow label="必填">
+                <PanelSwitch
+                  isSelected={Boolean(field.props.isRequired)}
+                  onChange={(value) =>
+                    onPropsChange(field.id, { isRequired: value })
+                  }
+                />
+              </PropertyRow>
+            ) : null}
+            {["singleLineText", "multiLineText", "serialNumber"].includes(
+              field.type,
+            ) ? (
+              <PropertyRow label="去重校验">
+                <PanelSwitch
+                  isSelected={Boolean(field.props.isUnique)}
+                  onChange={(value) =>
+                    onPropsChange(field.id, { isUnique: value })
+                  }
+                />
+              </PropertyRow>
+            ) : null}
+            {field.type === "singleLineText" ? (
+              <PropertyRow label="格式校验">
+                <PanelSwitch
+                  isSelected={Boolean(field.props.formatValidation)}
+                  onChange={(value) =>
+                    onPropsChange(field.id, {
+                      formatValidation: value ? "email" : undefined,
+                    })
+                  }
+                />
+                {field.props.formatValidation ? (
+                  <Select
+                    aria-label="格式校验类型"
+                    className="min-w-0 flex-1"
+                    selectedKey={field.props.formatValidation}
+                    onSelectionChange={(key) => {
+                      if (key == null) return;
+                      onPropsChange(field.id, {
+                        formatValidation: String(
+                          key,
+                        ) as DesignerFieldProps["formatValidation"],
+                      });
+                    }}
+                  >
+                    <Select.Trigger>
+                      <Select.Value />
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        <ListBox.Item id="email">邮箱</ListBox.Item>
+                        <ListBox.Item id="phoneCN">+86 手机号</ListBox.Item>
+                        <ListBox.Item id="idCardCN">身份证</ListBox.Item>
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                ) : null}
+              </PropertyRow>
+            ) : null}
             {field.type === "number" ? (
               <>
                 <PropertyRow label="最小值">
@@ -298,93 +450,11 @@ export function FieldPropertyPanel({
             ) : null}
           </PropertyFold>
         ) : null}
-
-        {field.type !== "groupContainer" &&
-        field.type !== "description" &&
-        field.type !== "button" &&
-        field.type !== "link" ? (
-          <PropertyFold title="Agent 数据访问">
-            <PropertyRow label="读取策略">
-              <Select
-                aria-label="Agent 数据读取策略"
-                className="min-w-0 flex-1"
-                selectedKey={field.props.agentDataAccess ?? "allow"}
-                onSelectionChange={(key) =>
-                  onPropsChange(field.id, {
-                    agentDataAccess: String(key ?? "allow") as
-                      | "allow"
-                      | "mask"
-                      | "deny",
-                  })
-                }
-              >
-                <Select.Trigger>
-                  <Select.Value />
-                  <Select.Indicator />
-                </Select.Trigger>
-                <Select.Popover>
-                  <ListBox>
-                    <ListBox.Item id="allow">允许读取</ListBox.Item>
-                    <ListBox.Item id="mask">脱敏显示</ListBox.Item>
-                    <ListBox.Item id="deny">禁止读取</ListBox.Item>
-                  </ListBox>
-                </Select.Popover>
-              </Select>
-            </PropertyRow>
-          </PropertyFold>
-        ) : null}
-
-        <PropertyFold title="HeroUI 组件属性" rightIcon={<CodeToken />}>
-          <PropertyRow label="禁用">
-            <PanelSwitch
-              isSelected={Boolean(field.props.isDisabled)}
-              onChange={(value) =>
-                onPropsChange(field.id, { isDisabled: value })
-              }
-            />
-          </PropertyRow>
-          <PropertyRow label="只读">
-            <PanelSwitch
-              isSelected={Boolean(field.props.isReadOnly)}
-              onChange={(value) =>
-                onPropsChange(field.id, { isReadOnly: value })
-              }
-            />
-          </PropertyRow>
-          {field.type === "multiLineText" ? (
-            <PropertyRow label="rows">
-              <NumberWithActions
-                min={1}
-                value={field.props.rows}
-                onChange={(value) =>
-                  onPropsChange(field.id, {
-                    rows: Math.max(1, value ?? 1),
-                  })
-                }
-              />
-            </PropertyRow>
-          ) : null}
-          {field.type === "number" ? (
-            <PropertyRow label="step">
-              <NumberWithActions
-                min={0}
-                value={field.props.step}
-                onChange={(value) =>
-                  onPropsChange(field.id, { step: value ?? 1 })
-                }
-              />
-            </PropertyRow>
-          ) : null}
-        </PropertyFold>
       </div>
 
-      <footer className="p-1">
-        <Button
-          fullWidth
-          variant="ghost"
-          onPress={() => onDelete(field.id)}
-          className="h-7"
-        >
+      <footer>
+        <Button variant="danger" fullWidth onPress={() => onDelete(field.id)}>
+          <TrashBin />
           删除组件
         </Button>
       </footer>
@@ -453,13 +523,30 @@ function TitlePositionSegmented({
   ];
 
   return (
-    <MyTabs
-      ariaLabel="标题位置"
-      className="min-w-0 flex-1 rounded-xl overflow-hidden"
-      items={options}
-      onValueChange={onChange}
-      value={value}
-    />
+    <ToggleButtonGroup
+      aria-label="标题位置"
+      selectionMode="single"
+      size="sm"
+      disallowEmptySelection
+      selectedKeys={[value]}
+      onSelectionChange={(keys) => {
+        const selected = options.find((option) => keys.has(option.value));
+        if (selected) onChange(selected.value);
+      }}
+    >
+      {options.map((option) => (
+        <ToggleButton key={option.value} id={option.value}>
+          {option.value === "top" ? (
+            <ArrowUpToLine aria-hidden="true" />
+          ) : option.value === "left" ? (
+            <ArrowLeftToLine aria-hidden="true" />
+          ) : (
+            <SquareLetterT aria-hidden="true" />
+          )}
+          {option.label}
+        </ToggleButton>
+      ))}
+    </ToggleButtonGroup>
   );
 }
 
@@ -472,6 +559,92 @@ function FieldSpecificProperties({
 }) {
   return (
     <>
+      {field.type === "date" ? (
+        <>
+          <PropertyRow label="日期精度">
+            <Select
+              aria-label="日期精度"
+              selectedKey={field.props.granularity ?? "day"}
+              onSelectionChange={(key) => {
+                if (key != null)
+                  onPropsChange(field.id, {
+                    granularity: String(
+                      key,
+                    ) as DesignerFieldProps["granularity"],
+                  });
+              }}
+            >
+              <Select.Trigger>
+                <Select.Value />
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                  <ListBox.Item id="day" textValue="日">
+                    日
+                  </ListBox.Item>
+                  <ListBox.Item id="hour" textValue="小时">
+                    小时
+                  </ListBox.Item>
+                  <ListBox.Item id="minute" textValue="分钟">
+                    分钟
+                  </ListBox.Item>
+                  <ListBox.Item id="second" textValue="秒">
+                    秒
+                  </ListBox.Item>
+                </ListBox>
+              </Select.Popover>
+            </Select>
+          </PropertyRow>
+          <PropertyRow label="小时制">
+            <Select
+              aria-label="小时制"
+              selectedKey={String(field.props.hourCycle ?? "auto")}
+              onSelectionChange={(key) => {
+                if (key != null)
+                  onPropsChange(field.id, {
+                    hourCycle:
+                      key === "auto" ? undefined : (Number(key) as 12 | 24),
+                  });
+              }}
+            >
+              <Select.Trigger>
+                <Select.Value />
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                  <ListBox.Item id="auto" textValue="跟随地区">
+                    跟随地区
+                  </ListBox.Item>
+                  <ListBox.Item id="12" textValue="12 小时制">
+                    12 小时制
+                  </ListBox.Item>
+                  <ListBox.Item id="24" textValue="24 小时制">
+                    24 小时制
+                  </ListBox.Item>
+                </ListBox>
+              </Select.Popover>
+            </Select>
+          </PropertyRow>
+          <PropertyRow label="隐藏时区">
+            <PanelSwitch
+              isSelected={Boolean(field.props.hideTimeZone)}
+              onChange={(hideTimeZone) =>
+                onPropsChange(field.id, { hideTimeZone })
+              }
+            />
+          </PropertyRow>
+          <PropertyRow label="数字补零">
+            <PanelSwitch
+              isSelected={Boolean(field.props.shouldForceLeadingZeros)}
+              onChange={(shouldForceLeadingZeros) =>
+                onPropsChange(field.id, { shouldForceLeadingZeros })
+              }
+            />
+          </PropertyRow>
+        </>
+      ) : null}
       {field.type === "link" ? (
         <>
           <PropertyRow label="链接地址">
@@ -542,6 +715,14 @@ function FieldSpecificProperties({
               }}
             />
           </PropertyRow>
+          <PropertyRow label="显示上传限制提示">
+            <PanelSwitch
+              isSelected={field.props.showUploadLimitHint !== false}
+              onChange={(showUploadLimitHint) =>
+                onPropsChange(field.id, { showUploadLimitHint })
+              }
+            />
+          </PropertyRow>
         </>
       ) : null}
       {field.type === "button" ? (
@@ -556,8 +737,7 @@ function FieldSpecificProperties({
   );
 }
 
-type AssociationFormSummary = { id: string; name: string };
-type AssociationApp = { id: string; name: string };
+type AssociationFormSummary = FormSelectOption;
 type AssociationSchemaField = {
   id: string;
   label: string;
@@ -574,16 +754,10 @@ function AssociationFormProperties({
   fields: PlacedField[];
   onPropsChange: FieldPropsChangeHandler;
 }) {
-  const [isFormPickerOpen, setFormPickerOpen] = useState(false);
   const [isDisplayOpen, setDisplayOpen] = useState(false);
-  const [scope, setScope] = useState<"current" | "cross">("current");
   const [forms, setForms] = useState<AssociationFormSummary[]>([]);
-  const [apps, setApps] = useState<AssociationApp[]>([]);
   const [schemaFields, setSchemaFields] = useState<AssociationSchemaField[]>(
     [],
-  );
-  const [selectedFormName, setSelectedFormName] = useState(
-    field.props.associationFormName ?? "",
   );
   const appId =
     typeof window === "undefined"
@@ -592,7 +766,7 @@ function AssociationFormProperties({
   const update = (props: DesignerFieldProps) => onPropsChange(field.id, props);
 
   useEffect(() => {
-    if (!isFormPickerOpen || !appId) return;
+    if (!appId) return;
     let cancelled = false;
 
     void getAppForms(appId)
@@ -605,25 +779,10 @@ function AssociationFormProperties({
         if (!cancelled) setForms([]);
       });
 
-    if (scope === "cross") {
-      void listApps({ responseStyle: "fields" })
-        .then(({ data, error }) => {
-          if (cancelled) return;
-          setApps(
-            !error && data?.code === 0 && data.data
-              ? data.data.filter((app) => app.id !== appId)
-              : [],
-          );
-        })
-        .catch(() => {
-          if (!cancelled) setApps([]);
-        });
-    }
-
     return () => {
       cancelled = true;
     };
-  }, [appId, field.id, isFormPickerOpen, scope]);
+  }, [appId, field.id]);
 
   useEffect(() => {
     const formId = field.props.associationFormId;
@@ -654,51 +813,25 @@ function AssociationFormProperties({
     };
   }, [field.props.associationFormId]);
 
-  useEffect(() => {
-    const formId = field.props.associationFormId;
-    const selectedAppId = field.props.associationAppId ?? appId;
-    if (!formId || !selectedAppId || field.props.associationFormName) return;
-
-    let cancelled = false;
-    void getAppForms(selectedAppId)
-      .then((nextForms) => {
-        const name = nextForms.find((form) => form.id === formId)?.name;
-        if (!cancelled && name) setSelectedFormName(name);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    appId,
-    field.props.associationAppId,
-    field.props.associationFormId,
-    field.props.associationFormName,
-  ]);
-
-  function chooseForm(form: AssociationFormSummary, selectedAppId: string) {
-    setSelectedFormName(form.name);
+  function chooseForm(form: AssociationFormSummary) {
     update({
       associationFormId: form.id,
       associationFormName: form.name,
-      associationAppId: selectedAppId,
+      associationAppId: form.appId ?? appId,
       associationPrimaryFieldId: "",
       associationSecondaryFieldId: "",
       associationTableFieldIds: [],
+      associationTableFieldMode: "default",
       associationFilters: [],
       associationFiltersEnabled: false,
       associationFills: [],
+      associationSubformFills: [],
       associationFillsEnabled: false,
       associationSorts: [],
       associationSortsEnabled: false,
     });
-    setFormPickerOpen(false);
   }
 
-  const formLabel =
-    selectedFormName ||
-    forms.find((form) => form.id === field.props.associationFormId)?.name ||
-    "未选择";
   const sourceMainFields = schemaFields.filter(
     (item) =>
       !item.parentGroupId &&
@@ -723,17 +856,20 @@ function AssociationFormProperties({
   return (
     <>
       <PropertyFold title="关联属性">
-        <PropertyRow label="关联表单 *">
-          <Button
-            variant="ghost"
-            onPress={() => setFormPickerOpen(true)}
-            className="h-7 min-w-0 flex-1 justify-between px-2"
-          >
-            <span className="truncate">{formLabel}</span>
-            <span>选择</span>
-          </Button>
+        <PropertyRow label={<span>关联表单 <span className="text-danger">*</span></span>}>
+          <div className="min-w-0 flex-1">
+            <FormSelect
+              appId={appId}
+              forms={forms}
+              formTypes={["normal", "workflow"]}
+              value={field.props.associationFormId ?? ""}
+              placeholder="选择关联表单"
+              onChange={() => {}}
+              onFormSelect={chooseForm}
+            />
+          </div>
         </PropertyRow>
-        <PropertyRow label="显示设置 *">
+        <PropertyRow label={<span>显示设置 <span className="text-danger">*</span></span>}>
           <Button
             variant="ghost"
             isDisabled={!field.props.associationFormId}
@@ -810,45 +946,6 @@ function AssociationFormProperties({
           }
         />
       </PropertyFold>
-      <Modal isOpen={isFormPickerOpen} onOpenChange={setFormPickerOpen}>
-        <Modal.Backdrop isDismissable>
-          <Modal.Container placement="center" size="sm">
-            <Modal.Dialog className="w-[min(560px,92vw)]">
-              <Modal.Header>
-                <Modal.Heading>选择关联表单</Modal.Heading>
-              </Modal.Header>
-              <Modal.Body className="">
-                <Tabs
-                  variant="secondary"
-                  selectedKey={scope}
-                  onSelectionChange={(key) =>
-                    setScope(key as "current" | "cross")
-                  }
-                >
-                  <Tabs.List aria-label="关联表单范围">
-                    <Tabs.Tab id="current" className="px-3 py-2">
-                      当前应用
-                      <Tabs.Indicator />
-                    </Tabs.Tab>
-                    <Tabs.Tab id="cross" className="px-3 py-2">
-                      跨应用
-                      <Tabs.Indicator />
-                    </Tabs.Tab>
-                  </Tabs.List>
-                </Tabs>
-                {scope === "current" ? (
-                  <FormList
-                    forms={forms}
-                    onSelect={(form) => chooseForm(form, appId)}
-                  />
-                ) : (
-                  <CrossAppFormList apps={apps} onSelect={chooseForm} />
-                )}
-              </Modal.Body>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
       <AssociationDisplaySettingsModal
         key={`${field.props.associationFormId}:${isDisplayOpen}`}
         isOpen={isDisplayOpen}
@@ -858,73 +955,6 @@ function AssociationFormProperties({
         onSave={update}
       />
     </>
-  );
-}
-
-function FormList({
-  forms,
-  onSelect,
-}: {
-  forms: AssociationFormSummary[];
-  onSelect: (form: AssociationFormSummary) => void;
-}) {
-  return (
-    <div className="space-y-1">
-      {forms.length ? (
-        forms.map((form) => (
-          <Button
-            key={form.id}
-            variant="ghost"
-            fullWidth
-            onPress={() => onSelect(form)}
-            className="justify-start px-3"
-          >
-            <span className="truncate">{form.name}</span>
-          </Button>
-        ))
-      ) : (
-        <p className="py-6">暂无可关联表单</p>
-      )}
-    </div>
-  );
-}
-function CrossAppFormList({
-  apps,
-  onSelect,
-}: {
-  apps: AssociationApp[];
-  onSelect: (form: AssociationFormSummary, appId: string) => void;
-}) {
-  const [loaded, setLoaded] = useState<
-    Record<string, AssociationFormSummary[]>
-  >({});
-  useEffect(() => {
-    let cancelled = false;
-    void mapWithConcurrency(apps, 6, async (app) => {
-      try {
-        return [app.id, await getAppForms(app.id)] as const;
-      } catch {
-        return [app.id, []] as const;
-      }
-    }).then((entries) => {
-      if (!cancelled) setLoaded(Object.fromEntries(entries));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [apps]);
-  return (
-    <div className="space-y-4">
-      {apps.map((app) => (
-        <section key={app.id}>
-          <h3 className="mb-1">{app.name}</h3>
-          <FormList
-            forms={loaded[app.id] ?? []}
-            onSelect={(form) => onSelect(form, app.id)}
-          />
-        </section>
-      ))}
-    </div>
   );
 }
 
@@ -950,16 +980,20 @@ function AssociationDisplaySettingsModal({
   const [tableFields, setTableFields] = useState(
     field.props.associationTableFieldIds ?? [],
   );
+  const [tableMode, setTableMode] = useState<"default" | "custom">(
+    field.props.associationTableFieldMode ?? (field.props.associationTableFieldIds?.length ? "custom" : "default"),
+  );
+  const fieldOptions = fields.map((item) => ({ key: item.id, label: item.label, fieldType: item.type }));
   const [tab, setTab] = useState<"dropdown" | "table">("dropdown");
   return (
     <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
       <Modal.Backdrop isDismissable>
         <Modal.Container placement="center" size="lg">
           <Modal.Dialog className="w-[min(960px,96vw)]">
-            <Modal.Header className="px-6 py-4">
+            <Modal.Header>
               <Modal.Heading>显示设置</Modal.Heading>
             </Modal.Header>
-            <Modal.Body className="px-6 py-5">
+            <Modal.Body>
               <Tabs
                 variant="secondary"
                 selectedKey={tab}
@@ -977,55 +1011,42 @@ function AssociationDisplaySettingsModal({
                 </Tabs.List>
               </Tabs>
               {tab === "dropdown" ? (
-                <div className="mt-5 grid gap-6 sm:grid-cols-2">
-                  <div className="p-5">
-                    <p>示例</p>
-                    <p className="mt-8">
-                      {fields.find((item) => item.id === primary)?.label ??
-                        "主要信息"}
-                    </p>
-                    <p className="mt-1">
-                      {fields.find((item) => item.id === secondary)?.label ??
-                        "次要信息"}
-                    </p>
-                  </div>
-                  <div className="space-y-4">
-                    <AssociationSelect
-                      label="主要信息 *"
-                      value={primary}
-                      fields={fields}
-                      onChange={setPrimary}
-                    />
-                    <AssociationSelect
-                      label="次要信息"
-                      value={secondary}
-                      fields={fields}
-                      onChange={setSecondary}
-                    />
-                  </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <FieldSelect
+                    label="主要信息"
+                    isRequired
+                    options={fieldOptions}
+                    value={primary}
+                    onChange={setPrimary}
+                  />
+                  <FieldSelect
+                    label="次要信息"
+                    options={fieldOptions}
+                    value={secondary}
+                    onChange={setSecondary}
+                  />
                 </div>
               ) : (
-                <div className="mt-5 grid gap-2 sm:grid-cols-2">
-                  {fields.map((item) => (
-                    <Checkbox
-                      key={item.id}
-                      isSelected={tableFields.includes(item.id)}
-                      onChange={(selected) =>
-                        setTableFields((current) =>
-                          selected
-                            ? [...current, item.id]
-                            : current.filter((id) => id !== item.id),
-                        )
-                      }
-                    >
-                      <Checkbox.Content>
-                        <Checkbox.Control>
-                          <Checkbox.Indicator />
-                        </Checkbox.Control>
-                        {item.label}
-                      </Checkbox.Content>
-                    </Checkbox>
-                  ))}
+                <div className="mt-5 space-y-4">
+                  <RadioGroup
+                    aria-label="设置选择数据中表格的显示字段"
+                    orientation="horizontal"
+                    value={tableMode}
+                    onChange={(value) => setTableMode(value as "default" | "custom")}
+                  >
+                    <Label>设置选择数据中表格的显示字段</Label>
+                    <Radio value="default"><Radio.Content><Radio.Control><Radio.Indicator /></Radio.Control><Label>默认</Label></Radio.Content></Radio>
+                    <Radio value="custom"><Radio.Content><Radio.Control><Radio.Indicator /></Radio.Control><Label>自定义</Label></Radio.Content></Radio>
+                  </RadioGroup>
+                  {tableMode === "custom" ? (
+                    <FieldSelect
+                      label="数据表展示字段"
+                      options={fieldOptions}
+                      selectionMode="multiple"
+                      value={tableFields}
+                      onChange={setTableFields}
+                    />
+                  ) : null}
                 </div>
               )}
             </Modal.Body>
@@ -1039,7 +1060,8 @@ function AssociationDisplaySettingsModal({
                   onSave({
                     associationPrimaryFieldId: primary,
                     associationSecondaryFieldId: secondary,
-                    associationTableFieldIds: tableFields,
+                    associationTableFieldMode: tableMode,
+                    associationTableFieldIds: tableMode === "default" ? fields.map((item) => item.id) : tableFields,
                   });
                   onOpenChange(false);
                 }}
@@ -1176,11 +1198,11 @@ function AssociationFilterModal({
       <Modal.Backdrop isDismissable>
         <Modal.Container placement="center" size="lg">
           <Modal.Dialog className="flex h-[min(640px,86vh)] w-[min(920px,96vw)] flex-col overflow-hidden">
-            <Modal.Header className="px-6 py-4">
+            <Modal.Header>
               <Modal.Heading>数据筛选</Modal.Heading>
               <Modal.CloseTrigger aria-label="关闭" />
             </Modal.Header>
-            <Modal.Body className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+            <Modal.Body>
               <p className="mb-6">
                 数据会按照如下条件进行筛选，前者为关联表单中的字段。
               </p>
@@ -1573,11 +1595,11 @@ function AssociationFillModalV2({
       <Modal.Backdrop isDismissable>
         <Modal.Container placement="center" size="cover">
           <Modal.Dialog className="flex h-[min(720px,90vh)] w-[min(1080px,96vw)] flex-col overflow-hidden">
-            <Modal.Header className="px-6 py-4">
+            <Modal.Header>
               <Modal.Heading>数据填充</Modal.Heading>
               <Modal.CloseTrigger aria-label="关闭" />
             </Modal.Header>
-            <Modal.Body className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+            <Modal.Body>
               <p className="mb-5">
                 {currentSubformId
                   ? "当前关联组件位于子表中，仅能填充该子表字段。"
@@ -2154,12 +2176,6 @@ function SubformProperties({
           <TextWithActions
             value={field.props.subformDeleteButtonText ?? "删除"}
             onChange={(value) => update({ subformDeleteButtonText: value })}
-          />
-        </PropertyRow>
-        <PropertyRow label="删除确认">
-          <PanelSwitch
-            isSelected={field.props.subformConfirmDelete !== false}
-            onChange={(value) => update({ subformConfirmDelete: value })}
           />
         </PropertyRow>
         <PropertyRow label="显示排序">
@@ -2802,18 +2818,28 @@ function StatusSegmented({
   ];
 
   return (
-    <MyTabs
-      ariaLabel="字段状态"
-      className="flex-1"
-      items={options}
-      onValueChange={(key) =>
+    <ToggleButtonGroup
+      aria-label="字段状态"
+      selectionMode="single"
+      size="sm"
+      disallowEmptySelection
+      selectedKeys={[current]}
+      onSelectionChange={(keys) => {
+        const selected = options.find((option) => keys.has(option.value));
+        if (!selected) return;
+        const key = selected.value;
         onPropsChange(field.id, {
           isDisabled: key === "disabled",
           isHidden: key === "hidden",
           isReadOnly: key === "readOnly",
-        })
-      }
-      value={current}
-    />
+        });
+      }}
+    >
+      {options.map((option) => (
+        <ToggleButton key={option.value} id={option.value}>
+          {option.label}
+        </ToggleButton>
+      ))}
+    </ToggleButtonGroup>
   );
 }

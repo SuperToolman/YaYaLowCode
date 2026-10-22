@@ -17,12 +17,7 @@ export function ConversationList({
 }) {
   return (
     <Card className="flex min-h-0 min-w-0 flex-col">
-      <Card.Header className="flex h-16 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-4">
-        <div>
-          <h2 className="m-0 text-base font-semibold text-[var(--color-text-primary)]">会话</h2>
-          <p className="m-0 text-xs text-[var(--color-text-secondary)]">最近的沟通记录</p>
-        </div>
-      </Card.Header>
+
       <ScrollShadow className="min-h-0 flex-1 overflow-y-auto">
         {conversations.map((item) => {
           const avatarMember =
@@ -35,7 +30,7 @@ export function ConversationList({
               key={item.id}
               type="button"
               onClick={() => onSelect(item.id)}
-              className={`mb-1 flex w-full items-center gap-2.5 rounded-md p-2.5 text-start hover:bg-[var(--color-control-selected)] ${item.id === selectedId ? "bg-[var(--color-control-selected)]" : ""}`}
+              className={`mb-1 flex w-full items-center gap-2 rounded-md p-2 text-start hover:bg-[var(--color-control-selected)] ${item.id === selectedId ? "bg-[var(--color-control-selected)]" : ""}`}
             >
               <MyAvatar name={item.title} imageUrl={avatarMember?.avatarUrl} />
               <span className="min-w-0 flex-1">

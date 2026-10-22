@@ -1,21 +1,12 @@
 "use client";
 
+import { unwrapApiResult } from "@lib/api-request";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Dropdown } from "@heroui/react";
 import { getWorkflowNotificationPreferences, listWorkflowNotifications, readWorkflowNotification } from "@/features/workflow/api";
 
-type Notification = {
-  id: string;
-  title: string;
-  content: string;
-  appId: string | null;
-  formUuid: string;
-  recordUuid: string;
-  readAt: string | null;
-  createdAt: string;
-};
-type Envelope = { code: number; message: string; data: { unread?: number; items?: Notification[] } | null };
+type Notification = import("@lib/http").WorkflowNotificationResponse;
 
 export function WorkflowNotificationItems({ onUnreadChange }: { onUnreadChange?: (count: number) => void }) {
   const router = useRouter();
@@ -23,18 +14,16 @@ export function WorkflowNotificationItems({ onUnreadChange }: { onUnreadChange?:
   const [unread, setUnread] = useState(0);
 
   async function load() {
-    const { data, error } = await listWorkflowNotifications({ responseStyle: "fields" });
-    const result = data as Envelope | undefined;
-    if (error || result?.code !== 0) throw new Error(result?.message || "无法加载通知");
-    setItems(result.data?.items ?? []);
-    setUnread(result.data?.unread ?? 0);
-    onUnreadChange?.(result.data?.unread ?? 0);
+    const result = unwrapApiResult(await listWorkflowNotifications());
+    setItems(result.items);
+    setUnread(result.unread);
+    onUnreadChange?.(result.unread);
   }
 
   useEffect(() => {
     let timer: number | undefined;
     let cancelled = false;
-    void getWorkflowNotificationPreferences<{ inAppEnabled?: boolean; pollIntervalSeconds?: number }>()
+    void getWorkflowNotificationPreferences()
       .catch(() => null)
       .then((preferences) => {
         if (cancelled || preferences?.inAppEnabled === false) return;

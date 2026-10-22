@@ -87,7 +87,12 @@ pub(crate) async fn grants(
         return Ok(HashSet::from(["*".into()]));
     }
 
-    rbac::grants_for_roles(&state.db, roles.into_iter().map(|role| role.id).collect()).await
+    Ok(super::platform_permissions::effective(
+        rbac::grants_for_roles(&state.db, roles.into_iter().map(|role| role.id).collect())
+            .await?
+            .into_iter()
+            .filter(|grant| grant != "*"),
+    ))
 }
 
 pub(crate) async fn get_grants(
@@ -155,14 +160,40 @@ pub(crate) async fn authorize_request(
         return Ok(());
     }
 
+    // Session ownership is checked in the handler; employee access must also survive revocation.
+    if let Some(session_path) = path.strip_prefix("/api/agent/sessions/") {
+        let session_uuid = session_path.split('/').next().unwrap_or_default();
+        if !path.ends_with("/restore") && !path.ends_with("/purge") {
+            if let Some(session) =
+                crate::infrastructure::entities::agent_session_entity::Entity::find()
+                    .filter(
+                        crate::infrastructure::entities::agent_session_entity::Column::SessionUuid
+                            .eq(session_uuid),
+                    )
+                    .one(&state.db)
+                    .await?
+            {
+                if !grants.contains(&format!("agent:{}:use", session.agent_id)) {
+                    return Err(AppError::Forbidden("无权使用此 AI 员工".into()));
+                }
+            }
+        }
+    }
+    if let Some(required) = super::platform_permissions::route_permissions(method, path) {
+        if required.is_empty()
+            || required
+                .iter()
+                .any(|permission| grants.contains(*permission))
+        {
+            return Ok(());
+        }
+        return Err(AppError::Forbidden("permission denied".into()));
+    }
     let permission = required_permission(state, method, path).await?;
     let Some(permission) = permission else {
         return Ok(());
     };
     let has_permission = grants.contains(&permission)
-        // Keep existing organization-only role assignments working after the
-        // identity source and organization settings were merged.
-        || (permission == "settings.identity-source" && grants.contains("settings.organization"))
         || (permission == "apps.access"
             && (grants.contains("apps.manage")
                 || grants
@@ -216,58 +247,6 @@ async fn required_permission(
     method: &Method,
     path: &str,
 ) -> Result<Option<String>, AppError> {
-    let platform_permission = match path {
-        "/api/settings/database"
-        | "/api/settings/database/test"
-        | "/api/settings/valkey"
-        | "/api/settings/valkey/test"
-        | "/api/settings/logs" => Some("settings.database"),
-        "/api/settings/recycle-bin" | "/api/recycle-bin" => Some("settings.database"),
-        _ if path.starts_with("/api/recycle-bin/") => Some("settings.database"),
-        "/api/settings/ai-employee-market"
-        | "/api/settings/model-routes"
-        | "/api/settings/notifications"
-        | "/api/settings/communication" => Some("settings.agent"),
-        _ if path.starts_with("/api/settings/ai-employee-market/") => Some("settings.agent"),
-        _ if path.starts_with("/api/settings/model-routes/") => Some("settings.agent"),
-        "/api/settings/license" if method == Method::GET || method == Method::HEAD => None,
-        "/api/settings/license" => Some("settings.license"),
-        "/api/settings/license/latest" => Some("settings.license"),
-        "/api/settings/identity-source"
-        | "/api/settings/identity-source/dingtalk/access-token"
-        | "/api/settings/identity-source/dingtalk/sync-departments"
-        | "/api/settings/identity-source/dingtalk/sync-users"
-        | "/api/settings/identity-source/dingtalk/clear" => Some("settings.identity-source"),
-        "/api/identity/organization-units" => Some("settings.identity-source"),
-        "/api/identity/users" => Some("settings.users"),
-        "/api/identity/roles" | "/api/settings/permissions" => Some("settings.roles"),
-        _ if path.starts_with("/api/identity/users/") => Some("settings.users"),
-        _ if path.starts_with("/api/identity/roles/")
-            || path.starts_with("/api/settings/permissions/") =>
-        {
-            Some("settings.roles")
-        }
-        _ if path.starts_with("/api/agent/sessions") => Some("agent.window"),
-        "/api/agent/available-agents" => Some("agent.window"),
-        "/api/agent/runtime-identity"
-        | "/api/agent/runtime-employees"
-        | "/api/agent/runtime-model-route" => None,
-        "/api/agent/system-ai/status" => Some("agent.window"),
-        // Communication is licensed at the platform level. Every active member can use it
-        // when the communication module is present in the current license.
-        _ if path.starts_with("/api/communication/") => None,
-        _ if path.starts_with("/api/agent/")
-            || path == "/api/agents"
-            || path.starts_with("/api/agents/") =>
-        {
-            Some("settings.agent")
-        }
-        _ => None,
-    };
-    if let Some(permission) = platform_permission {
-        return Ok(Some(permission.to_string()));
-    }
-
     let segments = path.trim_matches('/').split('/').collect::<Vec<_>>();
     match segments.as_slice() {
         // Application listing and detail visibility are filtered in the apps
@@ -279,14 +258,6 @@ async fn required_permission(
             // Ownership and system-administrator exceptions are enforced by
             // the apps module after loading the application record.
             Ok(None)
-        }
-        ["api", "apps", app_id, "business-context"]
-            if method == Method::GET || method == Method::HEAD =>
-        {
-            Ok(Some(format!("app:{app_id}:display")))
-        }
-        ["api", "apps", app_id, "business-context"] if method == Method::PATCH => {
-            Ok(Some(format!("app:{app_id}:edit_info")))
         }
         ["api", "apps", _app_id] if method == Method::GET || method == Method::HEAD => Ok(None),
         ["api", "apps", app_id] => Ok(Some(app_permission(app_id, method))),
@@ -302,6 +273,24 @@ async fn required_permission(
             Ok(Some(app_permission(app_id, method)))
         }
         ["api", "apps", app_id, "navigation", "groups"] => Ok(Some(app_permission(app_id, method))),
+        ["api", "forms", form_uuid, "custom-button-options"] => {
+            form_development_permission(state, form_uuid, "view_development").await
+        }
+        [
+            "api",
+            "forms",
+            form_uuid,
+            "custom-buttons",
+            "automation-options",
+        ] if method == Method::GET || method == Method::HEAD => {
+            form_development_permission(state, form_uuid, "view_development").await
+        }
+        ["api", "forms", form_uuid, "custom-buttons", ..] => {
+            form_development_permission(state, form_uuid, "edit_form").await
+        }
+        ["api", "forms", form_uuid, "views", _, "custom-buttons", ..] => {
+            Ok(Some(format!("form:{form_uuid}:display")))
+        }
         ["api", "forms", form_uuid, "views", ..]
             if method != Method::GET && method != Method::HEAD =>
         {
@@ -319,6 +308,10 @@ async fn required_permission(
                 && segments.get(4) == Some(&"process")
             {
                 return form_development_permission(state, form_uuid, "edit_form").await;
+            }
+            // The handler checks create/edit permission according to the validation body.
+            if segments.get(3) == Some(&"records") && segments.get(4) == Some(&"validate") {
+                return Ok(None);
             }
             let action = form_action(method, segments.get(3).copied());
             Ok(Some(format!("form:{form_uuid}:{action}")))

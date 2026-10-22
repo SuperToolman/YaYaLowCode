@@ -9,6 +9,24 @@
     "version": "0.2.0-alpha.0"
   },
   "paths": {
+    "/api/agent/archived-sessions": {
+      "get": {
+        "tags": [],
+        "operationId": "listArchivedAgentSessions",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ApiAgentSession"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/agent/plugins": {
       "get": {
         "tags": [],
@@ -40,7 +58,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
@@ -105,7 +123,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
           }
         }
       }
@@ -141,7 +166,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
@@ -206,7 +231,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
           }
         }
       }
@@ -242,7 +274,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
@@ -270,8 +302,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response"
+          "204": {
+            "description": ""
           }
         }
       },
@@ -312,6 +344,199 @@
         }
       }
     },
+    "/api/agent/sessions/{sessionId}/artifacts": {
+      "get": {
+        "tags": [],
+        "operationId": "listAgentArtifacts",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AgentFileResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/sessions/{sessionId}/files": {
+      "get": {
+        "tags": [],
+        "operationId": "listAgentFiles",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AgentFileResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "uploadAgentFile",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/FileUploadBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AgentFileUploadResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/sessions/{sessionId}/files/{fileId}": {
+      "get": {
+        "tags": [],
+        "operationId": "downloadAgentFile",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/sessions/{sessionId}/purge": {
+      "delete": {
+        "tags": [],
+        "operationId": "purgeAgentSession",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/agent/sessions/{sessionId}/restore": {
+      "post": {
+        "tags": [],
+        "operationId": "restoreAgentSession",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiAgentSession"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/agent/system-ai/status": {
       "get": {
         "tags": [],
@@ -323,6 +548,68 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_SystemAiStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/workbench/sessions": {
+      "get": {
+        "tags": [],
+        "operationId": "listAgentWorkbenchSessions",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "agentId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runStatus",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiAgentWorkbenchSessionPage"
                 }
               }
             }
@@ -361,7 +648,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
@@ -375,6 +662,32 @@
       }
     },
     "/api/apps/{appId}": {
+      "get": {
+        "tags": [],
+        "operationId": "getApp",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiApp"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "tags": [],
         "operationId": "deleteApp",
@@ -390,7 +703,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
           }
         }
       },
@@ -482,7 +802,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
@@ -574,12 +894,66 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_ApiFormSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{appId}/market-submission": {
+      "get": {
+        "tags": [],
+        "operationId": "getMarketSubmission",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Option_MarketSubmission"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "submitMarketApplication",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MarketSubmission"
                 }
               }
             }
@@ -760,7 +1134,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
@@ -853,6 +1227,24 @@
         }
       }
     },
+    "/api/authorization/grants": {
+      "get": {
+        "tags": [],
+        "operationId": "getAuthorizationGrants",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_String"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/automations/{automationId}": {
       "get": {
         "tags": [],
@@ -895,7 +1287,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
           }
         }
       },
@@ -1008,6 +1407,52 @@
         }
       }
     },
+    "/api/automations/{automationId}/runs/{runId}/resolve": {
+      "post": {
+        "tags": [],
+        "operationId": "resolveAutomationExecution",
+        "parameters": [
+          {
+            "name": "automationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveExecutionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/automations/{automationId}/runs/{runId}/retry": {
       "post": {
         "tags": [],
@@ -1023,6 +1468,50 @@
           },
           {
             "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/automations/{automationId}/runs/{runId}/visits/{logId}/retry": {
+      "post": {
+        "tags": [],
+        "operationId": "retryAutomationVisit",
+        "parameters": [
+          {
+            "name": "automationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "logId",
             "in": "path",
             "required": true,
             "schema": {
@@ -1604,6 +2093,62 @@
         }
       }
     },
+    "/api/files/upload": {
+      "post": {
+        "tags": [],
+        "operationId": "uploadFile",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/FileUploadBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UploadedFileResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/files/{fileId}/download": {
+      "get": {
+        "tags": [],
+        "operationId": "downloadFile",
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/form-schema-contract": {
       "get": {
         "tags": [],
@@ -1664,7 +2209,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
           }
         }
       },
@@ -1761,6 +2313,306 @@
         }
       }
     },
+    "/api/forms/{formUuid}/custom-button-options": {
+      "get": {
+        "tags": [],
+        "operationId": "listViewButtonOptions",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ApiCustomButton"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/custom-buttons": {
+      "get": {
+        "tags": [],
+        "operationId": "listCustomButtons",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiCustomButtonList"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "createCustomButton",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveCustomButtonRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiCustomButton"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/custom-buttons/automation-options": {
+      "get": {
+        "tags": [],
+        "operationId": "listButtonAutomationOptions",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ButtonAutomationOption"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/custom-buttons/automations": {
+      "post": {
+        "tags": [],
+        "operationId": "createButtonAutomationForForm",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateButtonAutomationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiAutomationFlow"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/custom-buttons/{buttonId}": {
+      "get": {
+        "tags": [],
+        "operationId": "getCustomButton",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "buttonId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiCustomButton"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [],
+        "operationId": "deleteCustomButton",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "buttonId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [],
+        "operationId": "updateCustomButton",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "buttonId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveCustomButtonRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiCustomButton"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/forms/{formUuid}/detail-forms": {
       "get": {
         "tags": [],
@@ -1812,7 +2664,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
@@ -1896,7 +2748,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
@@ -1940,6 +2792,44 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_ApiFormRecordList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/records/validate": {
+      "post": {
+        "tags": [],
+        "operationId": "validateFormRecord",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateRecordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BTreeMap_String_String"
                 }
               }
             }
@@ -2055,7 +2945,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Value"
+                  "$ref": "#/components/schemas/ApiResponse_WorkflowRuntimeResponse"
                 }
               }
             }
@@ -2091,7 +2981,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Value"
+                  "$ref": "#/components/schemas/ApiResponse_WorkflowCommentListResponse"
                 }
               }
             }
@@ -2135,7 +3025,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Value"
+                  "$ref": "#/components/schemas/ApiResponse_WorkflowCommentResponse"
                 }
               }
             }
@@ -2619,6 +3509,204 @@
         }
       }
     },
+    "/api/forms/{formUuid}/views/{viewUuid}/custom-buttons": {
+      "get": {
+        "tags": [],
+        "operationId": "listViewButtons",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "viewUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ViewButtonRuntime"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/views/{viewUuid}/custom-buttons/{buttonUuid}/execute": {
+      "post": {
+        "tags": [],
+        "operationId": "executeViewButton",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "viewUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "buttonUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecuteButtonRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ExecuteButtonResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/views/{viewUuid}/custom-buttons/{buttonUuid}/prepare": {
+      "post": {
+        "tags": [],
+        "operationId": "prepareViewButton",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "viewUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "buttonUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ButtonInvocation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiCustomButton"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/views/{viewUuid}/custom-buttons/{buttonUuid}/submit": {
+      "post": {
+        "tags": [],
+        "operationId": "submitViewButton",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "viewUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "buttonUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ButtonInvocation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApiFormRecord"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/forms/{formUuid}/workflow/process": {
       "post": {
         "tags": [],
@@ -2843,7 +3931,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
           }
         }
       }
@@ -3018,7 +4113,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
           }
         }
       }
@@ -3029,7 +4131,14 @@
         "operationId": "getInternalIdentitySourceSettings",
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_IdentitySourceSettings"
+                }
+              }
+            }
           }
         }
       }
@@ -3108,6 +4217,545 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_usize"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/compose/context": {
+      "get": {
+        "tags": [],
+        "operationId": "getMailComposeContext",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MailComposeContext"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/contacts/recent": {
+      "get": {
+        "tags": [],
+        "operationId": "getRecentMailContacts",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_MailContact"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/messages": {
+      "get": {
+        "tags": [],
+        "operationId": "listMailMessages",
+        "parameters": [
+          {
+            "name": "folder",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "beforeUid",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "uidValidity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MailPageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/messages/{uid}": {
+      "get": {
+        "tags": [],
+        "operationId": "getMailMessage",
+        "parameters": [
+          {
+            "name": "uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "folder",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "uidValidity",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MailDetailResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/messages/{uid}/attachments/{attachmentId}": {
+      "get": {
+        "tags": [],
+        "operationId": "downloadMailAttachment",
+        "parameters": [
+          {
+            "name": "uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "attachmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "folder",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "uidValidity",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attachment download",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/send": {
+      "post": {
+        "tags": [],
+        "operationId": "sendMail",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendMailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SendMailResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/applications": {
+      "get": {
+        "tags": [],
+        "operationId": "listMarketApplications",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_MarketProduct"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/applications/sync": {
+      "post": {
+        "tags": [],
+        "operationId": "syncMarketApplications",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MarketSyncResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/applications/{productId}": {
+      "get": {
+        "tags": [],
+        "operationId": "getMarketApplication",
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MarketProduct"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/applications/{productId}/installations": {
+      "post": {
+        "tags": [],
+        "operationId": "installMarketApplication",
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MarketInstallResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/applications/{productId}/preflight": {
+      "get": {
+        "tags": [],
+        "operationId": "preflightMarketApplication",
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MarketInstallPreflight"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/installations": {
+      "get": {
+        "tags": [],
+        "operationId": "listMarketInstallations",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_MarketInstallation"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/installations/{installationId}": {
+      "delete": {
+        "tags": [],
+        "operationId": "archiveMarketInstallation",
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MarketInstallationStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/installations/{installationId}/preflight": {
+      "get": {
+        "tags": [],
+        "operationId": "preflightMarketInstallation",
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MarketUpgradePreflight"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/installations/{installationId}/purge": {
+      "delete": {
+        "tags": [],
+        "operationId": "purgeMarketInstallation",
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MarketPurgeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/installations/{installationId}/restore": {
+      "post": {
+        "tags": [],
+        "operationId": "restoreMarketInstallation",
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MarketInstallationStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/installations/{installationId}/rollback": {
+      "post": {
+        "tags": [],
+        "operationId": "rollbackMarketInstallation",
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarketRollbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MarketReleaseResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/installations/{installationId}/upgrade": {
+      "post": {
+        "tags": [],
+        "operationId": "upgradeMarketInstallation",
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MarketReleaseResponse"
                 }
               }
             }
@@ -3249,7 +4897,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AiEmployeeInstallationStatus"
+                }
+              }
+            }
           }
         }
       }
@@ -3275,6 +4930,34 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_MarketPurchaseReceipt"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/ai-employee-market/{employee_id}/uninstall": {
+      "post": {
+        "tags": [],
+        "operationId": "uninstallAiEmployee",
+        "parameters": [
+          {
+            "name": "employee_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AiEmployeeInstallationStatus"
                 }
               }
             }
@@ -3368,7 +5051,14 @@
         "operationId": "getDatabaseSettings",
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DatabaseSettingsResponse"
+                }
+              }
+            }
           }
         }
       },
@@ -3605,6 +5295,222 @@
         }
       }
     },
+    "/api/settings/logs": {
+      "get": {
+        "tags": [],
+        "operationId": "listPlatformLogs",
+        "parameters": [
+          {
+            "name": "level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PlatformLogListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [],
+        "operationId": "clearPlatformLogs",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ClearPlatformLogsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/model-routes": {
+      "get": {
+        "tags": [],
+        "operationId": "listModelRoutes",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ModelRouteResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "createModelRoute",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelRouteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ModelRouteResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/model-routes/{id}": {
+      "put": {
+        "tags": [],
+        "operationId": "updateModelRoute",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelRouteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ModelRouteResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [],
+        "operationId": "deleteModelRoute",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/notifications": {
+      "get": {
+        "tags": [],
+        "operationId": "getNotificationSettings",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_NotificationSettings"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [],
+        "operationId": "updateNotificationSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_NotificationSettings"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/permissions/{roleId}": {
       "get": {
         "tags": [],
@@ -3757,6 +5663,24 @@
         }
       }
     },
+    "/api/settings/valkey/status": {
+      "get": {
+        "tags": [],
+        "operationId": "getValkeyRuntimeStatus",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ValkeyRuntimeStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/valkey/test": {
       "post": {
         "tags": [],
@@ -3785,6 +5709,24 @@
         }
       }
     },
+    "/api/workflow/notification-preferences": {
+      "get": {
+        "tags": [],
+        "operationId": "getWorkflowNotificationPreferences",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_WorkflowNotificationPreferences"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workflow/notifications": {
       "get": {
         "tags": [],
@@ -3795,7 +5737,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Value"
+                  "$ref": "#/components/schemas/ApiResponse_WorkflowNotificationListResponse"
                 }
               }
             }
@@ -3987,7 +5929,14 @@
         "operationId": "healthCheck",
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -4028,6 +5977,76 @@
           },
           "licenseCenterUrl": {
             "type": "string"
+          }
+        }
+      },
+      "AgentFileResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "storageKey",
+          "mimeType",
+          "size",
+          "kind",
+          "checksum",
+          "createdAt"
+        ],
+        "properties": {
+          "checksum": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "storageKey": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentFileUploadResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "size",
+          "mimeType",
+          "checksum"
+        ],
+        "properties": {
+          "checksum": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mimeType": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -4108,6 +6127,21 @@
           }
         }
       },
+      "AiEmployeeInstallationStatus": {
+        "type": "object",
+        "required": [
+          "employeeId",
+          "installed"
+        ],
+        "properties": {
+          "employeeId": {
+            "type": "string"
+          },
+          "installed": {
+            "type": "boolean"
+          }
+        }
+      },
       "AiEmployeeMarketItem": {
         "type": "object",
         "required": [
@@ -4181,6 +6215,58 @@
           }
         }
       },
+      "ApiAgentRuntimeSummary": {
+        "type": "object",
+        "required": [
+          "eventGeneration",
+          "lastEventSeq",
+          "runStatus",
+          "pendingApprovalCount",
+          "unreadActivityVersion",
+          "lastActivityAt"
+        ],
+        "properties": {
+          "eventGeneration": {
+            "type": "string"
+          },
+          "lastActivityAt": {
+            "type": "string"
+          },
+          "lastError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastEventSeq": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "lastToolName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pendingApprovalCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "runStatus": {
+            "type": "string"
+          },
+          "unreadActivityVersion": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "ApiAgentSession": {
         "type": "object",
         "required": [
@@ -4243,6 +6329,36 @@
           },
           "updatedAt": {
             "type": "string"
+          }
+        }
+      },
+      "ApiAgentWorkbenchSession": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiAgentSession"
+          },
+          {
+            "$ref": "#/components/schemas/ApiAgentRuntimeSummary"
+          }
+        ]
+      },
+      "ApiAgentWorkbenchSessionPage": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApiAgentWorkbenchSession"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -4345,7 +6461,6 @@
           "status",
           "currentVersion",
           "flowType",
-          "triggerEvent",
           "triggerEvents",
           "triggerLabel",
           "nodesCount",
@@ -4390,9 +6505,6 @@
           "status": {
             "$ref": "#/components/schemas/AutomationStatus"
           },
-          "triggerEvent": {
-            "$ref": "#/components/schemas/AutomationTriggerEvent"
-          },
           "triggerEvents": {
             "type": "array",
             "items": {
@@ -4425,7 +6537,6 @@
           "status",
           "currentVersion",
           "flowType",
-          "triggerEvent",
           "triggerEvents",
           "triggerLabel",
           "triggerConfig",
@@ -4476,9 +6587,6 @@
             "$ref": "#/components/schemas/AutomationStatus"
           },
           "triggerConfig": {},
-          "triggerEvent": {
-            "$ref": "#/components/schemas/AutomationTriggerEvent"
-          },
           "triggerEvents": {
             "type": "array",
             "items": {
@@ -4568,6 +6676,7 @@
       "ApiAutomationRun": {
         "type": "object",
         "required": [
+          "allowedActions",
           "id",
           "flowVersion",
           "triggerEvent",
@@ -4577,6 +6686,12 @@
           "nodes"
         ],
         "properties": {
+          "allowedActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "durationMs": {
             "type": [
               "integer",
@@ -4585,6 +6700,12 @@
             "format": "int64"
           },
           "errorMessage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "executionPolicy": {
             "type": [
               "string",
               "null"
@@ -4636,13 +6757,21 @@
           "triggerEvent": {
             "type": "string"
           },
-          "triggerPayload": {}
+          "triggerPayload": {},
+          "triggerSource": {},
+          "workflowInstanceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         }
       },
       "ApiAutomationRunNode": {
         "type": "object",
         "required": [
           "id",
+          "attempt",
           "nodeKey",
           "nodeKind",
           "nodeLabel",
@@ -4651,6 +6780,16 @@
           "startedAt"
         ],
         "properties": {
+          "attempt": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "branchId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "durationMs": {
             "type": [
               "integer",
@@ -4689,6 +6828,115 @@
           },
           "status": {
             "type": "string"
+          },
+          "visitId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ApiCustomButton": {
+        "type": "object",
+        "required": [
+          "id",
+          "appId",
+          "formUuid",
+          "name",
+          "description",
+          "actionType",
+          "actionConfig",
+          "availability",
+          "disabledReason",
+          "createdBy",
+          "updatedBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "actionConfig": {
+            "$ref": "#/components/schemas/FillFormConfig"
+          },
+          "actionType": {
+            "type": "string"
+          },
+          "appId": {
+            "type": "string"
+          },
+          "availability": {
+            "$ref": "#/components/schemas/ButtonAvailability"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "disabledReason": {
+            "type": "string"
+          },
+          "formUuid": {
+            "type": "string"
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "targetFormName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "updatedBy": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiCustomButtonList": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApiCustomButton"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         }
       },
@@ -4934,6 +7182,7 @@
         "type": "object",
         "required": [
           "version",
+          "componentCount",
           "createdAt"
         ],
         "properties": {
@@ -4942,6 +7191,10 @@
               "string",
               "null"
             ]
+          },
+          "componentCount": {
+            "type": "integer",
+            "minimum": 0
           },
           "createdAt": {
             "type": "string"
@@ -5043,6 +7296,55 @@
           }
         }
       },
+      "ApiResponse_AgentFileUploadResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "size",
+              "mimeType",
+              "checksum"
+            ],
+            "properties": {
+              "checksum": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "mimeType": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
       "ApiResponse_AgentPluginDefinition": {
         "type": "object",
         "required": [
@@ -5088,6 +7390,41 @@
               },
               "version": {
                 "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_AiEmployeeInstallationStatus": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "employeeId",
+              "installed"
+            ],
+            "properties": {
+              "employeeId": {
+                "type": "string"
+              },
+              "installed": {
+                "type": "boolean"
               }
             }
           },
@@ -5173,6 +7510,46 @@
               },
               "updatedAt": {
                 "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_ApiAgentWorkbenchSessionPage": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ApiAgentWorkbenchSession"
+                }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             }
           },
@@ -5335,7 +7712,6 @@
               "status",
               "currentVersion",
               "flowType",
-              "triggerEvent",
               "triggerEvents",
               "triggerLabel",
               "nodesCount",
@@ -5379,9 +7755,6 @@
               },
               "status": {
                 "$ref": "#/components/schemas/AutomationStatus"
-              },
-              "triggerEvent": {
-                "$ref": "#/components/schemas/AutomationTriggerEvent"
               },
               "triggerEvents": {
                 "type": "array",
@@ -5435,7 +7808,6 @@
               "status",
               "currentVersion",
               "flowType",
-              "triggerEvent",
               "triggerEvents",
               "triggerLabel",
               "triggerConfig",
@@ -5486,9 +7858,6 @@
                 "$ref": "#/components/schemas/AutomationStatus"
               },
               "triggerConfig": {},
-              "triggerEvent": {
-                "$ref": "#/components/schemas/AutomationTriggerEvent"
-              },
               "triggerEvents": {
                 "type": "array",
                 "items": {
@@ -5558,6 +7927,149 @@
               "total": {
                 "type": "integer",
                 "format": "int64"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_ApiCustomButton": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "id",
+              "appId",
+              "formUuid",
+              "name",
+              "description",
+              "actionType",
+              "actionConfig",
+              "availability",
+              "disabledReason",
+              "createdBy",
+              "updatedBy",
+              "createdAt",
+              "updatedAt"
+            ],
+            "properties": {
+              "actionConfig": {
+                "$ref": "#/components/schemas/FillFormConfig"
+              },
+              "actionType": {
+                "type": "string"
+              },
+              "appId": {
+                "type": "string"
+              },
+              "availability": {
+                "$ref": "#/components/schemas/ButtonAvailability"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "disabledReason": {
+                "type": "string"
+              },
+              "formUuid": {
+                "type": "string"
+              },
+              "icon": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "targetFormName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "updatedAt": {
+                "type": "string"
+              },
+              "updatedBy": {
+                "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_ApiCustomButtonList": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "items",
+              "total",
+              "page",
+              "pageSize"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ApiCustomButton"
+                }
+              },
+              "page": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "pageSize": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "total": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
               }
             }
           },
@@ -5927,6 +8439,35 @@
           }
         }
       },
+      "ApiResponse_BTreeMap_String_String": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
       "ApiResponse_ClearDingTalkDataResponse": {
         "type": "object",
         "required": [
@@ -5962,6 +8503,39 @@
               },
               "deletedUsers": {
                 "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_ClearPlatformLogsResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "clearedSizeBytes"
+            ],
+            "properties": {
+              "clearedSizeBytes": {
+                "type": "integer",
+                "format": "int64",
                 "minimum": 0
               }
             }
@@ -6595,6 +9169,41 @@
           }
         }
       },
+      "ApiResponse_ExecuteButtonResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "runId",
+              "status"
+            ],
+            "properties": {
+              "runId": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
       "ApiResponse_FormBootstrapResponse": {
         "type": "object",
         "required": [
@@ -6757,6 +9366,390 @@
           }
         }
       },
+      "ApiResponse_MailComposeContext": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "sender"
+            ],
+            "properties": {
+              "sender": {
+                "$ref": "#/components/schemas/MailContact"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_MailDetailResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "subject",
+              "sender",
+              "recipient",
+              "cc",
+              "sentAt",
+              "text",
+              "inlineImages",
+              "hasAttachments",
+              "attachments"
+            ],
+            "properties": {
+              "attachments": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MailAttachment"
+                }
+              },
+              "cc": {
+                "type": "string"
+              },
+              "hasAttachments": {
+                "type": "boolean"
+              },
+              "html": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "inlineImages": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "propertyNames": {
+                  "type": "string"
+                }
+              },
+              "recipient": {
+                "type": "string"
+              },
+              "sender": {
+                "type": "string"
+              },
+              "sentAt": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_MailPageResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "items",
+              "uidValidity"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MailSummary"
+                }
+              },
+              "nextBeforeUid": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "notice": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "uidValidity": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_MarketInstallPreflight": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "productId",
+              "releaseId",
+              "alreadyInstalled",
+              "blockingIssues",
+              "connectorBindingRequired"
+            ],
+            "properties": {
+              "alreadyInstalled": {
+                "type": "boolean"
+              },
+              "blockingIssues": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "connectorBindingRequired": {
+                "type": "boolean"
+              },
+              "productId": {
+                "type": "string"
+              },
+              "releaseId": {
+                "type": "string"
+              },
+              "resourceSummary": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MarketResourceSummary"
+                  }
+                ]
+              },
+              "version": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_MarketInstallResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "installationId",
+              "localAppId",
+              "releaseId",
+              "disabledAutomations"
+            ],
+            "properties": {
+              "disabledAutomations": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "installationId": {
+                "type": "string"
+              },
+              "localAppId": {
+                "type": "string"
+              },
+              "releaseId": {
+                "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_MarketInstallationStatus": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "installationId",
+              "status"
+            ],
+            "properties": {
+              "installationId": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_MarketProduct": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "productId",
+              "publisherAppId",
+              "publisherSubject",
+              "name",
+              "description",
+              "version",
+              "releaseId",
+              "status"
+            ],
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "productId": {
+                "type": "string"
+              },
+              "publisherAppId": {
+                "type": "string"
+              },
+              "publisherOwned": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "publisherSubject": {
+                "type": "string"
+              },
+              "releaseId": {
+                "type": "string"
+              },
+              "resourceSummary": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MarketResourceSummary"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": {}
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
       "ApiResponse_MarketPurchaseReceipt": {
         "type": "object",
         "required": [
@@ -6791,6 +9784,406 @@
                 "type": "string"
               }
             }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_MarketPurgeResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "installationId"
+            ],
+            "properties": {
+              "installationId": {
+                "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_MarketReleaseResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "installationId",
+              "releaseId"
+            ],
+            "properties": {
+              "installationId": {
+                "type": "string"
+              },
+              "releaseId": {
+                "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_MarketSubmission": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "submissionId",
+              "appId",
+              "appName",
+              "status",
+              "submittedBy",
+              "submittedAt",
+              "snapshot"
+            ],
+            "properties": {
+              "appId": {
+                "type": "string"
+              },
+              "appName": {
+                "type": "string"
+              },
+              "applicantSubject": {
+                "type": "string"
+              },
+              "snapshot": {},
+              "status": {
+                "type": "string"
+              },
+              "submissionId": {
+                "type": "string"
+              },
+              "submittedAt": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "submittedBy": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_MarketSyncResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "updated"
+            ],
+            "properties": {
+              "updated": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_MarketUpgradePreflight": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "installationId",
+              "currentReleaseId",
+              "targetReleaseId",
+              "upToDate",
+              "blockingIssues",
+              "canUpgrade"
+            ],
+            "properties": {
+              "blockingIssues": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "canUpgrade": {
+                "type": "boolean"
+              },
+              "currentReleaseId": {
+                "type": "string"
+              },
+              "installationId": {
+                "type": "string"
+              },
+              "targetReleaseId": {
+                "type": "string"
+              },
+              "targetVersion": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "upToDate": {
+                "type": "boolean"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_ModelRouteResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "apiBaseUrl",
+              "defaultChatModel",
+              "models",
+              "enabled",
+              "isDefault",
+              "apiKeyConfigured"
+            ],
+            "properties": {
+              "apiBaseUrl": {
+                "type": "string"
+              },
+              "apiKeyConfigured": {
+                "type": "boolean"
+              },
+              "defaultChatModel": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "id": {
+                "type": "string"
+              },
+              "isDefault": {
+                "type": "boolean"
+              },
+              "models": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_NotificationSettings": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "dingtalkEnabled": {
+                "type": "boolean"
+              },
+              "dingtalkWebhookUrl": {
+                "type": "string"
+              },
+              "emailEnabled": {
+                "type": "boolean"
+              },
+              "emailFromAddress": {
+                "type": "string"
+              },
+              "inAppEnabled": {
+                "type": "boolean"
+              },
+              "pollIntervalSeconds": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "retentionDays": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "websocketEnabled": {
+                "type": "boolean"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_Option_MarketSubmission": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "submissionId",
+                  "appId",
+                  "appName",
+                  "status",
+                  "submittedBy",
+                  "submittedAt",
+                  "snapshot"
+                ],
+                "properties": {
+                  "appId": {
+                    "type": "string"
+                  },
+                  "appName": {
+                    "type": "string"
+                  },
+                  "applicantSubject": {
+                    "type": "string"
+                  },
+                  "snapshot": {},
+                  "status": {
+                    "type": "string"
+                  },
+                  "submissionId": {
+                    "type": "string"
+                  },
+                  "submittedAt": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "submittedBy": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  }
+                }
+              }
+            ]
           },
           "message": {
             "type": "string"
@@ -7007,6 +10400,51 @@
           }
         }
       },
+      "ApiResponse_PlatformLogListResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "records",
+              "totalCount",
+              "totalSizeBytes"
+            ],
+            "properties": {
+              "records": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PlatformLogResponse"
+                }
+              },
+              "totalCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "totalSizeBytes": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
       "ApiResponse_ProviderResponse": {
         "type": "object",
         "required": [
@@ -7204,6 +10642,47 @@
           }
         }
       },
+      "ApiResponse_SendMailResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "accepted",
+              "requestId"
+            ],
+            "properties": {
+              "accepted": {
+                "type": "boolean"
+              },
+              "archiveWarning": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "requestId": {
+                "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
       "ApiResponse_SendSmsCodeResponse": {
         "type": "object",
         "required": [
@@ -7275,6 +10754,50 @@
                   "string",
                   "null"
                 ]
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_UploadedFileResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "fileId",
+              "name",
+              "size",
+              "mimeType"
+            ],
+            "properties": {
+              "fileId": {
+                "type": "string"
+              },
+              "mimeType": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "integer",
+                "format": "int64"
               }
             }
           },
@@ -7531,6 +11054,48 @@
           }
         }
       },
+      "ApiResponse_ValkeyRuntimeStatusResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "status",
+              "message"
+            ],
+            "properties": {
+              "latencyMs": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "double"
+              },
+              "message": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
       "ApiResponse_ValkeySettingsResponse": {
         "type": "object",
         "required": [
@@ -7615,6 +11180,70 @@
             "format": "int32"
           },
           "data": {},
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_Vec_AgentFileResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name",
+                "storageKey",
+                "mimeType",
+                "size",
+                "kind",
+                "checksum",
+                "createdAt"
+              ],
+              "properties": {
+                "checksum": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "mimeType": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "storageKey": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "message": {
             "type": "string"
           },
@@ -8031,6 +11660,7 @@
             "items": {
               "type": "object",
               "required": [
+                "allowedActions",
                 "id",
                 "flowVersion",
                 "triggerEvent",
@@ -8040,6 +11670,12 @@
                 "nodes"
               ],
               "properties": {
+                "allowedActions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
                 "durationMs": {
                   "type": [
                     "integer",
@@ -8048,6 +11684,12 @@
                   "format": "int64"
                 },
                 "errorMessage": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "executionPolicy": {
                   "type": [
                     "string",
                     "null"
@@ -8099,7 +11741,108 @@
                 "triggerEvent": {
                   "type": "string"
                 },
-                "triggerPayload": {}
+                "triggerPayload": {},
+                "triggerSource": {},
+                "workflowInstanceId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_Vec_ApiCustomButton": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "appId",
+                "formUuid",
+                "name",
+                "description",
+                "actionType",
+                "actionConfig",
+                "availability",
+                "disabledReason",
+                "createdBy",
+                "updatedBy",
+                "createdAt",
+                "updatedAt"
+              ],
+              "properties": {
+                "actionConfig": {
+                  "$ref": "#/components/schemas/FillFormConfig"
+                },
+                "actionType": {
+                  "type": "string"
+                },
+                "appId": {
+                  "type": "string"
+                },
+                "availability": {
+                  "$ref": "#/components/schemas/ButtonAvailability"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "createdBy": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "disabledReason": {
+                  "type": "string"
+                },
+                "formUuid": {
+                  "type": "string"
+                },
+                "icon": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "targetFormName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "updatedAt": {
+                  "type": "string"
+                },
+                "updatedBy": {
+                  "type": "string"
+                }
               }
             }
           },
@@ -8253,6 +11996,7 @@
               "type": "object",
               "required": [
                 "version",
+                "componentCount",
                 "createdAt"
               ],
               "properties": {
@@ -8261,6 +12005,10 @@
                     "string",
                     "null"
                   ]
+                },
+                "componentCount": {
+                  "type": "integer",
+                  "minimum": 0
                 },
                 "createdAt": {
                   "type": "string"
@@ -8341,6 +12089,52 @@
                     "string",
                     "null"
                   ]
+                }
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_Vec_ButtonAutomationOption": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name",
+                "status",
+                "sourceFormUuid"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "sourceFormUuid": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
                 }
               }
             }
@@ -8569,6 +12363,276 @@
                     "null"
                   ],
                   "format": "uuid"
+                }
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_Vec_MailContact": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "email"
+              ],
+              "properties": {
+                "avatarUrl": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "email": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_Vec_MarketInstallation": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "installationId",
+                "productId",
+                "releaseId",
+                "localAppId",
+                "status",
+                "installedAt",
+                "updatedAt",
+                "legacyMapping",
+                "versions",
+                "events"
+              ],
+              "properties": {
+                "archivedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "events": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MarketInstallationEvent"
+                  }
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "installedAt": {
+                  "type": "string"
+                },
+                "legacyMapping": {
+                  "type": "boolean"
+                },
+                "localAppId": {
+                  "type": "string"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "releaseId": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                },
+                "versions": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MarketInstallationVersion"
+                  }
+                }
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_Vec_MarketProduct": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "productId",
+                "publisherAppId",
+                "publisherSubject",
+                "name",
+                "description",
+                "version",
+                "releaseId",
+                "status"
+              ],
+              "properties": {
+                "description": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "publisherAppId": {
+                  "type": "string"
+                },
+                "publisherOwned": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "publisherSubject": {
+                  "type": "string"
+                },
+                "releaseId": {
+                  "type": "string"
+                },
+                "resourceSummary": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/MarketResourceSummary"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": {}
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_Vec_ModelRouteResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name",
+                "apiBaseUrl",
+                "defaultChatModel",
+                "models",
+                "enabled",
+                "isDefault",
+                "apiKeyConfigured"
+              ],
+              "properties": {
+                "apiBaseUrl": {
+                  "type": "string"
+                },
+                "apiKeyConfigured": {
+                  "type": "boolean"
+                },
+                "defaultChatModel": {
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "isDefault": {
+                  "type": "boolean"
+                },
+                "models": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "name": {
+                  "type": "string"
                 }
               }
             }
@@ -8847,6 +12911,32 @@
           }
         }
       },
+      "ApiResponse_Vec_String": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
       "ApiResponse_Vec_UserResponse": {
         "type": "object",
         "required": [
@@ -9024,6 +13114,249 @@
           }
         }
       },
+      "ApiResponse_Vec_ViewButtonRuntime": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "binding"
+              ],
+              "properties": {
+                "binding": {
+                  "$ref": "#/components/schemas/ViewButtonBinding"
+                },
+                "definition": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiCustomButton"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_WorkflowCommentListResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/WorkflowCommentResponse"
+                }
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_WorkflowCommentResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "id",
+              "author",
+              "content",
+              "createdAt"
+            ],
+            "properties": {
+              "author": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_WorkflowNotificationListResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "unread",
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/WorkflowNotificationResponse"
+                }
+              },
+              "unread": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_WorkflowNotificationPreferences": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "inAppEnabled",
+              "pollIntervalSeconds"
+            ],
+            "properties": {
+              "inAppEnabled": {
+                "type": "boolean"
+              },
+              "pollIntervalSeconds": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_WorkflowRuntimeResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "tasks",
+              "actions"
+            ],
+            "properties": {
+              "actions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/WorkflowActionResponse"
+                }
+              },
+              "instance": {},
+              "runId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "tasks": {
+                "type": "array",
+                "items": {}
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
       "ApiResponse_usize": {
         "type": "object",
         "required": [
@@ -9094,8 +13427,124 @@
           "after_update",
           "before_delete",
           "after_delete",
-          "form_submit"
+          "form_submit",
+          "button_click"
         ]
+      },
+      "ButtonAutomationOption": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status",
+          "sourceFormUuid"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sourceFormUuid": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "ButtonAvailability": {
+        "type": "object",
+        "required": [
+          "mode",
+          "rules"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string"
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ButtonConditionRule"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ButtonConditionRule": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "fieldKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isGroup": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "logicalOperator": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operator": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rawValue": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceFieldKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "valueType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ButtonInvocation": {
+        "type": "object",
+        "required": [
+          "recordId"
+        ],
+        "properties": {
+          "data": {},
+          "recordId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "ClearDingTalkDataResponse": {
         "type": "object",
@@ -9120,6 +13569,19 @@
           },
           "deletedUsers": {
             "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ClearPlatformLogsResponse": {
+        "type": "object",
+        "required": [
+          "clearedSizeBytes"
+        ],
+        "properties": {
+          "clearedSizeBytes": {
+            "type": "integer",
+            "format": "int64",
             "minimum": 0
           }
         }
@@ -9520,16 +13982,6 @@
               "null"
             ]
           },
-          "triggerEvent": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/AutomationTriggerEvent"
-              }
-            ]
-          },
           "triggerEvents": {
             "type": [
               "array",
@@ -9545,7 +13997,20 @@
               "null"
             ]
           }
-        }
+        },
+        "additionalProperties": false
+      },
+      "CreateButtonAutomationRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "CreateDetailFormRequest": {
         "type": "object",
@@ -9681,6 +14146,21 @@
               "null"
             ]
           },
+          "emailAddresses": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/EmailAddressRequest"
+            }
+          },
+          "jobNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "mobile": {
             "type": [
               "string",
@@ -9690,11 +14170,29 @@
           "password": {
             "type": "string"
           },
+          "remark": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "roleIds": {
             "type": "array",
             "items": {
               "type": "string"
             }
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "telephone": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "title": {
             "type": [
@@ -9704,6 +14202,12 @@
           },
           "username": {
             "type": "string"
+          },
+          "workPlace": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -9931,11 +14435,20 @@
           "email"
         ],
         "properties": {
+          "clearSmtpAuthorization": {
+            "type": "boolean"
+          },
           "email": {
             "type": "string"
           },
           "label": {
             "type": "string"
+          },
+          "smtpPassword": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -9953,6 +14466,98 @@
             "type": "string"
           }
         }
+      },
+      "ExecuteButtonRequest": {
+        "type": "object",
+        "required": [
+          "recordId",
+          "requestId"
+        ],
+        "properties": {
+          "recordId": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ExecuteButtonResponse": {
+        "type": "object",
+        "required": [
+          "runId",
+          "status"
+        ],
+        "properties": {
+          "runId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "FileUploadBody": {
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary"
+          }
+        }
+      },
+      "FillFormConfig": {
+        "type": "object",
+        "properties": {
+          "automationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fieldIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "linkType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "openMode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pageMode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targetAppId": {
+            "type": "string"
+          },
+          "targetFormUuid": {
+            "type": "string"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
       },
       "FormBootstrapResponse": {
         "type": "object",
@@ -10006,6 +14611,17 @@
             "type": "string"
           },
           "viewUuid": {
+            "type": "string"
+          }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
             "type": "string"
           }
         }
@@ -10193,6 +14809,195 @@
           }
         }
       },
+      "MailAttachment": {
+        "type": "object",
+        "required": [
+          "id",
+          "filename",
+          "contentType",
+          "size"
+        ],
+        "properties": {
+          "contentType": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "MailComposeContext": {
+        "type": "object",
+        "required": [
+          "sender"
+        ],
+        "properties": {
+          "sender": {
+            "$ref": "#/components/schemas/MailContact"
+          }
+        }
+      },
+      "MailContact": {
+        "type": "object",
+        "required": [
+          "name",
+          "email"
+        ],
+        "properties": {
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "MailDetailResponse": {
+        "type": "object",
+        "required": [
+          "subject",
+          "sender",
+          "recipient",
+          "cc",
+          "sentAt",
+          "text",
+          "inlineImages",
+          "hasAttachments",
+          "attachments"
+        ],
+        "properties": {
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MailAttachment"
+            }
+          },
+          "cc": {
+            "type": "string"
+          },
+          "hasAttachments": {
+            "type": "boolean"
+          },
+          "html": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inlineImages": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "sender": {
+            "type": "string"
+          },
+          "sentAt": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "MailPageResponse": {
+        "type": "object",
+        "required": [
+          "items",
+          "uidValidity"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MailSummary"
+            }
+          },
+          "nextBeforeUid": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "notice": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uidValidity": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "MailSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "sender",
+          "recipient",
+          "subject",
+          "preview",
+          "sentAt",
+          "isRead",
+          "isStarred"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "isRead": {
+            "type": "boolean"
+          },
+          "isStarred": {
+            "type": "boolean"
+          },
+          "preview": {
+            "type": "string"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "sender": {
+            "type": "string"
+          },
+          "sentAt": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          }
+        }
+      },
       "MarkConversationReadRequest": {
         "type": "object",
         "properties": {
@@ -10204,6 +15009,242 @@
             "format": "int64"
           }
         }
+      },
+      "MarketInstallPreflight": {
+        "type": "object",
+        "required": [
+          "productId",
+          "releaseId",
+          "alreadyInstalled",
+          "blockingIssues",
+          "connectorBindingRequired"
+        ],
+        "properties": {
+          "alreadyInstalled": {
+            "type": "boolean"
+          },
+          "blockingIssues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "connectorBindingRequired": {
+            "type": "boolean"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "releaseId": {
+            "type": "string"
+          },
+          "resourceSummary": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MarketResourceSummary"
+              }
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MarketInstallResponse": {
+        "type": "object",
+        "required": [
+          "installationId",
+          "localAppId",
+          "releaseId",
+          "disabledAutomations"
+        ],
+        "properties": {
+          "disabledAutomations": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "installationId": {
+            "type": "string"
+          },
+          "localAppId": {
+            "type": "string"
+          },
+          "releaseId": {
+            "type": "string"
+          }
+        }
+      },
+      "MarketInstallation": {
+        "type": "object",
+        "required": [
+          "installationId",
+          "productId",
+          "releaseId",
+          "localAppId",
+          "status",
+          "installedAt",
+          "updatedAt",
+          "legacyMapping",
+          "versions",
+          "events"
+        ],
+        "properties": {
+          "archivedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MarketInstallationEvent"
+            }
+          },
+          "installationId": {
+            "type": "string"
+          },
+          "installedAt": {
+            "type": "string"
+          },
+          "legacyMapping": {
+            "type": "boolean"
+          },
+          "localAppId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "releaseId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MarketInstallationVersion"
+            }
+          }
+        }
+      },
+      "MarketInstallationEvent": {
+        "type": "object",
+        "required": [
+          "eventType",
+          "detail",
+          "createdAt"
+        ],
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "detail": {},
+          "eventType": {
+            "type": "string"
+          }
+        }
+      },
+      "MarketInstallationStatus": {
+        "type": "object",
+        "required": [
+          "installationId",
+          "status"
+        ],
+        "properties": {
+          "installationId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "MarketInstallationVersion": {
+        "type": "object",
+        "required": [
+          "releaseId",
+          "version",
+          "appliedAt"
+        ],
+        "properties": {
+          "appliedAt": {
+            "type": "string"
+          },
+          "releaseId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "MarketProduct": {
+        "type": "object",
+        "required": [
+          "productId",
+          "publisherAppId",
+          "publisherSubject",
+          "name",
+          "description",
+          "version",
+          "releaseId",
+          "status"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "publisherAppId": {
+            "type": "string"
+          },
+          "publisherOwned": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "publisherSubject": {
+            "type": "string"
+          },
+          "releaseId": {
+            "type": "string"
+          },
+          "resourceSummary": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MarketResourceSummary"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": {}
       },
       "MarketPurchaseReceipt": {
         "type": "object",
@@ -10228,6 +15269,244 @@
           }
         }
       },
+      "MarketPurgeResponse": {
+        "type": "object",
+        "required": [
+          "installationId"
+        ],
+        "properties": {
+          "installationId": {
+            "type": "string"
+          }
+        }
+      },
+      "MarketReleaseResponse": {
+        "type": "object",
+        "required": [
+          "installationId",
+          "releaseId"
+        ],
+        "properties": {
+          "installationId": {
+            "type": "string"
+          },
+          "releaseId": {
+            "type": "string"
+          }
+        }
+      },
+      "MarketResourceSummary": {
+        "type": "object",
+        "properties": {
+          "automations": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "forms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "navigation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": {}
+      },
+      "MarketRollbackRequest": {
+        "type": "object",
+        "properties": {
+          "releaseId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MarketSubmission": {
+        "type": "object",
+        "required": [
+          "submissionId",
+          "appId",
+          "appName",
+          "status",
+          "submittedBy",
+          "submittedAt",
+          "snapshot"
+        ],
+        "properties": {
+          "appId": {
+            "type": "string"
+          },
+          "appName": {
+            "type": "string"
+          },
+          "applicantSubject": {
+            "type": "string"
+          },
+          "snapshot": {},
+          "status": {
+            "type": "string"
+          },
+          "submissionId": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "submittedBy": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "MarketSyncResponse": {
+        "type": "object",
+        "required": [
+          "updated"
+        ],
+        "properties": {
+          "updated": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "MarketUpgradePreflight": {
+        "type": "object",
+        "required": [
+          "installationId",
+          "currentReleaseId",
+          "targetReleaseId",
+          "upToDate",
+          "blockingIssues",
+          "canUpgrade"
+        ],
+        "properties": {
+          "blockingIssues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "canUpgrade": {
+            "type": "boolean"
+          },
+          "currentReleaseId": {
+            "type": "string"
+          },
+          "installationId": {
+            "type": "string"
+          },
+          "targetReleaseId": {
+            "type": "string"
+          },
+          "targetVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "upToDate": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ModelRouteRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "apiBaseUrl",
+          "defaultChatModel"
+        ],
+        "properties": {
+          "apiBaseUrl": {
+            "type": "string"
+          },
+          "apiKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "defaultChatModel": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "ModelRouteResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "apiBaseUrl",
+          "defaultChatModel",
+          "models",
+          "enabled",
+          "isDefault",
+          "apiKeyConfigured"
+        ],
+        "properties": {
+          "apiBaseUrl": {
+            "type": "string"
+          },
+          "apiKeyConfigured": {
+            "type": "boolean"
+          },
+          "defaultChatModel": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "MoveFormNavigationRequest": {
         "type": "object",
         "properties": {
@@ -10236,6 +15515,39 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "NotificationSettings": {
+        "type": "object",
+        "properties": {
+          "dingtalkEnabled": {
+            "type": "boolean"
+          },
+          "dingtalkWebhookUrl": {
+            "type": "string"
+          },
+          "emailEnabled": {
+            "type": "boolean"
+          },
+          "emailFromAddress": {
+            "type": "string"
+          },
+          "inAppEnabled": {
+            "type": "boolean"
+          },
+          "pollIntervalSeconds": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "retentionDays": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "websocketEnabled": {
+            "type": "boolean"
           }
         }
       },
@@ -10518,6 +15830,61 @@
           },
           "valid": {
             "type": "boolean"
+          }
+        }
+      },
+      "PlatformLogListResponse": {
+        "type": "object",
+        "required": [
+          "records",
+          "totalCount",
+          "totalSizeBytes"
+        ],
+        "properties": {
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlatformLogResponse"
+            }
+          },
+          "totalCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "totalSizeBytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "PlatformLogResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "occurredAt",
+          "level",
+          "target",
+          "message",
+          "fields"
+        ],
+        "properties": {
+          "fields": {},
+          "id": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "target": {
+            "type": "string"
           }
         }
       },
@@ -10860,6 +16227,20 @@
           }
         }
       },
+      "ResolveExecutionRequest": {
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "acceptDuplicateRisk": {
+            "type": "boolean"
+          },
+          "action": {
+            "type": "string"
+          }
+        }
+      },
       "RestoreVersionRequest": {
         "type": "object",
         "properties": {
@@ -10920,6 +16301,42 @@
             "type": "string"
           }
         }
+      },
+      "SaveCustomButtonRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "actionType",
+          "actionConfig"
+        ],
+        "properties": {
+          "actionConfig": {
+            "$ref": "#/components/schemas/FillFormConfig"
+          },
+          "actionType": {
+            "type": "string"
+          },
+          "availability": {
+            "$ref": "#/components/schemas/ButtonAvailability"
+          },
+          "description": {
+            "type": "string"
+          },
+          "disabledReason": {
+            "type": "string"
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "SaveFormViewRequest": {
         "type": "object",
@@ -10990,6 +16407,94 @@
             ]
           },
           "messageType": {
+            "type": "string"
+          }
+        }
+      },
+      "SendMailAttachment": {
+        "type": "object",
+        "required": [
+          "filename",
+          "contentType",
+          "contentBase64"
+        ],
+        "properties": {
+          "contentBase64": {
+            "type": "string"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SendMailRequest": {
+        "type": "object",
+        "required": [
+          "to",
+          "subject",
+          "text"
+        ],
+        "properties": {
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SendMailAttachment"
+            }
+          },
+          "bcc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "html": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subject": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "SendMailResponse": {
+        "type": "object",
+        "required": [
+          "accepted",
+          "requestId"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "archiveWarning": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestId": {
             "type": "string"
           }
         }
@@ -11155,16 +16660,6 @@
             ]
           },
           "triggerConfig": {},
-          "triggerEvent": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/AutomationTriggerEvent"
-              }
-            ]
-          },
           "triggerEvents": {
             "type": [
               "array",
@@ -11180,7 +16675,8 @@
               "null"
             ]
           }
-        }
+        },
+        "additionalProperties": false
       },
       "UpdateDatabaseSettingsRequest": {
         "type": "object",
@@ -11335,6 +16831,9 @@
       "UpdateUserRequest": {
         "type": "object",
         "properties": {
+          "clearSmtpAuthorization": {
+            "type": "boolean"
+          },
           "displayName": {
             "type": [
               "string",
@@ -11382,6 +16881,13 @@
             "items": {
               "type": "string"
             }
+          },
+          "smtpPassword": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Write-only SMTP credential; omitted/empty keeps existing authorization."
           },
           "status": {
             "type": [
@@ -11449,6 +16955,30 @@
           },
           "username": {
             "type": "string"
+          }
+        }
+      },
+      "UploadedFileResponse": {
+        "type": "object",
+        "required": [
+          "fileId",
+          "name",
+          "size",
+          "mimeType"
+        ],
+        "properties": {
+          "fileId": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -11657,6 +17187,44 @@
           }
         }
       },
+      "ValidateRecordRequest": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {},
+          "recordUuid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema": {}
+        }
+      },
+      "ValkeyRuntimeStatusResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "message"
+        ],
+        "properties": {
+          "latencyMs": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
       "ValkeySettingsResponse": {
         "type": "object",
         "required": [
@@ -11723,6 +17291,78 @@
           }
         }
       },
+      "ViewButtonBinding": {
+        "type": "object",
+        "required": [
+          "buttonId"
+        ],
+        "properties": {
+          "buttonId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ViewButtonRuntime": {
+        "type": "object",
+        "required": [
+          "binding"
+        ],
+        "properties": {
+          "binding": {
+            "$ref": "#/components/schemas/ViewButtonBinding"
+          },
+          "definition": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ApiCustomButton"
+              }
+            ]
+          }
+        }
+      },
+      "WorkflowActionResponse": {
+        "type": "object",
+        "required": [
+          "action",
+          "operator",
+          "createdAt"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "operator": {
+            "type": "string"
+          }
+        }
+      },
+      "WorkflowCommentListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowCommentResponse"
+            }
+          }
+        }
+      },
       "WorkflowCommentRequest": {
         "type": "object",
         "required": [
@@ -11730,6 +17370,29 @@
         ],
         "properties": {
           "content": {
+            "type": "string"
+          }
+        }
+      },
+      "WorkflowCommentResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "author",
+          "content",
+          "createdAt"
+        ],
+        "properties": {
+          "author": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
             "type": "string"
           }
         }
@@ -11749,6 +17412,89 @@
           "data": {}
         }
       },
+      "WorkflowNotificationListResponse": {
+        "type": "object",
+        "required": [
+          "unread",
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowNotificationResponse"
+            }
+          },
+          "unread": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "WorkflowNotificationPreferences": {
+        "type": "object",
+        "required": [
+          "inAppEnabled",
+          "pollIntervalSeconds"
+        ],
+        "properties": {
+          "inAppEnabled": {
+            "type": "boolean"
+          },
+          "pollIntervalSeconds": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "WorkflowNotificationResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "title",
+          "content",
+          "formUuid",
+          "recordUuid",
+          "createdAt"
+        ],
+        "properties": {
+          "appId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "formUuid": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "readAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recordUuid": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
       "WorkflowPauseRequest": {
         "type": "object",
         "properties": {
@@ -11757,6 +17503,32 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "WorkflowRuntimeResponse": {
+        "type": "object",
+        "required": [
+          "tasks",
+          "actions"
+        ],
+        "properties": {
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowActionResponse"
+            }
+          },
+          "instance": {},
+          "runId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tasks": {
+            "type": "array",
+            "items": {}
           }
         }
       },

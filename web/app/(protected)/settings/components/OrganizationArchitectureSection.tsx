@@ -1,4 +1,7 @@
-﻿"use client";
+"use client";
+import { assertApiResult } from "@lib/api-request";
+
+import { notifyRequestError } from "@lib/notify";
 
 import { useCallback, useEffect, useMemo, useState, type Key } from "react";
 import { notify } from "@lib/notify";
@@ -62,29 +65,26 @@ export function OrganizationArchitectureSection({
         listOrganizationUnits({ responseStyle: "fields" }),
         listUsers({ responseStyle: "fields" }),
       ]);
-      const unitsPayload = unitsResult.data as
-        | ApiEnvelope<OrganizationUnit[]>
-        | undefined;
-      if (unitsResult.error || unitsPayload?.code !== 0 || !unitsPayload.data)
-        throw new Error(unitsPayload?.message || "无法加载组织架构");
-      const usersPayload = usersResult.error
-        ? null
-        : (usersResult.data as ApiEnvelope<OrganizationUser[]> | undefined);
+      assertApiResult(unitsResult);
+      assertApiResult(usersResult);
+      const unitsPayload = unitsResult.data;
+      const usersPayload = usersResult.data;
       const membersByDepartment = new Map<string, OrganizationMember[]>();
       for (const user of usersPayload?.data ?? [])
         for (const department of user.departments ?? []) {
           const key = `${user.sourceType}:${department}`;
           membersByDepartment.set(key, [
             ...(membersByDepartment.get(key) ?? []),
-            user,
+            { ...user, avatarUrl: user.avatarUrl ?? null, title: user.title ?? null },
           ]);
         }
       const next = unitsPayload.data
         .filter((unit) => unit.sourceType === sourceType)
         .map((unit) => ({
           ...unit,
+          parentExternalId: unit.parentExternalId ?? null,
           members:
-            unit.members ??
+            unit.members?.map((member) => ({ ...member, avatarUrl: member.avatarUrl ?? null, title: member.title ?? null })) ??
             membersByDepartment.get(`${unit.sourceType}:${unit.name}`) ??
             [],
         }));
@@ -131,9 +131,8 @@ export function OrganizationArchitectureSection({
         body: { name, parentExternalId },
         responseStyle: "fields",
       });
-      const payload = result.data as ApiEnvelope<OrganizationUnit> | undefined;
-      if (result.error || payload?.code !== 0 || !payload.data)
-        throw new Error(payload?.message || "创建组织失败");
+      assertApiResult(result);
+      const payload = result.data;
       setCreateOpen(false);
       await load();
       setSelectedId(payload.data.id);
@@ -145,7 +144,7 @@ export function OrganizationArchitectureSection({
       }
       notify.success("组织已创建");
     } catch (reason) {
-      notify.error("创建组织失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
+      notifyRequestError(reason, "创建组织失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
     } finally {
       setCreating(false);
     }

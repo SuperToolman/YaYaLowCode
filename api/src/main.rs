@@ -60,12 +60,15 @@ async fn main() -> Result<(), AppError> {
 
     locations::prepare_legacy_location_catalog_schema(&db).await?;
     infrastructure::legacy_bootstrap::ensure_form_tables(&db).await?;
-    infrastructure::legacy_bootstrap::ensure_automation_tables(&db).await?;
     infrastructure::legacy_bootstrap::ensure_identity_tables(&db).await?;
     infrastructure::legacy_bootstrap::ensure_agent_tables(&db).await?;
-    infrastructure::legacy_bootstrap::ensure_workflow_tables(&db).await?;
     infrastructure::legacy_bootstrap::ensure_file_tables(&db).await?;
+    infrastructure::migrator::reconcile_legacy_names(&db).await?;
     infrastructure::migrator::Migrator::up(&db, None).await?;
+    if std::env::args().any(|arg| arg == "--migrate-only") {
+        info!("database migrations completed; no worker or HTTP server started");
+        return Ok(());
+    }
     agents::cleanup_native_workbench_reset(&db).await?;
     if let Err(error) = agents::cleanup_expired_agent_workspaces(&db).await {
         warn!(
@@ -84,10 +87,16 @@ async fn main() -> Result<(), AppError> {
     ensure_all_form_dynamic_storage(&db).await?;
 
     let (shutdown, mut shutdown_signal) = tokio::sync::watch::channel(false);
-    let state = AppState::new(db, valkey, config.valkey_cache_ttl_seconds, shutdown);
+    let state = AppState::new(
+        db,
+        valkey,
+        config.valkey_cache_ttl_seconds,
+        shutdown.clone(),
+    );
     if communication_module_enabled() {
         modules::communication::start_delivery_worker(state.clone());
     }
+    let execution_worker = modules::automations::execution::start_worker(state.clone());
     let app = http::router::build(state);
 
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
@@ -97,10 +106,17 @@ async fn main() -> Result<(), AppError> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
-            let _ = shutdown_signal.changed().await;
+            tokio::select! {
+                _ = shutdown_signal.changed() => {},
+                _ = tokio::signal::ctrl_c() => { let _ = shutdown.send(true); }
+            }
         })
         .await
-        .map_err(AppError::from)
+        .map_err(AppError::from)?;
+    execution_worker
+        .await
+        .map_err(|error| AppError::BadRequest(format!("worker shutdown failed: {error}")))?;
+    Ok(())
 }
 
 async fn connect_valkey(url: Option<&str>) -> Option<redis::aio::ConnectionManager> {

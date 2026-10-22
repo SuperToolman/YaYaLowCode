@@ -1,4 +1,9 @@
 "use client";
+import { assertApiResult, assertApiEnvelope } from "@lib/api-request";
+
+import { notifyRequestError } from "@lib/notify";
+
+import { automationSaveMetadata, automationSaveErrorMessage } from "../automation-save";
 import { notify } from "@lib/notify";
 
 import { createPortal } from "react-dom";
@@ -24,12 +29,13 @@ import {
 } from "@xyflow/react";
 import {
   Button,
-  Checkbox,
+  ButtonGroup,
   Input,
   ListBox,
   Select,
   Slider,
   Switch,
+  TextArea,
   Label,
 } from "@heroui/react";
 import {
@@ -39,6 +45,7 @@ import {
   listAutomationFlowVersions,
   listForms,
   listUsers,
+  listRoles,
   restoreAutomationFlowVersion,
   updateAutomationFlow,
   type ApiAutomationFlowVersionSummary,
@@ -64,6 +71,7 @@ import {
   processWorkflowNodeRegistry,
 } from "../../components/AutomationWorkflowNodeRegistry";
 import {
+  hasReachableProcessApproval,
   validateWorkflowGraph,
   validateWorkflowNodeConfigs,
 } from "@components/workflow-editor/workflow-core";
@@ -83,12 +91,17 @@ import {
   getInsertedNodePosition,
   WorkflowCardNode,
   WorkflowNodeActionsContext,
+  WorkflowNodeSummaryContext,
   type WorkflowNodeActions,
 } from "./AutomationNodeEditorComponents";
 import {
   buildAutomationName,
   buildDataNodeFieldChoices,
   buildGetManySourceOptions,
+  buildGetSourceOptions,
+  getSchemaForSourceNode,
+  getSourceFormUuid,
+  validateGetNodeConfiguration,
   buildQueryNodeOptions,
   buildSourceFieldChoices,
   buildUpdateTargetFormOptions,
@@ -103,7 +116,6 @@ import {
   ensureTriggerNode,
   formatDateLabel,
   getSchemaForNodeTarget,
-  getSchemaFields,
   hasUpdateTriggerEvent,
   migrateConditionEdgeHandles,
   nodeKindLabel,
@@ -112,6 +124,7 @@ import {
   normalizeAddDataConfig,
   normalizeAssigneeConfig,
   normalizeConditionConfig,
+  changeConditionEntryMode,
   normalizeCopyConfig,
   normalizeFormSchema,
   normalizeGetDataConfig,
@@ -136,12 +149,15 @@ import {
   type FormSchemaDescriptor,
   type InsertContext,
   type MemberOption,
+  type RoleOption,
   type PaletteNodeKind,
   type TriggerConfig,
   type WorkflowEdge,
   type WorkflowNode,
   type WorkflowNodeConfig,
 } from "../automation-editor-model";
+import { addMappingRow, removeMappingRow, updateMappingRow } from "@/features/automation-editor/field-mapping";
+import { addRule, removeRuleTree, updateRule } from "@/features/automation-editor/condition-rules";
 
 type AutomationEditorPageClientProps = {
   appId: string;
@@ -179,21 +195,38 @@ function AutomationEditorSurface({
     status: "paused",
     currentVersion: 1,
     triggerFormUuid: "",
-    triggerEvent: "after_create",
+
     triggerEvents: ["after_create"],
     triggerConfig: {},
   });
   const [members, setMembers] = useState<MemberOption[]>([]);
+  const [roles, setRoles] = useState<RoleOption[]>([]);
   useEffect(() => {
-    void listUsers({ responseStyle: "fields" }).then((result) => {
-      if (result.data?.code === 0 && result.data.data)
+    void Promise.all([
+      listUsers({ responseStyle: "fields" }),
+      listRoles({ responseStyle: "fields" }),
+    ]).then(([userResult, roleResult]) => {
+      if (userResult.data?.code === 0 && userResult.data.data)
         setMembers(
-          result.data.data
+          userResult.data.data
             .filter((user) => user.status === "active")
             .map((user) => ({
               id: user.id,
               displayName: user.displayName,
               status: user.status,
+              sourceType: user.sourceType,
+              avatarUrl: user.avatarUrl,
+            })),
+        );
+      if (roleResult.data?.code === 0 && roleResult.data.data)
+        setRoles(
+          roleResult.data.data
+            .filter((role) => role.status === "active")
+            .map((role) => ({
+              id: role.id,
+              name: role.name,
+              status: role.status,
+              sourceType: role.sourceType,
             })),
         );
     });
@@ -241,20 +274,27 @@ function AutomationEditorSurface({
   const handleAddConditionBranch = useCallback((nodeId: string) => {
     setNodes((current) =>
       current.map((node) => {
-        if (node.id !== nodeId || node.data.kind !== "condition") {
+        if (
+          node.id !== nodeId ||
+          (node.data.kind !== "condition" &&
+            node.data.kind !== "parallel-condition")
+        ) {
           return node;
         }
 
         const config = normalizeConditionConfig(node.data.config);
         const branches = config.branches ?? [];
-        const nextPriority =
-          Math.max(0, ...branches.map((branch) => branch.priority)) + 1;
+        const nextPriority = branches.length + 1;
         return {
           ...node,
           data: {
             ...node.data,
             config: {
-              branches: [...branches, createConditionBranch(nextPriority)],
+              branches: [
+                ...branches.filter((branch) => branch.entryMode !== "otherwise"),
+                createConditionBranch(nextPriority),
+                ...branches.filter((branch) => branch.entryMode === "otherwise"),
+              ].map((branch, index) => ({ ...branch, priority: index + 1 })),
             },
           },
         };
@@ -267,7 +307,11 @@ function AutomationEditorSurface({
     (nodeId: string, branchId: string) => {
       setNodes((current) =>
         current.map((node) => {
-          if (node.id !== nodeId || node.data.kind !== "condition") {
+          if (
+            node.id !== nodeId ||
+            (node.data.kind !== "condition" &&
+              node.data.kind !== "parallel-condition")
+          ) {
             return node;
           }
           const config = normalizeConditionConfig(node.data.config);
@@ -308,11 +352,15 @@ function AutomationEditorSurface({
     [handleAddConditionBranch, handleRemoveConditionBranch],
   );
 
+  const [schemaStatus, setSchemaStatus] = useState<Record<string, "loading" | "ready" | "error">>({});
+
   const ensureFormSchema = useCallback(async (formUuid: string) => {
     if (!formUuid) {
       return;
     }
 
+    setSchemaStatus((current) => ({ ...current, [formUuid]: "loading" }));
+    try {
     const result = await getFormSchema({
       path: { formUuid },
       responseStyle: "fields",
@@ -324,6 +372,7 @@ function AutomationEditorSurface({
       result.data.code !== 0 ||
       !result.data.data
     ) {
+      setSchemaStatus((current) => ({ ...current, [formUuid]: "error" }));
       return;
     }
 
@@ -332,8 +381,10 @@ function AutomationEditorSurface({
     );
     setFormSchemas((current) => ({
       ...current,
-      [formUuid]: normalized,
+      [formUuid]: { ...normalized, formUuid },
     }));
+    setSchemaStatus((current) => ({ ...current, [formUuid]: "ready" }));
+    } catch { setSchemaStatus((current) => ({ ...current, [formUuid]: "error" })); }
   }, []);
 
   const loadEditor = useCallback(async () => {
@@ -352,23 +403,9 @@ function AutomationEditorSurface({
         }),
       ]);
 
-      if (
-        detailResult.error ||
-        !detailResult.data ||
-        detailResult.data.code !== 0 ||
-        !detailResult.data.data
-      ) {
-        throw new Error("load automation detail failed");
-      }
+      assertApiResult(detailResult);
 
-      if (
-        formsResult.error ||
-        !formsResult.data ||
-        formsResult.data.code !== 0 ||
-        !formsResult.data.data
-      ) {
-        throw new Error("load forms failed");
-      }
+      assertApiResult(formsResult);
 
       const detail = detailResult.data.data;
       const nextFlowState: FlowState = {
@@ -378,7 +415,7 @@ function AutomationEditorSurface({
         status: detail.status,
         currentVersion: detail.currentVersion,
         triggerFormUuid: detail.triggerFormUuid ?? "",
-        triggerEvent: detail.triggerEvent,
+
         triggerEvents: detail.triggerEvents,
         triggerConfig: normalizeTriggerConfig(detail.triggerConfig),
         createdAt: detail.createdAt,
@@ -419,18 +456,21 @@ function AutomationEditorSurface({
       );
       setSelectedNodeId(null);
 
-      const schemaTargets = collectSchemaTargets(nextFlowState, nextNodes);
-      if (schemaTargets.length > 0) {
+      const schemaTargets = new Set(collectSchemaTargets(nextFlowState, nextNodes));
+      if (nextFlowState.triggerFormUuid) schemaTargets.add(nextFlowState.triggerFormUuid);
+      if (schemaTargets.size > 0) {
         await Promise.all(
-          schemaTargets.map((formUuid) => ensureFormSchema(formUuid)),
+          [...schemaTargets].map((formUuid) => ensureFormSchema(formUuid)),
         );
       }
-    } catch {
-      setErrorMessage("自动化详情加载失败，请确认后端服务正常。");
+    } catch (cause) {
+      notifyRequestError(cause, "自动化详情加载失败", { description: cause instanceof Error ? cause.message : "请确认后端服务正常" });
     } finally {
       setIsLoading(false);
     }
   }, [appId, automationId, ensureFormSchema, handleInsertRequest]);
+
+  const isProcessFlow = flowState.flowType === "process";
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -444,21 +484,50 @@ function AutomationEditorSurface({
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
   const selectedNodeSchema =
+    selectedNode?.data.kind === "initiate-approval" ||
     selectedNode?.data.kind === "add-data" ||
     selectedNode?.data.kind === "update-data" ||
     selectedNode?.data.kind === "delete-data"
       ? getSchemaForNodeTarget(selectedNode, formSchemas)
-      : undefined;
+      : selectedNode && ["get-one", "get-many"].includes(selectedNode.data.kind)
+        ? getSchemaForSourceNode(selectedNode, formSchemas, flowState, nodes) : undefined;
+  const selectedSubformConfig = selectedNode?.data.kind === "add-data" ? normalizeAddDataConfig(selectedNode.data.config) : undefined;
+  const selectedSubformSource = nodes.find((node) => node.id === selectedSubformConfig?.parentDataNodeId);
+  const selectedSubformParent = selectedSubformSource ? getSourceFormUuid(selectedSubformSource, nodes, flowState.triggerFormUuid ?? "") : "";
+  useEffect(() => {
+    if (!selectedNode || selectedSubformConfig?.targetMode !== "subtable" || selectedSubformConfig.targetFormUuid === selectedSubformParent) return;
+    const timer = window.setTimeout(() => {
+      setNodes((current) => current.map((node) => node.id === selectedNode.id ? { ...node, data: { ...node.data, config: { ...selectedSubformConfig, targetFormUuid: selectedSubformParent, subformFieldId: "", rows: [] } } } : node));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [selectedNode, selectedSubformConfig, selectedSubformParent]);
+  useEffect(() => {
+    if (!selectedNode || selectedNode.data.kind !== "add-data" || !selectedNodeSchema) return;
+    const config = normalizeAddDataConfig(selectedNode.data.config);
+    const requiredRows = syncRequiredRows(config.rows ?? [], selectedNodeSchema.fields);
+    if (requiredRows.length === (config.rows ?? []).length) return;
+    const timer = window.setTimeout(() => {
+      setNodes((current) => current.map((node) => node.id === selectedNode.id ? { ...node, data: { ...node.data, config: { ...config, rows: requiredRows } } } : node));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [selectedNode, selectedNodeSchema]);
+  const selectedQueryFormUuid = selectedNode?.data.kind === "initiate-approval" ? (selectedNode.data.config as { targetFormUuid?: string }).targetFormUuid ?? "" : selectedNode && ["get-one", "get-many"].includes(selectedNode.data.kind)
+    ? getSourceFormUuid(selectedNode, nodes, flowState.triggerFormUuid ?? "") : "";
+  const selectedQuerySchemaLoaded = Boolean(formSchemas[selectedQueryFormUuid]);
+  useEffect(() => {
+    if (!selectedQueryFormUuid || selectedQuerySchemaLoaded) return;
+    const timer = window.setTimeout(() => { void ensureFormSchema(selectedQueryFormUuid); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [selectedQueryFormUuid, selectedQuerySchemaLoaded, ensureFormSchema]);
+  const editorSchemas = formSchemas;
   const sourceFieldChoices = buildSourceFieldChoices({
     currentNodeId: selectedNodeId,
     edges,
-    formSchemas,
+    formSchemas: editorSchemas,
     flowState,
     nodes,
   });
-  const triggerFieldOptions = flowState.triggerFormUuid
-    ? (formSchemas[flowState.triggerFormUuid]?.fields ?? [])
-    : [];
+  const triggerFieldOptions = flowState.triggerFormUuid ? (formSchemas[flowState.triggerFormUuid]?.fields ?? []) : [];
   const getManySourceOptions = buildGetManySourceOptions(
     nodes,
     edges,
@@ -477,6 +546,7 @@ function AutomationEditorSurface({
     ? buildDataNodeFieldChoices({
         formSchemas,
         nodeId: selectedAddDataConfig.multipleSourceNodeId,
+        triggerFormUuid: flowState.triggerFormUuid ?? "",
         nodes,
       })
     : [];
@@ -548,7 +618,7 @@ function AutomationEditorSurface({
           ...nextState.triggerConfig,
           changedFieldMode: "any",
           changedFieldId: "",
-          changedFieldsText: "",
+
         };
       }
       setNodes((currentNodes) =>
@@ -571,14 +641,14 @@ function AutomationEditorSurface({
       const triggerEvents = orderTriggerEvents(
         selected
           ? [
-              ...current.triggerEvents.filter((item) => !events.includes(item)),
+              ...current.triggerEvents.filter((item) => event !== "button_click" && item !== "button_click" && !events.includes(item)),
               event,
             ]
           : current.triggerEvents.filter((item) => item !== event),
       );
       const nextState = {
         ...current,
-        triggerEvent: triggerEvents[0] ?? "after_create",
+
         triggerEvents,
         triggerConfig: hasUpdateTriggerEvent(triggerEvents)
           ? current.triggerConfig
@@ -586,7 +656,7 @@ function AutomationEditorSurface({
               ...current.triggerConfig,
               changedFieldMode: "any" as const,
               changedFieldId: "",
-              changedFieldsText: "",
+
             },
       };
       setNodes((currentNodes) =>
@@ -604,7 +674,6 @@ function AutomationEditorSurface({
       };
       if (key === "changedFieldMode" && value === "any") {
         triggerConfig.changedFieldId = "";
-        triggerConfig.changedFieldsText = "";
       }
       const nextState = {
         ...current,
@@ -618,6 +687,7 @@ function AutomationEditorSurface({
   }
 
   function openNameModal() {
+    if (isProcessFlow) return;
     setNameDraft(flowState.name);
     setDescriptionDraft(flowState.description);
     setNameError("");
@@ -625,6 +695,7 @@ function AutomationEditorSurface({
   }
 
   async function submitName() {
+    if (isProcessFlow) return;
     const name = nameDraft.trim();
     if (!name) {
       setNameError("请输入自动化名称");
@@ -634,14 +705,12 @@ function AutomationEditorSurface({
     setIsNameSaving(true);
     setNameError("");
     try {
-      const { data, error } = await updateAutomationFlow({
+      const { data, error , response: httpResponse0 } = await updateAutomationFlow({
         path: { automationId },
         body: { name, description: descriptionDraft.trim() || null },
         responseStyle: "fields",
       });
-      if (error || data?.code !== 0 || !data?.data) {
-        throw new Error(data?.message || "更新自动化名称失败");
-      }
+      assertApiEnvelope(data, error, httpResponse0);
       const updatedFlow = data.data;
 
       setFlowState((current) => ({
@@ -682,14 +751,7 @@ function AutomationEditorSurface({
         responseStyle: "fields",
       });
 
-      if (
-        result.error ||
-        !result.data ||
-        result.data.code !== 0 ||
-        !result.data.data
-      ) {
-        throw new Error("load automation versions failed");
-      }
+      assertApiResult(result);
 
       setVersionItems(result.data.data);
     } catch {
@@ -712,14 +774,14 @@ function AutomationEditorSurface({
       });
 
       if (error || !data || data.code !== 0 || !data.data) {
-        throw new Error("restore automation version failed");
+        throw error ?? new Error(data?.message || "切换版本失败");
       }
 
       notify.success(`已切换到 v${version}`);
       await openVersionModal();
       await loadEditor();
-    } catch {
-      notify.error("切换版本失败");
+    } catch (cause) {
+      notifyRequestError(cause, "切换版本失败", { description: automationSaveErrorMessage(cause) });
     } finally {
       setRestoringVersion(null);
     }
@@ -777,26 +839,27 @@ function AutomationEditorSurface({
       return;
     }
     if (
-      key === "assigneesText" &&
+      key === "assigneeMode" &&
       (selectedNode.data.kind === "approval" ||
         selectedNode.data.kind === "executor")
     ) {
       updateSelectedNodeConfig((config) => ({
         ...normalizeAssigneeConfig(config),
-        assignees: value
-          .split(/[，,\n]/)
-          .map((item) => item.trim())
-          .filter(Boolean),
+        assigneeMode: value as "self" | "members" | "roles",
+        assigneeIds: [],
+        roleIds: [],
+        ...(value === "self"
+          ? { approvalMode: undefined }
+          : { approvalMode: "all" }),
       }));
       return;
     }
-    if (key === "recipientsText" && selectedNode.data.kind === "copy") {
+    if (key === "recipientMode" && selectedNode.data.kind === "copy") {
       updateSelectedNodeConfig((config) => ({
         ...normalizeCopyConfig(config),
-        recipients: value
-          .split(/[，,\n]/)
-          .map((item) => item.trim())
-          .filter(Boolean),
+        recipientMode: value as "members" | "roles",
+        recipientIds: [],
+        roleIds: [],
       }));
       return;
     }
@@ -808,16 +871,42 @@ function AutomationEditorSurface({
   }
 
   function handleProcessMemberIdsChange(
-    key: "assigneeIds" | "recipientIds",
+    key: "assigneeIds" | "recipientIds" | "roleIds",
     ids: string[],
   ) {
-    updateSelectedNodeConfig((config) => ({ ...config, [key]: ids }));
+    updateSelectedNodeConfig((config) => {
+      if (key === "assigneeIds") {
+        return {
+          ...config,
+          assigneeMode: "members",
+          assigneeIds: ids,
+          roleIds: [],
+        };
+      }
+      if (key === "roleIds") {
+        return {
+          ...config,
+          roleIds: ids,
+          ...(selectedNode?.data.kind === "copy"
+            ? { recipientMode: "roles" }
+            : { assigneeMode: "roles", assigneeIds: [] }),
+        };
+      }
+      return {
+        ...config,
+        [key]: ids,
+        ...(selectedNode?.data.kind === "copy"
+          ? { recipientMode: "members" }
+          : {}),
+      };
+    });
   }
 
   function handleGetNodeSourceModeChange(value: DataSourceMode) {
     updateSelectedNodeConfig((config) => {
       const nextConfig = normalizeGetDataConfig(config);
       nextConfig.sourceMode = value;
+      nextConfig.rules = [];
       nextConfig.formUuid = value === "form" ? nextConfig.formUuid : "";
       nextConfig.dataNodeId =
         value === "data-node" ? nextConfig.dataNodeId : "";
@@ -829,6 +918,7 @@ function AutomationEditorSurface({
     updateSelectedNodeConfig((config) => {
       const nextConfig = normalizeGetDataConfig(config);
       nextConfig.formUuid = formUuid;
+      nextConfig.rules = [];
       return nextConfig;
     });
     if (formUuid) {
@@ -840,6 +930,7 @@ function AutomationEditorSurface({
     updateSelectedNodeConfig((config) => {
       const nextConfig = normalizeGetDataConfig(config);
       nextConfig.dataNodeId = nodeId;
+      nextConfig.rules = [];
       return nextConfig;
     });
   }
@@ -849,9 +940,12 @@ function AutomationEditorSurface({
       if (selectedNode?.data.kind === "add-data") {
         const nextConfig = normalizeAddDataConfig(config);
         nextConfig.targetFormUuid = formUuid;
+        nextConfig.subformFieldId = "";
+        nextConfig.parentDataNodeId = "";
+        if (nextConfig.targetMode === "subtable") nextConfig.rows = [];
         nextConfig.rows = syncRequiredRows(
           nextConfig.rows ?? [],
-          formSchemas[formUuid]?.fields ?? [],
+          nextConfig.targetMode === "subtable" ? [] : formSchemas[formUuid]?.fields ?? [],
         );
         return nextConfig;
       }
@@ -880,16 +974,33 @@ function AutomationEditorSurface({
     updateSelectedNodeConfig((config) => {
       const nextConfig = normalizeAddDataConfig(config);
       nextConfig[key] = value;
+      if (key === "targetMode") {
+        nextConfig.subformFieldId = "";
+        nextConfig.parentDataNodeId = "";
+        nextConfig.rows = [];
+      }
+      if (key === "subformFieldId") nextConfig.rows = [];
+      if (key === "parentDataNodeId") {
+        const source = nodes.find((node) => node.id === value);
+        nextConfig.targetFormUuid = source ? getSourceFormUuid(source, nodes, flowState.triggerFormUuid ?? "") : "";
+        nextConfig.subformFieldId = "";
+        nextConfig.rows = [];
+      }
 
       if (key === "recordMode" && value === "single") {
         nextConfig.rows = syncRequiredRows(
           nextConfig.rows ?? [],
-          getSchemaFields(nextConfig.targetFormUuid, formSchemas),
+          getSchemaForNodeTarget({ ...selectedNode!, data: { ...selectedNode!.data, config: nextConfig } }, formSchemas)?.fields ?? [],
         );
       }
 
       return nextConfig;
     });
+    if (key === "parentDataNodeId") {
+      const source = nodes.find((node) => node.id === value);
+      const parent = source ? getSourceFormUuid(source, nodes, flowState.triggerFormUuid ?? "") : "";
+      if (parent) void ensureFormSchema(parent);
+    }
   }
 
   function handleUpdateConfigChange<K extends keyof ActionConfig>(
@@ -908,10 +1019,7 @@ function AutomationEditorSurface({
         node.id === sourceNodeId &&
         (node.data.kind === "get-one" || node.data.kind === "get-many"),
     );
-    const sourceConfig = sourceNode
-      ? normalizeGetDataConfig(sourceNode.data.config)
-      : null;
-    const targetFormUuid = sourceConfig?.formUuid ?? "";
+    const targetFormUuid = sourceNode ? getSourceFormUuid(sourceNode, nodes, flowState.triggerFormUuid ?? "") : "";
 
     updateSelectedNodeConfig((config) => ({
       ...normalizeActionConfig(config),
@@ -924,38 +1032,22 @@ function AutomationEditorSurface({
     }
   }
 
+  function normalizeRuleNodeConfig(config: unknown) {
+    return selectedNode && ["get-one", "get-many"].includes(selectedNode.data.kind)
+      ? normalizeGetDataConfig(config) : normalizeActionConfig(config);
+  }
+
   function handleUpdateRuleChange(
     ruleId: string,
     key: keyof BranchRule,
     value: string,
   ) {
     updateSelectedNodeConfig((config) => {
-      const nextConfig = normalizeActionConfig(config);
+      const nextConfig = normalizeRuleNodeConfig(config);
       const changedRule = (nextConfig.rules ?? []).find(
         (rule) => rule.id === ruleId,
       );
-      nextConfig.rules = (nextConfig.rules ?? []).map((rule) => {
-        // A condition level has one logical operator. Keep every sibling in sync
-        // because the persisted rule shape stores that operator on each item.
-        if (
-          key === "logicalOperator" &&
-          rule.parentId === changedRule?.parentId
-        ) {
-          return { ...rule, logicalOperator: value as "and" | "or" };
-        }
-        if (rule.id !== ruleId) return rule;
-        const nextRule = { ...rule, [key]: value };
-        if (key === "fieldKey") {
-          nextRule.rawValue = "";
-        }
-        if (
-          key === "operator" &&
-          (value === "hasValue" || value === "noValue")
-        ) {
-          nextRule.rawValue = "";
-        }
-        return nextRule;
-      });
+      nextConfig.rules = updateRule(nextConfig.rules ?? [], ruleId, key, value);
       return nextConfig;
     });
   }
@@ -966,36 +1058,16 @@ function AutomationEditorSurface({
     count = 1,
   ) {
     updateSelectedNodeConfig((config) => {
-      const nextConfig = normalizeActionConfig(config);
-      const rules = [...(nextConfig.rules ?? [])];
-      if (count === 0 && parentId) {
-        nextConfig.rules = promoteRuleToChildGroup(rules, parentId);
-        return nextConfig;
-      }
-      const nextRules = Array.from({ length: count }, () =>
-        createBranchRule(parentId),
-      );
-      if (!siblingOfId) {
-        nextConfig.rules = [...rules, ...nextRules];
-        return nextConfig;
-      }
-      const siblingIndex = rules.findIndex((rule) => rule.id === siblingOfId);
-      if (siblingIndex === -1) {
-        nextConfig.rules = [...rules, ...nextRules];
-        return nextConfig;
-      }
-      rules.splice(siblingIndex + 1, 0, ...nextRules);
-      nextConfig.rules = rules;
+      const nextConfig = normalizeRuleNodeConfig(config);
+      nextConfig.rules = addRule(nextConfig.rules ?? [], parentId, siblingOfId, count);
       return nextConfig;
     });
   }
 
   function handleRemoveUpdateRule(ruleId: string) {
     updateSelectedNodeConfig((config) => {
-      const nextConfig = normalizeActionConfig(config);
-      nextConfig.rules = (nextConfig.rules ?? []).filter(
-        (rule) => rule.id !== ruleId,
-      );
+      const nextConfig = normalizeRuleNodeConfig(config);
+      nextConfig.rules = removeRuleTree(nextConfig.rules ?? [], ruleId);
       return nextConfig;
     });
   }
@@ -1015,7 +1087,7 @@ function AutomationEditorSurface({
 
   function handleConditionBranchChange(
     branchId: string,
-    key: "name" | "hitLabel" | "expression",
+    key: "name" | "expression",
     value: string,
   ) {
     updateSelectedConditionBranch(branchId, (branch) => ({
@@ -1026,21 +1098,16 @@ function AutomationEditorSurface({
 
   function handleConditionModeChange(
     branchId: string,
-    value: "all" | "rules" | "expression",
+    value: "all" | "rules" | "expression" | "otherwise",
   ) {
-    updateSelectedConditionBranch(branchId, (branch) => {
-      const rules =
-        value === "rules" && branch.rules.length === 0
-          ? [createBranchRule()]
-          : branch.rules;
-      return { ...branch, mode: value, rules };
-    });
+    updateSelectedNodeConfig((config) => changeConditionEntryMode(config, branchId, value));
   }
 
   function handleMoveConditionBranch(
     branchId: string,
     direction: "up" | "down",
   ) {
+    if (selectedNode?.data.kind === "parallel-condition") return;
     updateSelectedNodeConfig((config) => {
       const nextConfig = normalizeConditionConfig(config);
       const branches = [...(nextConfig.branches ?? [])];
@@ -1050,6 +1117,8 @@ function AutomationEditorSurface({
       const targetIndex =
         direction === "up" ? currentIndex - 1 : currentIndex + 1;
       if (
+        branches[currentIndex]?.entryMode === "otherwise" ||
+        branches[targetIndex]?.entryMode === "otherwise" ||
         currentIndex < 0 ||
         targetIndex < 0 ||
         targetIndex >= branches.length
@@ -1075,52 +1144,13 @@ function AutomationEditorSurface({
     count = 1,
   ) {
     updateSelectedConditionBranch(branchId, (branch) => {
-      const nextRules = Array.from({ length: count }, () =>
-        createBranchRule(parentId),
-      );
-      const rules = [...branch.rules];
-      if (count === 0 && parentId) {
-        return { ...branch, rules: promoteRuleToChildGroup(rules, parentId) };
-      }
-
-      if (!siblingOfId) {
-        return { ...branch, rules: [...rules, ...nextRules] };
-      }
-
-      const index = rules.findIndex((item) => item.id === siblingOfId);
-      if (index === -1) {
-        return { ...branch, rules: [...rules, ...nextRules] };
-      }
-
-      rules.splice(index + 1, 0, ...nextRules);
-      return { ...branch, rules };
+      return { ...branch, rules: addRule(branch.rules, parentId, siblingOfId, count) };
     });
   }
 
   function handleRemoveConditionRule(branchId: string, ruleId: string) {
     updateSelectedConditionBranch(branchId, (branch) => {
-      const rules = branch.rules;
-      const removeIds = new Set<string>([ruleId]);
-
-      let changed = true;
-      while (changed) {
-        changed = false;
-        for (const rule of rules) {
-          if (
-            rule.parentId &&
-            removeIds.has(rule.parentId) &&
-            !removeIds.has(rule.id)
-          ) {
-            removeIds.add(rule.id);
-            changed = true;
-          }
-        }
-      }
-
-      return {
-        ...branch,
-        rules: rules.filter((item) => !removeIds.has(item.id)),
-      };
+      return { ...branch, rules: removeRuleTree(branch.rules, ruleId) };
     });
   }
 
@@ -1131,35 +1161,7 @@ function AutomationEditorSurface({
     value: string,
   ) {
     updateSelectedConditionBranch(branchId, (branch) => {
-      const changedRule = branch.rules.find((rule) => rule.id === ruleId);
-      const rules = branch.rules.map((rule) => {
-        // A condition level has one logical operator. Keep every sibling in sync
-        // because the persisted rule shape stores that operator on each item.
-        if (
-          key === "logicalOperator" &&
-          rule.parentId === changedRule?.parentId
-        ) {
-          return { ...rule, logicalOperator: value as "and" | "or" };
-        }
-        if (rule.id !== ruleId) return rule;
-
-        const nextRule = { ...rule, [key]: value };
-        if (key === "fieldKey") {
-          nextRule.rawValue = "";
-        }
-        if (key === "valueType") {
-          nextRule.rawValue = "";
-          nextRule.sourceFieldKey = "";
-        }
-        if (
-          key === "operator" &&
-          (value === "hasValue" || value === "noValue")
-        ) {
-          nextRule.rawValue = "";
-        }
-        return nextRule;
-      });
-      return { ...branch, rules };
+      return { ...branch, rules: updateRule(branch.rules, ruleId, key, value) };
     });
   }
 
@@ -1175,25 +1177,10 @@ function AutomationEditorSurface({
           : selectedNode?.data.kind === "update-data"
             ? (normalizeActionConfig(config).rows ?? [])
             : [];
-      const nextRows = nextRowsSource.map((row) => {
-        if (row.id !== rowId) {
-          return row;
-        }
-
-        const nextRow = { ...row, [key]: value };
-        if (key === "fieldId") {
-          nextRow.rawValue = "";
-          nextRow.sourceFieldKey = "";
-          nextRow.formula = "";
-          nextRow.valueType = "value";
-        }
-        if (key === "valueType") {
-          nextRow.rawValue = "";
-          nextRow.sourceFieldKey = "";
-          nextRow.formula = "";
-        }
-        return nextRow;
-      });
+      if (key === "fieldId" && value && nextRowsSource.some((row) => row.id !== rowId && row.fieldId === value)) {
+        return config;
+      }
+      const nextRows = updateMappingRow(nextRowsSource, rowId, key, value);
       if (selectedNode?.data.kind === "add-data") {
         const nextConfig = normalizeAddDataConfig(config);
         nextConfig.rows = nextRows;
@@ -1221,7 +1208,7 @@ function AutomationEditorSurface({
       selectedNode.data.kind === "add-data"
         ? normalizeAddDataConfig(selectedNode.data.config)
         : normalizeActionConfig(selectedNode.data.config);
-    const targetFields = getSchemaFields(config.targetFormUuid, formSchemas);
+    const targetFields = getSchemaForNodeTarget(selectedNode, formSchemas)?.fields ?? [];
     const usedFieldIds = new Set((config.rows ?? []).map((row) => row.fieldId));
     const candidate = targetFields.find((field) => !usedFieldIds.has(field.id));
 
@@ -1232,17 +1219,11 @@ function AutomationEditorSurface({
     updateSelectedNodeConfig((current) => {
       if (selectedNode.data.kind === "add-data") {
         const nextConfig = normalizeAddDataConfig(current);
-        nextConfig.rows = [
-          ...(nextConfig.rows ?? []),
-          createFieldMappingRow(candidate.id),
-        ];
+        nextConfig.rows = addMappingRow(nextConfig.rows ?? [], candidate.id);
         return nextConfig;
       }
       const nextConfig = normalizeActionConfig(current);
-      nextConfig.rows = [
-        ...(nextConfig.rows ?? []),
-        createFieldMappingRow(candidate.id),
-      ];
+      nextConfig.rows = addMappingRow(nextConfig.rows ?? [], candidate.id);
       return nextConfig;
     });
   }
@@ -1260,7 +1241,7 @@ function AutomationEditorSurface({
       selectedNode.data.kind === "add-data"
         ? normalizeAddDataConfig(selectedNode.data.config)
         : normalizeActionConfig(selectedNode.data.config);
-    const targetFields = getSchemaFields(config.targetFormUuid, formSchemas);
+    const targetFields = getSchemaForNodeTarget(selectedNode, formSchemas)?.fields ?? [];
     const row = (config.rows ?? []).find((item) => item.id === rowId);
     const field = targetFields.find((item) => item.id === row?.fieldId);
 
@@ -1271,15 +1252,11 @@ function AutomationEditorSurface({
     updateSelectedNodeConfig((current) => {
       if (selectedNode.data.kind === "add-data") {
         const nextConfig = normalizeAddDataConfig(current);
-        nextConfig.rows = (nextConfig.rows ?? []).filter(
-          (item) => item.id !== rowId,
-        );
+        nextConfig.rows = removeMappingRow(nextConfig.rows ?? [], rowId);
         return nextConfig;
       }
       const nextConfig = normalizeActionConfig(current);
-      nextConfig.rows = (nextConfig.rows ?? []).filter(
-        (item) => item.id !== rowId,
-      );
+      nextConfig.rows = removeMappingRow(nextConfig.rows ?? [], rowId);
       return nextConfig;
     });
   }
@@ -1379,7 +1356,18 @@ function AutomationEditorSurface({
           },
         );
         if (validationIssues.some((issue) => issue.severity === "error")) {
-          setErrorMessage("工作流存在无效入口、失效连线或循环依赖，无法保存。");
+          notify.warning("无法保存工作流", {
+            description: "工作流存在无效入口、失效连线或循环依赖。",
+          });
+          return;
+        }
+        if (
+          flowState.flowType === "process" &&
+          !hasReachableProcessApproval(synchronizedNodes, edges)
+        ) {
+          notify.warning("无法保存审批流程", {
+            description: "必须至少存在一个从表单提交节点可抵达的审批人节点。",
+          });
           return;
         }
         const configIssues = validateWorkflowNodeConfigs(
@@ -1400,24 +1388,30 @@ function AutomationEditorSurface({
           flowState.status === "enabled" &&
           configIssues.some((issue) => issue.severity === "error")
         ) {
-          setErrorMessage(
-            configIssues.find((issue) => issue.severity === "error")?.message ??
+          notify.warning("无法保存工作流", {
+            description: configIssues.find((issue) => issue.severity === "error")?.message ??
               "节点配置不完整，无法启动。",
-          );
+          });
           return;
+        }
+        for (const node of synchronizedNodes) {
+          if (node.data.kind === "add-data") {
+            const config = normalizeAddDataConfig(node.data.config);
+            if (config.targetMode === "subtable") {
+              const options = buildGetSourceOptions(synchronizedNodes, edges, node.id);
+              if (!config.targetFormUuid || !config.subformFieldId || !options.some((source) => source.id === config.parentDataNodeId)) {
+                notify.warning("无法保存子表新增节点", { description: "请选择上游数据节点及其所属子表" }); return;
+              }
+            }
+          }
+          const issue = validateGetNodeConfiguration(node, synchronizedNodes, edges, formSchemas, flowState);
+          if (issue) { notify.warning("无法保存获取节点", { description: `${node.data.label}: ${issue}` }); return; }
         }
         const payload = serializeWorkflow(synchronizedNodes, edges);
         const { data, error } = await updateAutomationFlow({
           path: { automationId },
           body: {
-            name:
-              flowState.name.trim() ||
-              buildAutomationName(forms, flowState.triggerFormUuid),
-            description: flowState.description.trim() || undefined,
-            status: flowState.status,
-            triggerFormUuid: flowState.triggerFormUuid || undefined,
-            triggerEvents: flowState.triggerEvents,
-            triggerConfig: flowState.triggerConfig,
+            ...automationSaveMetadata(flowState, buildAutomationName(forms, flowState.triggerFormUuid)),
             nodes: payload.nodes,
             edges: payload.edges,
           } as UpdateAutomationFlowRequest & { triggerEvents?: TriggerEvent[] },
@@ -1425,7 +1419,7 @@ function AutomationEditorSurface({
         });
 
         if (error || !data || data.code !== 0 || !data.data) {
-          throw new Error("save automation flow failed");
+          throw error ?? data ?? new Error("保存自动化编排失败，请稍后重试。");
         }
 
         setNodes(synchronizedNodes);
@@ -1436,8 +1430,10 @@ function AutomationEditorSurface({
           updatedAt: savedFlow.updatedAt,
         }));
         notify.success("工作流已保存");
-      } catch {
-        setErrorMessage("保存自动化编排失败。");
+      } catch (error) {
+        notifyRequestError(error, "工作流保存失败", {
+          description: automationSaveErrorMessage(error),
+        });
       }
     });
   }
@@ -1456,7 +1452,7 @@ function AutomationEditorSurface({
         status: flowState.status,
         currentVersion: flowState.currentVersion,
         triggerFormUuid: flowState.triggerFormUuid || undefined,
-        triggerEvent: flowState.triggerEvent,
+
         triggerEvents: flowState.triggerEvents,
         triggerConfig: flowState.triggerConfig,
         ...workflow,
@@ -1474,7 +1470,7 @@ function AutomationEditorSurface({
       onPointerDown={(event) => event.stopPropagation()}
     >
       <div className="flex shrink-0 flex-col items-center gap-1">
-        <span className="whitespace-nowrap text-xs leading-none text-[var(--color-text-secondary)]">
+        <span className="whitespace-nowrap text-xs leading-4 text-[var(--color-text-secondary)]">
           {displayStatus === "enabled" ? "已启动" : "已停止"}
         </span>
         <Switch
@@ -1500,22 +1496,34 @@ function AutomationEditorSurface({
         </Switch>
       </div>
       <CanvasZoomControl zoom={canvasZoom} onZoomChange={setCanvasZoom} />
-      <Button variant="secondary" onPress={() => setIsSchemaModalOpen(true)}>
-        <CodeIcon />
-        Schema
-      </Button>
-      <Button variant="secondary" onPress={() => void openVersionModal()}>
-        <VersionIcon />
-        版本
-      </Button>
-      <Button variant="secondary" onPress={openNameModal}>
-        <EditIcon />
-        编辑名称
-      </Button>
-      <Button variant="primary" onPress={handleSaveFlow} isDisabled={isSaving}>
-        <SaveIcon />
-        保存
-      </Button>
+      <ButtonGroup
+        aria-label="自动化编排操作"
+        className="shrink-0"
+        variant="secondary"
+      >
+        <Button onPress={() => setIsSchemaModalOpen(true)}>
+          <CodeIcon />
+          Schema
+        </Button>
+        <Button onPress={() => void openVersionModal()}>
+          <ButtonGroup.Separator />
+          <VersionIcon />
+          版本
+        </Button>
+        <Button onPress={openNameModal} isDisabled={isProcessFlow}>
+          <ButtonGroup.Separator />
+          <EditIcon />
+          编辑名称
+        </Button>
+        <Button
+          variant="primary"
+          onPress={handleSaveFlow}
+          isDisabled={isSaving}
+        >
+          <SaveIcon />
+          保存
+        </Button>
+      </ButtonGroup>
     </div>
   );
 
@@ -1540,19 +1548,23 @@ function AutomationEditorSurface({
             </div>
           ) : null}
           <WorkflowNodeActionsContext.Provider value={workflowNodeActions}>
-            <WorkflowCanvas<WorkflowNode, WorkflowEdge>
-              nodes={nodes}
-              edges={edges}
-              edgeTypes={edgeTypes}
-              nodeTypes={nodeTypes}
-              onConnect={onConnect}
-              onConnectEnd={handleConnectEnd}
-              onEdgesChange={onEdgesChange}
-              onNodesChange={onNodesChange}
-              onNodeSelect={(node) => setSelectedNodeId(node.id)}
-              onPaneClick={() => setSelectedNodeId(null)}
-              onZoomChange={setCanvasZoom}
-            />
+            <WorkflowNodeSummaryContext.Provider
+              value={{ flowState, members, roles, fields: triggerFieldOptions }}
+            >
+              <WorkflowCanvas<WorkflowNode, WorkflowEdge>
+                nodes={nodes}
+                edges={edges}
+                edgeTypes={edgeTypes}
+                nodeTypes={nodeTypes}
+                onConnect={onConnect}
+                onConnectEnd={handleConnectEnd}
+                onEdgesChange={onEdgesChange}
+                onNodesChange={onNodesChange}
+                onNodeSelect={(node) => setSelectedNodeId(node.id)}
+                onPaneClick={() => setSelectedNodeId(null)}
+                onZoomChange={setCanvasZoom}
+              />
+            </WorkflowNodeSummaryContext.Provider>
           </WorkflowNodeActionsContext.Provider>
           {selectedNode ? (
             <WorkflowNodeConfigDrawer
@@ -1583,7 +1595,9 @@ function AutomationEditorSurface({
                     </div>
                   ) : (
                     <>
-                      <PropertyField label="触发表单">
+                      {flowState.triggerEvents.includes("button_click") ? (
+                        <p className="text-sm text-muted">{forms.find((form) => form.id === flowState.triggerFormUuid)?.name ?? "来源表单"}中的当前记录会作为触发数据。</p>
+                      ) : <PropertyField label="触发表单">
                         <Select
                           aria-label="触发表单"
                           selectedKey={flowState.triggerFormUuid || "none"}
@@ -1619,54 +1633,53 @@ function AutomationEditorSurface({
                             </ListBox>
                           </Select.Popover>
                         </Select>
-                      </PropertyField>
-                      <PropertyField label="触发事件" alignStart>
-                        <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
-                          <div className="grid grid-cols-[minmax(0,1fr)_72px_72px] border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] text-xs font-medium text-[var(--color-text-secondary)]">
-                            <span className="px-3 py-2">类型</span>
-                            <span className="px-3 py-2">前</span>
-                            <span className="px-3 py-2">后</span>
-                          </div>
-                          {triggerEventRows.map((row) => (
-                            <div
-                              key={row.label}
-                              className="grid grid-cols-[minmax(0,1fr)_72px_72px] items-center border-b border-[var(--color-border)] last:border-b-0"
-                            >
-                              <span className="px-3 py-2 text-sm text-[var(--color-text-primary)]">
-                                {row.label}
-                              </span>
-                              {row.events.map((event) => (
-                                <Checkbox
-                                  key={event}
-                                  isSelected={flowState.triggerEvents.includes(
-                                    event,
-                                  )}
-                                  onChange={(selected) =>
-                                    handleTriggerEventSelection(
-                                      row.events,
-                                      event,
-                                      selected,
-                                    )
+                      </PropertyField>}
+                      {triggerEventRows.map((row) => {
+                        const selectedEvent = row.events.find((event) =>
+                          flowState.triggerEvents.includes(event),
+                        );
+                        const operationLabel = row.label.replace("成功", "");
+                        return (
+                          <PropertyField key={row.label} label={operationLabel}>
+                            <Select
+                              aria-label={`${operationLabel}触发时机`}
+                              selectedKey={selectedEvent ?? "none"}
+                              onSelectionChange={(key) => {
+                                if (key === "none") {
+                                  if (selectedEvent) {
+                                    handleTriggerEventSelection(row.events, selectedEvent, false);
                                   }
-                                  className="px-3 py-2"
-                                >
-                                  <Checkbox.Content className="sr-only">
-                                    <Checkbox.Control>
-                                      <Checkbox.Indicator />
-                                    </Checkbox.Control>
-                                    {event}
-                                  </Checkbox.Content>
-                                </Checkbox>
-                              ))}
-                            </div>
-                          ))}
-                          <div className="grid grid-cols-[minmax(0,1fr)_72px_72px] items-center bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]">
-                            <span className="px-3 py-2 text-sm">评论成功</span>
-                            <span className="px-3 py-2">-</span>
-                            <span className="px-3 py-2">-</span>
-                          </div>
-                        </div>
-                      </PropertyField>
+                                } else {
+                                  const event = row.events.find((event) => event === key);
+                                  if (event) handleTriggerEventSelection(row.events, event, true);
+                                }
+                              }}
+                            >
+                              <Select.Trigger>
+                                <Select.Value />
+                                <Select.Indicator />
+                              </Select.Trigger>
+                              <Select.Popover>
+                                <ListBox>
+                                  <ListBox.Item id="none" textValue="不触发">
+                                    不触发
+                                  </ListBox.Item>
+                                  {row.events.map((event) => {
+                                    const label = event === "button_click"
+                                      ? "点击按钮时"
+                                      : `${operationLabel}${event.startsWith("before_") ? "前" : "后"}`;
+                                    return (
+                                      <ListBox.Item key={event} id={event} textValue={label}>
+                                        {label}
+                                      </ListBox.Item>
+                                    );
+                                  })}
+                                </ListBox>
+                              </Select.Popover>
+                            </Select>
+                          </PropertyField>
+                        );
+                      })}
                     </>
                   )}
                 </PropertyPanelSection>
@@ -1691,8 +1704,8 @@ function AutomationEditorSurface({
                     />
                   </PropertyField>
                   <PropertyField label="节点说明" alignStart>
-                    <textarea
-                      className="min-h-[64px] w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-2 py-1.5 text-[var(--color-text-primary)] outline-none transition-colors focus:border-[var(--color-primary)]"
+                    <TextArea
+                      className="w-full"
                       placeholder="节点说明"
                       value={selectedNode.data.description}
                       onChange={(event) =>
@@ -1707,17 +1720,24 @@ function AutomationEditorSurface({
               ) : null}
 
               <NodeConfigFields
+                onInitiateApprovalChange={(config) => updateSelectedNodeConfig(() => config)}
+                appId={appId}
                 forms={forms}
                 getManySourceOptions={getManySourceOptions}
                 updateSourceOptions={updateSourceOptions}
                 updateTargetFormOptions={updateTargetFormOptions}
                 multipleSourceFieldChoices={multipleSourceFieldChoices}
                 node={selectedNode}
+                getSchemaStatus={schemaStatus[selectedQueryFormUuid]}
+                onRetryGetSchema={() => { if (selectedQueryFormUuid) void ensureFormSchema(selectedQueryFormUuid); }}
+                getSourceOptions={buildGetSourceOptions(nodes, edges, selectedNodeId)}
+                onGetFilterModeChange={(filterMode) => updateSelectedNodeConfig((config) => ({ ...normalizeGetDataConfig(config), filterMode }))}
                 selectedSchema={selectedNodeSchema}
                 sourceFieldChoices={sourceFieldChoices}
                 triggerEvents={flowState.triggerEvents}
                 triggerFieldOptions={triggerFieldOptions}
                 members={members}
+                roles={roles}
                 onActionTargetFormChange={handleActionTargetFormChange}
                 onAddDataConfigChange={handleAddDataConfigChange}
                 onUpdateConfigChange={handleUpdateConfigChange}
@@ -1765,7 +1785,7 @@ function AutomationEditorSurface({
         />
 
         <AutomationNameModal
-          isOpen={isNameModalOpen}
+          isOpen={!isProcessFlow && isNameModalOpen}
           name={nameDraft}
           description={descriptionDraft}
           error={nameError}
@@ -1813,7 +1833,7 @@ function CanvasZoomControl({
   return (
     <Slider
       aria-label="画布缩放"
-      className="min-w-0 flex-1 w-40"
+      className="w-40 shrink-0 gap-1"
       minValue={50}
       maxValue={200}
       step={5}
@@ -1824,7 +1844,9 @@ function CanvasZoomControl({
         void zoomTo(nextZoom);
       }}
     >
-      <Label>{zoomPercent}%</Label>
+      <Label className="text-xs font-normal leading-4 tabular-nums text-[var(--color-text-secondary)]">
+        {zoomPercent}%
+      </Label>
       <Slider.Track>
         <Slider.Fill />
         <Slider.Thumb />

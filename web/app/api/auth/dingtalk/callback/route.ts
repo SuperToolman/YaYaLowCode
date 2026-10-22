@@ -1,7 +1,10 @@
+import { fetchWithControl, unwrapApiResult } from "@lib/api-request";
+import { resolveDingTalkLogin } from "@lib/http";
+import { createBackendSdkClient } from "@lib/backend-client";
 import { NextRequest, NextResponse } from "next/server";
 
 import { setAuthCookie, signToken, TOKEN_TTL_SECONDS } from "../../_lib";
-import { backendBaseUrl, getDingTalkSettings, safeRedirect } from "../../dingtalk-lib";
+import { getDingTalkSettings, safeRedirect } from "../../dingtalk-lib";
 
 const OAUTH_STATE_COOKIE = "yaya-dingtalk-oauth-state";
 
@@ -14,8 +17,6 @@ type DingTalkProfile = {
   mobile?: string;
   email?: string;
 };
-type BackendEnvelope<T> = { code: number; message: string; data: T | null };
-type LoginUser = { id: string; username: string; displayName: string };
 
 export async function GET(request: NextRequest) {
   const stateData = readState(request.cookies.get(OAUTH_STATE_COOKIE)?.value);
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const settings = await getDingTalkSettings();
-    const tokenResponse = await fetch("https://api.dingtalk.com/v1.0/oauth2/userAccessToken", {
+    const tokenResponse = await fetchWithControl("https://api.dingtalk.com/v1.0/oauth2/userAccessToken", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ clientId: settings.clientId, clientSecret: settings.clientSecret, code, grantType: "authorization_code" }),
@@ -36,26 +37,16 @@ export async function GET(request: NextRequest) {
     const token = (await tokenResponse.json()) as UserAccessTokenResponse;
     if (!tokenResponse.ok || !token.accessToken) throw new Error("钉钉未能确认本次授权");
 
-    const profileResponse = await fetch("https://api.dingtalk.com/v1.0/contact/users/me", {
+    const profileResponse = await fetchWithControl("https://api.dingtalk.com/v1.0/contact/users/me", {
       headers: { "x-acs-dingtalk-access-token": token.accessToken },
       cache: "no-store",
     });
     const profile = (await profileResponse.json()) as DingTalkProfile;
     if (!profileResponse.ok || (!profile.unionId && !profile.openId)) throw new Error("未能获取钉钉用户身份");
 
-    const userResponse = await fetch(`${backendBaseUrl}/api/identity/dingtalk/session`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(profile),
-      cache: "no-store",
-    });
-    const userPayload = (await userResponse.json()) as BackendEnvelope<LoginUser>;
-    if (!userResponse.ok || userPayload.code !== 0 || !userPayload.data) {
-      throw new Error(userPayload.message || "该钉钉账号尚未授权登录");
-    }
+    const user = unwrapApiResult(await resolveDingTalkLogin({ client: createBackendSdkClient(request), body: profile }));
 
     const now = Math.floor(Date.now() / 1000);
-    const user = userPayload.data;
     const tokenValue = signToken(
       { sub: user.id, name: user.displayName, username: user.username, iat: now, exp: now + TOKEN_TTL_SECONDS },
       process.env.AUTH_TOKEN_SECRET ?? "yaya-development-token-secret",

@@ -8,7 +8,7 @@ import {
   type TableOptions,
   useReactTable,
 } from "@tanstack/react-table";
-import { Checkbox, Table, type Selection, type SortDescriptor } from "@heroui/react";
+import { Checkbox, Table, type SortDescriptor } from "@heroui/react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import styles from "./MyTable.module.css";
 
@@ -34,7 +34,6 @@ export type MyTableProps<TData> = {
   sortDescriptor?: SortDescriptor;
   onSortChange?: (descriptor: SortDescriptor) => void;
   selectedRowIds?: Set<string>;
-  onSelectedRowIdsChange?: (selectedPageIds: Set<string>) => void;
   columnSizing?: Record<string, number>;
   onColumnSizingChange?: (sizing: Record<string, number>) => void;
 };
@@ -85,7 +84,6 @@ export function MyTable<TData>({
   sortDescriptor,
   onSortChange,
   selectedRowIds,
-  onSelectedRowIdsChange,
   columnSizing,
   onColumnSizingChange,
 }: MyTableProps<TData>) {
@@ -170,15 +168,8 @@ export function MyTable<TData>({
           aria-label={ariaLabel}
           className={`${styles["my-table__content"]} h-auto w-max ${tableClassName ?? ""}`}
           style={{ width: tableWidth, minWidth: tableWidth }}
-          selectionMode={onSelectedRowIdsChange ? "multiple" : "none"}
-          selectedKeys={selectedRowIds}
-          onSelectionChange={(keys: Selection) => {
-            if (!onSelectedRowIdsChange) return;
-            const nextSelectedIds = keys === "all" ? new Set(data.map(getRowId)) : new Set([...keys].map(String));
-            if (data.some((row) => Boolean(selectedRowIds?.has(getRowId(row))) !== nextSelectedIds.has(getRowId(row)))) {
-              onSelectedRowIdsChange(nextSelectedIds);
-            }
-          }}
+          // Selection is controlled exclusively by the explicit checkbox column.
+          selectionMode="none"
           sortDescriptor={sortDescriptor}
           onSortChange={(descriptor) => onSortChange?.(descriptor)}
         >
@@ -206,7 +197,7 @@ export function MyTable<TData>({
           </Table.Header>
           <Table.Body>
             {rows.length === 0 ? <Table.Row className="!h-auto"><Table.Cell colSpan={table.getVisibleLeafColumns().length} className="py-12 text-center">{emptyState}</Table.Cell></Table.Row> : rows.map((row) => (
-            <Table.Row key={row.id} id={row.id} className="group !h-auto">
+            <Table.Row key={row.id} id={row.id} data-selected={selectedRowIds?.has(row.id) || undefined} className="group !h-auto">
               {[...row.getVisibleCells()].sort((a, b) => {
                 const pinOrder = (cell: typeof a) => cell.column.getIsPinned() === "left" ? 0 : cell.column.getIsPinned() === "right" ? 2 : 1;
                 return pinOrder(a) - pinOrder(b);
@@ -230,5 +221,5 @@ export function MyTable<TData>({
 }
 
 export function MyTableCheckbox({ ariaLabel, isSelected, isIndeterminate, onChange }: { ariaLabel: string; isSelected: boolean; isIndeterminate?: boolean; onChange?: (selected: boolean) => void }) {
-  return <Checkbox slot="selection" aria-label={ariaLabel} isSelected={isSelected} isIndeterminate={isIndeterminate} onChange={onChange}><Checkbox.Content><Checkbox.Control><Checkbox.Indicator /></Checkbox.Control></Checkbox.Content></Checkbox>;
+  return <Checkbox slot={null} aria-label={ariaLabel} isSelected={isSelected} isIndeterminate={isIndeterminate} onChange={onChange}><Checkbox.Content><Checkbox.Control><Checkbox.Indicator /></Checkbox.Control></Checkbox.Content></Checkbox>;
 }

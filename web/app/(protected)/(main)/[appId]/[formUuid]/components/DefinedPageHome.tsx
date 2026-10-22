@@ -1,4 +1,6 @@
 "use client";
+import { notifyRequestError } from "@lib/notify";
+
 import { notify } from "@lib/notify";
 
 import { useEffect, useState } from "react";
@@ -68,8 +70,8 @@ export function DefinedPageHome({ appId, formUuid }: Props) {
       notifyAppNavigationChanged(appId);
       notify.success("自定义页面已删除");
       router.replace(`/${appId}`);
-    } catch {
-      notify.error("删除自定义页面失败", {
+    } catch (requestError) {
+      notifyRequestError(requestError, "删除自定义页面失败", {
         description: "请确认后端服务正常。",
       });
     } finally {

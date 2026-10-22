@@ -1,11 +1,10 @@
 "use client";
 
-import { ListBox, Select } from "@heroui/react";
+import { FieldError, Label, ListBox, Select } from "@heroui/react";
 import { useEffect, useMemo, useState, type Key } from "react";
 import { fetchAssociationRecords } from "@/features/form-runtime/api";
 import type { AssociationRecord } from "@/features/form-runtime/types";
 import type { RuntimeFieldProps, RuntimeSchemaField } from "./RuntimeFormRenderer";
-import styles from "./RuntimeFormControls.module.css";
 
 const recordsCache = new Map<string, Promise<AssociationRecord[]>>();
 const MAX_CACHED_FORMS = 50;
@@ -31,12 +30,14 @@ function loadRecords(formId: string) {
 
 export function RuntimeAssociationField({
   field,
+  errorMessage,
   onChange,
   onFill,
   showLabel = true,
   value,
 }: {
   field: RuntimeSchemaField;
+  errorMessage?: string;
   onChange: (value: string) => void;
   onFill: (source: Record<string, unknown>) => void;
   showLabel?: boolean;
@@ -79,16 +80,17 @@ export function RuntimeAssociationField({
   const isLeftTitle = showLabel && props.titlePosition === "left";
 
   return (
-    <div className={isLeftTitle ? "grid h-full w-full min-w-0 grid-cols-[minmax(0,max-content)_minmax(0,1fr)] items-start gap-3 pt-7" : showLabel ? "w-full min-w-0 space-y-2" : "w-full min-w-0"}>
+    <div className={isLeftTitle ? "grid h-full w-full min-w-0 grid-cols-[minmax(0,max-content)_minmax(0,1fr)] items-start gap-3 pt-7" : "w-full min-w-0"}>
       {showLabel ? (
-        <label className={isLeftTitle ? "max-w-28 truncate pt-2 text-sm font-medium text-[var(--color-text-primary)]" : "block text-sm font-medium text-[var(--color-text-primary)]"}>
+        <Label isRequired={props.isRequired} className={isLeftTitle ? "max-w-28 truncate pt-2" : "mb-2"}>
           {field.label}
-        </label>
+        </Label>
       ) : null}
       <div className={isLeftTitle ? "w-full min-w-0" : undefined}>
       <Select
         aria-label={field.label}
-        className={styles["form-runtime-controls__select-field"]}
+        isInvalid={Boolean(errorMessage)}
+        validationBehavior="aria"
         selectedKey={selectedId || null}
         onSelectionChange={(key: Key | null) => {
           const recordId = key === null ? "" : String(key);
@@ -100,7 +102,7 @@ export function RuntimeAssociationField({
         isRequired={props.isRequired}
         fullWidth
       >
-        <Select.Trigger>
+        <Select.Trigger className="min-w-0">
           <Select.Value>{selected ? primary(selected) : placeholder}</Select.Value>
           <Select.Indicator />
         </Select.Trigger>
@@ -122,6 +124,7 @@ export function RuntimeAssociationField({
             ))}
           </ListBox>
         </Select.Popover>
+        <FieldError>{errorMessage}</FieldError>
       </Select>
       </div>
     </div>

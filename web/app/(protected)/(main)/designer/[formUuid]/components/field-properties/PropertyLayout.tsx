@@ -13,6 +13,43 @@ export function PropertyPanel({ children }: { children: ReactNode }) {
   return <div className="space-y-1 p-1">{children}</div>;
 }
 
+export function PropertyPanelHeader({
+  title,
+  description,
+}: {
+  title: ReactNode;
+  description: ReactNode;
+}) {
+  return (
+    <div className="shrink-0 text-[12px]">
+      <h2 className="truncate">{title}</h2>
+      <div className="truncate text-[var(--color-text-secondary)]">
+        {description}
+      </div>
+    </div>
+  );
+}
+
+export function PropertySection({
+  children,
+  rightIcon,
+  title,
+}: {
+  children: ReactNode;
+  rightIcon?: ReactNode;
+  title: string;
+}) {
+  return (
+    <section className="space-y-1">
+      <div className="flex min-h-6 items-center justify-between gap-1 text-[11px] text-[var(--color-text-secondary)]">
+        <span>{title}</span>
+        {rightIcon ? <span className="shrink-0">{rightIcon}</span> : null}
+      </div>
+      <div className="space-y-1">{children}</div>
+    </section>
+  );
+}
+
 export function PropertyFold({
   children,
   rightIcon,
@@ -23,7 +60,7 @@ export function PropertyFold({
   title: string;
 }) {
   return (
-    <MySurface className="overflow-hidden rounded-md bg-[var(--designer-surface-muted)]">
+    <MySurface className="shrink-0 overflow-hidden rounded-md bg-[var(--designer-surface-muted)]">
       <div className="flex p-1 items-center justify-between bg-[var(--designer-surface-soft)] text-[12px]">
         <span className="text-[12px]">{title}</span>
       </div>
@@ -39,7 +76,7 @@ export function PropertyRow({
 }: {
   align?: "center" | "start";
   children: ReactNode;
-  label: string;
+  label: ReactNode;
 }) {
   return (
     <div
@@ -108,9 +145,11 @@ export function PanelSwitch({
 }) {
   return (
     <Switch aria-label="开关" isSelected={isSelected} onChange={onChange}>
-      <Switch.Control>
-        <Switch.Thumb />
-      </Switch.Control>
+      <Switch.Content>
+        <Switch.Control>
+          <Switch.Thumb />
+        </Switch.Control>
+      </Switch.Content>
     </Switch>
   );
 }

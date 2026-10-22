@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchWithControl, requestApi } from "./api-request";
 import { SYSTEM_FAILURE_EVENT, type SystemFailureKind } from "./system-notification";
-import { listApps } from "./api-client";
+import { listApps } from "./http";
 
 describe("system request notifications", () => {
   const events: SystemFailureKind[] = [];
@@ -69,7 +69,7 @@ describe("system request notifications", () => {
   it("reports invalid JSON from the OpenAPI SDK", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("not-json", { status: 200, headers: { "content-type": "application/json" } })));
     const result = await listApps({ baseUrl: "http://localhost" });
-    expect(result.error).toBeInstanceOf(SyntaxError);
+    expect(result.error).toMatchObject({ kind: "invalid-response", status: 200, cause: expect.any(SyntaxError) });
     expect(events).toEqual(["invalid-response"]);
   });
 });

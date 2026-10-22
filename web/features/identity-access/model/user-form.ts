@@ -1,6 +1,6 @@
 import type { UpdateUserRequest, UserResponse } from "../api";
 
-export type UserFormValues = { displayName: string; title: string; mobile: string; telephone: string; email: string; jobNumber: string; workPlace: string; remark: string; emailAddresses: Array<{ label: string; email: string }>; roleIds: string[] };
+export type UserFormValues = { smtpPassword?: string; clearSmtpAuthorization?: boolean; displayName: string; title: string; mobile: string; telephone: string; email: string; jobNumber: string; workPlace: string; remark: string; emailAddresses: Array<{ label: string; email: string; smtpPassword?: string; clearSmtpAuthorization?: boolean }>; roleIds: string[] };
 export function toUserFormValues(user: UserResponse): UserFormValues {
   return { displayName: user.displayName, title: user.title ?? "", mobile: user.mobile ?? "", telephone: user.telephone ?? "", email: user.email ?? "", jobNumber: user.jobNumber ?? "", workPlace: user.workPlace ?? "", remark: user.remark ?? "", emailAddresses: user.emailAddresses ?? [], roleIds: user.roleIds ?? [] };
 }

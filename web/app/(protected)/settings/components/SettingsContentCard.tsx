@@ -27,8 +27,8 @@ export function SettingsContentCard({
   footerClassName = "",
 }: SettingsContentCardProps) {
   return (
-    <Card className={`h-full ${className}`.trim()} style={{ overflow: "clip" }}>
-      <header
+    <Card className="h-full">
+      <Card.Header
         className={`shrink-0 flex flex-wrap items-start justify-between gap-4 ${headerClassName}`.trim()}
       >
         <div className="flex items-end gap-2">
@@ -40,19 +40,13 @@ export function SettingsContentCard({
             {headerActions}
           </div>
         ) : null}
-      </header>
+      </Card.Header>
+
       <div
         className={`min-h-0 flex-1 ${bodyScrollable ? "overflow-y-auto overscroll-contain" : "!overflow-clip"} ${bodyClassName}`.trim()}
       >
         {children}
       </div>
-      {footer ? (
-        <footer
-          className={`mt-6 flex shrink-0 flex-wrap items-center justify-between gap-3 ${footerClassName}`.trim()}
-        >
-          {footer}
-        </footer>
-      ) : null}
     </Card>
   );
 }

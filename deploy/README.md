@@ -2,7 +2,21 @@
 
 Each customer receives one isolated platform container. The container runs the Next.js Web BFF, Rust API, PostgreSQL, internal Valkey, and the DSH Agent runtime. Only Web and API host ports are published.
 
-## HTTP/HTTPS and WebSocket
+## Mail workbench (phase 1)
+
+`/mail` and its folder subroutes provide primary-mailbox lists, UID cursor pagination, read-only details and plain-text sending. Mail data is fetched on demand from IMAP and is not stored in the platform database. Sending uses Alibaba enterprise mail SMTP (`smtp.qiye.aliyun.com:465`, implicit TLS), not DirectMail. SMS keeps its existing Aliyun AccessKey configuration; mail does not use AccessKey credentials.
+
+In user management, edit an existing user and set their primary email and SMTP authorization code. Create a user first before configuring authorization. A blank authorization code preserves the existing value; the clear action removes it when saved. Changing the primary email requires a new authorization. Enable SMTP and IMAP access in the mailbox and obtain its authorization credential according to the enterprise mailbox administrator's policy.
+
+Credentials are stored encrypted in `user_smtp_authorizations` using the existing server-side `YAYA_BYOM_ENCRYPTION_KEY` (Base64-encoded 32-byte key). This migration stores authorization only, not messages. Keep the encryption key stable and backed up; do not change it when restarting. Production must supply its own key. Credentials are write-only and are never returned by user APIs or logged.
+
+The sender and SMTP login are resolved from the authenticated user's primary email; the browser cannot override them. Missing authorization fails before connecting, using the global notification system. To/Cc/Bcc use SMTP, with Bcc in the envelope only. TLS certificate verification is enabled. A successful response means the SMTP server accepted the message, not confirmed delivery. Timeouts may leave the result unknown; there is no automatic retry.
+
+IMAP uses `imap.qiye.aliyun.com:993` with certificate verification and the same primary mailbox authorization. Lists fetch 25 headers per page; details use read-only PEEK and render HTML as text. Starred means flagged inbox messages; important contacts are unsupported. Messages above 10MB and attachment download require the mailbox client. New sent messages are appended to Sent when no matching Message-ID exists; archive failures return an explicit warning after successful SMTP delivery. Existing messages without a provider-side sent copy cannot be recovered.
+
+Acceptance requires a controlled recipient and a real SMTP authorization code: verify Chinese subject/body, sender identity, Cc/Bcc visibility and actual inbox delivery.
+
+## HTTP/HTTPS and WebSocket configuration
 
 The container can be reached over plain HTTP for private-network testing. In that mode keep `AUTH_COOKIE_SECURE=false`; otherwise browsers will reject the login cookie. For production, terminate TLS at a reverse proxy in front of `WEB_PORT`, set `AUTH_COOKIE_SECURE=true`, and use an HTTPS operation-center API URL.
 
@@ -76,3 +90,5 @@ The script reads `api/runtime/state/database.json`, creates a full plain-SQL loc
 ## Upgrade and rollback
 
 Build a versioned image, take backups, then run `docker compose up -d`. The API applies database migrations during the container's single-instance startup. Keep the previous image tag until the customer smoke test passes: login, create a record, upload/download a file, and complete one workflow task.
+
+附加邮箱也可在用户管理中分别保存或清除 SMTP 授权码，密码加密保存且不会回显。留空保留同地址原授权，删除附加邮箱会清除其授权（若仍是主邮箱则保留）。当前写信默认使用主邮箱，不提供附加邮箱发件人切换。

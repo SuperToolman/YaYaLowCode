@@ -1,15 +1,14 @@
 "use client";
 
 import { Drawer } from "@heroui/react/drawer";
+import { notify } from "@lib/notify";
 import type { FormDesignerSchema } from "../designer-schema";
-import { useTheme } from "@shared/ThemeProvider";
 import {
   RuntimeFormRenderer,
   RuntimeFormSurface,
   type RuntimeDebugEvent,
   type RuntimeFormSchema,
 } from "@features/form-runtime/components";
-import styles from "./DesignerTheme.module.css";
 
 type FormPreviewModalProps = {
   isOpen: boolean;
@@ -24,7 +23,6 @@ export function FormPreviewModal({
   onDebugEvent,
   onOpenChange,
 }: FormPreviewModalProps) {
-  const { resolvedTheme } = useTheme();
   const visibleFields = schema.fields.filter((field) => !field.props.isHidden);
   const runtimeSchema: RuntimeFormSchema = {
     ...schema,
@@ -33,12 +31,9 @@ export function FormPreviewModal({
 
   return (
     <Drawer isOpen={isOpen} onOpenChange={onOpenChange}>
-      <Drawer.Backdrop className={styles["designer-theme__modal-backdrop"]} isDismissable>
+      <Drawer.Backdrop className="theme-modal-backdrop" isDismissable>
         <Drawer.Content placement="right">
-          <Drawer.Dialog
-            data-theme={resolvedTheme}
-            className="w-[90vw]"
-          >
+          <Drawer.Dialog className="w-[1200px]">
             <Drawer.Header>
               <div className="flex justify-between">
                 <div className="min-w-0">
@@ -62,11 +57,14 @@ export function FormPreviewModal({
                   <RuntimeFormRenderer
                     schema={runtimeSchema}
                     submitLabel={schema.pageProps?.submitButtonText?.trim() || "提交"}
-                    showSubmitButton={false}
+                    showSubmitButton
                     urlParams={{ preview: "true", formUuid: schema.formUuid }}
                     onDebugEvent={onDebugEvent}
                     onSubmit={async (values) => {
                       console.info("[preview-submit]", values);
+                      notify.success("模拟提交成功", {
+                        description: "本次为预览模拟，数据未保存。",
+                      });
                     }}
                   />
                 ) : (

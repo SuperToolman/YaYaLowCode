@@ -28,7 +28,10 @@ export function PageContentLayout({
         <div className="grid gap-3 lg:grid-cols-[minmax(14rem,1fr)_minmax(16rem,28rem)_minmax(14rem,1fr)] lg:items-center">
           <div className="flex items-end gap-2">
             <Typography type="h3">{title}</Typography>
-            <Typography type="body-sm" className="text-[var(--color-text-secondary)]">
+            <Typography
+              type="body-sm"
+              className="text-[var(--color-text-secondary)]"
+            >
               {subtitle}
             </Typography>
           </div>

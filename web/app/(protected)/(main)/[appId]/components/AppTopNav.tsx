@@ -28,12 +28,15 @@ export function AppTopNav({ appId }: AppTopNavProps) {
 
   return (
     <Tabs
-      className="w-[360px]"
+      className="w-[360px] shrink-0"
       selectedKey={selectedKey}
       onSelectionChange={(key) => router.push(hrefByKey[key as keyof typeof hrefByKey])}
     >
-      <Tabs.ListContainer>
-        <Tabs.List aria-label="应用功能导航">
+        <Tabs.List
+          aria-label="应用功能导航"
+          className="grid-cols-3 rounded-full bg-default"
+          style={{ display: "grid", width: "100%" }}
+        >
           <Tabs.Tab id="overview">
             页面管理
             <Tabs.Indicator />
@@ -47,7 +50,6 @@ export function AppTopNav({ appId }: AppTopNavProps) {
             <Tabs.Indicator />
           </Tabs.Tab>
         </Tabs.List>
-      </Tabs.ListContainer>
     </Tabs>
   );
 }

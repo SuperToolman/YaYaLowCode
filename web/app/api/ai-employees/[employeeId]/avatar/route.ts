@@ -1,3 +1,4 @@
+import { fetchWithControl } from "@lib/api-request";
 import { backendBaseUrl, backendAuthorizationHeaders } from "../../../_lib/backend-json-proxy";
 
 export async function GET(
@@ -6,9 +7,9 @@ export async function GET(
 ) {
   const { employeeId } = await params;
   try {
-    const response = await fetch(
+    const response = await fetchWithControl(
       `${backendBaseUrl}/api/settings/ai-employee-market/${encodeURIComponent(employeeId)}/avatar`,
-      { cache: "no-store", headers: backendAuthorizationHeaders(_request) },
+      { cache: "no-store", bufferResponse: false, headers: backendAuthorizationHeaders(_request) },
     );
     return new Response(response.body, {
       status: response.status,

@@ -296,6 +296,10 @@ function Assert-DatabaseSchemaPrivileges {
         if ($privileges -notmatch "^(t|true)\|(t|true)$") {
             throw "Database role '$($Values.POSTGRES_USER)' can connect to '$($Values.POSTGRES_DB)' but lacks USAGE/CREATE on schema public. Ask a PostgreSQL administrator to run: GRANT USAGE, CREATE ON SCHEMA public TO $($Values.POSTGRES_USER);"
         }
+        $foreignTables = & $psql -h 127.0.0.1 -p 5432 -U $Values.POSTGRES_USER -d $Values.POSTGRES_DB -Atc "SELECT format('%I (owner: %I)', c.relname, r.rolname) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_roles r ON r.oid = c.relowner WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND NOT EXISTS (SELECT 1 FROM pg_roles me WHERE me.rolname = current_user AND me.rolsuper) AND NOT pg_has_role(current_user, c.relowner, 'USAGE') ORDER BY c.relname;" 2>$null
+        if ($LASTEXITCODE -eq 0 -and $foreignTables) {
+            throw "Database role '$($Values.POSTGRES_USER)' cannot migrate tables owned by another role: $($foreignTables -join ', '). Have their owner or a PostgreSQL administrator transfer the application tables to the application role. For the diagnosed local tables, see scripts/repair-local-table-owners.sql."
+        }
     } finally {
         if ($null -eq $previousPassword) { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue } else { $env:PGPASSWORD = $previousPassword }
     }

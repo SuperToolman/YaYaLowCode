@@ -1,4 +1,6 @@
 "use client";
+import { notifyRequestError } from "@lib/notify";
+import { useAuth } from "@components/AuthProvider";
 import { notify } from "@lib/notify";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -11,7 +13,6 @@ import {
 } from "@gravity-ui/icons";
 import {
   Button,
-  Card,
   Chip,
   Popover,
   Tooltip,
@@ -27,23 +28,9 @@ import {
   uninstallMarketAiEmployee,
 } from "@features/settings/api";
 
-type MarketEmployee = {
-  id: string;
-  title: string;
-  description: string;
-  category: string;
-  priceCents: number;
-  billingCycle: "month" | "year" | "one_time";
-  version: string;
-  avatarUrl?: string | null;
-  latestPackageVersion: string;
-  installedPackageVersion: string | null;
-  owned: boolean;
-  installed: boolean;
-  expiresAt: number | null;
-};
+type MarketEmployee = import("@lib/http").AiEmployeeMarketItem;
 
-const billingText = {
+const billingText: Record<string, string> = {
   month: "按月授权",
   year: "按年授权",
   one_time: "一次性购买",
@@ -56,6 +43,8 @@ export default function AiEmployeeMarketPage({
   embedded?: boolean;
   query?: string;
 }) {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission("settings.ai-employees.manage");
   const router = useRouter();
   const [employees, setEmployees] = useState<MarketEmployee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,7 +60,7 @@ export default function AiEmployeeMarketPage({
     setLoading(true);
     setError("");
     try {
-      setEmployees(await getAiEmployees<MarketEmployee[]>());
+      setEmployees(await getAiEmployees());
       setCurrentTimestamp(Math.floor(Date.now() / 1000));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "无法读取 AI 员工市场");
@@ -131,11 +120,11 @@ export default function AiEmployeeMarketPage({
   async function install(employee: MarketEmployee) {
     setInstallingId(employee.id);
     try {
-      await installMarketAiEmployee<unknown>(employee.id);
+      await installMarketAiEmployee(employee.id);
       notify.success("AI 员工已安装", { description: employee.title });
       await load();
     } catch (cause) {
-      notify.error("安装失败", {
+      notifyRequestError(cause, "安装失败", {
         description: cause instanceof Error ? cause.message : "请稍后重试",
       });
     } finally {
@@ -146,11 +135,11 @@ export default function AiEmployeeMarketPage({
   async function sync(employee: MarketEmployee) {
     setSyncingId(employee.id);
     try {
-      await installMarketAiEmployee<unknown>(employee.id);
+      await installMarketAiEmployee(employee.id);
       notify.success("AI 员工已更新", { description: employee.title });
       await load();
     } catch (cause) {
-      notify.error("AI 员工更新失败", {
+      notifyRequestError(cause, "AI 员工更新失败", {
         description: cause instanceof Error ? cause.message : "请稍后重试",
       });
     } finally {
@@ -161,11 +150,11 @@ export default function AiEmployeeMarketPage({
   async function remove(employee: MarketEmployee) {
     setRemovingId(employee.id);
     try {
-      await uninstallMarketAiEmployee<unknown>(employee.id);
+      await uninstallMarketAiEmployee(employee.id);
       notify.success("AI 员工已移除", { description: employee.title });
       await load();
     } catch (cause) {
-      notify.error("AI 员工移除失败", {
+      notifyRequestError(cause, "AI 员工移除失败", {
         description: cause instanceof Error ? cause.message : "请稍后重试",
       });
     } finally {
@@ -176,17 +165,14 @@ export default function AiEmployeeMarketPage({
   async function completeTestPayment() {
     if (!purchase) return false;
     try {
-      const payload = await testMarketAiEmployeePurchase<{
-        orderNo: string;
-        licenseId: string;
-      }>(purchase.id);
+      const payload = await testMarketAiEmployeePurchase(purchase.id);
       notify.success("测试支付完成", {
         description: `订单 ${payload.orderNo} 已回款并签发新许可证`,
       });
       window.setTimeout(openLicenseUpdatePrompt, 0);
       return true;
     } catch (cause) {
-      notify.error("测试支付失败", {
+      notifyRequestError(cause, "测试支付失败", {
         description: cause instanceof Error ? cause.message : "请稍后重试",
       });
       return false;
@@ -344,10 +330,10 @@ export default function AiEmployeeMarketPage({
                         <Button
                           size="sm"
                           isPending={syncingId === employee.id}
-                          isDisabled={
+                          isDisabled={!canManage ||
                             Boolean(syncingId) ||
                             Boolean(removingId) ||
-                            (employee.expiresAt !== null &&
+                            (employee.expiresAt != null &&
                               employee.expiresAt < currentTimestamp)
                           }
                           onPress={() => void sync(employee)}
@@ -361,7 +347,7 @@ export default function AiEmployeeMarketPage({
                           size="sm"
                           variant="danger-soft"
                           isPending={removingId === employee.id}
-                          isDisabled={Boolean(syncingId) || Boolean(removingId)}
+                          isDisabled={!canManage || Boolean(syncingId) || Boolean(removingId)}
                           onPress={() => void remove(employee)}
                         >
                           移除
@@ -385,7 +371,7 @@ export default function AiEmployeeMarketPage({
                       </div>
                       <div className="mt-3 flex justify-end">
                         {employee.owned ? (
-                          <Button
+                          <Button isDisabled={!canManage}
                             size="sm"
                             isPending={installingId === employee.id}
                             onPress={() => void install(employee)}
@@ -393,7 +379,7 @@ export default function AiEmployeeMarketPage({
                             安装
                           </Button>
                         ) : (
-                          <Button
+                          <Button isDisabled={!canManage}
                             size="sm"
                             onPress={() => setPurchase(employee)}
                           >

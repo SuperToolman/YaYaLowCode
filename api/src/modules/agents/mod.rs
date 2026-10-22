@@ -5,9 +5,9 @@ pub(crate) mod dto;
 use axum::http::HeaderMap;
 use axum::http::StatusCode;
 use base64::Engine;
-use sea_orm::{ActiveModelTrait, ConnectionTrait, DbBackend, QuerySelect, Statement};
-use sea_orm::sea_query::{Expr, Order};
 use sea_orm::Condition;
+use sea_orm::sea_query::{Expr, Order};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, DbBackend, QuerySelect, Statement};
 use std::fs;
 use std::path::{Path as FsPath, PathBuf};
 
@@ -63,17 +63,23 @@ pub(crate) async fn cleanup_native_workbench_reset(
     )).await? else {
         return Ok(());
     };
-    if marker.try_get::<bool>("", "workspace_cleanup_completed")? { return Ok(()); }
+    if marker.try_get::<bool>("", "workspace_cleanup_completed")? {
+        return Ok(());
+    }
     let root = PathBuf::from(&crate::platform::config::agent_workspace_settings().root);
     let canonical_root = root.canonicalize().unwrap_or(root.clone());
     if canonical_root.as_os_str().is_empty() || canonical_root.parent().is_none() {
-        return Err(AppError::Server(std::io::Error::other("invalid agent workspace root")));
+        return Err(AppError::Server(std::io::Error::other(
+            "invalid agent workspace root",
+        )));
     }
     if canonical_root.exists() {
         for entry in fs::read_dir(&canonical_root).map_err(AppError::Server)? {
             let path = entry.map_err(AppError::Server)?.path();
             if !is_within(&canonical_root, &path) {
-                return Err(AppError::Server(std::io::Error::other("agent workspace cleanup escaped root")));
+                return Err(AppError::Server(std::io::Error::other(
+                    "agent workspace cleanup escaped root",
+                )));
             }
             if path.is_dir() {
                 fs::remove_dir_all(path).map_err(AppError::Server)?;
@@ -108,11 +114,10 @@ fn is_within(root: &FsPath, path: &FsPath) -> bool {
 }
 
 pub(crate) use self::dto::{
-    AgentPageContext, AgentWorkbenchSessionsQuery, ApiAgentRuntimeSummary,
-    ApiAgentSession, ApiAgentTransaction, ApiAgentWorkbenchSession,
-    ApiAgentWorkbenchSessionPage, CreateAgentSessionRequest,
-    CreateAgentTransactionRequest, RuntimeSessionAccessQuery,
-    ReconcileAgentSessionRequest, UpdateAgentSessionRequest, UpsertAgentRuntimeSummaryRequest,
+    AgentPageContext, AgentWorkbenchSessionsQuery, ApiAgentRuntimeSummary, ApiAgentSession,
+    ApiAgentTransaction, ApiAgentWorkbenchSession, ApiAgentWorkbenchSessionPage,
+    CreateAgentSessionRequest, CreateAgentTransactionRequest, ReconcileAgentSessionRequest,
+    RuntimeSessionAccessQuery, UpdateAgentSessionRequest, UpsertAgentRuntimeSummaryRequest,
 };
 
 const TERMINAL_RUN_STATUSES: [&str; 4] = ["idle", "completed", "stopped", "failed"];
@@ -155,6 +160,7 @@ pub(crate) async fn list_agent_sessions(
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<Vec<ApiAgentSession>>>, AppError> {
     let user = authorization::current_user(&headers, &state).await?;
+    let grants = authorization::grants(&headers, &state).await?;
     let sessions = AgentSessionEntity::find()
         .filter(agent_session_entity::Column::OwnerUserId.eq(Some(user.id)))
         .filter(agent_session_entity::Column::Status.eq("active"))
@@ -164,6 +170,9 @@ pub(crate) async fn list_agent_sessions(
         .await?;
     let mut response = Vec::with_capacity(sessions.len());
     for session in sessions {
+        if !grants.contains("*") && !grants.contains(&format!("agent:{}:use", session.agent_id)) {
+            continue;
+        }
         response.push(ApiAgentSession::from(session));
     }
     Ok(Json(success_response("agent sessions loaded", response)))
@@ -206,26 +215,63 @@ pub(crate) async fn list_agent_workbench_sessions(
     let mut filters = Condition::all()
         .add(agent_session_entity::Column::OwnerUserId.eq(Some(user.id)))
         .add(agent_session_entity::Column::Status.eq("active"));
-    if let Some(agent_id) = query.agent_id.as_deref().filter(|value| !value.trim().is_empty()) {
+    let grants = authorization::grants(&headers, &state).await?;
+    if !grants.contains("*") {
+        let employees = grants
+            .iter()
+            .filter_map(|grant| {
+                grant
+                    .strip_prefix("agent:")
+                    .and_then(|rest| rest.strip_suffix(":use"))
+            })
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        filters = filters.add(agent_session_entity::Column::AgentId.is_in(employees));
+    }
+    if let Some(agent_id) = query
+        .agent_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
         filters = filters.add(agent_session_entity::Column::AgentId.eq(agent_id));
     }
-    if let Some(run_status) = query.run_status.as_deref().filter(|value| !value.trim().is_empty()) {
+    if let Some(run_status) = query
+        .run_status
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
         if !VALID_RUN_STATUSES.contains(&run_status) {
             return Err(AppError::BadRequest("invalid agent run status".to_string()));
         }
-        filters = filters.add(agent_session_runtime_summary_entity::Column::RunStatus.eq(run_status));
+        filters =
+            filters.add(agent_session_runtime_summary_entity::Column::RunStatus.eq(run_status));
     }
-    if let Some(search) = query.query.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(search) = query
+        .query
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         if search.len() > 160 {
-            return Err(AppError::BadRequest("agent session search is too long".to_string()));
+            return Err(AppError::BadRequest(
+                "agent session search is too long".to_string(),
+            ));
         }
         filters = filters.add(agent_session_entity::Column::Title.contains(search));
     }
     if let Some(cursor) = cursor.as_ref() {
         let cursor_rank_condition = if cursor.active_rank == 1 {
-            agent_session_runtime_summary_entity::Column::RunStatus.is_in(["running", "queued", "waiting_approval"])
+            agent_session_runtime_summary_entity::Column::RunStatus.is_in([
+                "running",
+                "queued",
+                "waiting_approval",
+            ])
         } else {
-            agent_session_runtime_summary_entity::Column::RunStatus.is_not_in(["running", "queued", "waiting_approval"])
+            agent_session_runtime_summary_entity::Column::RunStatus.is_not_in([
+                "running",
+                "queued",
+                "waiting_approval",
+            ])
         };
         let mut after_cursor = Condition::any()
             .add(agent_session_entity::Column::IsPinned.lt(cursor.is_pinned))
@@ -233,19 +279,33 @@ pub(crate) async fn list_agent_workbench_sessions(
                 Condition::all()
                     .add(agent_session_entity::Column::IsPinned.eq(cursor.is_pinned))
                     .add(cursor_rank_condition.clone())
-                    .add(agent_session_runtime_summary_entity::Column::LastActivityAt.lt(cursor.last_activity_at))
+                    .add(
+                        agent_session_runtime_summary_entity::Column::LastActivityAt
+                            .lt(cursor.last_activity_at),
+                    ),
             )
             .add(
                 Condition::all()
                     .add(agent_session_entity::Column::IsPinned.eq(cursor.is_pinned))
                     .add(cursor_rank_condition)
-                    .add(agent_session_runtime_summary_entity::Column::LastActivityAt.eq(cursor.last_activity_at))
-                    .add(agent_session_entity::Column::SessionUuid.gt(cursor.session_uuid.clone()))
+                    .add(
+                        agent_session_runtime_summary_entity::Column::LastActivityAt
+                            .eq(cursor.last_activity_at),
+                    )
+                    .add(agent_session_entity::Column::SessionUuid.gt(cursor.session_uuid.clone())),
             );
         if cursor.active_rank == 1 {
-            after_cursor = after_cursor.add(Condition::all()
-                .add(agent_session_entity::Column::IsPinned.eq(cursor.is_pinned))
-                .add(agent_session_runtime_summary_entity::Column::RunStatus.is_not_in(["running", "queued", "waiting_approval"])));
+            after_cursor = after_cursor.add(
+                Condition::all()
+                    .add(agent_session_entity::Column::IsPinned.eq(cursor.is_pinned))
+                    .add(
+                        agent_session_runtime_summary_entity::Column::RunStatus.is_not_in([
+                            "running",
+                            "queued",
+                            "waiting_approval",
+                        ]),
+                    ),
+            );
         }
         filters = filters.add(after_cursor);
     }
@@ -263,22 +323,30 @@ pub(crate) async fn list_agent_workbench_sessions(
     let rows = rows.into_iter().take(limit as usize).collect::<Vec<_>>();
     let next_cursor = if has_next {
         rows.last().and_then(|(summary, session)| {
-            session.as_ref().map(|session| encode_directory_cursor(
-                session.is_pinned,
-                if is_active_run_status(&summary.run_status) { 1 } else { 0 },
-                summary.last_activity_at,
-                &session.session_uuid,
-            ))
+            session.as_ref().map(|session| {
+                encode_directory_cursor(
+                    session.is_pinned,
+                    if is_active_run_status(&summary.run_status) {
+                        1
+                    } else {
+                        0
+                    },
+                    summary.last_activity_at,
+                    &session.session_uuid,
+                )
+            })
         })
     } else {
         None
     };
     let items = rows
         .into_iter()
-        .filter_map(|(summary, session)| session.map(|session| ApiAgentWorkbenchSession {
-            session: ApiAgentSession::from(session),
-            runtime: runtime_summary_response(summary),
-        }))
+        .filter_map(|(summary, session)| {
+            session.map(|session| ApiAgentWorkbenchSession {
+                session: ApiAgentSession::from(session),
+                runtime: runtime_summary_response(summary),
+            })
+        })
         .collect();
     Ok(Json(success_response(
         "agent workbench sessions loaded",
@@ -344,29 +412,57 @@ pub(crate) async fn reconcile_agent_session(
     if session_uuid.is_empty() || session_uuid.len() > 160 {
         return Err(AppError::BadRequest("invalid agent session id".to_string()));
     }
-    let parent = match payload.parent_session_uuid.as_deref().filter(|value| !value.trim().is_empty()) {
+    let parent = match payload
+        .parent_session_uuid
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
         Some(parent_uuid) => Some(find_owned_session(&state.db, parent_uuid, user.id).await?),
         None => None,
     };
     if let Some(existing) = AgentSessionEntity::find()
         .filter(agent_session_entity::Column::SessionUuid.eq(session_uuid))
         .one(&state.db)
-        .await? {
+        .await?
+    {
         if existing.owner_user_id != Some(user.id) {
-            return Err(AppError::Forbidden("agent session belongs to another user".to_string()));
+            return Err(AppError::Forbidden(
+                "agent session belongs to another user".to_string(),
+            ));
         }
-        return Ok(Json(success_response("agent session reconciled", ApiAgentSession::from(existing))));
+        let grants = authorization::grants(&headers, &state).await?;
+        if !grants.contains("*") && !grants.contains(&format!("agent:{}:use", existing.agent_id)) {
+            return Err(AppError::Forbidden("无权使用此 AI 员工".into()));
+        }
+        return Ok(Json(success_response(
+            "agent session reconciled",
+            ApiAgentSession::from(existing),
+        )));
     }
-    let agent_id = payload.agent_id
+    let agent_id = payload
+        .agent_id
         .filter(|value| !value.trim().is_empty())
         .or_else(|| parent.as_ref().map(|value| value.agent_id.clone()))
         .unwrap_or_else(|| "cordis-default".to_string());
-    let context = payload.context
-        .or_else(|| parent.as_ref().and_then(|value| serde_json::from_value(value.context_json.clone()).ok()))
+    let actor_grants = authorization::grants(&headers, &state).await?;
+    if !actor_grants.contains("*") && !actor_grants.contains(&format!("agent:{agent_id}:use")) {
+        return Err(AppError::Forbidden("无权使用此 AI 员工".into()));
+    }
+    let context = payload
+        .context
+        .or_else(|| {
+            parent
+                .as_ref()
+                .and_then(|value| serde_json::from_value(value.context_json.clone()).ok())
+        })
         .unwrap_or_default();
     validate_context_resources(&state.db, &context).await?;
     let now = Utc::now();
-    let title = payload.title.as_deref().map(truncate_title).unwrap_or_else(|| "新对话".to_string());
+    let title = payload
+        .title
+        .as_deref()
+        .map(truncate_title)
+        .unwrap_or_else(|| "新对话".to_string());
     let session = agent_session_entity::ActiveModel {
         id: Set(Uuid::new_v4()),
         session_uuid: Set(session_uuid.to_string()),
@@ -382,13 +478,28 @@ pub(crate) async fn reconcile_agent_session(
         archived_at: Set(None),
         created_at: Set(now.into()),
         updated_at: Set(now.into()),
-    }.insert(&state.db).await?;
+    }
+    .insert(&state.db)
+    .await?;
     agent_session_runtime_summary_entity::ActiveModel {
-        session_id: Set(session.id), event_generation: Set("initial".to_string()), last_event_seq: Set(-1),
-        run_status: Set("idle".to_string()), phase: Set(None), last_tool_name: Set(None), last_error: Set(None),
-        pending_approval_count: Set(0), unread_activity_version: Set(0), last_activity_at: Set(now.into()), updated_at: Set(now.into()),
-    }.insert(&state.db).await?;
-    Ok(Json(success_response("agent session reconciled", ApiAgentSession::from(session))))
+        session_id: Set(session.id),
+        event_generation: Set("initial".to_string()),
+        last_event_seq: Set(-1),
+        run_status: Set("idle".to_string()),
+        phase: Set(None),
+        last_tool_name: Set(None),
+        last_error: Set(None),
+        pending_approval_count: Set(0),
+        unread_activity_version: Set(0),
+        last_activity_at: Set(now.into()),
+        updated_at: Set(now.into()),
+    }
+    .insert(&state.db)
+    .await?;
+    Ok(Json(success_response(
+        "agent session reconciled",
+        ApiAgentSession::from(session),
+    )))
 }
 
 pub(crate) async fn create_agent_session(
@@ -408,14 +519,37 @@ pub(crate) async fn create_agent_session(
     // Do this before writing agent_sessions so a missing/default legacy id
     // cannot leave an unusable workbench row behind.
     let Json(runtime_employees) = crate::modules::settings::list_runtime_ai_employees().await?;
-    let available_employees = runtime_employees.data.unwrap_or_default();
+    let actor_grants = authorization::grants(&headers, &state).await?;
+    let available_employees = runtime_employees
+        .data
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|employee| {
+            actor_grants.contains("*")
+                || actor_grants.contains(&format!("agent:{}:use", employee.id))
+        })
+        .collect::<Vec<_>>();
     let agent_id = match requested_agent_id {
-        Some(agent_id) if available_employees.iter().any(|employee| employee.id == agent_id) => agent_id.to_string(),
-        Some(_) => return Err(AppError::BadRequest("AI 员工未安装、已过期或无权使用".to_string())),
+        Some(agent_id)
+            if available_employees
+                .iter()
+                .any(|employee| employee.id == agent_id) =>
+        {
+            agent_id.to_string()
+        }
+        Some(_) => {
+            return Err(AppError::BadRequest(
+                "AI 员工未安装、已过期或无权使用".to_string(),
+            ));
+        }
         None => available_employees
             .first()
             .map(|employee| employee.id.clone())
-            .ok_or_else(|| AppError::BadRequest("没有可用的已安装 AI 员工，请先在 AI 员工市场安装并授权".to_string()))?,
+            .ok_or_else(|| {
+                AppError::BadRequest(
+                    "没有可用的已安装 AI 员工，请先在 AI 员工市场安装并授权".to_string(),
+                )
+            })?,
     };
     let context = payload.and_then(|value| value.context).unwrap_or_default();
     if let Some(app_id) = context.app_id.as_deref() {
@@ -509,7 +643,10 @@ pub(crate) async fn delete_agent_session(
     let runtime = AgentSessionRuntimeSummaryEntity::find_by_id(session.id)
         .one(&state.db)
         .await?;
-    if runtime.as_ref().is_some_and(|summary| !TERMINAL_RUN_STATUSES.contains(&summary.run_status.as_str())) {
+    if runtime
+        .as_ref()
+        .is_some_and(|summary| !TERMINAL_RUN_STATUSES.contains(&summary.run_status.as_str()))
+    {
         return Err(AppError::BadRequest(
             "stop the active agent run before archiving this session".to_string(),
         ));
@@ -539,7 +676,10 @@ pub(crate) async fn restore_agent_session(
     active.archived_at = Set(None);
     active.updated_at = Set(Utc::now().into());
     let restored = active.update(&state.db).await?;
-    Ok(Json(success_response("agent session restored", ApiAgentSession::from(restored))))
+    Ok(Json(success_response(
+        "agent session restored",
+        ApiAgentSession::from(restored),
+    )))
 }
 
 pub(crate) async fn purge_archived_agent_session(
@@ -794,7 +934,9 @@ async fn find_owned_archived_session(
 }
 
 fn remove_session_workspace(session: &agent_session_entity::Model) -> Result<(), AppError> {
-    let Some(user_id) = session.owner_user_id else { return Ok(()); };
+    let Some(user_id) = session.owner_user_id else {
+        return Ok(());
+    };
     let root = PathBuf::from(&crate::platform::config::agent_workspace_settings().root);
     let canonical_root = root.canonicalize().unwrap_or(root);
     let workspace = canonical_root
@@ -802,9 +944,13 @@ fn remove_session_workspace(session: &agent_session_entity::Model) -> Result<(),
         .join(safe_segment(&session.agent_id))
         .join(safe_segment(&session.session_uuid));
     if !is_within(&canonical_root, &workspace) {
-        return Err(AppError::Server(std::io::Error::other("agent workspace purge escaped root")));
+        return Err(AppError::Server(std::io::Error::other(
+            "agent workspace purge escaped root",
+        )));
     }
-    if workspace.exists() { fs::remove_dir_all(workspace).map_err(AppError::Server)?; }
+    if workspace.exists() {
+        fs::remove_dir_all(workspace).map_err(AppError::Server)?;
+    }
     Ok(())
 }
 
@@ -857,7 +1003,11 @@ fn parse_directory_cursor(value: &str) -> Result<DirectoryCursor, AppError> {
     let is_pinned = match parts.next() {
         Some("1") => true,
         Some("0") => false,
-        _ => return Err(AppError::BadRequest("invalid agent session cursor".to_string())),
+        _ => {
+            return Err(AppError::BadRequest(
+                "invalid agent session cursor".to_string(),
+            ));
+        }
     };
     let active_rank = parts
         .next()
@@ -937,29 +1087,45 @@ async fn update_runtime_summary(
 ) -> Result<agent_session_runtime_summary_entity::Model, AppError> {
     let generation = payload.event_generation.trim();
     if generation.is_empty() || generation.len() > 120 {
-        return Err(AppError::BadRequest("invalid runtime event generation".to_string()));
+        return Err(AppError::BadRequest(
+            "invalid runtime event generation".to_string(),
+        ));
     }
     if payload.last_event_seq < -1 {
-        return Err(AppError::BadRequest("invalid runtime event sequence".to_string()));
+        return Err(AppError::BadRequest(
+            "invalid runtime event sequence".to_string(),
+        ));
     }
     if !VALID_RUN_STATUSES.contains(&payload.run_status.as_str()) {
         return Err(AppError::BadRequest("invalid agent run status".to_string()));
     }
     if payload.pending_approval_count < 0 || payload.unread_activity_version < 0 {
-        return Err(AppError::BadRequest("invalid runtime activity counters".to_string()));
+        return Err(AppError::BadRequest(
+            "invalid runtime activity counters".to_string(),
+        ));
     }
     for value in [payload.phase.as_deref(), payload.last_tool_name.as_deref()] {
         if value.is_some_and(|value| value.len() > 255) {
-            return Err(AppError::BadRequest("runtime summary field is too long".to_string()));
+            return Err(AppError::BadRequest(
+                "runtime summary field is too long".to_string(),
+            ));
         }
     }
-    if payload.last_error.as_ref().is_some_and(|value| value.len() > 16_000) {
-        return Err(AppError::BadRequest("runtime error is too long".to_string()));
+    if payload
+        .last_error
+        .as_ref()
+        .is_some_and(|value| value.len() > 16_000)
+    {
+        return Err(AppError::BadRequest(
+            "runtime error is too long".to_string(),
+        ));
     }
     let last_activity_at = payload
         .last_activity_at
         .as_deref()
-        .map(|value| chrono::DateTime::parse_from_rfc3339(value).map(|value| value.with_timezone(&Utc)))
+        .map(|value| {
+            chrono::DateTime::parse_from_rfc3339(value).map(|value| value.with_timezone(&Utc))
+        })
         .transpose()
         .map_err(|_| AppError::BadRequest("invalid runtime activity timestamp".to_string()))?
         .unwrap_or_else(Utc::now);

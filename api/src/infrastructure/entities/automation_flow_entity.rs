@@ -14,7 +14,6 @@ pub struct Model {
     pub current_version: i32,
     pub flow_type: String,
     pub trigger_form_uuid: Option<String>,
-    pub trigger_event: String,
     pub trigger_config: Json,
     pub nodes_json: Json,
     pub edges_json: Json,

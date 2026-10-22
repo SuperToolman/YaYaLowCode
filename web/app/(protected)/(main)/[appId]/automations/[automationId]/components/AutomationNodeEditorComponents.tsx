@@ -1,4 +1,6 @@
 "use client";
+import { AutomationInitiateApprovalConfig } from "./AutomationInitiateApprovalConfig";
+import type { InitiateApprovalConfig } from "../automation-editor-model";
 
 import { createContext, useContext } from "react";
 import {
@@ -13,15 +15,16 @@ import {
 import type { ApiFormSummary } from "@/features/automation-editor/api";
 import {
   Plus as AddIcon,
-  FileText as FormIcon,
   TrashBin as TrashIcon,
 } from "@gravity-ui/icons";
 import type { TriggerEvent } from "../../components/AutomationShared";
+import { workflowNodeIcons, workflowConfigKind } from "../../components/AutomationWorkflowNodeRegistry";
 import {
   conditionBranchHandleId,
   conditionBranchSummary,
   nodeKindLabel,
   nodeSummary,
+  type NodeSummaryContext,
   nodeTone,
   normalizeConditionConfig,
   defaultNodeTemplate,
@@ -29,16 +32,17 @@ import {
   type ActionConfig,
   type PaletteNodeKind,
   type AddDataConfig,
-  type BranchRule,
   type DataSourceMode,
-  type FieldMappingRow,
   type FormFieldDescriptor,
   type FormSchemaDescriptor,
   type MemberOption,
+  type RoleOption,
   type SourceFieldChoice,
   type WorkflowEdge,
   type WorkflowNode,
 } from "../automation-editor-model";
+import type { BranchRule } from "@/features/automation-editor/condition-rules";
+import type { FieldMappingRow } from "@/features/automation-editor/field-mapping";
 import { ConditionNodeConfig } from "./AutomationConditionNodeConfig";
 import { DataNodeConfigFields } from "./AutomationDataNodeConfig";
 import { FlowNodeConfig } from "./AutomationFlowNodeConfig";
@@ -58,17 +62,21 @@ export const WorkflowNodeActionsContext = createContext<WorkflowNodeActions>({
   removeConditionBranch: () => undefined,
 });
 
+export const WorkflowNodeSummaryContext = createContext<NodeSummaryContext>({});
+
 export function WorkflowCardNode({
   id,
   data,
   selected,
 }: NodeProps<WorkflowNode>) {
   const canAcceptInput = data.kind !== "trigger";
+  const NodeIcon = workflowNodeIcons[data.kind];
+  const summaryContext = useContext(WorkflowNodeSummaryContext);
   const { addConditionBranch, removeConditionBranch } = useContext(
     WorkflowNodeActionsContext,
   );
   const conditionBranches =
-    data.kind === "condition"
+    (data.kind === "condition" || data.kind === "parallel-condition")
       ? (normalizeConditionConfig(data.config).branches ?? [])
       : [];
 
@@ -76,7 +84,7 @@ export function WorkflowCardNode({
     <div
       data-workflow-node-card="true"
       className={[
-        data.kind === "condition" ? "w-[310px]" : "min-w-[220px] max-w-[280px]",
+        (data.kind === "condition" || data.kind === "parallel-condition") ? "w-[310px]" : "min-w-[220px] max-w-[280px]",
         "border border-[var(--color-border)] p-2 rounded-lg bg-[var(--color-bg-canvas)] shadow-[var(--shadow-floating)]",
         selected ? "ring-2 ring-[var(--color-primary)]" : "",
       ].join(" ")}
@@ -89,8 +97,8 @@ export function WorkflowCardNode({
         />
       ) : null}
       <div className="flex items-start gap-2">
-        <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
-          <FormIcon />
+        <span className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${nodeTone[data.kind]}`}>
+          <NodeIcon className="size-4" aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
@@ -102,26 +110,41 @@ export function WorkflowCardNode({
             >
               {nodeKindLabel(data.kind)}
             </div>
+            {(data.kind === "condition" || data.kind === "parallel-condition") ? (
+              <button
+                type="button"
+                aria-label="添加条件分支"
+                title="添加条件分支"
+                className="nodrag nopan inline-flex size-5 shrink-0 items-center justify-center rounded border border-[var(--color-warning)] bg-[var(--color-warning-soft)] text-[var(--color-warning)] transition-colors hover:bg-[var(--color-control-soft-hover)]"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  addConditionBranch(id);
+                }}
+              >
+                <AddIcon className="size-3" />
+              </button>
+            ) : null}
           </div>
           <div className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">
             {data.description}
           </div>
         </div>
       </div>
-      {data.kind === "condition" ? (
+      {(data.kind === "condition" || data.kind === "parallel-condition") ? (
         <div className="mt-3 space-y-2">
           {conditionBranches.map((branch, index) => (
             <div
               key={branch.id}
               className="relative rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3 py-2.5 pr-8"
             >
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 pr-5">
                 <span className="truncate text-xs font-semibold text-[var(--color-text-primary)]">
                   {branch.name || `条件分支 ${index + 1}`}
                 </span>
-                <span className="shrink-0 rounded bg-[var(--color-warning-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-warning)]">
-                  P{branch.priority}
-                </span>
+                {data.kind !== "parallel-condition" ? <span className="shrink-0 rounded bg-[var(--color-warning-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-warning)]">
+                  P{index + 1}
+                </span> : null}
               </div>
               <div className="mt-1 truncate text-[11px] text-[var(--color-text-secondary)]">
                 {conditionBranchSummary(branch)}
@@ -130,7 +153,7 @@ export function WorkflowCardNode({
                 <button
                   type="button"
                   aria-label={`删除条件分支 ${index + 1}`}
-                  className="nodrag nopan absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-danger-soft)] hover:text-[var(--color-danger)]"
+                  className="nodrag nopan absolute right-1 top-2 flex h-5 w-5 items-center justify-center rounded text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-danger-soft)] hover:text-[var(--color-danger)]"
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={(event) => {
                     event.stopPropagation();
@@ -148,23 +171,11 @@ export function WorkflowCardNode({
               />
             </div>
           ))}
-          <button
-            type="button"
-            className="nodrag nopan flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-2 text-xs font-semibold text-[var(--color-warning)] transition-colors hover:bg-[var(--color-control-soft-hover)]"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation();
-              addConditionBranch(id);
-            }}
-          >
-            <AddIcon />
-            添加分支
-          </button>
         </div>
       ) : (
         <>
           <div className="mt-3 rounded-lg bg-[var(--color-bg-subtle)] px-3 py-2 text-[11px] leading-5 text-[var(--color-text-secondary)] whitespace-pre-wrap">
-            {nodeSummary(data)}
+            {nodeSummary(data, summaryContext)}
           </div>
           <Handle
             type="source"
@@ -225,9 +236,16 @@ export function InsertableEdge({
 }
 
 export function NodeConfigFields({
+  onInitiateApprovalChange,
+  appId,
   forms,
   members,
+  roles,
   getManySourceOptions,
+  getSourceOptions,
+  getSchemaStatus,
+  onRetryGetSchema,
+  onGetFilterModeChange,
   updateSourceOptions,
   updateTargetFormOptions,
   multipleSourceFieldChoices,
@@ -261,8 +279,15 @@ export function NodeConfigFields({
   onRemoveMappingRow,
   onRowChange,
 }: {
+  onInitiateApprovalChange: (config: InitiateApprovalConfig) => void;
+  getSchemaStatus?: "loading" | "ready" | "error";
+  onRetryGetSchema?: () => void;
+  getSourceOptions?: Array<{ id: string; label: string; description: string }>;
+  onGetFilterModeChange?: (mode: "all" | "rules") => void;
+  appId: string;
   forms: ApiFormSummary[];
   members: MemberOption[];
+  roles: RoleOption[];
   getManySourceOptions: Array<{
     id: string;
     label: string;
@@ -300,18 +325,18 @@ export function NodeConfigFields({
   onAddMappingRow: () => void;
   onBasicChange: (key: string, value: string) => void;
   onProcessMemberIdsChange: (
-    key: "assigneeIds" | "recipientIds",
+    key: "assigneeIds" | "recipientIds" | "roleIds",
     ids: string[],
   ) => void;
   onProcessRequiredFieldIdsChange: (ids: string[]) => void;
   onConditionBranchChange: (
     branchId: string,
-    key: "name" | "hitLabel" | "expression",
+    key: "name" | "expression",
     value: string,
   ) => void;
   onConditionModeChange: (
     branchId: string,
-    value: "all" | "rules" | "expression",
+    value: "all" | "rules" | "expression" | "otherwise",
   ) => void;
   onMoveConditionBranch: (branchId: string, direction: "up" | "down") => void;
   onAddConditionBranch: () => void;
@@ -339,12 +364,13 @@ export function NodeConfigFields({
     value: string,
   ) => void;
 }) {
-  if (
-    ["approval", "executor", "copy", "end", "trigger"].includes(node.data.kind)
-  ) {
+  if (node.data.kind === "initiate-approval") return <AutomationInitiateApprovalConfig appId={appId} forms={forms} config={node.data.config as InitiateApprovalConfig} schema={selectedSchema} schemaStatus={getSchemaStatus} onRetry={() => onRetryGetSchema?.()} members={members} sourceFieldChoices={sourceFieldChoices} onChange={onInitiateApprovalChange} />;
+  const configKind = workflowConfigKind(node.data.kind);
+  if (configKind === "flow") {
     return (
       <FlowNodeConfig
         members={members}
+        roles={roles}
         node={node}
         onBasicChange={onBasicChange}
         onProcessMemberIdsChange={onProcessMemberIdsChange}
@@ -355,7 +381,7 @@ export function NodeConfigFields({
     );
   }
 
-  if (node.data.kind === "condition") {
+  if (configKind === "condition") {
     return (
       <ConditionNodeConfig
         node={node}
@@ -372,19 +398,15 @@ export function NodeConfigFields({
     );
   }
 
-  if (
-    [
-      "get-one",
-      "get-many",
-      "add-data",
-      "update-data",
-      "delete-data",
-      "http-request",
-    ].includes(node.data.kind)
-  ) {
+  if (configKind === "data") {
     return (
       <DataNodeConfigFields
+        appId={appId}
         forms={forms}
+        getSchemaStatus={getSchemaStatus}
+        onRetryGetSchema={onRetryGetSchema}
+        getSourceOptions={getSourceOptions}
+        onGetFilterModeChange={onGetFilterModeChange}
         getManySourceOptions={getManySourceOptions}
         multipleSourceFieldChoices={multipleSourceFieldChoices}
         node={node}

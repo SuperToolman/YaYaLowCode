@@ -1,7 +1,6 @@
 //! Runtime for approval-process automations.
 //!
-//! Process definitions share the automation graph store, but their lifecycle is deliberately
-//! separate from trigger automations: a process can stop at a human task and resume later.
+//! Human-task business rules for the common persistent execution service.
 
 use axum::{
     Json,
@@ -11,8 +10,8 @@ use axum::{
 use chrono::{DateTime, Utc};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, ConnectionTrait, EntityTrait,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, QueryTrait, TransactionTrait,
 };
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -21,10 +20,10 @@ use uuid::Uuid;
 use crate::{
     infrastructure::entities::{
         automation_flow_entity, automation_flow_version_entity, form_definition_entity,
-        workflow_action_entity, workflow_comment_entity, workflow_instance_entity,
-        workflow_notification_entity, workflow_task_entity,
+        iam_user_entity, iam_user_role_entity, workflow_action_entity, workflow_comment_entity,
+        workflow_instance_entity, workflow_notification_entity, workflow_task_entity,
     },
-    modules::{automations, forms::find_form_definition},
+    modules::forms::find_form_definition,
     platform::{
         api::ApiResponse, authorization, config::load_notification_settings, error::AppError,
         records::RecordRepository, runtime::AppState,
@@ -77,7 +76,8 @@ pub(crate) async fn pause_workflow_record(
         .one(&txn)
         .await?
         .ok_or_else(|| AppError::NotFound("workflow instance not found".to_string()))?;
-    if instance.submitter != user.display_name {
+    ensure_current_instance(&txn, &instance).await?;
+    if instance.submitter_user_id != Some(user.id) {
         return Err(AppError::Forbidden(
             "only the submitter can pause this workflow".to_string(),
         ));
@@ -98,6 +98,7 @@ pub(crate) async fn pause_workflow_record(
         .filter(|value| !value.trim().is_empty()));
     active.updated_at = Set(now.into());
     active.update(&txn).await?;
+    execution::set_run_state(&txn, instance.id, "paused").await?;
     write_action(
         &txn,
         instance.id,
@@ -139,7 +140,8 @@ pub(crate) async fn resume_workflow_record(
         .one(&txn)
         .await?
         .ok_or_else(|| AppError::NotFound("workflow instance not found".to_string()))?;
-    if instance.submitter != user.display_name {
+    ensure_current_instance(&txn, &instance).await?;
+    if instance.submitter_user_id != Some(user.id) {
         return Err(AppError::Forbidden(
             "only the submitter can resume this workflow".to_string(),
         ));
@@ -149,6 +151,11 @@ pub(crate) async fn resume_workflow_record(
             "only paused workflows can be resumed".to_string(),
         ));
     }
+    let mut flow = automation_flow_entity::Entity::find_by_id(instance.process_flow_id)
+        .one(&txn)
+        .await?
+        .ok_or_else(|| AppError::NotFound("process flow not found".into()))?;
+    apply_instance_flow_snapshot(&txn, &mut flow, instance.flow_version).await?;
     let mut active: workflow_instance_entity::ActiveModel = instance.clone().into();
     active.status = Set("running".to_string());
     active.paused_by = Set(None);
@@ -156,6 +163,7 @@ pub(crate) async fn resume_workflow_record(
     active.pause_reason = Set(None);
     active.updated_at = Set(Utc::now().into());
     active.update(&txn).await?;
+    execution::set_run_state(&txn, instance.id, "queued").await?;
     write_action(&txn, instance.id, None, "resume", &user.display_name, None).await?;
     let record = RecordRepository::new(&txn)
         .find(&form_uuid, &record_uuid)
@@ -170,6 +178,12 @@ pub(crate) async fn resume_workflow_record(
     )
     .await?;
     txn.commit().await?;
+    {
+        if let Err(error) = execution::resume_queued(&state, &flow, &instance).await {
+            fail_instance(&state, &instance, &format!("{error:?}")).await?;
+            return Err(error);
+        }
+    }
     Ok(Json(success_response(
         "流程已恢复",
         json!({ "instanceId": instance.instance_uuid }),
@@ -190,17 +204,29 @@ async fn latest_workflow_instance(
         .ok_or_else(|| AppError::NotFound("workflow instance not found".to_string()))
 }
 
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkflowNotificationResponse {
+    pub(crate) id: String, pub(crate) r#type: String, pub(crate) title: String,
+    pub(crate) content: String, pub(crate) app_id: Option<String>,
+    pub(crate) form_uuid: String, pub(crate) record_uuid: String,
+    pub(crate) read_at: Option<String>, pub(crate) created_at: String,
+}
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct WorkflowNotificationListResponse {
+    pub(crate) unread: usize, pub(crate) items: Vec<WorkflowNotificationResponse>,
+}
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkflowNotificationPreferences { pub(crate) in_app_enabled: bool, pub(crate) poll_interval_seconds: u32 }
+
 pub(crate) async fn list_workflow_notifications(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<ApiResponse<Value>>, AppError> {
+) -> Result<Json<ApiResponse<WorkflowNotificationListResponse>>, AppError> {
     let user = authorization::current_user(&headers, &state).await?;
     let items = workflow_notification_entity::Entity::find()
-        .filter(
-            Condition::any()
-                .add(workflow_notification_entity::Column::RecipientUserId.eq(user.id))
-                .add(workflow_notification_entity::Column::Recipient.eq(&user.display_name)),
-        )
+        .filter(workflow_notification_entity::Column::RecipientUserId.eq(user.id))
         .order_by_desc(workflow_notification_entity::Column::CreatedAt)
         .all(&state.db)
         .await?;
@@ -218,18 +244,19 @@ pub(crate) async fn list_workflow_notifications(
         .collect::<HashMap<_, _>>();
     Ok(Json(success_response(
         "获取流程通知成功",
-        json!({ "unread": unread, "items": items.into_iter().map(|item| json!({ "id": item.notification_uuid, "type": item.notification_type, "title": item.title, "content": item.content, "appId": app_ids.get(&item.form_uuid), "formUuid": item.form_uuid, "recordUuid": item.record_uuid, "readAt": item.read_at, "createdAt": item.created_at })).collect::<Vec<_>>() }),
+        WorkflowNotificationListResponse { unread, items: items.into_iter().map(|item| WorkflowNotificationResponse {
+            id: item.notification_uuid, r#type: item.notification_type, title: item.title, content: item.content,
+            app_id: app_ids.get(&item.form_uuid).cloned(), form_uuid: item.form_uuid, record_uuid: item.record_uuid,
+            read_at: item.read_at.map(|time| time.to_rfc3339()), created_at: item.created_at.to_rfc3339(),
+        }).collect() },
     )))
 }
 
-pub(crate) async fn get_notification_preferences() -> Json<ApiResponse<Value>> {
+pub(crate) async fn get_notification_preferences() -> Json<ApiResponse<WorkflowNotificationPreferences>> {
     let settings = load_notification_settings().unwrap_or_default();
     Json(success_response(
         "notification preferences loaded",
-        json!({
-            "inAppEnabled": settings.in_app_enabled,
-            "pollIntervalSeconds": settings.poll_interval_seconds,
-        }),
+        WorkflowNotificationPreferences { in_app_enabled: settings.in_app_enabled, poll_interval_seconds: settings.poll_interval_seconds },
     ))
 }
 
@@ -244,9 +271,7 @@ pub(crate) async fn read_workflow_notification(
         .one(&state.db)
         .await?
         .ok_or_else(|| AppError::NotFound("workflow notification not found".to_string()))?;
-    if notification.recipient_user_id != Some(user.id)
-        && notification.recipient != user.display_name
-    {
+    if notification.recipient_user_id != Some(user.id) {
         return Err(AppError::Forbidden(
             "notification belongs to another user".to_string(),
         ));
@@ -257,11 +282,33 @@ pub(crate) async fn read_workflow_notification(
     Ok(Json(success_response("流程通知已读", json!({}))))
 }
 
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkflowCommentResponse {
+    pub(crate) id: String,
+    pub(crate) author: String,
+    pub(crate) content: String,
+    pub(crate) created_at: String,
+}
+impl From<workflow_comment_entity::Model> for WorkflowCommentResponse {
+    fn from(comment: workflow_comment_entity::Model) -> Self {
+        Self { id: comment.comment_uuid, author: comment.author, content: comment.content, created_at: comment.created_at.to_rfc3339() }
+    }
+}
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct WorkflowCommentListResponse { pub(crate) items: Vec<WorkflowCommentResponse> }
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkflowActionResponse {
+    pub(crate) action: String, pub(crate) operator: String,
+    pub(crate) comment: Option<String>, pub(crate) created_at: String,
+}
+
 pub(crate) async fn list_workflow_comments(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((form_uuid, record_uuid)): Path<(String, String)>,
-) -> Result<Json<ApiResponse<Value>>, AppError> {
+) -> Result<Json<ApiResponse<WorkflowCommentListResponse>>, AppError> {
     ensure_workflow_record_display_permission(&headers, &state, &form_uuid).await?;
     let comments = workflow_comment_entity::Entity::find()
         .filter(workflow_comment_entity::Column::FormUuid.eq(form_uuid))
@@ -271,7 +318,7 @@ pub(crate) async fn list_workflow_comments(
         .await?;
     Ok(Json(success_response(
         "获取流程评论成功",
-        json!({ "items": comments.into_iter().map(|comment| json!({ "id": comment.comment_uuid, "author": comment.author, "content": comment.content, "createdAt": comment.created_at })).collect::<Vec<_>>() }),
+        WorkflowCommentListResponse { items: comments.into_iter().map(Into::into).collect() },
     )))
 }
 
@@ -280,7 +327,7 @@ pub(crate) async fn create_workflow_comment(
     headers: HeaderMap,
     Path((form_uuid, record_uuid)): Path<(String, String)>,
     Json(payload): Json<WorkflowCommentRequest>,
-) -> Result<Json<ApiResponse<Value>>, AppError> {
+) -> Result<Json<ApiResponse<WorkflowCommentResponse>>, AppError> {
     let user = authorization::current_user(&headers, &state).await?;
     let definition = find_form_definition(&state.db, &form_uuid).await?;
     ensure_workflow_form(&definition.form_type)?;
@@ -303,7 +350,7 @@ pub(crate) async fn create_workflow_comment(
         )),
         form_uuid: Set(form_uuid),
         record_uuid: Set(record_uuid),
-        author_user_id: Set(user.id),
+        author_user_id: Set(Some(user.id)),
         author: Set(user.display_name),
         content: Set(content.to_string()),
         created_at: Set(now.into()),
@@ -312,7 +359,7 @@ pub(crate) async fn create_workflow_comment(
     .await?;
     Ok(Json(success_response(
         "流程评论已发布",
-        json!({ "id": comment.comment_uuid, "author": comment.author, "content": comment.content, "createdAt": comment.created_at }),
+        WorkflowCommentResponse::from(comment),
     )))
 }
 
@@ -354,7 +401,7 @@ pub(crate) async fn list_workflow_tasks(
     let instances = if scope == "created" {
         workflow_instance_entity::Entity::find()
             .filter(workflow_instance_entity::Column::ProcessFlowId.is_in(flow_ids))
-            .filter(workflow_instance_entity::Column::Submitter.eq(&user.display_name))
+            .filter(workflow_instance_entity::Column::SubmitterUserId.eq(user.id))
             .order_by_desc(workflow_instance_entity::Column::StartedAt)
             .all(&state.db)
             .await?
@@ -369,11 +416,7 @@ pub(crate) async fn list_workflow_tasks(
                         .into_query(),
                 ),
             )
-            .filter(
-                Condition::any()
-                    .add(workflow_task_entity::Column::AssigneeUserId.eq(user.id))
-                    .add(workflow_task_entity::Column::Assignee.eq(&user.display_name)),
-            );
+            .filter(workflow_task_entity::Column::AssigneeUserId.eq(user.id));
         task_query = match scope {
             "todo" => task_query
                 .filter(workflow_task_entity::Column::Status.eq("pending"))
@@ -406,7 +449,7 @@ pub(crate) async fn list_workflow_tasks(
             let instance = instances_by_id.get(&task.instance_id)?;
             if scope == "todo"
                 && (!matches!(instance.status.as_str(), "running" | "paused")
-                    || instance.current_node_key.as_deref() != Some(task.node_key.as_str()))
+                    || (task.branch_token_id.is_none() && instance.current_node_key.as_deref() != Some(task.node_key.as_str())))
             {
                 return None;
             }
@@ -487,7 +530,7 @@ pub(crate) async fn submit_workflow_record(
     let mut flow = process_flow(&state, &form_uuid).await?;
     if flow.status != "enabled" {
         return Err(AppError::BadRequest(
-            "workflow definition is disabled; new records cannot be submitted".to_string(),
+            "不存在正在启动的流程，请先在流程编排页面启动该流程后再提交".to_string(),
         ));
     }
     let flow_version = flow.current_version;
@@ -520,6 +563,7 @@ pub(crate) async fn submit_workflow_record(
         status: Set("running".to_string()),
         current_node_key: Set(Some("trigger-1".to_string())),
         submitter: Set(user.display_name.clone()),
+        submitter_user_id: Set(Some(user.id)),
         started_at: Set(now.into()),
         completed_at: Set(None),
         paused_by: Set(None),
@@ -540,9 +584,12 @@ pub(crate) async fn submit_workflow_record(
         "表单提交时",
     )
     .await?;
+    let run_id = execution::start_in(&txn, &flow, &instance, &updated.record_data).await?;
     txn.commit().await?;
-    if let Err(error) = advance(&state, &flow, &instance, &updated.record_data).await {
-        fail_instance(&state, &instance, "workflow advancement failed").await?;
+    if let Err(error) =
+        crate::modules::automations::execution::drive_execution(&state, run_id).await
+    {
+        fail_instance(&state, &instance, &format!("{error:?}")).await?;
         return Err(error);
     }
     Ok(Json(success_response(
@@ -551,11 +598,20 @@ pub(crate) async fn submit_workflow_record(
     )))
 }
 
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkflowRuntimeResponse {
+    pub(crate) run_id: Option<String>,
+    pub(crate) instance: Option<Value>,
+    pub(crate) tasks: Vec<Value>,
+    pub(crate) actions: Vec<WorkflowActionResponse>,
+}
+
 pub(crate) async fn get_workflow_record_runtime(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((form_uuid, record_uuid)): Path<(String, String)>,
-) -> Result<Json<ApiResponse<Value>>, AppError> {
+) -> Result<Json<ApiResponse<WorkflowRuntimeResponse>>, AppError> {
     ensure_workflow_record_display_permission(&headers, &state, &form_uuid).await?;
     let instance = workflow_instance_entity::Entity::find()
         .filter(workflow_instance_entity::Column::FormUuid.eq(form_uuid))
@@ -566,7 +622,12 @@ pub(crate) async fn get_workflow_record_runtime(
     let Some(instance) = instance else {
         return Ok(Json(success_response(
             "流程运行态为空",
-            json!({ "instance": null, "tasks": [], "actions": [] }),
+            WorkflowRuntimeResponse {
+                run_id: None,
+                instance: None,
+                tasks: vec![],
+                actions: vec![],
+            },
         )));
     };
     let tasks = workflow_task_entity::Entity::find()
@@ -579,13 +640,21 @@ pub(crate) async fn get_workflow_record_runtime(
         .order_by_asc(workflow_action_entity::Column::CreatedAt)
         .all(&state.db)
         .await?;
+    let run = crate::infrastructure::entities::automation_run_entity::Entity::find()
+        .filter(
+            crate::infrastructure::entities::automation_run_entity::Column::WorkflowInstanceId
+                .eq(instance.id),
+        )
+        .one(&state.db)
+        .await?;
     Ok(Json(success_response(
         "获取流程运行态成功",
-        json!({
-            "instance": { "id": instance.instance_uuid, "status": instance.status, "currentNodeKey": instance.current_node_key, "flowVersion": instance.flow_version, "submitter": instance.submitter, "startedAt": instance.started_at, "completedAt": instance.completed_at },
-            "tasks": tasks.into_iter().map(|task| json!({ "id": task.task_uuid, "nodeKey": task.node_key, "nodeLabel": task.node_label, "taskType": task.task_type, "assignee": task.assignee, "status": task.status, "comment": task.comment, "completedBy": task.completed_by, "completedAt": task.completed_at })).collect::<Vec<_>>(),
-            "actions": actions.into_iter().map(|action| json!({ "action": action.action, "operator": action.operator, "comment": action.comment, "createdAt": action.created_at })).collect::<Vec<_>>(),
-        }),
+        WorkflowRuntimeResponse {
+            run_id: run.map(|run| run.run_uuid),
+            instance: Some(json!({ "id": instance.instance_uuid, "status": instance.status, "currentNodeKey": instance.current_node_key, "flowVersion": instance.flow_version, "submitter": instance.submitter, "startedAt": instance.started_at, "completedAt": instance.completed_at })),
+            tasks: tasks.into_iter().map(|task| json!({ "id": task.task_uuid, "nodeKey": task.node_key, "nodeLabel": task.node_label, "taskType": task.task_type, "assignee": task.assignee, "status": task.status, "comment": task.comment, "completedBy": task.completed_by, "completedAt": task.completed_at })).collect(),
+            actions: actions.into_iter().map(|action| WorkflowActionResponse { action: action.action, operator: action.operator, comment: action.comment, created_at: action.created_at.to_rfc3339() }).collect(),
+        },
     )))
 }
 
@@ -653,7 +722,17 @@ pub(crate) async fn approve_workflow_task(
     Path(task_uuid): Path<String>,
     Json(payload): Json<WorkflowTaskActionRequest>,
 ) -> Result<Json<ApiResponse<Value>>, AppError> {
-    complete_task(state, headers, task_uuid, payload.comment, true, None, payload.card_version, payload.message_id).await
+    complete_task(
+        state,
+        headers,
+        task_uuid,
+        payload.comment,
+        true,
+        None,
+        payload.card_version,
+        payload.message_id,
+    )
+    .await
 }
 
 pub(crate) async fn reject_workflow_task(
@@ -662,7 +741,17 @@ pub(crate) async fn reject_workflow_task(
     Path(task_uuid): Path<String>,
     Json(payload): Json<WorkflowTaskActionRequest>,
 ) -> Result<Json<ApiResponse<Value>>, AppError> {
-    complete_task(state, headers, task_uuid, payload.comment, false, None, payload.card_version, payload.message_id).await
+    complete_task(
+        state,
+        headers,
+        task_uuid,
+        payload.comment,
+        false,
+        None,
+        payload.card_version,
+        payload.message_id,
+    )
+    .await
 }
 
 pub(crate) async fn complete_workflow_execution(
@@ -710,21 +799,30 @@ async fn complete_task(
         .one(&txn)
         .await?
         .ok_or_else(|| AppError::NotFound("workflow task not found".to_string()))?;
-    if let Some(message_id) = message_id.as_deref() {
-        let message_id = Uuid::parse_str(message_id).map_err(|_| AppError::BadRequest("invalid messageId".into()))?;
+    let mut bound_message_id = None;
+    if let Some(message_uuid) = message_id.as_deref() {
         let binding = txn.query_one_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DbBackend::Postgres,
-            "SELECT b.business_id,b.business_type,b.status,(m.payload_json->>'version')::int AS card_version FROM im_business_message_bindings b JOIN im_messages m ON m.id=b.message_id WHERE b.message_id=$1",
-            vec![sea_orm::Value::Uuid(Some(message_id))],
+            "SELECT b.message_id,b.business_id,b.business_type,b.status,(m.payload_json->>'version')::int AS card_version FROM im_business_message_bindings b JOIN im_messages m ON m.id=b.message_id WHERE m.message_uuid=$1",
+            vec![message_uuid.into()],
         )).await?;
-        let Some(binding) = binding else { return Err(AppError::BadRequest("审批卡片绑定不存在".into())); };
+        let Some(binding) = binding else {
+            return Err(AppError::BadRequest("审批卡片绑定不存在".into()));
+        };
+        bound_message_id = Some(binding.try_get::<Uuid>("", "message_id")?);
         let business_id: Uuid = binding.try_get("", "business_id")?;
         let business_type: String = binding.try_get("", "business_type")?;
         let status: String = binding.try_get("", "status")?;
         let stored_version: Option<i32> = binding.try_get("", "card_version").ok();
-        if business_type != "approval" || business_id != task.id || status != "active" || card_version.is_none() || stored_version.is_none() || card_version != stored_version {
+        if business_type != "approval"
+            || business_id != task.id
+            || status != "active"
+            || card_version.is_none()
+            || stored_version.is_none()
+            || card_version != stored_version
+        {
             state.im_metrics.inc("im_approval_action_conflict_count");
-            tracing::warn!(userId=%user.id, taskUuid=%task.task_uuid, messageId=%message_id, "approval card binding conflict");
+            tracing::warn!(userId=%user.id, taskUuid=%task.task_uuid, messageId=%message_uuid, "approval card binding conflict");
             return Err(AppError::BadRequest("审批卡片已失效或版本不匹配".into()));
         }
     }
@@ -735,20 +833,39 @@ async fn complete_task(
             "workflow task is already completed".to_string(),
         ));
     }
-    if task
-        .assignee_user_id
-        .map(|id| id != user.id)
-        .unwrap_or(task.assignee != user.display_name)
-    {
+    ensure_current_instance(&txn, &instance).await?;
+    if task.assignee_user_id != Some(user.id) {
         return Err(AppError::Forbidden(
             "workflow task is assigned to another user".to_string(),
         ));
     }
-    if instance.status != "running"
-        || instance.current_node_key.as_deref() != Some(task.node_key.as_str())
-    {
+    if instance.status != "running" || task.branch_token_id.is_none() {
         return Err(AppError::BadRequest(
             "workflow is paused or has advanced from this node".to_string(),
+        ));
+    }
+    let common_run = execution::run_id(&txn, instance.id).await?;
+    let row = txn
+        .query_one_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DbBackend::Postgres,
+            "SELECT status FROM automation_flow_runs WHERE id=$1 FOR UPDATE",
+            vec![common_run.into()],
+        ))
+        .await?;
+    if !row.is_some_and(|r| {
+        r.try_get::<String>("", "status")
+            .is_ok_and(|s| matches!(s.as_str(), "running" | "waiting" | "queued"))
+    }) {
+        return Err(AppError::BadRequest(
+            "执行暂停或外部结果待核实，暂不能处理人工任务".into(),
+        ));
+    }
+    let cursor = txn.query_one_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres,
+        "SELECT 1 FROM automation_execution_tokens WHERE id=$1 AND instance_id=$2 AND node_key=$3 AND status='waiting'",
+        vec![task.branch_token_id.unwrap().into(), instance.id.into(), task.node_key.clone().into()])).await?;
+    if cursor.is_none() {
+        return Err(AppError::BadRequest(
+            "workflow task cursor is no longer waiting".into(),
         ));
     }
     if data.is_some() && task.task_type != "execution"
@@ -758,15 +875,13 @@ async fn complete_task(
             "task type does not support this action".to_string(),
         ));
     }
-    let mut flow = if approved {
+    let mut flow = {
         let mut flow = automation_flow_entity::Entity::find_by_id(instance.process_flow_id)
             .one(&txn)
             .await?
             .ok_or_else(|| AppError::NotFound("process flow not found".to_string()))?;
         apply_instance_flow_snapshot(&txn, &mut flow, instance.flow_version).await?;
         Some(flow)
-    } else {
-        None
     };
     if let Some(patch) = data {
         let flow = flow.as_ref().expect("approved tasks load their flow");
@@ -803,12 +918,20 @@ async fn complete_task(
     active.completed_at = Set(Some(now.into()));
     active.updated_at = Set(now.into());
     active.update(&txn).await?;
-    if let Some(message_id) = message_id.as_deref().and_then(|value| Uuid::parse_str(value).ok()) {
+    if let Some(message_id) = bound_message_id {
         txn.execute_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DbBackend::Postgres,
             "UPDATE im_business_message_bindings SET status=$2 WHERE message_id=$1",
-            vec![sea_orm::Value::Uuid(Some(message_id)), sea_orm::Value::String(Some(if approved { "approved".into() } else { "rejected".into() }))],
-        )).await?;
+            vec![
+                sea_orm::Value::Uuid(Some(message_id)),
+                sea_orm::Value::String(Some(if approved {
+                    "approved".into()
+                } else {
+                    "rejected".into()
+                })),
+            ],
+        ))
+        .await?;
     }
     write_action(
         &txn,
@@ -826,14 +949,8 @@ async fn complete_task(
     )
     .await?;
     if !approved {
-        skip_pending_tasks(
-            &txn,
-            &instance,
-            Some(&task.node_key),
-            "其他审批人已驳回",
-            now,
-        )
-        .await?;
+        execution::complete_human_log(&txn, &task, "rejected", &user.display_name).await?;
+        skip_pending_tasks(&txn, &instance, None, "其他审批人已驳回", now, None).await?;
         complete_instance(
             &txn,
             &instance,
@@ -844,15 +961,8 @@ async fn complete_task(
             &user.display_name,
         )
         .await?;
+        enqueue_result_notifications(&txn, &task, &instance, user.id, "你已拒绝该审批任务").await?;
         txn.commit().await?;
-        let recipients = workflow_result_recipients(&state, &task, &instance, user.id).await?;
-        for recipient in recipients {
-            crate::modules::communication::create_system_notification_message(
-                &state, recipient, Uuid::new_v4(), &Uuid::new_v4().to_string(),
-                "审批结果", "你已拒绝该审批任务", "approval_result", Some(task.id),
-                Some(&task.task_uuid), instance.id, &instance.form_uuid, &instance.record_uuid,
-            ).await?;
-        }
         return Ok(Json(success_response(
             "流程已拒绝",
             json!({ "instanceId": instance.instance_uuid }),
@@ -877,17 +987,27 @@ async fn complete_task(
             Some(&task.node_key),
             "其他审批人已同意",
             now,
+            task.branch_token_id,
         )
         .await?;
     }
-    let pending = workflow_task_entity::Entity::find()
+    let mut pending_query = workflow_task_entity::Entity::find()
         .filter(workflow_task_entity::Column::InstanceId.eq(instance.id))
         .filter(workflow_task_entity::Column::NodeKey.eq(task.node_key.clone()))
-        .filter(workflow_task_entity::Column::Status.eq("pending"))
-        .count(&txn)
-        .await?;
+        .filter(workflow_task_entity::Column::Status.eq("pending"));
+    if let Some(token) = task.branch_token_id {
+        pending_query = pending_query.filter(workflow_task_entity::Column::BranchTokenId.eq(token));
+    }
+    let pending = pending_query.count(&txn).await?;
     let next_data = if pending == 0 {
-        if !claim_node_advance(&txn, &instance, &task.node_key).await? {
+        execution::complete_human_log(&txn, &task, "success", &user.display_name).await?;
+        let token = task
+            .branch_token_id
+            .ok_or_else(|| AppError::BadRequest("obsolete workflow task".into()))?;
+        let claimed =
+            execution::queue_human_completion(&txn, &flow, &instance, token, &task.node_key)
+                .await?;
+        if !claimed {
             return Err(AppError::BadRequest(
                 "workflow has already advanced from this node".to_string(),
             ));
@@ -901,22 +1021,28 @@ async fn complete_task(
     } else {
         None
     };
+    enqueue_result_notifications(
+        &txn,
+        &task,
+        &instance,
+        user.id,
+        if task.task_type == "execution" {
+            "执行任务已完成"
+        } else {
+            "你已同意该审批任务"
+        },
+    )
+    .await?;
     txn.commit().await?;
     if let Some(data) = next_data {
-        if let Err(error) = advance_from(&state, &flow, &instance, &data, &task.node_key).await {
-            fail_instance(&state, &instance, "workflow advancement failed").await?;
+        let token = task
+            .branch_token_id
+            .ok_or_else(|| AppError::BadRequest("obsolete workflow task".into()))?;
+        let result = execution::resume_branch(&state, &flow, &instance, token, &data).await;
+        if let Err(error) = result {
+            fail_instance(&state, &instance, &format!("{error:?}")).await?;
             return Err(error);
         }
-    }
-    let recipients = workflow_result_recipients(&state, &task, &instance, user.id).await?;
-    for recipient in recipients {
-        crate::modules::communication::create_system_notification_message(
-            &state, recipient, Uuid::new_v4(), &Uuid::new_v4().to_string(),
-            "审批结果",
-            if task.task_type == "execution" { "执行任务已完成" } else { "你已同意该审批任务" },
-            "approval_result", Some(task.id), Some(&task.task_uuid), instance.id,
-            &instance.form_uuid, &instance.record_uuid,
-        ).await?;
     }
     Ok(Json(success_response(
         if task.task_type == "execution" {
@@ -928,39 +1054,75 @@ async fn complete_task(
     )))
 }
 
-async fn workflow_result_recipients(
-    state: &AppState,
+async fn workflow_result_recipients<C: ConnectionTrait>(
+    db: &C,
     task: &workflow_task_entity::Model,
     instance: &workflow_instance_entity::Model,
     operator_id: Uuid,
 ) -> Result<Vec<Uuid>, AppError> {
     let mut ids = HashSet::new();
     ids.insert(operator_id);
-    if let Some(id) = task.assignee_user_id { ids.insert(id); }
+    if let Some(id) = instance.submitter_user_id {
+        ids.insert(id);
+    }
+    if let Some(id) = task.assignee_user_id {
+        ids.insert(id);
+    }
     let notifications = workflow_notification_entity::Entity::find()
         .filter(workflow_notification_entity::Column::InstanceId.eq(instance.id))
-        .all(&state.db).await?;
+        .all(db)
+        .await?;
     for notice in notifications {
-        if let Some(id) = notice.recipient_user_id { ids.insert(id); }
+        if let Some(id) = notice.recipient_user_id {
+            ids.insert(id);
+        }
     }
     let flow = automation_flow_entity::Entity::find_by_id(instance.process_flow_id)
-        .one(&state.db).await?;
-    if let Some(flow) = flow {
-        let node = flow.nodes_json.as_array().and_then(|nodes| nodes.iter().find(|node|
-            node.get("id").and_then(Value::as_str) == Some(task.node_key.as_str())));
-        for pointer in ["/data/config/assigneeIds", "/data/config/assignees", "/data/config/recipientIds", "/data/config/recipients", "/data/config/executorIds", "/data/config/executors"] {
-            if let Some(values) = node.and_then(|n| n.pointer(pointer)).and_then(Value::as_array) {
+        .one(db)
+        .await?;
+    if let Some(mut flow) = flow {
+        apply_instance_flow_snapshot(db, &mut flow, instance.flow_version).await?;
+        let node = flow.nodes_json.as_array().and_then(|nodes| {
+            nodes
+                .iter()
+                .find(|node| node.get("id").and_then(Value::as_str) == Some(task.node_key.as_str()))
+        });
+        for pointer in ["/data/config/assigneeIds", "/data/config/recipientIds"] {
+            if let Some(values) = node
+                .and_then(|n| n.pointer(pointer))
+                .and_then(Value::as_array)
+            {
                 for value in values.iter().filter_map(Value::as_str) {
-                    if let Ok(id) = Uuid::parse_str(value) { ids.insert(id); }
+                    if let Ok(id) = Uuid::parse_str(value) {
+                        ids.insert(id);
+                    }
+                }
+            }
+        }
+        if let Some(role_ids) = node
+            .and_then(|n| n.pointer("/data/config/roleIds"))
+            .and_then(Value::as_array)
+        {
+            let role_recipients = role_assignees_in(db, Some(role_ids)).await?;
+            for value in role_recipients {
+                if let Ok(id) = Uuid::parse_str(&value) {
+                    ids.insert(id);
                 }
             }
         }
     }
     let users = crate::infrastructure::entities::iam_user_entity::Entity::find()
-        .filter(crate::infrastructure::entities::iam_user_entity::Column::Id.is_in(ids.iter().copied().collect::<Vec<_>>()))
+        .filter(
+            crate::infrastructure::entities::iam_user_entity::Column::Id
+                .is_in(ids.iter().copied().collect::<Vec<_>>()),
+        )
         .filter(crate::infrastructure::entities::iam_user_entity::Column::Status.eq("active"))
-        .all(&state.db).await?;
-    let valid = users.into_iter().map(|user| user.id).collect::<HashSet<_>>();
+        .all(db)
+        .await?;
+    let valid = users
+        .into_iter()
+        .map(|user| user.id)
+        .collect::<HashSet<_>>();
     Ok(ids.into_iter().filter(|id| valid.contains(id)).collect())
 }
 
@@ -1005,37 +1167,13 @@ fn merge_execution_data(
     Ok(next)
 }
 
-/// Atomically claims the current node before progressing it. This is the optimistic
-/// concurrency guard for multi-worker deployments: only one completion request can
-/// move an instance past a given node, even when "any" approvers act simultaneously.
-async fn claim_node_advance<C: ConnectionTrait>(
-    db: &C,
-    instance: &workflow_instance_entity::Model,
-    node_key: &str,
-) -> Result<bool, AppError> {
-    let result = workflow_instance_entity::Entity::update_many()
-        .col_expr(
-            workflow_instance_entity::Column::Status,
-            Expr::value("advancing"),
-        )
-        .col_expr(
-            workflow_instance_entity::Column::UpdatedAt,
-            Expr::value(Utc::now()),
-        )
-        .filter(workflow_instance_entity::Column::Id.eq(instance.id))
-        .filter(workflow_instance_entity::Column::Status.eq("running"))
-        .filter(workflow_instance_entity::Column::CurrentNodeKey.eq(node_key))
-        .exec(db)
-        .await?;
-    Ok(result.rows_affected == 1)
-}
-
-async fn skip_pending_tasks<C: ConnectionTrait>(
+pub(crate) async fn skip_pending_tasks<C: ConnectionTrait>(
     db: &C,
     instance: &workflow_instance_entity::Model,
     node_key: Option<&str>,
     reason: &str,
     now: DateTime<Utc>,
+    branch_token_id: Option<Uuid>,
 ) -> Result<(), AppError> {
     let mut query = workflow_task_entity::Entity::update_many()
         .col_expr(workflow_task_entity::Column::Status, Expr::value("skipped"))
@@ -1057,334 +1195,50 @@ async fn skip_pending_tasks<C: ConnectionTrait>(
     if let Some(node_key) = node_key {
         query = query.filter(workflow_task_entity::Column::NodeKey.eq(node_key));
     }
+    if let Some(token) = branch_token_id {
+        query = query.filter(workflow_task_entity::Column::BranchTokenId.eq(token));
+    }
     query.exec(db).await?;
     Ok(())
 }
 
-async fn advance(
+pub(crate) async fn role_assignees(
     state: &AppState,
-    flow: &automation_flow_entity::Model,
-    instance: &workflow_instance_entity::Model,
-    data: &Value,
-) -> Result<(), AppError> {
-    advance_from(state, flow, instance, data, "trigger-1").await
+    role_ids: Option<&Vec<Value>>,
+) -> Result<Vec<String>, AppError> {
+    role_assignees_in(&state.db, role_ids).await
 }
-async fn advance_from(
-    state: &AppState,
-    flow: &automation_flow_entity::Model,
-    instance: &workflow_instance_entity::Model,
-    data: &Value,
-    node_key: &str,
-) -> Result<(), AppError> {
-    let nodes = flow.nodes_json.as_array().cloned().unwrap_or_default();
-    let edges = flow.edges_json.as_array().cloned().unwrap_or_default();
-    let node_by_id = nodes
-        .iter()
-        .filter_map(|node| node.get("id").and_then(Value::as_str).map(|id| (id, node)))
-        .collect::<HashMap<_, _>>();
-    let mut current = next_node(&edges, node_key, None).unwrap_or_else(|| node_key.to_string());
-    let mut outputs = HashMap::from([("trigger-1".to_string(), data.clone())]);
-    let mut seen = HashSet::new();
-    for _ in 0..128 {
-        if !seen.insert(current.clone()) {
-            return fail_instance(state, instance, "workflow graph contains a cycle").await;
-        }
-        let Some(node) = node_by_id.get(current.as_str()) else {
-            return finish_instance(
-                state,
-                instance,
-                "completed",
-                "approved",
-                "completed",
-                "已结束",
-                "系统",
-            )
-            .await;
-        };
-        let kind = node
-            .pointer("/data/kind")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        let label = node
-            .pointer("/data/label")
-            .and_then(Value::as_str)
-            .unwrap_or("流程节点");
-        match kind {
-            "trigger" => {
-                current = next_node(&edges, &current, None)
-                    .unwrap_or_else(|| return_complete(state, instance))
-            }
-            "condition" => {
-                let next = select_condition_edge(&edges, &current, node, data);
-                let Some(next) = next else {
-                    return fail_instance(state, instance, "no condition branch matched").await;
-                };
-                current = next;
-            }
-            "add-data" | "update-data" | "get-one" | "get-many" | "delete-data"
-            | "http-request" => {
-                let config = node
-                    .pointer("/data/config")
-                    .cloned()
-                    .unwrap_or_else(|| json!({}));
-                automations::execute_process_automation_node(
-                    &state.db,
-                    flow,
-                    &current,
-                    kind,
-                    &config,
-                    &mut outputs,
-                    "系统",
-                )
-                .await?;
-                current = next_node(&edges, &current, None)
-                    .unwrap_or_else(|| return_complete(state, instance));
-            }
-            "approval" | "executor" => {
-                let assignees = node
-                    .pointer("/data/config/assigneeIds")
-                    .or_else(|| node.pointer("/data/config/assignees"))
-                    .and_then(Value::as_array)
-                    .map(|items| {
-                        items
-                            .iter()
-                            .filter_map(Value::as_str)
-                            .filter(|v| !v.trim().is_empty())
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
-                if assignees.is_empty() {
-                    return fail_instance(state, instance, "process node has no assignee").await;
-                }
-                for assignee in assignees {
-                    create_task(
-                        state,
-                        instance,
-                        &current,
-                        label,
-                        if kind == "approval" {
-                            "approval"
-                        } else {
-                            "execution"
-                        },
-                        assignee,
-                    )
-                    .await?;
-                }
-                set_instance_node(state, instance, &current).await?;
-                let status = if kind == "approval" {
-                    "reviewing"
-                } else {
-                    "reviewing"
-                };
-                update_record_state(
-                    &state.db,
-                    &RecordRepository::new(&state.db)
-                        .find(&instance.form_uuid, &instance.record_uuid)
-                        .await?,
-                    "系统",
-                    status,
-                    "running",
-                    label,
-                )
-                .await?;
-                return Ok(());
-            }
-            "copy" => {
-                for recipient in node
-                    .pointer("/data/config/recipientIds")
-                    .or_else(|| node.pointer("/data/config/recipients"))
-                    .and_then(Value::as_array)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Value::as_str)
-                {
-                    create_task(state, instance, &current, label, "copy", recipient).await?;
-                }
-                current = next_node(&edges, &current, None)
-                    .unwrap_or_else(|| return_complete(state, instance));
-            }
-            "end" => {
-                return finish_instance(
-                    state,
-                    instance,
-                    "completed",
-                    "approved",
-                    "completed",
-                    "已结束",
-                    "系统",
-                )
-                .await;
-            }
-            _ => return fail_instance(state, instance, "unsupported process node kind").await,
-        }
-    }
-    fail_instance(state, instance, "process graph traversal exceeded limit").await
-}
-fn return_complete(_state: &AppState, _instance: &workflow_instance_entity::Model) -> String {
-    "__end__".to_string()
-}
-fn next_node(edges: &[Value], source: &str, _data: Option<&Value>) -> Option<String> {
-    edges
-        .iter()
-        .find(|edge| edge.get("source").and_then(Value::as_str) == Some(source))
-        .and_then(|edge| edge.get("target"))
-        .and_then(Value::as_str)
-        .map(ToString::to_string)
-}
-
-fn select_condition_edge(
-    edges: &[Value],
-    source: &str,
-    node: &Value,
-    data: &Value,
-) -> Option<String> {
-    let branches = node.pointer("/data/config/branches")?.as_array()?;
-    let mut ordered = branches.iter().collect::<Vec<_>>();
-    ordered.sort_by_key(|branch| branch.get("priority").and_then(Value::as_i64).unwrap_or(0));
-    let branch_id = ordered
+async fn role_assignees_in<C: ConnectionTrait>(
+    db: &C,
+    role_ids: Option<&Vec<Value>>,
+) -> Result<Vec<String>, AppError> {
+    let ids = role_ids
         .into_iter()
-        .find(|branch| workflow_condition_matches(branch, data))?
-        .get("id")?
-        .as_str()?;
-    let handle = format!("condition-branch:{branch_id}");
-    edges
-        .iter()
-        .find(|edge| {
-            edge.get("source").and_then(Value::as_str) == Some(source)
-                && edge.get("sourceHandle").and_then(Value::as_str) == Some(handle.as_str())
-        })
-        .and_then(|edge| edge.get("target"))
-        .and_then(Value::as_str)
-        .map(ToString::to_string)
-}
-
-fn workflow_condition_matches(branch: &Value, data: &Value) -> bool {
-    match branch.get("mode").and_then(Value::as_str).unwrap_or("all") {
-        "all" => true,
-        "expression" => branch
-            .get("expression")
-            .and_then(Value::as_str)
-            .map(|expression| simple_condition_expression(expression, data))
-            .unwrap_or(false),
-        "rules" => branch
-            .get("rules")
-            .and_then(Value::as_array)
-            .map(|rules| workflow_condition_rule_group(rules, None, data))
-            .unwrap_or(false),
-        _ => false,
-    }
-}
-
-fn simple_condition_rule(rule: &Value, data: &Value) -> bool {
-    let field = rule
-        .get("fieldKey")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let actual = data.get(field).map(condition_scalar).unwrap_or_default();
-    let expected = if rule.get("valueType").and_then(Value::as_str) == Some("field") {
-        rule.get("sourceFieldKey")
-            .and_then(Value::as_str)
-            .and_then(|key| data.get(key))
-            .map(condition_scalar)
-            .unwrap_or_default()
-    } else {
-        rule.get("rawValue")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string()
-    };
-    match rule.get("operator").and_then(Value::as_str).unwrap_or("eq") {
-        "hasValue" => !actual.trim().is_empty(),
-        "noValue" => actual.trim().is_empty(),
-        "neq" => actual != expected,
-        "inAny" => expected
-            .split(',')
-            .map(str::trim)
-            .any(|value| value == actual),
-        "notInAny" => expected
-            .split(',')
-            .map(str::trim)
-            .all(|value| value != actual),
-        _ => actual == expected,
-    }
-}
-
-fn workflow_condition_rule_group(rules: &[Value], parent_id: Option<&str>, data: &Value) -> bool {
-    let siblings = rules
-        .iter()
-        .filter(|rule| rule.get("parentId").and_then(Value::as_str) == parent_id)
+        .flatten()
+        .filter_map(Value::as_str)
+        .filter_map(|id| Uuid::parse_str(id).ok())
         .collect::<Vec<_>>();
-    if siblings.is_empty() {
-        return true;
+    if ids.is_empty() {
+        return Ok(Vec::new());
     }
-    let logical_operator = siblings[0]
-        .get("logicalOperator")
-        .and_then(Value::as_str)
-        .unwrap_or("and");
-    siblings
+    let bindings = iam_user_role_entity::Entity::find()
+        .filter(iam_user_role_entity::Column::RoleId.is_in(ids))
+        .all(db)
+        .await?;
+    let user_ids = bindings
         .into_iter()
-        .enumerate()
-        .fold(true, |result, (index, rule)| {
-            let rule_id = rule.get("id").and_then(Value::as_str);
-            let first_child = rule_id.and_then(|id| {
-                rules
-                    .iter()
-                    .find(|candidate| candidate.get("parentId").and_then(Value::as_str) == Some(id))
-            });
-            let matches = if rule.get("isGroup").and_then(Value::as_bool) == Some(true) {
-                workflow_condition_rule_group(rules, rule_id, data)
-            } else if let Some(child) = first_child {
-                let children_match = workflow_condition_rule_group(rules, rule_id, data);
-                if child.get("logicalOperator").and_then(Value::as_str) == Some("or") {
-                    simple_condition_rule(rule, data) || children_match
-                } else {
-                    simple_condition_rule(rule, data) && children_match
-                }
-            } else {
-                simple_condition_rule(rule, data)
-            };
-            if index == 0 {
-                matches
-            } else if logical_operator == "or" {
-                result || matches
-            } else {
-                result && matches
-            }
-        })
+        .map(|binding| binding.user_id)
+        .collect::<Vec<_>>();
+    let users = iam_user_entity::Entity::find()
+        .filter(iam_user_entity::Column::Id.is_in(user_ids))
+        .filter(iam_user_entity::Column::Status.eq("active"))
+        .all(db)
+        .await?;
+    Ok(users.into_iter().map(|user| user.id.to_string()).collect())
 }
-
-fn simple_condition_expression(expression: &str, data: &Value) -> bool {
-    let expression = expression.trim();
-    let (operator, left, right) = if let Some((left, right)) = expression.split_once("!=") {
-        ("!=", left, right)
-    } else if let Some((left, right)) = expression.split_once("==") {
-        ("==", left, right)
-    } else {
-        return false;
-    };
-    let field = left
-        .trim()
-        .trim_start_matches("{{")
-        .trim_end_matches("}}")
-        .trim_start_matches("record.");
-    let expected = right.trim().trim_matches(|c| c == '\'' || c == '\"');
-    let actual = data.get(field).map(condition_scalar).unwrap_or_default();
-    if operator == "==" {
-        actual == expected
-    } else {
-        actual != expected
-    }
-}
-
-fn condition_scalar(value: &Value) -> String {
-    value
-        .as_str()
-        .map(ToString::to_string)
-        .unwrap_or_else(|| value.to_string().trim_matches('\"').to_string())
-}
-async fn create_task(
-    state: &AppState,
+pub(crate) async fn create_task_in<C: ConnectionTrait>(
+    db: &C,
+    branch_token_id: Option<Uuid>,
     instance: &workflow_instance_entity::Model,
     node_key: &str,
     label: &str,
@@ -1392,7 +1246,10 @@ async fn create_task(
     assignee: &str,
 ) -> Result<(), AppError> {
     let now = Utc::now();
-    let assignee_user_id = Uuid::parse_str(assignee).ok();
+    let assignee_user_id = Some(
+        Uuid::parse_str(assignee)
+            .map_err(|_| AppError::BadRequest("process assignees must be user UUIDs".into()))?,
+    );
     let task = workflow_task_entity::ActiveModel {
         id: Set(Uuid::new_v4()),
         task_uuid: Set(format!(
@@ -1401,6 +1258,7 @@ async fn create_task(
         )),
         instance_id: Set(instance.id),
         node_key: Set(node_key.to_string()),
+        branch_token_id: Set(branch_token_id),
         node_label: Set(label.to_string()),
         task_type: Set(task_type.to_string()),
         assignee: Set(assignee.to_string()),
@@ -1417,7 +1275,7 @@ async fn create_task(
         created_at: Set(now.into()),
         updated_at: Set(now.into()),
     }
-    .insert(&state.db)
+    .insert(db)
     .await?;
     if !load_notification_settings()
         .unwrap_or_default()
@@ -1448,69 +1306,164 @@ async fn create_task(
         read_at: Set(None),
         created_at: Set(now.into()),
     }
-    .insert(&state.db)
+    .insert(db)
     .await?;
-    if let Some(recipient_user_id) = notification.recipient_user_id {
-        crate::modules::communication::create_system_notification_message(
-            state,
-            recipient_user_id,
-            notification.id,
-            &notification.notification_uuid,
-            &notification.title,
-            &notification.content,
-            &notification.notification_type,
-            notification.task_id,
-            notification.task_id.and_then(|id| if id == task.id { Some(task.task_uuid.as_str()) } else { None }),
-            notification.instance_id,
-            &notification.form_uuid,
-            &notification.record_uuid,
-        ).await?;
+    db.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres,
+        "INSERT INTO workflow_notification_dispatch(notification_id,task_uuid) VALUES($1,$2) ON CONFLICT DO NOTHING",
+        vec![notification.id.into(), task.task_uuid.clone().into()])).await?;
+    Ok(())
+}
+
+async fn enqueue_result_notifications<C: ConnectionTrait>(
+    db: &C,
+    task: &workflow_task_entity::Model,
+    instance: &workflow_instance_entity::Model,
+    operator: Uuid,
+    content: &str,
+) -> Result<(), AppError> {
+    let recipients = workflow_result_recipients(db, task, instance, operator).await?;
+    for user in recipients {
+        let id = Uuid::new_v4();
+        workflow_notification_entity::ActiveModel {
+            id: Set(id),
+            notification_uuid: Set(format!("WFN-{id}")),
+            recipient_user_id: Set(Some(user)),
+            recipient: Set(user.to_string()),
+            form_uuid: Set(instance.form_uuid.clone()),
+            record_uuid: Set(instance.record_uuid.clone()),
+            instance_id: Set(instance.id),
+            task_id: Set(Some(task.id)),
+            notification_type: Set("approval_result".into()),
+            title: Set("审批结果".into()),
+            content: Set(content.into()),
+            read_at: Set(None),
+            created_at: Set(Utc::now()),
+        }
+        .insert(db)
+        .await?;
+        crate::modules::automations::execution::sql(
+            db,
+            "INSERT INTO workflow_notification_dispatch(notification_id,task_uuid) VALUES($1,$2)",
+            vec![id.into(), task.task_uuid.clone().into()],
+        )
+        .await?;
     }
     Ok(())
 }
-async fn set_instance_node(
-    state: &AppState,
-    instance: &workflow_instance_entity::Model,
-    node: &str,
-) -> Result<(), AppError> {
-    let mut a: workflow_instance_entity::ActiveModel = instance.clone().into();
-    // `claim_node_advance` temporarily marks the instance as advancing. Re-open it
-    // only after the next human task has been durably created.
-    a.status = Set("running".to_string());
-    a.current_node_key = Set(Some(node.to_string()));
-    a.updated_at = Set(Utc::now().into());
-    a.update(&state.db).await?;
+
+pub(crate) async fn dispatch_pending_notifications(state: &AppState) -> Result<(), AppError> {
+    use sea_orm::{DbBackend, Statement};
+    let rows=state.db.query_all_raw(Statement::from_string(DbBackend::Postgres,"SELECT notification_id,task_uuid FROM workflow_notification_dispatch WHERE status='pending' AND (attempts=0 OR updated_at<NOW()-(LEAST(300,attempts*5)*INTERVAL '1 second')) ORDER BY updated_at LIMIT 32".to_string())).await?;
+    for row in rows {
+        let id: Uuid = row.try_get("", "notification_id")?;
+        let Some(n) = workflow_notification_entity::Entity::find_by_id(id)
+            .one(&state.db)
+            .await?
+        else {
+            continue;
+        };
+        let Some(user) = n.recipient_user_id else {
+            continue;
+        };
+        let task_uuid: String = row.try_get("", "task_uuid")?;
+        let result = crate::modules::communication::create_system_notification_message(
+            state,
+            user,
+            id,
+            &n.notification_uuid,
+            &n.title,
+            &n.content,
+            &n.notification_type,
+            n.task_id,
+            Some(&task_uuid),
+            n.instance_id,
+            &n.form_uuid,
+            &n.record_uuid,
+        )
+        .await;
+        crate::modules::automations::execution::sql(&state.db,"UPDATE workflow_notification_dispatch SET status=$2,attempts=attempts+1,error_message=$3,updated_at=NOW() WHERE notification_id=$1",
+            vec![id.into(),if result.is_ok(){"delivered"}else{"pending"}.into(),result.err().map(|e|format!("{e:?}")).into()]).await?;
+    }
     Ok(())
 }
-async fn finish_instance(
-    state: &AppState,
+
+pub(crate) async fn execute_human_node(
+    db: &sea_orm::DatabaseTransaction,
+    _state: &AppState,
     instance: &workflow_instance_entity::Model,
-    status: &str,
-    approval: &str,
-    record_status: &str,
-    node: &str,
-    operator: &str,
-) -> Result<(), AppError> {
-    let txn = state.db.begin().await?;
-    let current = workflow_instance_entity::Entity::find_by_id(instance.id)
-        .lock_exclusive()
-        .one(&txn)
-        .await?
-        .ok_or_else(|| AppError::NotFound("workflow instance not found".to_string()))?;
-    complete_instance(
-        &txn,
-        &current,
-        status,
-        approval,
-        record_status,
-        node,
-        operator,
-    )
-    .await?;
-    txn.commit().await?;
-    Ok(())
+    cursor: &crate::modules::automations::engine::Cursor,
+    node: &Value,
+) -> Result<Option<Value>, AppError> {
+    let kind = node
+        .pointer("/data/kind")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let config = node
+        .pointer("/data/config")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let copy = kind == "copy";
+    let mode = config
+        .get(if copy {
+            "recipientMode"
+        } else {
+            "assigneeMode"
+        })
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let assignees = if mode == "self" {
+        vec![
+            instance
+                .submitter_user_id
+                .ok_or_else(|| AppError::BadRequest("workflow submitter UUID required".into()))?
+                .to_string(),
+        ]
+    } else if mode == "roles" {
+        role_assignees_in(db, config.get("roleIds").and_then(Value::as_array)).await?
+    } else {
+        config
+            .get(if copy { "recipientIds" } else { "assigneeIds" })
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect()
+    };
+    if assignees.is_empty() && !copy {
+        return Err(AppError::BadRequest("human node has no assignee".into()));
+    }
+    let assignees = assignees
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>();
+    for assignee in &assignees {
+        create_task_in(
+            db,
+            Some(cursor.id),
+            instance,
+            &cursor.node,
+            node.pointer("/data/label")
+                .and_then(Value::as_str)
+                .unwrap_or(&cursor.node),
+            if copy {
+                "copy"
+            } else if kind == "approval" {
+                "approval"
+            } else {
+                "execution"
+            },
+            assignee,
+        )
+        .await?;
+    }
+    Ok(if copy {
+        Some(json!({"result":"notified","participants":assignees}))
+    } else {
+        None
+    })
 }
-async fn complete_instance<C: ConnectionTrait>(
+
+pub(crate) async fn complete_instance<C: ConnectionTrait + TransactionTrait>(
     db: &C,
     instance: &workflow_instance_entity::Model,
     status: &str,
@@ -1530,12 +1483,37 @@ async fn complete_instance<C: ConnectionTrait>(
         .find(&instance.form_uuid, &instance.record_uuid)
         .await?;
     update_record_state(db, &rec, operator, approval, record_status, node).await?;
+    use crate::infrastructure::entities::automation_run_entity;
+    if let Some(run) = automation_run_entity::Entity::find()
+        .filter(automation_run_entity::Column::WorkflowInstanceId.eq(instance.id))
+        .one(db)
+        .await?
+    {
+        crate::platform::automation_runs::finalize_automation_run(
+            db,
+            run.id,
+            if status == "completed" {
+                "success"
+            } else {
+                status
+            },
+            None,
+        )
+        .await?;
+        if status != "completed" {
+            execution::close_pending_logs(db, run.id, "skipped", node).await?;
+            db.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres,
+                "UPDATE automation_execution_tokens SET status='cancelled',updated_at=NOW() WHERE instance_id=$1 AND status NOT IN ('completed','failed')", vec![instance.id.into()])).await?;
+            db.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres,
+                "UPDATE im_business_message_bindings SET status='invalidated' WHERE business_type='approval' AND status='active' AND business_id IN (SELECT id FROM workflow_tasks WHERE instance_id=$1 AND status <> 'pending')", vec![instance.id.into()])).await?;
+        }
+    }
     Ok(())
 }
-async fn fail_instance(
+pub(crate) async fn fail_instance(
     state: &AppState,
     instance: &workflow_instance_entity::Model,
-    _reason: &str,
+    reason: &str,
 ) -> Result<(), AppError> {
     let txn = state.db.begin().await?;
     let current = workflow_instance_entity::Entity::find_by_id(instance.id)
@@ -1546,7 +1524,7 @@ async fn fail_instance(
     if matches!(current.status.as_str(), "completed" | "rejected" | "failed") {
         return Ok(());
     }
-    skip_pending_tasks(&txn, &current, None, "流程执行失败", Utc::now()).await?;
+    skip_pending_tasks(&txn, &current, None, "流程执行失败", Utc::now(), None).await?;
     complete_instance(
         &txn,
         &current,
@@ -1557,10 +1535,33 @@ async fn fail_instance(
         "系统",
     )
     .await?;
+    use crate::infrastructure::entities::automation_run_entity;
+    if let Some(run) = automation_run_entity::Entity::find()
+        .filter(automation_run_entity::Column::WorkflowInstanceId.eq(instance.id))
+        .one(&txn)
+        .await?
+    {
+        crate::platform::automation_runs::finalize_automation_run(
+            &txn,
+            run.id,
+            "failed",
+            Some(reason.into()),
+        )
+        .await?;
+    }
+    write_action(
+        &txn,
+        current.id,
+        None,
+        "execution_failed",
+        "系统",
+        Some(reason.into()),
+    )
+    .await?;
     txn.commit().await?;
     Ok(())
 }
-async fn update_record_state<C: ConnectionTrait>(
+pub(crate) async fn update_record_state<C: ConnectionTrait + TransactionTrait>(
     db: &C,
     record: &crate::platform::records::StoredFormRecord,
     operator: &str,
@@ -1603,6 +1604,9 @@ async fn apply_instance_flow_snapshot<C: ConnectionTrait>(
         .ok_or_else(|| AppError::NotFound("workflow flow version not found".to_string()))?;
     flow.nodes_json = snapshot.nodes_json;
     flow.edges_json = snapshot.edges_json;
+    flow.trigger_config = snapshot.trigger_config;
+    crate::modules::automations::validate_execution_definition(flow)?;
+    crate::modules::automations::validate_execution_sources(db, flow).await?;
     Ok(())
 }
 fn ensure_workflow_form(form_type: &str) -> Result<(), AppError> {
@@ -1655,60 +1659,30 @@ mod tests {
         assert_eq!(next["second"], "B");
         assert_eq!(next["workflowInstanceStatus"], "running");
     }
+}
 
-    #[test]
-    fn condition_selects_the_first_matching_branch_by_priority() {
-        let node = json!({
-            "data": { "config": { "branches": [
-                { "id": "high", "priority": 1, "mode": "rules", "rules": [{ "id": "r1", "fieldKey": "amount", "operator": "eq", "rawValue": "100" }] },
-                { "id": "fallback", "priority": 2, "mode": "all" }
-            ] } }
-        });
-        let edges = vec![
-            json!({ "source": "condition-1", "sourceHandle": "condition-branch:high", "target": "approved" }),
-            json!({ "source": "condition-1", "sourceHandle": "condition-branch:fallback", "target": "manual" }),
-        ];
-        assert_eq!(
-            select_condition_edge(&edges, "condition-1", &node, &json!({ "amount": 100 })),
-            Some("approved".to_string())
-        );
-        assert_eq!(
-            select_condition_edge(&edges, "condition-1", &node, &json!({ "amount": 20 })),
-            Some("manual".to_string())
-        );
-    }
+pub(crate) mod execution;
 
-    #[test]
-    fn condition_rules_support_nested_or_groups_and_field_values() {
-        let branch = json!({
-            "mode": "rules",
-            "rules": [
-                { "id": "group", "isGroup": true, "logicalOperator": "and" },
-                { "id": "priority", "parentId": "group", "fieldKey": "priority", "operator": "eq", "rawValue": "high", "logicalOperator": "or" },
-                { "id": "same-owner", "parentId": "group", "fieldKey": "owner", "operator": "eq", "valueType": "field", "sourceFieldKey": "approver", "logicalOperator": "or" }
-            ]
-        });
-        assert!(workflow_condition_matches(
-            &branch,
-            &json!({ "priority": "low", "owner": "u-1", "approver": "u-1" })
-        ));
-        assert!(!workflow_condition_matches(
-            &branch,
-            &json!({ "priority": "low", "owner": "u-1", "approver": "u-2" })
+async fn ensure_current_instance<C: ConnectionTrait>(
+    db: &C,
+    instance: &workflow_instance_entity::Model,
+) -> Result<(), AppError> {
+    if instance.submitter_user_id.is_none() {
+        return Err(AppError::BadRequest(
+            "旧审批实例不支持处理或恢复，请重新提交新流程".into(),
         ));
     }
-
-    #[test]
-    fn condition_expressions_compare_record_values() {
-        let branch =
-            json!({ "mode": "expression", "expression": "{{record.status}} == 'approved'" });
-        assert!(workflow_condition_matches(
-            &branch,
-            &json!({ "status": "approved" })
-        ));
-        assert!(!workflow_condition_matches(
-            &branch,
-            &json!({ "status": "draft" })
+    let cursor = db
+        .query_one_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DbBackend::Postgres,
+            "SELECT 1 FROM automation_execution_tokens WHERE instance_id=$1 LIMIT 1",
+            vec![instance.id.into()],
+        ))
+        .await?;
+    if cursor.is_none() {
+        return Err(AppError::BadRequest(
+            "审批实例缺少新执行游标，不能处理或恢复".into(),
         ));
     }
+    Ok(())
 }

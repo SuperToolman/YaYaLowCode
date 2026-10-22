@@ -83,7 +83,222 @@ impl MigratorTrait for Migrator {
             Box::new(m20260929_000070_create_im_reliable_mailbox::Migration),
             Box::new(m20260929_000071_migrate_to_im_authoritative_storage::Migration),
             Box::new(m20260930_000072_remove_automation_draft::Migration),
+            Box::new(m20261006_000073_workflow_parallel_branches::Migration),
+            Box::new(m20261006_000074_unified_automation_engine::Migration),
+            Box::new(m20261007_000075_remove_automation_compatibility::Migration),
+            Box::new(m20261008_000076_repair_workflow_comments_author::Migration),
+            Box::new(m20261008_000077_cleanup_orphan_form_references::Migration),
+            Box::new(m20261008_000078_remove_retired_field_config::Migration),
+            Box::new(m20261012_000079_common_execution::Migration),
+            Box::new(m20261012_000080_custom_buttons::Migration),
+            Box::new(m20261013_000081_custom_button_scope::Migration),
+            Box::new(m20261014_000082_user_smtp_authorizations::Migration),
+            Box::new(m20261014_000083_additional_smtp_authorizations::Migration),
+            Box::new(m20261013_000082_custom_button_fill_scope::Migration),
+            Box::new(m20261013_000083_custom_button_open_page::Migration),
+            Box::new(m20261019_000086_button_automation::Migration),
+            Box::new(m20261021_000087_form_owned_custom_buttons::Migration),
+            Box::new(m20261021_000088_button_conditions_owned_by_definition::Migration),
         ]
+    }
+}
+
+mod m20261021_000088_button_conditions_owned_by_definition {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261021_000088_button_conditions_owned_by_definition"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(include_str!(
+                    "../modules/custom_buttons/definition_conditions.sql"
+                ))
+                .await?;
+            Ok(())
+        }
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
+    }
+}
+
+mod m20261021_000087_form_owned_custom_buttons {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261021_000087_form_owned_custom_buttons"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(include_str!("../modules/custom_buttons/form_ownership.sql"))
+                .await?;
+            Ok(())
+        }
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
+    }
+}
+
+mod m20261013_000083_custom_button_open_page {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261013_000083_custom_button_open_page"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("ALTER TABLE app_custom_buttons DROP CONSTRAINT IF EXISTS app_custom_buttons_action_type_check; ALTER TABLE app_custom_buttons ADD CONSTRAINT app_custom_buttons_action_type_check CHECK (action_type IN ('fill_form','open_page'));").await?;
+            Ok(())
+        }
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
+    }
+}
+
+mod m20261013_000082_custom_button_fill_scope {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261013_000082_custom_button_fill_scope"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("ALTER TABLE app_custom_buttons ADD COLUMN IF NOT EXISTS fill_scope VARCHAR(16) NOT NULL DEFAULT 'other';").await?;
+            Ok(())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "ALTER TABLE app_custom_buttons DROP COLUMN IF EXISTS fill_scope;",
+                )
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20261013_000081_custom_button_scope {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261013_000081_custom_button_scope"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("ALTER TABLE app_custom_buttons ADD COLUMN IF NOT EXISTS button_scope VARCHAR(16) NOT NULL DEFAULT 'public'; ALTER TABLE app_custom_buttons ADD COLUMN IF NOT EXISTS scope_form_uuid VARCHAR(80); ALTER TABLE app_custom_buttons ADD COLUMN IF NOT EXISTS fill_scope VARCHAR(16) NOT NULL DEFAULT 'other'; UPDATE app_custom_buttons SET button_scope='public' WHERE button_scope IS NULL;").await?;
+            Ok(())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("ALTER TABLE app_custom_buttons DROP COLUMN IF EXISTS fill_scope; ALTER TABLE app_custom_buttons DROP COLUMN IF EXISTS scope_form_uuid; ALTER TABLE app_custom_buttons DROP COLUMN IF EXISTS button_scope;").await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20261008_000076_repair_workflow_comments_author {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261008_000076_repair_workflow_comments_author"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "ALTER TABLE workflow_comments ADD COLUMN IF NOT EXISTS author_user_id UUID REFERENCES iam_users(id) ON DELETE RESTRICT;",
+                )
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "ALTER TABLE workflow_comments DROP COLUMN IF EXISTS author_user_id;",
+                )
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20261008_000077_cleanup_orphan_form_references {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261008_000077_cleanup_orphan_form_references"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                    DELETE FROM app_navigation_items AS navigation
+                    WHERE navigation.target_form_uuid IS NOT NULL
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM form_definitions AS form
+                          WHERE form.form_uuid = navigation.target_form_uuid
+                      );
+
+                    DELETE FROM form_detail_definitions AS detail
+                    WHERE NOT EXISTS (
+                              SELECT 1
+                              FROM form_definitions AS source_form
+                              WHERE source_form.form_uuid = detail.source_form_uuid
+                          )
+                       OR NOT EXISTS (
+                              SELECT 1
+                              FROM form_definitions AS detail_form
+                              WHERE detail_form.form_uuid = detail.detail_form_uuid
+                          );
+                    "#,
+                )
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, _: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
     }
 }
 
@@ -110,9 +325,12 @@ mod m20260930_000072_remove_automation_draft {
         }
 
         async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-            manager.get_connection().execute_unprepared(
-                "ALTER TABLE automation_flows ALTER COLUMN status SET DEFAULT 'draft'"
-            ).await?;
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "ALTER TABLE automation_flows ALTER COLUMN status SET DEFAULT 'draft'",
+                )
+                .await?;
             Ok(())
         }
     }
@@ -123,7 +341,9 @@ mod m20260929_000071_migrate_to_im_authoritative_storage {
 
     pub struct Migration;
     impl MigrationName for Migration {
-        fn name(&self) -> &str { "m20260929_000071_migrate_to_im_authoritative_storage" }
+        fn name(&self) -> &str {
+            "m20260929_000071_migrate_to_im_authoritative_storage"
+        }
     }
 
     #[async_trait::async_trait]
@@ -442,10 +662,13 @@ mod m20260928_000068_drop_legacy_agent_registry {
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
         async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-            manager.get_connection().execute_unprepared(
-                "DROP TABLE IF EXISTS agent_definitions CASCADE;
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "DROP TABLE IF EXISTS agent_definitions CASCADE;
                  DROP TABLE IF EXISTS agent_config_profiles CASCADE;",
-            ).await?;
+                )
+                .await?;
             Ok(())
         }
 
@@ -470,13 +693,16 @@ mod m20260928_000069_drop_yaya_knowledge_system {
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
         async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-            manager.get_connection().execute_unprepared(
-                "DROP TABLE IF EXISTS agent_knowledge_bindings;
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "DROP TABLE IF EXISTS agent_knowledge_bindings;
                  DROP TABLE IF EXISTS knowledge_index_jobs;
                  DROP TABLE IF EXISTS knowledge_chunks;
                  DROP TABLE IF EXISTS knowledge_documents;
                  DELETE FROM agent_resources WHERE kind = 'knowledge_base';",
-            ).await?;
+                )
+                .await?;
             Ok(())
         }
 
@@ -566,14 +792,18 @@ mod m20260918_000064_reset_legacy_agent_runtime {
     pub struct Migration;
 
     impl MigrationName for Migration {
-        fn name(&self) -> &str { "m20260918_000064_reset_legacy_agent_runtime" }
+        fn name(&self) -> &str {
+            "m20260918_000064_reset_legacy_agent_runtime"
+        }
     }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
         async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-            manager.get_connection().execute_unprepared(
-                "
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "
                 CREATE TABLE IF NOT EXISTS agent_runtime_reset_markers (
                     version VARCHAR(80) PRIMARY KEY,
                     applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -586,7 +816,8 @@ mod m20260918_000064_reset_legacy_agent_runtime {
                 DROP TABLE IF EXISTS agent_runs;
                 DROP TABLE IF EXISTS agent_messages;
                 ",
-            ).await?;
+                )
+                .await?;
             Ok(())
         }
 
@@ -603,7 +834,9 @@ mod m20260918_000063_add_agent_session_lineage {
     pub struct Migration;
 
     impl MigrationName for Migration {
-        fn name(&self) -> &str { "m20260918_000063_add_agent_session_lineage" }
+        fn name(&self) -> &str {
+            "m20260918_000063_add_agent_session_lineage"
+        }
     }
 
     #[async_trait::async_trait]
@@ -685,14 +918,20 @@ mod m20260918_000062_create_agent_session_runtime_summaries {
 mod m20260918_000061_add_market_installation_lifecycle {
     use sea_orm_migration::prelude::*;
     pub struct Migration;
-    impl MigrationName for Migration { fn name(&self) -> &str { "m20260918_000061_add_market_installation_lifecycle" } }
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260918_000061_add_market_installation_lifecycle"
+        }
+    }
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
         async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
             manager.get_connection().execute_unprepared("ALTER TABLE market_installations ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ; ALTER TABLE market_installations ADD COLUMN IF NOT EXISTS legacy_mapping BOOLEAN NOT NULL DEFAULT FALSE; CREATE TABLE IF NOT EXISTS market_installation_versions (installation_id UUID NOT NULL, release_id VARCHAR(128) NOT NULL, version VARCHAR(64) NOT NULL, package_sha256 VARCHAR(128) NOT NULL, package_bytes BYTEA, snapshot_json JSONB NOT NULL DEFAULT '{}', applied_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(installation_id, release_id)); CREATE INDEX IF NOT EXISTS idx_market_installation_versions_applied ON market_installation_versions(installation_id, applied_at DESC);").await?;
             Ok(())
         }
-        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> { Ok(()) }
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
     }
 }
 
@@ -750,8 +989,13 @@ mod m20260916_000059_allow_duplicate_agent_resource_names {
 
 mod m20260904_000057_drop_agent_transactions {
     use sea_orm_migration::prelude::*;
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260904_000057_drop_agent_transactions"
+        }
+    }
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
         async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
@@ -1591,8 +1835,13 @@ mod m20260728_000037_repair_agent_transactions {
 
 mod m20260727_000036_add_workflow_pause_fields {
     use sea_orm_migration::prelude::*;
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260727_000036_add_workflow_pause_fields"
+        }
+    }
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
         async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
@@ -1608,8 +1857,13 @@ mod m20260727_000036_add_workflow_pause_fields {
 
 mod m20260727_000035_create_workflow_notifications {
     use sea_orm_migration::prelude::*;
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260727_000035_create_workflow_notifications"
+        }
+    }
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
         async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
@@ -1636,8 +1890,13 @@ mod m20260727_000035_create_workflow_notifications {
 
 mod m20260727_000034_create_workflow_comments {
     use sea_orm_migration::prelude::*;
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260727_000034_create_workflow_comments"
+        }
+    }
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
         async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
@@ -1711,8 +1970,13 @@ mod m20260727_000033_create_agent_transactions {
 mod m20260727_000032_add_agent_session_owner {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260727_000032_add_agent_session_owner"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -1735,8 +1999,13 @@ mod m20260727_000032_add_agent_session_owner {
 mod m20260724_000031_extend_agent_sessions {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260724_000031_extend_agent_sessions"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -1759,8 +2028,13 @@ mod m20260724_000031_extend_agent_sessions {
 mod m20260723_000028_create_uploaded_files_table {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260723_000028_create_uploaded_files_table"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -1796,8 +2070,13 @@ mod m20260723_000028_create_uploaded_files_table {
 mod m20260723_000027_create_locations_table {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260723_000027_create_locations_table"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -1835,8 +2114,13 @@ mod m20260723_000027_create_locations_table {
 mod m20260723_000028_limit_locations_to_three_levels {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260723_000028_limit_locations_to_three_levels"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -1860,8 +2144,13 @@ mod m20260723_000028_limit_locations_to_three_levels {
 mod m20260723_000029_convert_locations_to_tree {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260723_000029_convert_locations_to_tree"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -1904,8 +2193,13 @@ mod m20260723_000029_convert_locations_to_tree {
 mod m20260723_000030_repair_locations_tree_schema {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260723_000030_repair_locations_tree_schema"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -1948,8 +2242,13 @@ mod m20260723_000030_repair_locations_tree_schema {
 }
 mod m20260722_000026_add_workflow_task_assignee_user {
     use sea_orm_migration::prelude::*;
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260722_000026_add_workflow_task_assignee_user"
+        }
+    }
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
         async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
@@ -1965,8 +2264,13 @@ mod m20260722_000026_add_workflow_task_assignee_user {
 mod m20260722_000023_add_form_type {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260722_000023_add_form_type"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -1993,8 +2297,13 @@ mod m20260722_000023_add_form_type {
 mod m20260722_000024_add_automation_flow_type {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260722_000024_add_automation_flow_type"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -2021,8 +2330,13 @@ mod m20260722_000024_add_automation_flow_type {
 mod m20260722_000025_create_workflow_runtime_tables {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260722_000025_create_workflow_runtime_tables"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -2095,8 +2409,13 @@ mod m20260722_000025_create_workflow_runtime_tables {
 }
 mod m20260720_000022_create_local_credentials {
     use sea_orm_migration::prelude::*;
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260720_000022_create_local_credentials"
+        }
+    }
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
         async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
@@ -2115,8 +2434,13 @@ mod m20260720_000022_create_local_credentials {
 
 mod m20260720_000021_create_user_email_addresses {
     use sea_orm_migration::prelude::*;
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260720_000021_create_user_email_addresses"
+        }
+    }
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
         async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
@@ -2143,8 +2467,13 @@ mod m20260720_000021_create_user_email_addresses {
 
 mod m20260720_000019_create_form_views {
     use sea_orm_migration::prelude::*;
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260720_000019_create_form_views"
+        }
+    }
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
         async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
@@ -2169,8 +2498,13 @@ mod m20260720_000019_create_form_views {
 
 mod m20260720_000020_remove_role_groups {
     use sea_orm_migration::prelude::*;
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260720_000020_remove_role_groups"
+        }
+    }
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
         async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
@@ -2189,8 +2523,13 @@ mod m20260720_000020_remove_role_groups {
 mod m20260715_000018_repair_form_storage_definitions {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260715_000018_repair_form_storage_definitions"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -2226,8 +2565,13 @@ mod m20260715_000018_repair_form_storage_definitions {
 mod m20260715_000017_drop_shared_form_records {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260715_000017_drop_shared_form_records"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -2248,8 +2592,13 @@ mod m20260715_000017_drop_shared_form_records {
 mod m20260715_000016_create_form_storage_definitions {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260715_000016_create_form_storage_definitions"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -2289,8 +2638,13 @@ mod m20260715_000016_create_form_storage_definitions {
 mod m20260714_000015_bind_agent_sessions {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260714_000015_bind_agent_sessions"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -2318,8 +2672,13 @@ mod m20260714_000015_bind_agent_sessions {
 mod m20260714_000014_expand_identity_user_profile {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260714_000014_expand_identity_user_profile"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -2355,8 +2714,13 @@ mod m20260714_000014_expand_identity_user_profile {
 mod m20260714_000013_create_identity_role_tables {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260714_000013_create_identity_role_tables"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -2410,8 +2774,13 @@ mod m20260714_000013_create_identity_role_tables {
 mod m20260714_000012_create_identity_user_tables {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260714_000012_create_identity_user_tables"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -2482,8 +2851,13 @@ mod m20260714_000012_create_identity_user_tables {
 mod m20260714_000011_create_identity_organization_tables {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260714_000011_create_identity_organization_tables"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -2526,8 +2900,13 @@ mod m20260714_000011_create_identity_organization_tables {
 mod m20260713_000010_create_agent_mvp_tables {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260713_000010_create_agent_mvp_tables"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -2619,8 +2998,13 @@ mod m20260713_000010_create_agent_mvp_tables {
 mod m20260626_000001_create_apps_table {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260626_000001_create_apps_table"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -2701,8 +3085,13 @@ mod m20260626_000001_create_apps_table {
 mod m20260626_000002_create_form_definitions_table {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260626_000002_create_form_definitions_table"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -2814,8 +3203,13 @@ mod m20260626_000002_create_form_definitions_table {
 mod m20260626_000003_create_form_schemas_table {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260626_000003_create_form_schemas_table"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -2904,8 +3298,13 @@ mod m20260626_000003_create_form_schemas_table {
 mod m20260626_000004_create_app_navigation_items_table {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260626_000004_create_app_navigation_items_table"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -3039,8 +3438,13 @@ mod m20260626_000004_create_app_navigation_items_table {
 mod m20260626_000005_create_form_records_table {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260626_000005_create_form_records_table"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -3154,8 +3558,13 @@ mod m20260626_000005_create_form_records_table {
 mod m20260629_000006_create_automation_flows_table {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260629_000006_create_automation_flows_table"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -3308,8 +3717,13 @@ mod m20260629_000006_create_automation_flows_table {
 mod m20260629_000007_add_automation_flow_versions {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260629_000007_add_automation_flow_versions"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -3441,8 +3855,13 @@ mod m20260629_000007_add_automation_flow_versions {
 mod m20260629_000008_create_automation_nodes_table {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260629_000008_create_automation_nodes_table"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -3561,8 +3980,13 @@ mod m20260629_000008_create_automation_nodes_table {
 mod m20260629_000009_create_automation_edges_table {
     use sea_orm_migration::prelude::*;
 
-    #[derive(DeriveMigrationName)]
     pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20260629_000009_create_automation_edges_table"
+        }
+    }
 
     #[async_trait::async_trait]
     impl MigrationTrait for Migration {
@@ -3663,5 +4087,354 @@ mod m20260629_000009_create_automation_edges_table {
         RawJson,
         CreatedAt,
         UpdatedAt,
+    }
+}
+
+mod m20261006_000073_workflow_parallel_branches {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261006_000073_workflow_parallel_branches"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("CREATE TABLE IF NOT EXISTS workflow_branch_tokens (id UUID PRIMARY KEY, instance_id UUID NOT NULL REFERENCES workflow_instances(id) ON DELETE CASCADE, node_key VARCHAR(96) NOT NULL, status VARCHAR(24) NOT NULL, outputs JSONB NOT NULL DEFAULT '{}'::jsonb, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()); CREATE INDEX IF NOT EXISTS idx_workflow_branch_instance ON workflow_branch_tokens(instance_id,status); ALTER TABLE workflow_tasks ADD COLUMN IF NOT EXISTS branch_token_id UUID REFERENCES workflow_branch_tokens(id) ON DELETE SET NULL;").await?;
+            Ok(())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("ALTER TABLE workflow_tasks DROP COLUMN IF EXISTS branch_token_id; DROP TABLE IF EXISTS workflow_branch_tokens;").await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20261006_000074_unified_automation_engine {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261006_000074_unified_automation_engine"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            // These entities previously had no structural migration on a fresh install.
+            use sea_orm::Schema;
+            let schema = Schema::new(manager.get_database_backend());
+            manager
+                .create_table(
+                    schema
+                        .create_table_from_entity(
+                            crate::infrastructure::entities::automation_run_entity::Entity,
+                        )
+                        .if_not_exists()
+                        .to_owned(),
+                )
+                .await?;
+            manager
+                .create_table(
+                    schema
+                        .create_table_from_entity(
+                            crate::infrastructure::entities::automation_run_node_entity::Entity,
+                        )
+                        .if_not_exists()
+                        .to_owned(),
+                )
+                .await?;
+            manager.get_connection().execute_unprepared(r#"
+                ALTER TABLE workflow_instances ADD COLUMN IF NOT EXISTS engine_revision INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE workflow_branch_tokens ADD COLUMN IF NOT EXISTS depth INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE workflow_branch_tokens ADD COLUMN IF NOT EXISTS error_message TEXT;
+                ALTER TABLE workflow_branch_tokens ADD COLUMN IF NOT EXISTS sequence BIGSERIAL;
+                ALTER TABLE workflow_branch_tokens ADD COLUMN IF NOT EXISTS parallel_group UUID;
+                ALTER TABLE automation_flow_runs ADD COLUMN IF NOT EXISTS workflow_instance_id UUID REFERENCES workflow_instances(id);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_automation_workflow_instance ON automation_flow_runs(workflow_instance_id) WHERE workflow_instance_id IS NOT NULL;
+                ALTER TABLE automation_flow_run_nodes ADD COLUMN IF NOT EXISTS branch_id UUID;
+                CREATE INDEX IF NOT EXISTS idx_automation_node_branch ON automation_flow_run_nodes(branch_id,status);
+            "#).await?;
+            Ok(())
+        }
+        async fn down(&self, _: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Custom(
+                "unified engine cutover cannot restore retired workflow progress".into(),
+            ))
+        }
+    }
+}
+
+mod m20261007_000075_remove_automation_compatibility {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261007_000075_remove_automation_compatibility"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(r#"
+                ALTER TABLE automation_flows DROP COLUMN IF EXISTS trigger_event;
+                ALTER TABLE automation_flow_versions DROP COLUMN IF EXISTS trigger_event;
+                ALTER TABLE workflow_instances DROP COLUMN IF EXISTS engine_revision;
+                ALTER TABLE workflow_instances ADD COLUMN IF NOT EXISTS submitter_user_id UUID;
+                CREATE INDEX IF NOT EXISTS idx_workflow_submitter_user ON workflow_instances(submitter_user_id);
+            "#).await?;
+            Ok(())
+        }
+        async fn down(&self, _: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Custom(
+                "removed automation protocols cannot be restored".into(),
+            ))
+        }
+    }
+}
+
+mod m20261008_000078_remove_retired_field_config {
+    use sea_orm_migration::prelude::*;
+
+    pub struct Migration;
+
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261008_000078_remove_retired_field_config"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                UPDATE form_schemas AS schemas
+                SET schema_json = jsonb_set(schemas.schema_json, '{fields}', (
+                    SELECT jsonb_agg(
+                        CASE WHEN jsonb_typeof(field->'props') = 'object'
+                            THEN jsonb_set(field, '{props}',
+                                (field->'props') - 'agentDataAccess' - 'rows' - 'step')
+                            ELSE field
+                        END ORDER BY position
+                    )
+                    FROM jsonb_array_elements(schemas.schema_json->'fields')
+                        WITH ORDINALITY AS entries(field, position)
+                ))
+                WHERE jsonb_typeof(schemas.schema_json->'fields') = 'array'
+                  AND EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(schemas.schema_json->'fields') AS field
+                    WHERE jsonb_typeof(field->'props') = 'object'
+                      AND (field->'props') ?| ARRAY['agentDataAccess', 'rows', 'step']
+                  );
+            "#,
+                )
+                .await?;
+            Ok(())
+        }
+
+        async fn down(&self, _: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Custom(
+                "retired field configuration cannot be restored".into(),
+            ))
+        }
+    }
+}
+
+mod m20261012_000079_common_execution {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261012_000079_common_execution"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(include_str!("../modules/automations/execution_schema.sql"))
+                .await?;
+            Ok(())
+        }
+        async fn down(&self, _: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Custom(
+                "execution cutover requires restoring the pre-cutover backup".into(),
+            ))
+        }
+    }
+}
+
+// Inline modules formerly derived the same filename identity, "migrator".
+// Preserve their historical applied/skipped semantics without replaying their SQL.
+// Fresh databases instead apply every distinct migration exactly once.
+pub async fn reconcile_legacy_names(db: &sea_orm::DatabaseConnection) -> Result<(), DbErr> {
+    use sea_orm::{ConnectionTrait, DbBackend, Statement, TransactionTrait};
+    let txn = db.begin().await?;
+    txn.execute_unprepared("SELECT pg_advisory_xact_lock(610120079)")
+        .await?;
+    let exists = txn
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT to_regclass('seaql_migrations') IS NOT NULL AS present",
+        ))
+        .await?;
+    if !exists.is_some_and(|r| r.try_get::<bool>("", "present").unwrap_or(false)) {
+        return Ok(());
+    }
+    let legacy = txn
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT applied_at FROM seaql_migrations WHERE version='migrator' FOR UPDATE",
+        ))
+        .await?;
+    if let Some(row) = legacy {
+        let applied: i64 = row.try_get("", "applied_at")?;
+        for name in LEGACY_INLINE_MIGRATIONS {
+            txn.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,
+                "INSERT INTO seaql_migrations(version,applied_at) VALUES($1,$2) ON CONFLICT DO NOTHING",
+                vec![(*name).into(),applied.into()])).await?;
+        }
+        txn.execute_unprepared("DELETE FROM seaql_migrations WHERE version='migrator'")
+            .await?;
+    }
+    txn.commit().await?;
+    Ok(())
+}
+const LEGACY_INLINE_MIGRATIONS: &[&str] = &[
+    "m20260904_000057_drop_agent_transactions",
+    "m20260727_000036_add_workflow_pause_fields",
+    "m20260727_000035_create_workflow_notifications",
+    "m20260727_000034_create_workflow_comments",
+    "m20260727_000032_add_agent_session_owner",
+    "m20260724_000031_extend_agent_sessions",
+    "m20260723_000028_create_uploaded_files_table",
+    "m20260723_000027_create_locations_table",
+    "m20260723_000028_limit_locations_to_three_levels",
+    "m20260723_000029_convert_locations_to_tree",
+    "m20260723_000030_repair_locations_tree_schema",
+    "m20260722_000026_add_workflow_task_assignee_user",
+    "m20260722_000023_add_form_type",
+    "m20260722_000024_add_automation_flow_type",
+    "m20260722_000025_create_workflow_runtime_tables",
+    "m20260720_000022_create_local_credentials",
+    "m20260720_000021_create_user_email_addresses",
+    "m20260720_000019_create_form_views",
+    "m20260720_000020_remove_role_groups",
+    "m20260715_000018_repair_form_storage_definitions",
+    "m20260715_000017_drop_shared_form_records",
+    "m20260715_000016_create_form_storage_definitions",
+    "m20260714_000015_bind_agent_sessions",
+    "m20260714_000014_expand_identity_user_profile",
+    "m20260714_000013_create_identity_role_tables",
+    "m20260714_000012_create_identity_user_tables",
+    "m20260714_000011_create_identity_organization_tables",
+    "m20260713_000010_create_agent_mvp_tables",
+    "m20260626_000001_create_apps_table",
+    "m20260626_000002_create_form_definitions_table",
+    "m20260626_000003_create_form_schemas_table",
+    "m20260626_000004_create_app_navigation_items_table",
+    "m20260626_000005_create_form_records_table",
+    "m20260629_000006_create_automation_flows_table",
+    "m20260629_000007_add_automation_flow_versions",
+    "m20260629_000008_create_automation_nodes_table",
+    "m20260629_000009_create_automation_edges_table",
+];
+
+mod m20261012_000080_custom_buttons {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261012_000080_custom_buttons"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(include_str!("../modules/custom_buttons/schema.sql"))
+                .await?;
+            Ok(())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE IF EXISTS app_custom_buttons;")
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20261014_000082_user_smtp_authorizations {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261014_000082_user_smtp_authorizations"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("CREATE TABLE user_smtp_authorizations (user_id uuid PRIMARY KEY REFERENCES iam_users(id) ON DELETE CASCADE, email text NOT NULL, encrypted_password text NOT NULL);").await?;
+            Ok(())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE IF EXISTS user_smtp_authorizations;")
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20261014_000083_additional_smtp_authorizations {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261014_000083_additional_smtp_authorizations"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("ALTER TABLE user_smtp_authorizations DROP CONSTRAINT user_smtp_authorizations_pkey; ALTER TABLE user_smtp_authorizations ADD PRIMARY KEY (user_id, email);").await?;
+            Ok(())
+        }
+        async fn down(&self, _: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Custom(
+                "Cannot collapse multiple mailbox authorizations without losing credentials".into(),
+            ))
+        }
+    }
+}
+
+mod m20261019_000086_button_automation {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261019_000086_button_automation"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("ALTER TABLE app_custom_buttons DROP CONSTRAINT IF EXISTS app_custom_buttons_action_type_check; ALTER TABLE app_custom_buttons ADD CONSTRAINT app_custom_buttons_action_type_check CHECK (action_type IN ('fill_form','open_page','run_automation'));").await?;
+            Ok(())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("ALTER TABLE app_custom_buttons DROP CONSTRAINT IF EXISTS app_custom_buttons_action_type_check; ALTER TABLE app_custom_buttons ADD CONSTRAINT app_custom_buttons_action_type_check CHECK (action_type IN ('fill_form','open_page'));").await?;
+            Ok(())
+        }
     }
 }

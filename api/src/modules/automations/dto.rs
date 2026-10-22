@@ -25,8 +25,6 @@ pub(crate) struct ApiAutomationFlow {
     #[schema(value_type = AutomationFlowType)]
     pub(crate) flow_type: String,
     pub(crate) trigger_form_uuid: Option<String>,
-    #[schema(value_type = AutomationTriggerEvent)]
-    pub(crate) trigger_event: String,
     #[schema(value_type = Vec<AutomationTriggerEvent>)]
     pub(crate) trigger_events: Vec<String>,
     pub(crate) trigger_label: String,
@@ -50,8 +48,6 @@ pub(crate) struct ApiAutomationFlowDetail {
     #[schema(value_type = AutomationFlowType)]
     pub(crate) flow_type: String,
     pub(crate) trigger_form_uuid: Option<String>,
-    #[schema(value_type = AutomationTriggerEvent)]
-    pub(crate) trigger_event: String,
     #[schema(value_type = Vec<AutomationTriggerEvent>)]
     pub(crate) trigger_events: Vec<String>,
     pub(crate) trigger_label: String,
@@ -90,6 +86,9 @@ pub(crate) struct ApiAutomationFlowList {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiAutomationRunNode {
     pub(crate) id: String,
+    pub(crate) branch_id: Option<String>,
+    pub(crate) visit_id: Option<String>,
+    pub(crate) attempt: i32,
     pub(crate) node_key: String,
     pub(crate) node_kind: String,
     pub(crate) node_label: String,
@@ -105,6 +104,10 @@ pub(crate) struct ApiAutomationRunNode {
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiAutomationRun {
+    pub(crate) workflow_instance_id: Option<String>,
+    pub(crate) execution_policy: Option<String>,
+    pub(crate) trigger_source: Option<Value>,
+    pub(crate) allowed_actions: Vec<String>,
     pub(crate) id: String,
     pub(crate) flow_version: i32,
     pub(crate) trigger_event: String,
@@ -121,28 +124,30 @@ pub(crate) struct ApiAutomationRun {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct CreateButtonAutomationRequest {
+    pub(crate) name: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct CreateAutomationFlowRequest {
     pub(crate) name: Option<String>,
     pub(crate) description: Option<String>,
     pub(crate) trigger_form_uuid: Option<String>,
-    #[schema(value_type = Option<AutomationTriggerEvent>)]
-    pub(crate) trigger_event: Option<String>,
     #[schema(value_type = Option<Vec<AutomationTriggerEvent>>)]
     pub(crate) trigger_events: Option<Vec<String>>,
     pub(crate) operator: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct UpdateAutomationFlowRequest {
     pub(crate) name: Option<String>,
     pub(crate) description: Option<String>,
     #[schema(value_type = Option<AutomationStatus>)]
     pub(crate) status: Option<String>,
     pub(crate) trigger_form_uuid: Option<String>,
-    #[schema(value_type = Option<AutomationTriggerEvent>)]
-    pub(crate) trigger_event: Option<String>,
     #[schema(value_type = Option<Vec<AutomationTriggerEvent>>)]
     pub(crate) trigger_events: Option<Vec<String>>,
     pub(crate) trigger_config: Option<Value>,
@@ -167,15 +172,15 @@ impl From<automation_flow_entity::Model> for ApiAutomationFlow {
             description: value.description,
             status: value.status,
             current_version: value.current_version,
-            flow_type: value.flow_type,
+            flow_type: value.flow_type.clone(),
             trigger_form_uuid: value.trigger_form_uuid,
-            trigger_label: automation_trigger_events(&value.trigger_event, &value.trigger_config)
+            trigger_label: automation_trigger_events(&value.trigger_config)
                 .iter()
                 .map(|event| automation_trigger_label(event))
                 .collect::<Vec<_>>()
                 .join("、"),
-            trigger_events: automation_trigger_events(&value.trigger_event, &value.trigger_config),
-            trigger_event: value.trigger_event,
+            trigger_events: automation_trigger_events(&value.trigger_config),
+
             nodes_count,
             created_by: value.created_by,
             updated_by: value.updated_by,
@@ -200,11 +205,11 @@ impl From<automation_flow_entity::Model> for ApiAutomationFlowDetail {
             description: value.description,
             status: value.status,
             current_version: value.current_version,
-            flow_type: value.flow_type,
+            flow_type: value.flow_type.clone(),
             trigger_form_uuid: value.trigger_form_uuid,
-            trigger_event: value.trigger_event.clone(),
-            trigger_events: automation_trigger_events(&value.trigger_event, &value.trigger_config),
-            trigger_label: automation_trigger_events(&value.trigger_event, &value.trigger_config)
+
+            trigger_events: automation_trigger_events(&value.trigger_config),
+            trigger_label: automation_trigger_events(&value.trigger_config)
                 .iter()
                 .map(|event| automation_trigger_label(event))
                 .collect::<Vec<_>>()
@@ -238,6 +243,9 @@ impl From<automation_run_node_entity::Model> for ApiAutomationRunNode {
     fn from(value: automation_run_node_entity::Model) -> Self {
         Self {
             id: value.id.to_string(),
+            branch_id: value.branch_id.map(|id| id.to_string()),
+            visit_id: value.visit_id.map(|id| id.to_string()),
+            attempt: value.attempt,
             node_key: value.node_key,
             node_kind: value.node_kind,
             node_label: value.node_label,

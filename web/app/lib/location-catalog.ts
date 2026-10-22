@@ -1,4 +1,4 @@
-import { listLocations, type LocationResponse } from "./api-client";
+import { listLocations, type LocationResponse } from "./http";
 
 export type LocationCatalogItem = LocationResponse;
 

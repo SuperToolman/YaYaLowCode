@@ -1,4 +1,4 @@
-import { createFormView, listFormViews } from "../../../../lib/api-client";
+import { createFormView, listFormViews } from "../../../../lib/http";
 import { createBackendSdkClient, sdkJsonResponse } from "../../../_lib/backend-sdk-client";
 type Context = { params: Promise<{ formUuid: string }> };
 export async function GET(request: Request, { params }: Context) { const { formUuid } = await params; return sdkJsonResponse(listFormViews({ client: createBackendSdkClient(request), path: { formUuid } })); }

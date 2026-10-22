@@ -1,13 +1,14 @@
 "use client";
+import { notifyRequestError } from "@lib/notify";
 import { notify } from "@lib/notify";
 
 import { memo, useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { Monaco } from "@monaco-editor/react";
 import styles from "./DesignerTheme.module.css";
-import dynamic from "next/dynamic";
-import { Button, Card, Checkbox, CheckboxGroup, Input, ListBox, Modal, Select, Switch, TextArea, Tooltip } from "@heroui/react";
-import { Plus as AddIcon, Code as CodeIcon, Gear as GearMiniIcon, LayoutCellsLarge as GridIcon, CircleInfo as InfoIcon, ListUl as ListIcon, Comment as MessageIcon, ArrowRightArrowLeft as SwapIcon, TrashBin as TrashIcon, Wrench as ToolIcon } from "@gravity-ui/icons";
+import { MonacoEditor } from "@shared/ui/MonacoEditor";
+import { Button, Card, Checkbox, CheckboxGroup, Input, ListBox, Modal, Select, Switch, Tabs, TextArea, Tooltip } from "@heroui/react";
+import { Plus as AddIcon, Code as CodeIcon, CircleInfo as InfoIcon, TrashBin as TrashIcon, Cube, DatabaseNutHex, DatabaseArrowRight, FaceRobot, SquareChartColumn } from "@gravity-ui/icons";
 import { CompTool } from "./CompTool";
 import type { FormDesignerSchema } from "../designer-schema";
 import type {
@@ -17,7 +18,6 @@ import type {
   PlacedField,
 } from "../designer-types";
 import type { RuntimeDebugEvent } from "@features/form-runtime/components";
-import { AgentMarkdown } from "@features/agent-assistant/components";
 import { AgentPanel } from "./AgentPanel";
 import { fetchAvailableAgents } from "@features/agent-workbench/platform-api";
 import type { AgentOption } from "@features/agent-assistant/types";
@@ -26,17 +26,7 @@ import {
   validateActionPanelCode,
 } from "@lib/action-panel-code";
 
-const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
-  ssr: false,
-  loading: () => (
-    <div className="flex h-[360px] items-center justify-center rounded-2xl bg-[var(--color-code-bg)] text-sm text-[var(--color-code-text)]">
-      编辑器加载中...
-    </div>
-  ),
-});
-
 export type DesignerPanelKey =
-  | "outline"
   | "components"
   | "dataSources"
   | "indexes"
@@ -50,6 +40,9 @@ type DesignerWorkbenchSidebarProps = {
   formType: "normal" | "workflow" | "defined";
   pageProps: PageDesignerProps;
   schema: FormDesignerSchema;
+  schemaSource: string | null;
+  onSchemaSourceChange: (source: string) => void;
+  onSchemaSave: () => Promise<boolean>;
   debugEvents: RuntimeDebugEvent[];
   onActivePanelChange: (panel: DesignerPanelKey) => void;
   onBeforeDesignerActionRegister?: (handler: (() => boolean) | null) => void;
@@ -61,13 +54,12 @@ const DESIGNER_PANELS: Array<{
   label: string;
   icon: ReactNode;
 }> = [
-    { key: "outline", label: "大纲树", icon: <ListIcon /> },
-    { key: "components", label: "组件", icon: <GridIcon /> },
-    { key: "dataSources", label: "数据源", icon: <SwapIcon /> },
-    { key: "indexes", label: "索引", icon: <ListIcon /> },
-    { key: "agent", label: "Agent", icon: <MessageIcon /> },
-    { key: "actions", label: "动作面板", icon: <ToolIcon /> },
-    { key: "schema", label: "页面源码", icon: <GearMiniIcon /> },
+    { key: "components", label: "组件", icon: <Cube /> },
+    { key: "dataSources", label: "数据源", icon: <DatabaseNutHex /> },
+    { key: "indexes", label: "索引", icon: <DatabaseArrowRight /> },
+    { key: "agent", label: "Agent", icon: <FaceRobot /> },
+    { key: "actions", label: "动作面板", icon: <CodeIcon /> },
+    { key: "schema", label: "页面源码", icon: <SquareChartColumn /> },
   ];
 
 export const DesignerWorkbenchSidebar = memo(function DesignerWorkbenchSidebar({
@@ -76,13 +68,15 @@ export const DesignerWorkbenchSidebar = memo(function DesignerWorkbenchSidebar({
   formType,
   pageProps,
   schema,
+  schemaSource,
+  onSchemaSourceChange,
+  onSchemaSave,
   debugEvents,
   onActivePanelChange,
   onBeforeDesignerActionRegister,
   onPagePropsChange,
 }: DesignerWorkbenchSidebarProps) {
-  const activePanelMeta =
-    DESIGNER_PANELS.find((item) => item.key === activePanel) ?? DESIGNER_PANELS[0];
+  const activePanelMeta = DESIGNER_PANELS.find((panel) => panel.key === activePanel)!;
   const panelContent = renderDesignerPanelContent({
     activePanel,
     debugEvents,
@@ -92,48 +86,51 @@ export const DesignerWorkbenchSidebar = memo(function DesignerWorkbenchSidebar({
     onPagePropsChange,
     pageProps,
     schema,
+    schemaSource,
+    onSchemaSourceChange,
+    onSchemaSave,
   });
 
   return (
-    <Card className="flex h-full min-h-0 min-w-0 flex-row gap-0 overflow-hidden p-0">
-      <div className="flex h-full min-h-0 shrink-0 flex-col gap-1 pl-1">
-        {DESIGNER_PANELS.map((panel) => {
-          const isActive = panel.key === activePanel;
-          return (
-            <Button
-              key={panel.key}
-              isIconOnly
-              aria-label={panel.label}
-              variant="ghost"
-              className={[
-                "h-9 w-9 min-w-9 justify-center rounded-lg px-0 text-[var(--color-text-secondary)]",
-                isActive
-                  ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]"
-                  : "hover:bg-[var(--color-bg-subtle)]",
-              ].join(" ")}
-              onPress={() => onActivePanelChange(panel.key)}
-            >
-              <span className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-                {panel.icon}
-              </span>
-            </Button>
-          );
-        })}
-      </div>
-
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col p-1">
-        <div className="mb-3 shrink-0">
-          <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">
+    <Card className="flex h-full min-h-0 min-w-0 flex-col gap-0 overflow-hidden p-1">
+      <Tabs
+        selectedKey={activePanel}
+        onSelectionChange={(key) => {
+          const panel = DESIGNER_PANELS.find((item) => item.key === key);
+          if (panel) onActivePanelChange(panel.key);
+        }}
+        className="flex min-h-0 min-w-0 flex-1 flex-col gap-3"
+      >
+        <Tabs.ListContainer className="w-full min-w-0 shrink-0">
+          <Tabs.List aria-label="表单设计器工具箱" className="w-full">
+            {DESIGNER_PANELS.map((panel) => (
+              <Tabs.Tab
+                key={panel.key}
+                id={panel.key}
+                aria-label={panel.label}
+                className="h-9 min-w-9 flex-1 justify-center px-2"
+              >
+                <span aria-hidden="true" title={panel.label} className="inline-flex h-full w-full items-center justify-center">
+                  {panel.icon}
+                </span>
+                <Tabs.Indicator />
+              </Tabs.Tab>
+            ))}
+          </Tabs.List>
+        </Tabs.ListContainer>
+        <Tabs.Panel
+          key={activePanel}
+          id={activePanel}
+          className="flex min-h-0 min-w-0 flex-1 flex-col p-0"
+        >
+          <h2 className="mb-3 shrink-0 text-xl font-semibold text-[var(--color-text-primary)]">
             {activePanelMeta.label}
           </h2>
-        </div>
-
-        <div className="min-h-0 min-w-0 flex-1 overflow-auto">
-          <div key={activePanel} className="flex min-h-full min-w-0 flex-col">
-            {panelContent}
+          <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+            <div className="flex min-h-full min-w-0 flex-col">{panelContent}</div>
           </div>
-        </div>
-      </div>
+        </Tabs.Panel>
+      </Tabs>
     </Card>
   );
 }, areDesignerWorkbenchPropsEqual);
@@ -154,6 +151,9 @@ function areDesignerWorkbenchPropsEqual(
     previous.fields === next.fields &&
     previous.pageProps === next.pageProps &&
     previous.schema === next.schema &&
+    previous.schemaSource === next.schemaSource &&
+    previous.onSchemaSourceChange === next.onSchemaSourceChange &&
+    previous.onSchemaSave === next.onSchemaSave &&
     previous.onActivePanelChange === next.onActivePanelChange &&
     previous.onBeforeDesignerActionRegister === next.onBeforeDesignerActionRegister &&
     previous.onPagePropsChange === next.onPagePropsChange
@@ -169,6 +169,9 @@ function renderDesignerPanelContent({
   onPagePropsChange,
   pageProps,
   schema,
+  schemaSource,
+  onSchemaSourceChange,
+  onSchemaSave,
 }: {
   activePanel: DesignerPanelKey;
   debugEvents: RuntimeDebugEvent[];
@@ -178,11 +181,10 @@ function renderDesignerPanelContent({
   onPagePropsChange: (props: PageDesignerProps) => void;
   pageProps: PageDesignerProps;
   schema: FormDesignerSchema;
+  schemaSource: string | null;
+  onSchemaSourceChange: (source: string) => void;
+  onSchemaSave: () => Promise<boolean>;
 }) {
-  if (activePanel === "outline") {
-    return <OutlinePanel fields={fields} />;
-  }
-
   if (activePanel === "components") {
     return <CompTool embedded allowCustomComponents={formType === "defined"} />;
   }
@@ -227,7 +229,7 @@ function renderDesignerPanelContent({
     );
   }
 
-  return <SchemaPanel schema={schema} />;
+  return <SchemaPanel schema={schema} source={schemaSource} onChange={onSchemaSourceChange} onSave={onSchemaSave} />;
 }
 
 const INDEXABLE_FIELD_TYPES = new Set<PlacedField["type"]>([
@@ -309,55 +311,6 @@ type SystemAiStatus = {
   providerName?: string;
   reason?: string;
 };
-
-function OutlinePanel({ fields }: { fields: PlacedField[] }) {
-  const rootFields = fields
-    .filter((field) => !field.parentGroupId)
-    .sort((left, right) => left.row - right.row || left.column - right.column);
-
-  return (
-    <div className="h-full overflow-y-auto">
-      <div className="space-y-1">
-        {rootFields.map((field) => (
-          <OutlineNode key={field.id} field={field} fields={fields} level={0} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function OutlineNode({
-  field,
-  fields,
-  level,
-}: {
-  field: PlacedField;
-  fields: PlacedField[];
-  level: number;
-}) {
-  const children = fields
-    .filter((item) => item.parentGroupId === field.id)
-    .sort((left, right) => left.row - right.row || left.column - right.column);
-
-  return (
-    <div>
-      <div
-        className="flex items-center gap-3 rounded-2xl px-3 py-2 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-subtle)]"
-        style={{ paddingLeft: 12 + level * 18 }}
-      >
-        <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-[var(--color-text-secondary)]">
-          {field.type === "groupContainer" || field.type === "subform" ? <GridIcon /> : <ListIcon />}
-        </span>
-        <span className="truncate">{field.label}</span>
-      </div>
-      {children.length > 0
-        ? children.map((child) => (
-          <OutlineNode key={child.id} field={child} fields={fields} level={level + 1} />
-        ))
-        : null}
-    </div>
-  );
-}
 
 function DataSourcesPanel({
   dataSources,
@@ -529,7 +482,7 @@ function ActionPanel({
     } catch (error) {
       const message = error instanceof Error ? error.message : "动作面板解析失败";
       setParseError(message);
-      notify.error("动作面板解析失败", {
+      notifyRequestError(error, "动作面板解析失败", {
         description: message,
       });
       return false;
@@ -599,17 +552,6 @@ function ActionPanel({
                 draft: value ?? "",
               })
             }
-            theme="vs-dark"
-            options={{
-              automaticLayout: true,
-              minimap: { enabled: false },
-              fontSize: 13,
-              lineNumbersMinChars: 3,
-              padding: { top: 16, bottom: 16 },
-              scrollBeyondLastLine: false,
-              wordWrap: "on",
-              tabSize: 2,
-            }}
           />
         </div>
         {parseError ? (
@@ -653,13 +595,13 @@ function ActionContextDialog({
       <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
         <Modal.Container placement="center" scroll="inside" size="lg">
           <Modal.Dialog className={`${styles["designer-theme__surface"]} rounded-3xl bg-[var(--color-bg-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-dialog)]`}>
-            <Modal.Header className="border-b border-[var(--color-border)]">
+            <Modal.Header>
               <div className="flex items-center gap-3">
                 <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
                   <CodeIcon />
                 </span>
                 <div>
-                  <Modal.Heading className="text-lg font-semibold text-[var(--color-text-primary)]">
+                  <Modal.Heading>
                     动作上下文
                   </Modal.Heading>
                   <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
@@ -942,38 +884,41 @@ function handleMonacoBeforeMount(monaco: Monaco) {
   );
 }
 
-function SchemaPanel({ schema }: { schema: FormDesignerSchema }) {
+function SchemaPanel({ schema, source, onChange, onSave }: {
+  schema: FormDesignerSchema;
+  source: string | null;
+  onChange: (source: string) => void;
+  onSave: () => Promise<boolean>;
+}) {
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const schemaMarkdown = `\`\`\`json\n${JSON.stringify(schema, null, 2).replace(/\`\`\`/g, "\`\u200b\`\`")}\n\`\`\``;
-
+  const [isSaving, setIsSaving] = useState(false);
+  const value = source ?? JSON.stringify(schema, null, 2);
   useEffect(() => {
     if (!isFullscreen) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
+    const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setIsFullscreen(false);
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, [isFullscreen]);
-
   return (
-    <div
-      className={[
-        "overflow-hidden border border-[var(--color-border)] bg-[var(--color-code-bg)]",
-        isFullscreen
-          ? "fixed inset-0 z-[100] flex flex-col rounded-none shadow-[var(--shadow-dialog)]"
-          : "rounded-2xl",
-      ].join(" ")}
-    >
-      <div className="flex h-11 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3">
-        <span className="text-xs font-medium text-[var(--color-text-primary)]">Schema（只读）</span>
-        <EditorFullscreenButton
-          isFullscreen={isFullscreen}
-          onPress={() => setIsFullscreen((current) => !current)}
-        />
+    <div className={isFullscreen
+      ? "fixed inset-0 z-[100] flex flex-col bg-[var(--color-code-bg)] p-4"
+      : "flex min-h-0 flex-1 flex-col gap-3"}>
+      <div className="flex shrink-0 items-center justify-between gap-2 pb-3">
+        <span className="text-xs text-[var(--color-text-secondary)]">{source === null ? "Schema JSON" : "Schema JSON · 未保存"}</span>
+        <div className="flex items-center gap-1">
+          <Button size="sm" isDisabled={isSaving} onPress={() => {
+            setIsSaving(true);
+            void onSave().finally(() => setIsSaving(false));
+          }}>{isSaving ? "保存中..." : "保存源码"}</Button>
+          <EditorFullscreenButton isFullscreen={isFullscreen} onPress={() => setIsFullscreen(!isFullscreen)} />
+        </div>
       </div>
-      <div className={isFullscreen ? "min-h-0 flex-1 overflow-auto p-4" : "max-h-[calc(100vh-365px)] overflow-auto p-3"}>
-        <AgentMarkdown compact content={schemaMarkdown} />
+      <div className={styles["designer-theme__monaco-container"] + (isFullscreen ? " min-h-0 flex-1" : "")}>
+        <MonacoEditor height={isFullscreen ? "100%" : "calc(100vh - 200px)"}
+          language="json" value={value} onChange={(text) => onChange(text ?? "")}
+          options={{ readOnly: isSaving }} />
       </div>
     </div>
   );

@@ -14,6 +14,7 @@ pub struct Model {
     pub status: String,
     pub current_node_key: Option<String>,
     pub submitter: String,
+    pub submitter_user_id: Option<Uuid>,
     pub started_at: DateTimeUtc,
     pub completed_at: Option<DateTimeUtc>,
     pub paused_by: Option<String>,

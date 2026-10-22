@@ -1,5 +1,6 @@
 "use client";
 
+import { effectivePlatformGrants } from "@features/identity-access/platform-permissions";
 import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   AUTH_TOKEN_STORAGE_KEY,
@@ -29,10 +30,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 const authListeners = new Set<() => void>();
 
-type SessionResponse = {
-  code: number;
-  data: { token: string; user: AuthUser } | null;
-};
+
 
 function subscribeToAuth(listener: () => void) {
   authListeners.add(listener);
@@ -69,7 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    void getAuthSession<{ token: string; user: AuthUser }>()
+    void getAuthSession()
       .then((payload) => {
         if (!isTokenUsable(payload.token)) {
           throw new Error("未登录");
@@ -103,7 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const grants = await getAuthorizationGrants();
         if (cancelled) return;
         attempt = 0;
-        setPermissions(grants);
+        setPermissions([...effectivePlatformGrants(grants)]);
         setPermissionsLoadedFor(token);
       } catch {
         if (cancelled) return;
@@ -117,11 +115,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (document.visibilityState === "visible") void loadPermissions();
     };
     void loadPermissions();
+    window.addEventListener("yaya-permissions-updated", refreshOnFocus);
     window.addEventListener("focus", refreshOnFocus);
     document.addEventListener("visibilitychange", refreshOnFocus);
     return () => {
       cancelled = true;
       if (retryTimer !== null) window.clearTimeout(retryTimer);
+      window.removeEventListener("yaya-permissions-updated", refreshOnFocus);
       window.removeEventListener("focus", refreshOnFocus);
       document.removeEventListener("visibilitychange", refreshOnFocus);
     };

@@ -60,3 +60,12 @@ describe("IM local store", () => {
     expect(await store.getCursor()).toBe(1);
   }, 15_000);
 });
+
+ it("preserves enqueue order for equal timestamps and keeps order when retrying", async () => {
+  const store = new ImStore(crypto.randomUUID());
+  const base = { conversationId: "c", messageType: "text", content: "hi", fileIds: [], createdAt: "2026-10-12T00:00:00.000Z" };
+  await store.putPending({ ...base, localId: "z-first" });
+  await store.putPending({ ...base, localId: "a-second" });
+  await store.putPending({ ...base, localId: "z-first" });
+  expect((await store.getPending()).map(item => item.localId)).toEqual(["z-first", "a-second"]);
+});

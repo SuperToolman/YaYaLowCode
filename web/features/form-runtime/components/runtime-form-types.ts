@@ -1,4 +1,5 @@
 import type { CountryCityValue } from "@lib/location-catalog";
+import type { DateValidation } from "./date-validation";
 
 export type RuntimeFieldType =
   | "groupContainer"
@@ -33,8 +34,13 @@ export type RuntimeFieldOption = {
 };
 
 export type RuntimeFieldProps = {
+  groupStyle?: import("./FormGroup").GroupStyle;
   titlePosition?: "top" | "left" | "inside";
   placeholder?: string;
+  granularity?: "day" | "hour" | "minute" | "second";
+  hourCycle?: 12 | 24;
+  hideTimeZone?: boolean;
+  shouldForceLeadingZeros?: boolean;
   description?: string;
   defaultValueType?: "none" | "custom" | "formula" | "linkage";
   defaultValue?: string | number | string[] | CountryCityValue;
@@ -44,12 +50,14 @@ export type RuntimeFieldProps = {
   isHidden?: boolean;
   isReadOnly?: boolean;
   isRequired?: boolean;
+  dateTodayOrFuture?: boolean;
+  dateValidation?: DateValidation;
+  isUnique?: boolean;
+  formatValidation?: "email" | "phoneCN" | "idCardCN";
   showClearButton?: boolean;
   showCounter?: boolean;
   minValue?: number;
   maxValue?: number;
-  step?: number;
-  rows?: number;
   options?: RuntimeFieldOption[];
   orientation?: "horizontal" | "vertical";
   href?: string;
@@ -58,6 +66,7 @@ export type RuntimeFieldProps = {
   accept?: string;
   multiple?: boolean;
   maxFileSizeMb?: number;
+  showUploadLimitHint?: boolean;
   subformAddButtonText?: string;
   subformButtonState?: "normal" | "disabled" | "hidden";
   subformAllowBatchImport?: boolean;
@@ -98,6 +107,7 @@ export type RuntimeFieldProps = {
   associationPrimaryFieldId?: string;
   associationSecondaryFieldId?: string;
   associationTableFieldIds?: string[];
+  associationTableFieldMode?: "default" | "custom";
   associationFilters?: Array<{ fieldId: string; operator: string; value: string }>;
   associationFills?: Array<{ sourceFieldId: string; targetFieldId: string }>;
   associationSubformFills?: Array<{
@@ -196,6 +206,7 @@ export type RuntimeFormRendererProps = {
   schema: RuntimeFormSchema;
   submitLabel: string;
   formId?: string;
+  recordUuid?: string;
   submitting?: boolean;
   showSubmitButton?: boolean;
   isReadOnly?: boolean;

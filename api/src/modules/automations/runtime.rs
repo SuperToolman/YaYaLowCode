@@ -6,8 +6,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 #[derive(Clone)]
-pub(super) struct AutomationExecutionContext {
-    pub(super) outputs: HashMap<String, Value>,
-    pub(super) operator: String,
-    pub(super) run_id: Option<Uuid>,
+pub(crate) struct AutomationExecutionContext {
+    pub(crate) outputs: HashMap<String, Value>,
+    pub(crate) operator: String,
+    pub(crate) run_id: Option<Uuid>,
 }

@@ -1,3 +1,4 @@
+import * as sdk from "@lib/http";
 import {
   cleanupCommunicationData,
   getCommunicationModuleSettings,
@@ -20,150 +21,120 @@ import {
   updateIdentitySourceSettings,
   getAiEmployeeMarket,
   installAiEmployee,
-  testPurchaseAiEmployee,
-} from "@lib/api-client";
-import { ApiRequestError, jsonRequest, requestApi, type ApiEnvelope } from "@lib/api-request";
+} from "@lib/http";
+import { unwrapApiResult } from "@lib/api-request";
 
-function unwrap<T>(data: ApiEnvelope<T> | undefined, error: unknown, fallback: string): T {
-  if (error || data?.code !== 0 || data.data === null) {
-    throw new ApiRequestError(data?.message || fallback, 0, "business", data?.code, { cause: error });
-  }
-  return data.data;
+export async function getCommunicationSettings() {
+  const result = await getCommunicationModuleSettings({ responseStyle: "fields" });
+  return unwrapApiResult(result, "无法加载通讯模块状态");
 }
 
-export async function getCommunicationSettings<T>() {
-  const { data, error } = await getCommunicationModuleSettings({ responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "无法加载通讯模块状态");
+export async function getCommunicationStats() {
+  const result = await getCommunicationStorageStats({ responseStyle: "fields" });
+  return unwrapApiResult(result, "无法加载存储统计");
 }
 
-export async function getCommunicationStats<T>() {
-  const { data, error } = await getCommunicationStorageStats({ responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "无法加载存储统计");
+export async function updateCommunicationSettings(settings: import("@lib/http").CommunicationModuleSettings) {
+  const result = await updateCommunicationModuleSettings({ body: settings, responseStyle: "fields" });
+  return unwrapApiResult(result, "保存通讯模块设置失败");
 }
 
-export async function updateCommunicationSettings<T>(settings: T) {
-  const { data, error } = await updateCommunicationModuleSettings({ body: settings as never, responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "保存通讯模块设置失败");
+export async function cleanupCommunication() {
+  const result = await cleanupCommunicationData({ responseStyle: "fields" });
+  return unwrapApiResult(result, "清理失败");
 }
 
-export async function cleanupCommunication<T>() {
-  const { data, error } = await cleanupCommunicationData({ responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "清理失败");
+export async function loadDatabaseSettings() {
+  const result = await getDatabaseSettings({ responseStyle: "fields" });
+  return unwrapApiResult(result, "无法加载数据库配置");
+}
+export async function saveDatabaseSettings(body: sdk.UpdateDatabaseSettingsRequest) {
+  const result = await updateDatabaseSettings({ body, responseStyle: "fields" });
+  return unwrapApiResult(result, "保存数据库配置失败");
+}
+export async function testDatabase(body: sdk.TestDatabaseConnectionData["body"]) {
+  const result = await testDatabaseConnection({ body, responseStyle: "fields" });
+  return unwrapApiResult(result, "数据库连接测试失败");
+}
+export async function loadValkeySettings() {
+  const result = await getValkeySettings({ responseStyle: "fields" });
+  return unwrapApiResult(result, "无法加载 Valkey 配置");
+}
+export type ValkeyRuntimeStatus = sdk.ValkeyRuntimeStatusResponse;
+export async function getValkeyRuntimeStatus(signal?: AbortSignal) { return unwrapApiResult(await sdk.getValkeyRuntimeStatus({ signal, cache: "no-store" })); }
+export async function saveValkeySettings(body: sdk.UpdateValkeySettingsRequest) {
+  const result = await updateValkeySettings({ body, responseStyle: "fields" });
+  return unwrapApiResult(result, "保存 Valkey 配置失败");
+}
+export async function testValkey(body: sdk.TestValkeyConnectionData["body"]) {
+  const result = await testValkeyConnection({ body, responseStyle: "fields" });
+  return unwrapApiResult(result, "Valkey 连接测试失败");
 }
 
-export async function loadDatabaseSettings<T>() {
-  const { data, error } = await getDatabaseSettings({ responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "无法加载数据库配置");
-}
-export async function saveDatabaseSettings<T>(body: { host: string; port: number; database: string; username: string; password: string }) {
-  const { data, error } = await updateDatabaseSettings({ body, responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "保存数据库配置失败");
-}
-export async function testDatabase<T>(body: { host: string; port: number; database: string; username: string; password: string }) {
-  const { data, error } = await testDatabaseConnection({ body, responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "数据库连接测试失败");
-}
-export async function loadValkeySettings<T>() {
-  const { data, error } = await getValkeySettings({ responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "无法加载 Valkey 配置");
-}
-export async function saveValkeySettings<T>(body: { enabled: boolean; host: string; port: number; database: number; username: string; password: string; cacheTtlHours: number }) {
-  const { data, error } = await updateValkeySettings({ body, responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "保存 Valkey 配置失败");
-}
-export async function testValkey<T>(body: { enabled: boolean; host: string; port: number; database: number; username: string; password: string; cacheTtlHours: number }) {
-  const { data, error } = await testValkeyConnection({ body, responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "Valkey 连接测试失败");
+export async function getLicenseStatus() {
+  const result = await getPlatformLicenseStatus({ responseStyle: "fields" });
+  return unwrapApiResult(result, "无法读取许可证状态");
 }
 
-export async function getLicenseStatus<T>() {
-  const { data, error } = await getPlatformLicenseStatus({ responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "无法读取许可证状态");
+export async function activateLicense(body: sdk.ActivatePlatformLicenseRequest) {
+  const result = await activatePlatformLicense({ body, responseStyle: "fields" });
+  return unwrapApiResult(result, "无法更新许可证");
 }
 
-export async function activateLicense<T>(body: { licenseCenterUrl: string; license: string }) {
-  const { data, error } = await activatePlatformLicense({ body, responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "无法更新许可证");
+export async function applyLatestLicense() {
+  const result = await applyLatestPlatformLicense({ responseStyle: "fields" });
+  return unwrapApiResult(result, "无法更新平台签名");
 }
 
-export async function applyLatestLicense<T>() {
-  const { data, error } = await applyLatestPlatformLicense({ responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "无法更新平台签名");
+export async function getIdentitySettings() {
+  const result = await getIdentitySourceSettings({ responseStyle: "fields" });
+  return unwrapApiResult(result, "无法加载身份源配置");
 }
 
-export async function getIdentitySettings<T>() {
-  const { data, error } = await getIdentitySourceSettings({ responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "无法加载身份源配置");
+export async function saveIdentitySettings(body: import("@lib/http").UpdateIdentitySourceSettingsRequest) {
+  const result = await updateIdentitySourceSettings({ body: body, responseStyle: "fields" });
+  return unwrapApiResult(result, "保存身份源配置失败");
 }
 
-export async function saveIdentitySettings<T>(body: T) {
-  const { data, error } = await updateIdentitySourceSettings({ body: body as never, responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "保存身份源配置失败");
+export async function refreshDingTalkToken() {
+  const result = await refreshDingTalkAccessToken({ responseStyle: "fields" });
+  return unwrapApiResult(result, "获取 AccessToken 失败");
 }
 
-export async function refreshDingTalkToken<T>() {
-  const { data, error } = await refreshDingTalkAccessToken({ responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "获取 AccessToken 失败");
+export async function synchronizeDingTalkDepartments() {
+  const result = await syncDingTalkDepartments({ responseStyle: "fields" });
+  return unwrapApiResult(result, "同步钉钉组织架构失败");
 }
 
-export async function synchronizeDingTalkDepartments<T>() {
-  const { data, error } = await syncDingTalkDepartments({ responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "同步钉钉组织架构失败");
+export async function synchronizeDingTalkUsers() {
+  const result = await syncDingTalkUsers({ responseStyle: "fields" });
+  return unwrapApiResult(result, "同步钉钉用户失败");
 }
 
-export async function synchronizeDingTalkUsers<T>() {
-  const { data, error } = await syncDingTalkUsers({ responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "同步钉钉用户失败");
+export async function clearDingTalkIdentityData() {
+  const result = await clearDingTalkData({ responseStyle: "fields" });
+  return unwrapApiResult(result, "清除钉钉数据失败");
 }
 
-export async function clearDingTalkIdentityData<T>() {
-  const { data, error } = await clearDingTalkData({ responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "清除钉钉数据失败");
+export async function getAiEmployees() {
+  const result = await getAiEmployeeMarket({ responseStyle: "fields" });
+  return unwrapApiResult(result, "无法读取 AI 员工市场");
 }
 
-export async function getAiEmployees<T>() {
-  const { data, error } = await getAiEmployeeMarket({ responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "无法读取 AI 员工市场");
+export async function installMarketAiEmployee(employeeId: string) {
+  const result = await installAiEmployee({ path: { employee_id: employeeId }, responseStyle: "fields" });
+  return unwrapApiResult(result, "安装 AI 员工失败");
 }
 
-export async function installMarketAiEmployee<T>(employeeId: string) {
-  const { data, error } = await installAiEmployee({ path: { employee_id: employeeId }, responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "安装 AI 员工失败");
+export async function uninstallMarketAiEmployee(employeeId: string) {
+  return unwrapApiResult(await sdk.uninstallAiEmployee({ path: { employee_id: employeeId } }));
 }
-
-// The uninstall operation exists in the Next API but is not yet described by OpenAPI.
-export function uninstallMarketAiEmployee<T>(employeeId: string) {
-  return requestApi<T>(`/api/settings/ai-employee-market/${encodeURIComponent(employeeId)}/uninstall`, { method: "POST" });
+export async function testMarketAiEmployeePurchase(employeeId: string) {
+  return unwrapApiResult(await sdk.testPurchaseAiEmployee({ path: { employee_id: employeeId } }));
 }
-
-export async function testMarketAiEmployeePurchase<T>(employeeId: string) {
-  const { data, error } = await testPurchaseAiEmployee({ path: { employee_id: employeeId }, responseStyle: "fields" });
-  return unwrap(data as ApiEnvelope<T> | undefined, error, "测试支付失败");
-}
-
-// Model routes are a settings-specific resource and are not the OpenAPI agent-provider API.
-export function listModelRoutes<T>() {
-  return requestApi<T>("/api/settings/model-routes", { cache: "no-store" });
-}
-
-export function createModelRoute<T>(body: unknown) {
-  return requestApi<T>("/api/settings/model-routes", jsonRequest(body, { method: "POST" }));
-}
-
-export function updateModelRoute<T>(id: string, body: unknown) {
-  return requestApi<T>(`/api/settings/model-routes/${encodeURIComponent(id)}`, jsonRequest(body, { method: "PUT" }));
-}
-
-export function deleteModelRoute<T>(id: string) {
-  return requestApi<T>(`/api/settings/model-routes/${encodeURIComponent(id)}`, { method: "DELETE" });
-}
-
-export function listPlatformLogs<T>(params: { limit: number; offset: number; level?: string }) {
-  const search = new URLSearchParams({ limit: String(params.limit), offset: String(params.offset) });
-  if (params.level) search.set("level", params.level);
-  return requestApi<T>(`/api/settings/logs?${search}`, { cache: "no-store" });
-}
-
-export function clearPlatformLogs<T>() {
-  return requestApi<T>("/api/settings/logs", { method: "DELETE" });
-}
+export async function listModelRoutes() { return unwrapApiResult(await sdk.listModelRoutes()); }
+export async function createModelRoute(body: sdk.ModelRouteRequest) { return unwrapApiResult(await sdk.createModelRoute({ body })); }
+export async function updateModelRoute(id: string, body: sdk.ModelRouteRequest) { return unwrapApiResult(await sdk.updateModelRoute({ path: { id }, body })); }
+export async function deleteModelRoute(id: string) { return unwrapApiResult(await sdk.deleteModelRoute({ path: { id } })); }
+export async function listPlatformLogs(query: { limit: number; offset: number; level?: string }) { return unwrapApiResult(await sdk.listPlatformLogs({ query })); }
+export async function clearPlatformLogs() { return unwrapApiResult(await sdk.clearPlatformLogs()); }

@@ -1,7 +1,9 @@
 import { createRandomUuid } from "@/app/lib/random-uuid";
 
+export type ParsedImportWorkbook = ParsedExcel & { sheetName: string; sheetNames: string[] };
+
 type ExcelColumn = { id: string; label: string; header: string };
-type ParsedExcel = { headers: string[]; rows: unknown[][]; mappings: Record<number, string> };
+import type { ParsedExcelImport as ParsedExcel } from "@features/records/model/excel-import";
 
 function runWorker<TResult>(
   message: Record<string, unknown>,
@@ -24,20 +26,21 @@ function runWorker<TResult>(
   });
 }
 
-export async function parseExcelFile(buffer: ArrayBuffer, columns: ExcelColumn[]): Promise<ParsedExcel> {
-  const result = await runWorker<{ headers: string[]; rows: unknown[][]; mappings: Record<number, string> }>(
-    { type: "parse", buffer, columns },
+export async function parseExcelFile(buffer: ArrayBuffer, columns: ExcelColumn[], sheetName?: string): Promise<ParsedImportWorkbook> {
+  const result = await runWorker<ParsedImportWorkbook>(
+    { type: "parse", buffer, columns, sheetName },
     [buffer],
   );
-  return { headers: result.headers, rows: result.rows, mappings: result.mappings };
+  return result;
 }
 
-export async function buildExcelWorkbook(matrix: unknown[][], sheetName = "数据"): Promise<ArrayBuffer> {
+export async function buildExcelWorkbook(matrix: unknown[][], sheetName = "数据", merges: import("xlsx").Range[] = []): Promise<ArrayBuffer> {
   const result = await runWorker<{ buffer: ArrayBuffer }>({
     type: "build",
     matrix,
     sheetName,
     columnWidth: 22,
+    merges,
   });
   return result.buffer;
 }

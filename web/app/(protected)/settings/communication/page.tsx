@@ -1,8 +1,19 @@
 "use client";
+import { notifyRequestError } from "@lib/notify";
+import { useAuth } from "@components/AuthProvider";
 import { notify } from "@lib/notify";
 
 import { useEffect, useState } from "react";
-import { Button, Input, Modal, Switch } from "@heroui/react";
+import {
+  Button,
+  Modal,
+  Switch,
+  Description,
+  InputGroup,
+  Label,
+  TextField,
+} from "@heroui/react";
+import { FileTypeSelect } from "./components/FileTypeSelect";
 import { openLicenseManagementModal } from "@components/LicenseManagementModal";
 import { SettingsContentCard } from "../components/SettingsContentCard";
 import {
@@ -35,7 +46,7 @@ const defaultSettings: CommunicationModuleSettings = {
   installed: false,
   licenseId: null,
   expiresAt: null,
-  maxFileUploadMb: 20,
+  maxFileUploadMb: 50,
   retentionDays: 0,
   allowedFileExtensions: "",
   websocketEnabled: true,
@@ -57,6 +68,8 @@ function formatBytes(value: number) {
 }
 
 export default function CommunicationSettingsPage() {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission("settings.communication.manage");
   const [settings, setSettings] =
     useState<CommunicationModuleSettings>(defaultSettings);
   const [stats, setStats] = useState<StorageStats | null>(null);
@@ -68,14 +81,14 @@ export default function CommunicationSettingsPage() {
   async function load() {
     try {
       const nextSettings = normalizeSettings(
-        await getCommunicationSettings<CommunicationModuleSettings>(),
+        await getCommunicationSettings(),
       );
       setSettings(nextSettings);
       if (nextSettings.installed) {
-        setStats(await getCommunicationStats<StorageStats>());
+        setStats(await getCommunicationStats());
       }
     } catch (error) {
-      notify.error("无法加载通讯模块设置", {
+      notifyRequestError(error, "无法加载通讯模块设置", {
         description: error instanceof Error ? error.message : "请稍后重试。",
       });
     } finally {
@@ -94,7 +107,7 @@ export default function CommunicationSettingsPage() {
       );
       notify.success("通讯模块设置已保存");
     } catch (error) {
-      notify.error("保存失败", {
+      notifyRequestError(error, "保存失败", {
         description: error instanceof Error ? error.message : "请稍后重试。",
       });
     } finally {
@@ -104,17 +117,14 @@ export default function CommunicationSettingsPage() {
   async function cleanup() {
     setCleaning(true);
     try {
-      const result = await cleanupCommunication<{
-        deletedMessages: number;
-        deletedFiles: number;
-      }>();
+      const result = await cleanupCommunication();
       notify.success("过期通讯数据已清理", {
         description: `消息 ${result.deletedMessages} 条，附件 ${result.deletedFiles} 个`,
       });
       setCleanupConfirmOpen(false);
       await load();
     } catch (error) {
-      notify.error("清理失败", {
+      notifyRequestError(error, "清理失败", {
         description: error instanceof Error ? error.message : "请稍后重试。",
       });
     } finally {
@@ -134,7 +144,7 @@ export default function CommunicationSettingsPage() {
                 修改后立即生效
               </span>
               <Button
-                isDisabled={saving || loading}
+                isDisabled={!canManage || saving || loading}
                 onPress={() => void save()}
               >
                 {saving ? "正在保存…" : "保存配置"}
@@ -189,43 +199,41 @@ export default function CommunicationSettingsPage() {
             </section>
             <section className="border-t border-[var(--color-border)] pt-5">
               <h3 className="text-sm font-semibold">消息与附件</h3>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <label className="text-sm">
-                  单个聊天文件最大大小
-                  <Input
-                    className="mt-2"
-                    type="number"
-                    min="1"
-                    max="200"
-                    value={String(settings.maxFileUploadMb)}
-                    onChange={(event) =>
-                      setSettings({
-                        ...settings,
-                        maxFileUploadMb: Number(event.currentTarget.value) || 1,
-                      })
-                    }
-                  />
-                  <span className="mt-1 block text-xs text-[var(--color-text-secondary)]">
-                    单位：MB，范围 1 至 200。
-                  </span>
-                </label>
-                <label className="text-sm">
-                  允许的文件类型
-                  <Input
-                    className="mt-2"
-                    placeholder="例如 pdf,docx,png"
-                    value={settings.allowedFileExtensions}
-                    onChange={(event) =>
-                      setSettings({
-                        ...settings,
-                        allowedFileExtensions: event.currentTarget.value,
-                      })
-                    }
-                  />
-                  <span className="mt-1 block text-xs text-[var(--color-text-secondary)]">
-                    留空表示不限制扩展名。
-                  </span>
-                </label>
+              <div className="flex gap-4">
+                <TextField
+                  isRequired
+                  className="w-full max-w-[280px]"
+                  name="price"
+                >
+                  <Label>单个聊天文件最大大小</Label>
+                  <InputGroup>
+                    <InputGroup.Input
+                      type="number"
+                      min="1"
+                      max="200"
+                      value={String(settings.maxFileUploadMb)}
+                      onChange={(event) =>
+                        setSettings({
+                          ...settings,
+                          maxFileUploadMb:
+                            Number(event.currentTarget.value) || 1,
+                        })
+                      }
+                    />
+                    <InputGroup.Suffix>MB</InputGroup.Suffix>
+                  </InputGroup>
+                  <Description>范围 1 至 200。</Description>
+                </TextField>
+
+                <FileTypeSelect
+                  value={settings.allowedFileExtensions}
+                  onChange={(allowedFileExtensions) =>
+                    setSettings((current) => ({
+                      ...current,
+                      allowedFileExtensions,
+                    }))
+                  }
+                />
               </div>
               <Switch
                 className="mt-4"
@@ -244,33 +252,41 @@ export default function CommunicationSettingsPage() {
             </section>
             <section className="border-t border-[var(--color-border)] pt-5">
               <h3 className="text-sm font-semibold">数据保留与实时通信</h3>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <label className="text-sm">
-                  消息保留天数
-                  <Input
-                    className="mt-2"
-                    type="number"
-                    min="0"
-                    max="3650"
-                    value={String(settings.retentionDays)}
-                    onChange={(event) =>
-                      setSettings({
-                        ...settings,
-                        retentionDays: Math.max(
-                          0,
-                          Number(event.currentTarget.value) || 0,
-                        ),
-                      })
-                    }
-                  />
-                  <span className="mt-1 block text-xs text-[var(--color-text-secondary)]">
-                    0 表示永久保留。
-                  </span>
-                </label>
+              <div className="flex gap-4">
+                <TextField
+                  isRequired
+                  className="w-full max-w-[280px]"
+                  name="price"
+                >
+                  <Label>消息保留天数</Label>
+                  <InputGroup>
+                    <InputGroup.Input
+                      type="number"
+                      min="0"
+                      max="3650"
+                      value={String(settings.retentionDays)}
+                      onChange={(event) =>
+                        setSettings({
+                          ...settings,
+                          retentionDays: Math.max(
+                            0,
+                            Number(event.currentTarget.value) || 0,
+                          ),
+                        })
+                      }
+                    />
+                    <InputGroup.Suffix>天</InputGroup.Suffix>
+                  </InputGroup>
+                  <Description>0 表示永久保留。</Description>
+                </TextField>
+
+
                 <div className="flex items-end">
                   <Button
                     variant="secondary"
-                    isDisabled={cleaning || settings.retentionDays === 0}
+                    isDisabled={
+                      !canManage || cleaning || settings.retentionDays === 0
+                    }
                     onPress={() => setCleanupConfirmOpen(true)}
                   >
                     {cleaning ? "清理中…" : "清理过期数据"}
@@ -317,14 +333,14 @@ export default function CommunicationSettingsPage() {
                 <Modal.Footer>
                   <Button
                     variant="ghost"
-                    isDisabled={cleaning}
+                    isDisabled={!canManage || cleaning}
                     onPress={() => setCleanupConfirmOpen(false)}
                   >
                     取消
                   </Button>
                   <Button
                     className="bg-[var(--color-danger)] text-white"
-                    isDisabled={cleaning}
+                    isDisabled={!canManage || cleaning}
                     onPress={() => void cleanup()}
                   >
                     {cleaning ? "清理中…" : "确认清理"}

@@ -2,6 +2,7 @@ use crate::platform::authorization;
 use crate::platform::prelude::*;
 use crate::shared::*;
 use axum::http::{HeaderMap, StatusCode};
+use sea_orm::QuerySelect;
 
 pub(crate) async fn list_navigation_items(
     State(state): State<AppState>,
@@ -17,6 +18,33 @@ pub(crate) async fn list_navigation_items(
         .order_by_asc(app_navigation_entity::Column::CreatedAt)
         .all(&state.db)
         .await?;
+
+    let target_form_uuids = items
+        .iter()
+        .filter_map(|item| item.target_form_uuid.as_deref())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let valid_form_uuids = if target_form_uuids.is_empty() {
+        HashSet::new()
+    } else {
+        FormDefinitionEntity::find()
+            .select_only()
+            .column(form_definition_entity::Column::FormUuid)
+            .filter(form_definition_entity::Column::FormUuid.is_in(target_form_uuids))
+            .into_tuple::<String>()
+            .all(&state.db)
+            .await?
+            .into_iter()
+            .collect::<HashSet<_>>()
+    };
+    let items = items
+        .into_iter()
+        .filter(|item| {
+            item.target_form_uuid
+                .as_deref()
+                .is_none_or(|form_uuid| valid_form_uuids.contains(form_uuid))
+        })
+        .collect();
 
     let grants = authorization::grants(&headers, &state).await?;
     let visible_items = filter_navigation_items_by_grants(items, &grants);

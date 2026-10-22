@@ -55,6 +55,27 @@ describe("IM adapter", () => {
     expect(socket.sent.filter((item) => item.action === "ack").at(-1)?.data?.mailboxSeq).toBe(2);
   });
 
+  it("submits queued messages serially even when a new send triggers another flush", async () => {
+    vi.stubGlobal("WebSocket", TestSocket);
+    let release!: () => void;
+    const first = new Promise<void>(resolve => { release = resolve; });
+    let active = 0; let maximum = 0;
+    const order: string[] = [];
+    const transport = vi.fn(async (_action: string, data: unknown) => {
+      const item = data as { localId: string }; active++; maximum = Math.max(maximum, active); order.push(item.localId);
+      if (item.localId === "z-first") await first;
+      active--; return { accepted: true };
+    });
+    const adapter = client(transport);
+    const base = { conversationId: "c", messageType: "text", content: "hello", fileIds: [], createdAt: "2026-10-12T00:00:00.000Z" };
+    await adapter.sendMessage({ ...base, localId: "z-first" });
+    await adapter.connect(); const socket = sockets[0]; socket.onopen?.();
+    socket.receive({ type: "event", event: "snapshot.completed", mailboxSeq: 0 }); await settle();
+    await adapter.sendMessage({ ...base, localId: "a-second" }); await settle();
+    expect(order).toEqual(["z-first"]); release(); await settle();
+    expect(order).toEqual(["z-first", "a-second"]); expect(maximum).toBe(1);
+  });
+
   it("persists an offline send and retries with its original localId", async () => {
     vi.stubGlobal("WebSocket", TestSocket);
     const transport = vi.fn().mockResolvedValue({ accepted: true });

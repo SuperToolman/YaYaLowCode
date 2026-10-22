@@ -1,9 +1,13 @@
 "use client";
+import { assertApiEnvelope } from "@lib/api-request";
+
+import { notifyRequestError } from "@lib/notify";
 import { notify } from "@lib/notify";
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
+  ButtonGroup,
   Button,
   Card,
   Dropdown,
@@ -60,7 +64,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
   const router = useRouter();
   const { hasPermission, user } = useAuth();
   const canManageApps = hasPermission("apps.manage");
-  const canImportApps = hasPermission("apps.import");
+  const canImportApps = hasPermission("market.apps.view");
   const isSystemAdministrator = hasPermission("*");
 
   useEffect(() => {
@@ -70,21 +74,19 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
       try {
         // A source application is promoted in place after its publisher's release is approved.
         // Sync before reading the list so the online version is visible immediately.
-        await syncMarketplaceApplications<unknown>();
-        const { data, error } = await listApps({
+        await syncMarketplaceApplications();
+        const { data, error , response: httpResponse0 } = await listApps({
           responseStyle: "fields",
         });
 
-        if (error || !data || data.code !== 0 || !data.data) {
-          throw new Error("load apps failed");
-        }
+        assertApiEnvelope(data, error, httpResponse0);
 
         if (!cancelled) {
           setApps(sortApps(data.data.map(toAppItem).map(normalizeAppItem)));
         }
       } catch (cause) {
         if (!cancelled)
-          notify.error("应用列表加载失败", {
+          notifyRequestError(cause, "应用列表加载失败", {
             description:
               cause instanceof Error ? cause.message : "请刷新后重试",
           });
@@ -127,7 +129,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
   async function handleCreateApp() {
     startTransition(async () => {
       try {
-        const { data, error } = await createApp({
+        const { data, error , response: httpResponse1 } = await createApp({
           body: {
             name: createName.trim() || undefined,
             description: createDescription.trim() || undefined,
@@ -135,9 +137,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
           responseStyle: "fields",
         });
 
-        if (error || !data || data.code !== 0 || !data.data) {
-          throw new Error("create app failed");
-        }
+        assertApiEnvelope(data, error, httpResponse1);
 
         const createdApp = toAppItem(data.data);
         setApps((current) =>
@@ -163,13 +163,12 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
     setBusyAppId(app.id);
 
     try {
-      const { data: payload, error } = await updateApp({
+      const { data: payload, error , response: httpResponse2 } = await updateApp({
         path: { appId: app.id },
         body: { name: nextName, description: renameDescription.trim() },
         responseStyle: "fields",
       });
-      if (error || payload?.code !== 0 || !payload.data)
-        throw new Error(payload?.message || "应用更新失败");
+      assertApiEnvelope(payload, error, httpResponse2);
 
       const updatedApp = normalizeAppItem(toAppItem(payload.data));
       setApps((current) =>
@@ -180,7 +179,7 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
       window.dispatchEvent(new Event("yaya-apps-updated"));
       setRenameApp(null);
     } catch (cause) {
-      notify.error("应用更新失败", {
+      notifyRequestError(cause, "应用更新失败", {
         description: cause instanceof Error ? cause.message : "请稍后重试",
       });
     } finally {
@@ -192,21 +191,21 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
     setBusyAppId(app.id);
 
     try {
-      const { data, error } = await deleteAppRequest({
+      const { data, error, response } = await deleteAppRequest({
         path: { appId: app.id },
         responseStyle: "fields",
       });
-      const payload = data as { code?: number; message?: string } | undefined;
-      if (error || payload?.code !== 0)
-        throw new Error(payload?.message || "删除应用失败");
+      assertApiEnvelope(data, error, response);
 
       setApps((current) => current.filter((item) => item.id !== app.id));
-      window.dispatchEvent(new CustomEvent("yaya-apps-updated", {
-        detail: { deletedAppId: app.id },
-      }));
+      window.dispatchEvent(
+        new CustomEvent("yaya-apps-updated", {
+          detail: { deletedAppId: app.id },
+        }),
+      );
       setDeleteApp(null);
     } catch (cause) {
-      notify.error("删除应用失败", {
+      notifyRequestError(cause, "删除应用失败", {
         description: cause instanceof Error ? cause.message : "请稍后重试",
       });
     } finally {
@@ -217,12 +216,12 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
   async function handleSubmitMarket(app: AppItem) {
     setSubmittingAppId(app.id);
     try {
-      await submitAppToMarketplace<unknown>(app.id);
+      await submitAppToMarketplace(app.id);
       notify.success("上线申请已提交", {
         description: "申请已发送，等待运营中心审核。",
       });
     } catch (cause) {
-      notify.error("上线申请失败", {
+      notifyRequestError(cause, "上线申请失败", {
         description: cause instanceof Error ? cause.message : "请稍后重试。",
       });
     } finally {
@@ -244,24 +243,24 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
         </SearchField>
       }
       actions={
-        <>
-          <Button onPress={() => setIsFieldOutlineOpen(true)}>
+        <ButtonGroup>
+          <Button variant="secondary" onPress={() => setIsFieldOutlineOpen(true)}>
             <ListUl />
             字段大纲
           </Button>
           {canManageApps ? (
-            <Button onClick={() => setCreateOpen(true)} isDisabled={isPending}>
+            <Button variant="secondary" onClick={() => setCreateOpen(true)} isDisabled={isPending}>
               <Plus />
               {isPending ? "创建中..." : "创建应用"}
             </Button>
           ) : null}
           {canImportApps ? (
-            <Button onPress={() => router.push("/market")}>
+            <Button variant="tertiary" onPress={() => router.push("/market")}>
               <Rocket />
               应用市场
             </Button>
           ) : null}
-        </>
+        </ButtonGroup>
       }
     >
       <main className="flex h-full min-h-0 flex-col gap-5">

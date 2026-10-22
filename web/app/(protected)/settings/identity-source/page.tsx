@@ -1,4 +1,6 @@
 "use client";
+import { notifyRequestError } from "@lib/notify";
+import { useAuth } from "@components/AuthProvider";
 
 import { useEffect, useState } from "react";
 import { notify } from "@lib/notify";
@@ -57,6 +59,8 @@ const providerTabs: Array<{ id: ProviderTab; label: string }> = [
 ];
 
 export default function IdentitySourceSettingsPage() {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission("settings.identity-source.manage");
   const [activeTab, setActiveTab] = useState<ProviderTab>("local");
   const [form, setForm] = useState<IdentitySourceSettings>(defaultSettings);
   const [loading, setLoading] = useState(true);
@@ -80,7 +84,8 @@ export default function IdentitySourceSettingsPage() {
       setLoading(true);
       setError("");
       try {
-        setForm(await getIdentitySettings<IdentitySourceSettings>());
+        const payload = await getIdentitySettings();
+        setForm({ dingtalk: { ...defaultSettings.dingtalk, ...payload.dingtalk, appId: payload.dingtalk.appId ?? "", agentId: payload.dingtalk.agentId ?? "", accessTokenExpiresAt: payload.dingtalk.accessTokenExpiresAt ?? null } });
       } catch (reason) {
         setError(
           reason instanceof Error ? reason.message : "无法加载身份源配置",
@@ -112,11 +117,11 @@ export default function IdentitySourceSettingsPage() {
     setSaving(true);
     setError("");
     try {
-      const payload = await saveIdentitySettings<IdentitySourceSettings>(form);
-      setForm(payload);
+      const payload = await saveIdentitySettings(form);
+      setForm({ dingtalk: { ...defaultSettings.dingtalk, ...payload.dingtalk, appId: payload.dingtalk.appId ?? "", agentId: payload.dingtalk.agentId ?? "", accessTokenExpiresAt: payload.dingtalk.accessTokenExpiresAt ?? null } });
       return true;
     } catch (reason) {
-      notify.error("保存身份源配置失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
+      notifyRequestError(reason, "保存身份源配置失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
       return false;
     } finally {
       setSaving(false);
@@ -129,11 +134,7 @@ export default function IdentitySourceSettingsPage() {
     try {
       const saved = await saveSettings();
       if (!saved) return;
-      const payload = await refreshDingTalkToken<{
-        accessToken: string;
-        expiresIn: number;
-        expiresAt: string;
-      }>();
+      const payload = await refreshDingTalkToken();
       setForm((current) => ({
         ...current,
         dingtalk: {
@@ -146,7 +147,7 @@ export default function IdentitySourceSettingsPage() {
         description: `有效期至 ${new Date(payload.expiresAt).toLocaleString("zh-CN")}`,
       });
     } catch (reason) {
-      notify.error("获取 AccessToken 失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
+      notifyRequestError(reason, "获取 AccessToken 失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
     } finally {
       setFetchingToken(false);
     }
@@ -158,30 +159,14 @@ export default function IdentitySourceSettingsPage() {
     try {
       const saved = await saveSettings();
       if (!saved) return false;
-      const departmentPayload = await synchronizeDingTalkDepartments<{
-        total: number;
-        created: number;
-        updated: number;
-        disabled: number;
-        synchronizedAt: string;
-      }>();
-      const userPayload = await synchronizeDingTalkUsers<{
-        total: number;
-        created: number;
-        updated: number;
-        disabled: number;
-        avatars: number;
-        memberships: number;
-        roles: number;
-        roleBindings: number;
-        synchronizedAt: string;
-      }>();
+      const departmentPayload = await synchronizeDingTalkDepartments();
+      const userPayload = await synchronizeDingTalkUsers();
       notify.success("钉钉同步完成", {
         description: `部门 ${departmentPayload.total} 个，用户 ${userPayload.total} 人，角色 ${userPayload.roles} 个。`,
       });
       return true;
     } catch (reason) {
-      notify.error("同步钉钉数据失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
+      notifyRequestError(reason, "同步钉钉数据失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
       return false;
     } finally {
       setSyncingDingTalk(false);
@@ -192,18 +177,13 @@ export default function IdentitySourceSettingsPage() {
     setClearingDingTalk(true);
     setError("");
     try {
-      const payload = await clearDingTalkIdentityData<{
-        deletedUsers: number;
-        deletedRoles: number;
-        deletedOrganizationUnits: number;
-        deletedRolePermissions: number;
-      }>();
+      const payload = await clearDingTalkIdentityData();
       setClearConfirmOpen(false);
       notify.success("钉钉数据已清除", {
         description: `${payload.deletedOrganizationUnits} 个组织、${payload.deletedUsers} 个用户、${payload.deletedRoles} 个角色、${payload.deletedRolePermissions} 项权限配置。`,
       });
     } catch (reason) {
-      notify.error("清除钉钉数据失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
+      notifyRequestError(reason, "清除钉钉数据失败", { description: reason instanceof Error ? reason.message : "请稍后重试" });
     } finally {
       setClearingDingTalk(false);
     }
@@ -253,10 +233,10 @@ export default function IdentitySourceSettingsPage() {
             sourceLabel="钉钉"
             actions={
               <>
-                <Button variant="secondary" isDisabled={loading || syncingDingTalk || clearingDingTalk} onPress={() => setSyncConfigOpen(true)}>
+                <Button variant="secondary" isDisabled={!canManage || loading || syncingDingTalk || clearingDingTalk} onPress={() => setSyncConfigOpen(true)}>
                   {syncingDingTalk ? "正在同步…" : "同步组织与用户"}
                 </Button>
-                <Button className="bg-[var(--color-danger)] text-white" isDisabled={loading || saving || syncingDingTalk || clearingDingTalk} onPress={() => setClearConfirmOpen(true)}>
+                <Button className="bg-[var(--color-danger)] text-white" isDisabled={!canManage || loading || saving || syncingDingTalk || clearingDingTalk} onPress={() => setClearConfirmOpen(true)}>
                   清除钉钉数据
                 </Button>
               </>
@@ -357,7 +337,7 @@ export default function IdentitySourceSettingsPage() {
                     <Button
                       className="shrink-0"
                       isDisabled={
-                        loading ||
+                        !canManage || loading ||
                         saving ||
                         syncingDingTalk ||
                         fetchingToken ||
@@ -439,7 +419,7 @@ export default function IdentitySourceSettingsPage() {
                 <Button
                   variant="primary"
                   isDisabled={
-                    loading || saving || syncingDingTalk || !canFetchAccessToken
+                    !canManage || loading || saving || syncingDingTalk || !canFetchAccessToken
                   }
                   onPress={() =>
                     void (async () => {
@@ -479,14 +459,14 @@ export default function IdentitySourceSettingsPage() {
               <Modal.Footer>
                 <Button
                   variant="ghost"
-                  isDisabled={clearingDingTalk}
+                  isDisabled={!canManage || clearingDingTalk}
                   onPress={() => setClearConfirmOpen(false)}
                 >
                   取消
                 </Button>
                 <Button
                   className="bg-[var(--color-danger)] text-white"
-                  isDisabled={clearingDingTalk}
+                  isDisabled={!canManage || clearingDingTalk}
                   onPress={() => void clearDingTalkData()}
                 >
                   {clearingDingTalk ? "正在清除…" : "确认清除"}

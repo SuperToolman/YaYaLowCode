@@ -8,19 +8,8 @@ import { listModelRoutes } from "@features/settings/api";
 import type { AgentOption } from "@features/agent-assistant/types";
 import type { PageDesignerProps } from "../designer-types";
 
-type SystemAiStatus = {
-  available: boolean;
-  providerId?: string;
-  providerName?: string;
-  reason?: string;
-};
+type SystemAiStatus = import("@lib/http").SystemAiStatusResponse;
 
-type ModelRouteStatus = {
-  enabled?: boolean;
-  isDefault?: boolean;
-  apiBaseUrl?: string;
-  defaultChatModel?: string;
-};
 
 type AgentPanelProps = {
   value: PageDesignerProps["agent"];
@@ -36,8 +25,8 @@ export function AgentPanel({ value, onChange }: AgentPanelProps) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const statusRequest = fetchSystemAiStatus<SystemAiStatus>();
-      const routesRequest = listModelRoutes<ModelRouteStatus[]>();
+      const statusRequest = fetchSystemAiStatus();
+      const routesRequest = listModelRoutes();
 
       const [statusResult, routesResult] = await Promise.allSettled([statusRequest, routesRequest]);
       if (cancelled) return;

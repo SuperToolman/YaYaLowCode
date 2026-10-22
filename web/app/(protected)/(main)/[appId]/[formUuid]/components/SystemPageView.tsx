@@ -1,4 +1,7 @@
 "use client";
+import { assertApiResult } from "@lib/api-request";
+
+import { notifyRequestError } from "@lib/notify";
 import { notify } from "@lib/notify";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -19,7 +22,6 @@ import {
 } from "@/features/workflow/api";
 import { formatDateTime } from "../form-record-utils";
 import type { ApiEnvelope } from "@/app/lib/api-request";
-import styles from "./SystemPageView.module.css";
 
 type Scope = "todo" | "processed" | "created" | "copied";
 type Item = {
@@ -76,8 +78,8 @@ export function SystemPageView({
       setError("");
       try {
         const result = await listWorkflowTasks({ query: { scope: next, appId: filter || undefined }, responseStyle: "fields" });
-        const body = result.data as ApiEnvelope<{ items?: Item[] }> | undefined;
-        if (result.error || body?.code !== 0) throw new Error(body?.message || "加载任务失败");
+        assertApiResult(result);
+        const body = result.data as ApiEnvelope<{ items?: Item[] }>;
         setItems(body.data?.items ?? []);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "加载任务失败");
@@ -122,19 +124,12 @@ export function SystemPageView({
       const result = await (action.kind === "reject"
         ? rejectWorkflowTask(request)
         : approveWorkflowTask(request));
-      if (
-        result.error ||
-        (result.data as ApiEnvelope<unknown> | undefined)?.code !== 0
-      )
-        throw new Error(
-          (result.data as ApiEnvelope<unknown> | undefined)?.message ||
-            "任务处理失败",
-        );
+      assertApiResult(result);
       notify.success("任务已处理");
       setAction(null);
       await load(scope);
     } catch (cause) {
-      notify.error("任务处理失败", {
+      notifyRequestError(cause, "任务处理失败", {
         description: cause instanceof Error ? cause.message : "请稍后重试",
       });
     } finally {
@@ -142,23 +137,23 @@ export function SystemPageView({
     }
   }
   return (
-    <div className={styles.page}>
-      <div className={styles.layout}>
-        <header className={styles.header}>
+    <div className="h-full min-h-0 overflow-hidden">
+      <div className="flex h-full min-h-0 w-full flex-col gap-4 py-6">
+        <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-4 min-[901px]:grid-cols-[minmax(0,1fr)_minmax(14rem,24rem)_minmax(0,1fr)]">
           <div>
-            <h1 className={styles.title}>{pageTitle}</h1>
-            <p className={styles.subtitle}>
+            <h1 className="text-xl font-semibold">{pageTitle}</h1>
+            <p className="mt-1 text-sm text-muted">
               查看所有应用中的流程任务与审批记录。
             </p>
           </div>
           <Input
             aria-label="搜索任务"
-            className={styles.search}
+            className="col-span-full row-start-2 w-full min-[901px]:col-span-1 min-[901px]:col-start-2 min-[901px]:row-start-1"
             placeholder="搜索任务"
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
           />
-          <nav className={styles.tabs}>
+          <nav className="col-start-2 row-start-1 max-w-full justify-self-end overflow-x-auto min-[901px]:col-start-3">
             <Tabs
               selectedKey={scope}
               onSelectionChange={(key) => setScope(String(key) as Scope)}
@@ -177,9 +172,9 @@ export function SystemPageView({
             </Tabs>
           </nav>
         </header>
-        <div className={styles.tableArea}>
-          <Table className={styles.table}>
-            <Table.ScrollContainer className={styles.scroll}>
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <Table className="h-full min-h-0 min-w-[38.75rem] flex-1">
+            <Table.ScrollContainer className="h-full overflow-auto">
               <Table.Content aria-label="任务列表">
                 <Table.Header>
                   <Table.Column id="task" isRowHeader>
@@ -192,7 +187,7 @@ export function SystemPageView({
                 </Table.Header>
                 <Table.Body
                   renderEmptyState={() => (
-                    <EmptyState className={styles.empty}>
+                    <EmptyState className="flex min-h-full items-center justify-center">
                       {loading ? "正在加载任务…" : error || "暂无相关流程任务"}
                     </EmptyState>
                   )}
@@ -202,7 +197,8 @@ export function SystemPageView({
                       <Table.Row key={`${row.appId}-${row.id}`} id={row.id}>
                         <Table.Cell>
                           <Button
-                            className={styles.taskButton}
+                            variant="ghost"
+                            className="h-auto justify-start p-0 text-left"
                             onPress={() =>
                               router.push(
                                 `/${row.appId || appId}/${row.formUuid}?record=${encodeURIComponent(row.recordUuid)}${scope === "todo" && row.taskType === "execution" ? `&task=${encodeURIComponent(row.id)}` : ""}`,
@@ -210,21 +206,21 @@ export function SystemPageView({
                             }
                           >
                             <span>
-                              <span className={styles.taskName}>
+                              <span className="block max-w-88 truncate font-medium">
                                 {row.formName}
                               </span>
-                              <span className={styles.taskMeta}>
+                              <span className="mt-1 block max-w-88 truncate text-xs text-muted">
                                 {row.flowName} · {row.nodeLabel || "流程处理中"}
                               </span>
                             </span>
                           </Button>
                         </Table.Cell>
                         <Table.Cell>
-                          <span className={styles.appId}>{row.appId}</span>
+                          <span className="text-xs text-muted">{row.appId}</span>
                         </Table.Cell>
                         <Table.Cell>{row.submitter}</Table.Cell>
                         <Table.Cell>
-                          <span className={styles.muted}>
+                          <span className="text-xs text-muted">
                             {formatDateTime(
                               row.completedAt || row.updatedAt || row.createdAt,
                             )}
@@ -234,7 +230,7 @@ export function SystemPageView({
                           {scope === "todo" &&
                           row.status === "pending" &&
                           row.taskType === "approval" ? (
-                            <div className={styles.rowActions}>
+                            <div className="flex gap-1">
                               <Button
                                 size="sm"
                                 onPress={() => {
@@ -279,43 +275,41 @@ export function SystemPageView({
           </Table>
         </div>
       </div>
-      <Modal
+      <Modal.Backdrop
         isOpen={action !== null}
         onOpenChange={(open) => !open && !submitting && setAction(null)}
       >
-        <Modal.Backdrop>
-          <Modal.Container placement="center" size="sm">
-            <Modal.Dialog>
-              <Modal.Header>
-                <Modal.Heading>
-                  {action?.kind === "reject" ? "拒绝任务" : "同意任务"}
-                </Modal.Heading>
-                <Modal.CloseTrigger aria-label="关闭" />
-              </Modal.Header>
-              <Modal.Body>
-                <TextArea
-                  aria-label="审批意见"
-                  value={comment}
-                  onChange={(event) => setComment(event.currentTarget.value)}
-                  placeholder="可填写审批意见"
-                />
-              </Modal.Body>
-              <Modal.Footer>
-                <Button onPress={() => setAction(null)}>取消</Button>
-                <Button
-                  isPending={submitting}
-                  isDisabled={
-                    submitting || (action?.kind === "reject" && !comment.trim())
-                  }
-                  onPress={() => void submitAction()}
-                >
-                  确认
-                </Button>
-              </Modal.Footer>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
+        <Modal.Container placement="center" size="sm">
+          <Modal.Dialog>
+            <Modal.Header>
+              <Modal.Heading>
+                {action?.kind === "reject" ? "拒绝任务" : "同意任务"}
+              </Modal.Heading>
+              <Modal.CloseTrigger aria-label="关闭" />
+            </Modal.Header>
+            <Modal.Body>
+              <TextArea
+                aria-label="审批意见"
+                value={comment}
+                onChange={(event) => setComment(event.currentTarget.value)}
+                placeholder="可填写审批意见"
+              />
+            </Modal.Body>
+            <Modal.Footer>
+              <Button onPress={() => setAction(null)}>取消</Button>
+              <Button
+                isPending={submitting}
+                isDisabled={
+                  submitting || (action?.kind === "reject" && !comment.trim())
+                }
+                onPress={() => void submitAction()}
+              >
+                确认
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
     </div>
   );
 }

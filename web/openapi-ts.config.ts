@@ -4,7 +4,7 @@ export default defineConfig({
   input: "../api/openapi/openapi.json",
   output: "./app/lib/api-client",
   plugins: [
-    "@hey-api/client-fetch",
+    { name: "@hey-api/client-fetch", runtimeConfigPath: "./app/lib/api-client-runtime" },
     "@hey-api/sdk",
   ],
 });

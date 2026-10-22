@@ -1,4 +1,4 @@
-import { createLocalRole, listRoles } from "../../../lib/api-client";
+import { createLocalRole, listRoles } from "../../../lib/http";
 import { createBackendSdkClient, sdkJsonResponse } from "../../_lib/backend-sdk-client";
 
 export async function GET(request: Request) {

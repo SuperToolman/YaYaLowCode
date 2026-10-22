@@ -1,7 +1,5 @@
-import { requestApi } from "@lib/api-request";
-
-export function uploadFile<T>(file: File) {
-  const body = new FormData();
-  body.append("file", file);
-  return requestApi<T>("/api/files/upload", { method: "POST", body });
+import { uploadFile as upload } from "@lib/http";
+import { unwrapApiResult } from "@lib/api-request";
+export async function uploadFile(file: File) {
+  return unwrapApiResult(await upload({ body: { file } }));
 }

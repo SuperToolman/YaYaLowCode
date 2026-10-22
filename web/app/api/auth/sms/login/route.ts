@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { createLoginResponse } from "../../_lib";
-import { backendBaseUrl } from "../../dingtalk-lib";
+import { verifySmsCode } from "@lib/http";
+import { createBackendSdkClient } from "@lib/backend-client";
 
 export async function POST(request: Request) {
   let body: { mobile?: string; code?: string };
@@ -10,13 +11,12 @@ export async function POST(request: Request) {
   const code = body.code?.trim() ?? "";
   if (!mobile || !code) return error("请输入手机号和验证码", 400);
   if (process.env.NODE_ENV === "production" && !process.env.AUTH_TOKEN_SECRET) return error("登录服务尚未完成生产环境配置", 503);
-  const response = await fetch(`${backendBaseUrl}/api/identity/sms/login`, {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ mobile, code }), cache: "no-store",
-  });
-  const result = await response.json().catch(() => null) as { code?: number; message?: string; data?: { id: string; username: string; displayName: string } | null } | null;
-  if (!response.ok || result?.code !== 0 || !result.data) return error(result?.message || "验证码错误或已过期", response.status || 401);
-  return createLoginResponse(result.data);
+  const result = await verifySmsCode({ client: createBackendSdkClient(request), body: { mobile, code } });
+  if (result.error || result.data?.code !== 0 || !result.data.data) {
+    const detail = result.error && typeof result.error === "object" && "message" in result.error ? String(result.error.message) : result.data?.message;
+    return error(detail || "验证码错误或已过期", result.response?.status ?? 503);
+  }
+  return createLoginResponse(result.data.data);
 }
 
 function error(message: string, status: number) { return NextResponse.json({ code: status, message, data: null }, { status }); }

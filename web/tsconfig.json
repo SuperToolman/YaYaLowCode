@@ -25,6 +25,7 @@
       "@features/*": ["./features/*"],
       "@components/*": ["./app/components/*"],
       "@shared/*": ["./components/*"],
+      "@global-components/*": ["./components/*"],
       "@lib/*": ["./app/lib/*"]
       ,"@yaya/dsh-workbench-client": ["./packages/dsh-workbench-client/src"]
     }

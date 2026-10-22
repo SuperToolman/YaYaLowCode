@@ -1,4 +1,4 @@
-import { clearDingTalkData } from "../../../../../lib/api-client";
+import { clearDingTalkData } from "../../../../../lib/http";
 import { createBackendSdkClient, sdkJsonResponse } from "../../../../_lib/backend-sdk-client";
 
 export async function POST(request: Request) {

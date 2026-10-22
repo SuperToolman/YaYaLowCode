@@ -1,0 +1,4 @@
+.editor :global(.tiptap) { min-height: 2lh; outline: none; white-space: pre-wrap; overflow-wrap: anywhere; }
+.editor :global(.tiptap p) { margin: 0; }
+.editor :global(.tiptap p.is-editor-empty:first-child::before) { content: attr(data-placeholder); color: var(--color-text-secondary); float: left; height: 0; pointer-events: none; }
+.editor :global([data-draft-mention]) { color: var(--color-primary); }
