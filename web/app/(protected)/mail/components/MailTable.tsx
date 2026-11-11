@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { Avatar, Checkbox, Spinner, Table } from "@heroui/react";
 import { FolderOpen } from "@gravity-ui/icons";
-import { formatMailDate } from "@features/mail/format-date";
-import { groupMailByDate } from "@features/mail/date-groups";
-import type { MailListItem } from "@features/mail/model";
+import { formatMailDate } from "@/features/mail/format-date";
+import { groupMailByDate } from "@/features/mail/date-groups";
+import type { MailListItem } from "@/features/mail/model";
 
 function MailParty({ value }: { value: string }) {
   const match = value.match(/^\s*(.*?)\s*<([^>]+)>/);

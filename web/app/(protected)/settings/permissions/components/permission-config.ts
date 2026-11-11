@@ -13,6 +13,8 @@ export const formActions = [
   "create_view",
 ] as const;
 export const appActions = [
+  "knowledge_view",
+  "knowledge_manage",
   "display",
   "edit_info",
   "create_group",
@@ -39,6 +41,8 @@ export const actionLabels: Record<string, string> = {
   create_view: "创建视图",
 };
 export const appActionLabels: Record<(typeof appActions)[number], string> = {
+  knowledge_view: "查看应用知识库",
+  knowledge_manage: "管理应用知识库",
   display: "查看应用",
   edit_info: "编辑应用信息",
   create_group: "创建分组",
@@ -51,6 +55,8 @@ export const appActionLabels: Record<(typeof appActions)[number], string> = {
   view_development: "全部表单视图操作",
 };
 export const applicationDevelopmentActions = [
+  "knowledge_view",
+  "knowledge_manage",
   "edit_info",
   "create_group",
   "automation",

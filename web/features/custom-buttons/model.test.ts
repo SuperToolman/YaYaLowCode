@@ -25,3 +25,12 @@ describe("按钮配置契约",()=>{
   it("更换填写对象清空字段，保留名称",()=>{const draft=configured();const next=changeTarget(draft,"other-app","other-form");expect(next.actionConfig.fieldIds).toEqual([]);expect(next.name).toBe("按钮");expect(draft.actionConfig.fieldIds).toEqual(["text"]);});
   it("按钮定义拥有统一可用条件",()=>{const draft=configured();expect(draft.availability).toEqual({mode:"all",rules:[]});expect(validateDraft(draft,fields,false)).toBe("");draft.actionConfig.fieldIds=["missing"];expect(validateDraft(draft,fields,false)).toContain("失效");});
 });
+
+it("跨表填写要求关联条件，更换目标同时清空旧条件", () => {
+  const draft = configured();
+  expect(validateDraft(draft, fields, false, "owner")).toContain("关联实例条件");
+  draft.actionConfig.associationRules = [{ id: "r", fieldKey: "text", rawValue: "A" }];
+  expect(validateDraft(draft, fields, false, "owner")).toBe("");
+  expect(changeTarget(draft, "app", "next").actionConfig.associationRules).toEqual([]);
+  expect(draft.actionConfig.associationRules).toHaveLength(1);
+});

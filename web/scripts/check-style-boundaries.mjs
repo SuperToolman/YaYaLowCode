@@ -34,7 +34,12 @@ export const GLOBAL_SELECTOR_ALLOWLIST = new Set([
   ".app-main-glass",
   ".app-main-region",
   ".app-root-shell",
+  ".checkbox__control,.checkbox__control::before",
+  ".radio__control,.radio__indicator:empty::before",
   ".button,button[data-slot=\"button\"],button.button--icon-only,button.button--icon-only.button--sm,button.button--icon-only.button--lg",
+  // HeroUI ButtonGroup must retain joined corners under the platform radius override.
+  ".button-group > .button:not(:first-child)",
+  ".button-group > .button:not(:last-child)",
   ".license-checking-overlay",
   ".surface,.card",
   ".surface--transparent",
@@ -139,8 +144,8 @@ export function findCrossFeatureCssModuleImports(source, filePath) {
   const errors = [];
   for (const match of source.matchAll(importPattern)) {
     const specifier = match[1];
-    const targetPath = specifier.startsWith("@features/")
-      ? specifier.slice(1)
+    const targetPath = specifier.startsWith("@/features/")
+      ? specifier.slice(2)
       : specifier.startsWith(".")
         ? path.posix.normalize(path.posix.join(path.posix.dirname(normalizedPath), specifier))
         : null;
@@ -168,7 +173,7 @@ async function collectFiles(directory, predicate) {
 
 export async function checkStyleBoundaries(projectRoot = PROJECT_ROOT) {
   const errors = [];
-  const sourceRoots = ["app", "components", "features", "styles"];
+  const sourceRoots = ["app", "shared", "features", "styles"];
   const cssFiles = (await Promise.all(sourceRoots.map(async (directory) => {
     const absoluteDirectory = path.join(projectRoot, directory);
     try {
@@ -197,7 +202,7 @@ export async function checkStyleBoundaries(projectRoot = PROJECT_ROOT) {
     }
   }
 
-  const codeRoots = ["app", "components", "features"];
+  const codeRoots = ["app", "shared", "features"];
   const codeFiles = (await Promise.all(codeRoots.map(async (directory) => {
     const absoluteDirectory = path.join(projectRoot, directory);
     try {

@@ -69,6 +69,8 @@ pub(crate) fn validate_grants(grants: &HashSet<String>) -> Result<(), AppError> 
                     && [
                         "display",
                         "edit", // Legacy application navigation grants remain readable and editable.
+                        "knowledge_view",
+                        "knowledge_manage",
                         "edit_info",
                         "create_group",
                         "automation",
@@ -105,6 +107,12 @@ pub(crate) fn validate_grants(grants: &HashSet<String>) -> Result<(), AppError> 
             }
             ["form", id, "view_scope", value] => {
                 !id.is_empty() && ["all", "specified"].contains(value)
+            }
+            ["form", id, "field_scope", value] => {
+                !id.is_empty() && ["all", "specified", "none"].contains(value)
+            }
+            ["form", id, "field", field, "read"] => {
+                !id.is_empty() && !field.is_empty() && *field != "*"
             }
             ["form", id, "view", view] => !id.is_empty() && !view.is_empty(),
             _ => false,
@@ -173,7 +181,6 @@ pub(crate) fn route_permissions(method: &Method, path: &str) -> Option<Vec<&'sta
     if path == "/api/settings/model-routes"
         || path.starts_with("/api/settings/model-routes/")
         || path.starts_with("/api/agent/providers")
-        || path.starts_with("/api/agent/plugins")
     {
         return pair("settings.models.view", "settings.models.manage");
     }
@@ -207,26 +214,7 @@ pub(crate) fn route_permissions(method: &Method, path: &str) -> Option<Vec<&'sta
     if path.starts_with("/api/settings/permissions/") {
         return pair("settings.permissions.view", "settings.permissions.manage");
     }
-    if path == "/api/agent/archived-sessions" {
-        return Some(vec!["settings.agent-archive.view"]);
-    }
-    if path.ends_with("/restore") || path.ends_with("/purge") {
-        if path.starts_with("/api/agent/sessions/") {
-            return Some(vec!["settings.agent-archive.manage"]);
-        }
-    }
-    if path == "/api/agent/runtime-identity" || path == "/api/agent/runtime-model-route" {
-        return Some(vec![]);
-    }
-    if path == "/api/agent/runtime-employees" {
-        return Some(vec!["agent.window", "settings.agent-archive.view"]);
-    }
-    if path.starts_with("/api/agent/sessions")
-        || path == "/api/agent/runtime/reconcile-session"
-        || path == "/api/agent/workbench/sessions"
-        || path == "/api/agent/system-ai/status"
-        || path == "/api/agent/available-agents"
-    {
+    if path == "/api/agent/system-ai/status" {
         return Some(vec!["agent.window"]);
     }
     if path.starts_with("/api/apps/") && path.ends_with("/market-submission") {
@@ -238,9 +226,8 @@ pub(crate) fn route_permissions(method: &Method, path: &str) -> Option<Vec<&'sta
     if path.starts_with("/api/communication/") {
         return Some(vec![]);
     }
-    if path.starts_with("/api/agent/") || path == "/api/agents" || path.starts_with("/api/agents/")
-    {
-        return pair("settings.models.view", "settings.models.manage");
+    if path.starts_with("/api/agent/v2/") {
+        return Some(vec!["agent.window"]);
     }
     // Fail closed for future settings endpoints until their policy is specified.
     if path.starts_with("/api/settings/") {
@@ -325,21 +312,9 @@ mod tests {
         }
     }
     #[test]
-    fn session_and_archive_permissions_are_separate() {
+    fn v2_and_employee_install_permissions_are_separate() {
         assert_eq!(
-            route_permissions(&Method::POST, "/api/agent/runtime/reconcile-session"),
-            Some(vec!["agent.window"])
-        );
-        assert_eq!(
-            route_permissions(&Method::POST, "/api/agent/sessions/abc/restore"),
-            Some(vec!["settings.agent-archive.manage"])
-        );
-        assert_eq!(
-            route_permissions(&Method::DELETE, "/api/agent/sessions/abc/purge"),
-            Some(vec!["settings.agent-archive.manage"])
-        );
-        assert_eq!(
-            route_permissions(&Method::GET, "/api/agent/sessions/abc/files"),
+            route_permissions(&Method::POST, "/api/agent/v2/submissions"),
             Some(vec!["agent.window"])
         );
         assert_eq!(

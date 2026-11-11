@@ -5,7 +5,7 @@ import { EditorContent, useEditor, ReactNodeViewRenderer, NodeViewWrapper } from
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Button, Card } from "@heroui/react";
-import type { CommunicationConversationResponse } from "@features/communication/api";
+import type { CommunicationConversationResponse } from "@/features/communication/api";
 import { AttachmentPreview } from "./AttachmentPreview";
 import type { DraftAsset } from "./draft";
 import styles from "./message-send-box.module.css";
@@ -83,5 +83,5 @@ export const MentionComposer = forwardRef<MentionComposerHandle, Props>(function
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing || editor?.view.composing || event.keyCode === 229) return;
     event.preventDefault(); event.stopPropagation();
     if (!latest.current.disabled) latest.current.onSend();
-  }}><EditorContent editor={editor} className={styles.editor} />{query !== null && props.members.length > 0 && !props.disabled ? <Card className="absolute bottom-2 left-2 z-20 max-h-48 w-64 overflow-y-auto p-2">{query === "" ? <Button onPress={() => mention("all", "所有人")}>@所有人</Button> : null}{members.map(m => <Button key={m.userId} onPress={() => mention(m.userId, m.displayName)}>{m.displayName}</Button>)}</Card> : null}</div>;
+  }}><EditorContent editor={editor} className={styles["messages-composer__editor"]} />{query !== null && props.members.length > 0 && !props.disabled ? <Card className="absolute bottom-2 left-2 z-20 max-h-48 w-64 overflow-y-auto p-2">{query === "" ? <Button onPress={() => mention("all", "所有人")}>@所有人</Button> : null}{members.map(m => <Button key={m.userId} onPress={() => mention(m.userId, m.displayName)}>{m.displayName}</Button>)}</Card> : null}</div>;
 });

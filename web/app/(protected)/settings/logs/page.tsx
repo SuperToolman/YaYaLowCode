@@ -1,17 +1,17 @@
 "use client";
-import { notifyRequestError } from "@lib/notify";
-import { useAuth } from "@components/AuthProvider";
+import { notifyRequestError } from "@/shared/lib/notify";
+import { useAuth } from "@/features/auth/components/AuthProvider";
 
 import { useCallback, useEffect, useState } from "react";
-import { notify } from "@lib/notify";
+import { notify } from "@/shared/lib/notify";
 import { ArrowRotateRight, Eye, TrashBin } from "@gravity-ui/icons";
 import { Alert, Button, Chip, EmptyState, Modal, Table, Tabs, Tooltip } from "@heroui/react";
 import { SettingsContentCard } from "../components/SettingsContentCard";
 import styles from "./logs.module.css";
-import { clearPlatformLogs, listPlatformLogs } from "@features/settings/api";
+import { clearPlatformLogs, listPlatformLogs } from "@/features/settings/api";
 
 type LogLevel = "all" | "debug" | "info" | "warn" | "error";
-type PlatformLog = import("@lib/http").PlatformLogResponse;
+type PlatformLog = import("@/shared/lib/http").PlatformLogResponse;
 
 const levelLabels: Record<string, string> = {
   debug: "调试",

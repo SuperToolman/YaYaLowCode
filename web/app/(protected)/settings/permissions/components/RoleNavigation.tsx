@@ -1,14 +1,7 @@
 "use client";
 import { useState } from "react";
-import {
-  Description,
-  Label,
-  ListBox,
-  ScrollShadow,
-  SearchField,
-  Tabs,
-} from "@heroui/react";
-import { MySurface } from "@shared/ui/MySurface";
+import { Description, Label, ListBox, ScrollShadow, SearchField, Tabs } from "@heroui/react";
+import { MySurface } from "@/shared/ui/MySurface";
 import { Empty } from "./PermissionFeedback";
 import type { Role, RoleSourceFilter } from "./permission-types";
 

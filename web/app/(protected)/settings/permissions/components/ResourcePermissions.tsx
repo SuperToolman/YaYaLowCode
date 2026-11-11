@@ -1,19 +1,8 @@
 "use client";
 import { Description, Typography } from "@heroui/react";
-import {
-  appActions,
-  formActions,
-  appActionLabels,
-  applicationDevelopmentActions,
-  formDevelopmentActions,
-  formActionGroups,
-} from "./permission-config";
+import { appActions, formActions, appActionLabels, applicationDevelopmentActions, formDevelopmentActions, formActionGroups } from "./permission-config";
 import { Empty, StatusTag } from "./PermissionFeedback";
-import {
-  PermissionPanel,
-  OperationChecks,
-  ScopePanel,
-} from "./PermissionPanel";
+import { PermissionPanel, OperationChecks, ScopePanel } from "./PermissionPanel";
 import { ViewScopePanel } from "./ViewScopePanel";
 import type { PermissionResource, PermissionState } from "./permission-types";
 export function ResourcePermissions({

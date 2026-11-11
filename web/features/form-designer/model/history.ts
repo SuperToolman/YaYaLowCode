@@ -9,8 +9,8 @@ export function createHistory<T>(present: T): HistoryState<T> {
 }
 
 export function commitHistory<T>(history: HistoryState<T> | null, present: T, limit = 100): HistoryState<T> {
+  if (!history) return createHistory(present);
   const snapshot = cloneSnapshot(present);
-  if (!history) return createHistory(snapshot);
   return { past: [...history.past, history.present].slice(-limit), present: snapshot, future: [] };
 }
 

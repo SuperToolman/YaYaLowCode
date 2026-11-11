@@ -4,7 +4,7 @@ import { Description, Typography } from "@heroui/react";
 import { platformPermissionGroups } from "./permission-config";
 import { PlatformPermissionGroupCard } from "./PlatformPermissionGroupCard";
 import type { Agent } from "./permission-types";
-import { MySurface } from "@/components/ui/MySurface";
+import { MySurface } from "@/shared/ui/MySurface";
 
 export function PlatformPermissions({
   isReadOnly = false,

@@ -3,6 +3,86 @@ use super::*;
 #[cfg(test)]
 use std::sync::Mutex;
 
+pub(crate) fn parallel_join_node(
+    flow: &automation_flow_entity::Model,
+    branches: &[Cursor],
+) -> Option<String> {
+    if branches.len() < 2 {
+        return None;
+    }
+    let edges = flow
+        .edges_json
+        .as_array()?
+        .iter()
+        .filter_map(|edge| {
+            Some((
+                edge.get("source")?.as_str()?.to_string(),
+                edge.get("target")?.as_str()?.to_string(),
+            ))
+        })
+        .collect::<Vec<_>>();
+    let mut distances_by_branch = Vec::with_capacity(branches.len());
+    for branch in branches {
+        let mut distances = HashMap::from([(branch.node.clone(), 0usize)]);
+        let mut pending = std::collections::VecDeque::from([branch.node.clone()]);
+        while let Some(source) = pending.pop_front() {
+            let distance = distances[&source];
+            for (_, target) in edges.iter().filter(|(from, _)| from == &source) {
+                if !distances.contains_key(target) {
+                    distances.insert(target.clone(), distance + 1);
+                    pending.push_back(target.clone());
+                }
+            }
+        }
+        distances_by_branch.push(distances);
+    }
+    let mut candidates = distances_by_branch[0]
+        .keys()
+        .filter(|node| {
+            distances_by_branch
+                .iter()
+                .all(|distances| distances.contains_key(*node))
+        })
+        .filter(|candidate| {
+            // A join is safe only when every path from every branch reaches it.
+            // Otherwise a branch can terminate elsewhere and leave the group
+            // waiting forever for a token that will never arrive.
+            branches.iter().all(|branch| {
+                let mut pending = std::collections::VecDeque::from([branch.node.clone()]);
+                let mut seen = HashSet::new();
+                while let Some(node) = pending.pop_front() {
+                    if !seen.insert(node.clone()) || node == **candidate {
+                        continue;
+                    }
+                    let next = edges
+                        .iter()
+                        .filter(|(from, _)| from == &node)
+                        .map(|(_, to)| to.clone())
+                        .collect::<Vec<_>>();
+                    if next.is_empty() {
+                        return false;
+                    }
+                    pending.extend(next);
+                }
+                true
+            })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|node| {
+        let values = distances_by_branch
+            .iter()
+            .map(|distances| distances[node])
+            .collect::<Vec<_>>();
+        (
+            values.iter().copied().max().unwrap_or(usize::MAX),
+            values.iter().sum::<usize>(),
+            node.clone(),
+        )
+    });
+    candidates.into_iter().next()
+}
+
 #[derive(Clone)]
 pub(crate) struct Cursor {
     pub id: Uuid,
@@ -47,7 +127,7 @@ pub(crate) trait Runtime: Sync {
     fn db(&self) -> &DatabaseConnection;
     fn flow(&self) -> &automation_flow_entity::Model;
     fn claim(&self, cursor: &mut Cursor) -> impl Future<Output = Result<bool, AppError>> + Send;
-    fn ready(&self, cursor: &Cursor) -> impl Future<Output = Result<bool, AppError>> + Send;
+    fn ready(&self, cursor: &mut Cursor) -> impl Future<Output = Result<bool, AppError>> + Send;
     fn human(
         &self,
         cursor: &Cursor,
@@ -127,7 +207,7 @@ pub(crate) fn drive<'a, R: Runtime + 'a>(
         }
         let result = async {
             loop {
-                if !runtime.ready(&cursor).await? {
+                if !runtime.ready(&mut cursor).await? {
                     return Ok(());
                 }
                 if cursor.node.is_empty() {
@@ -282,7 +362,7 @@ impl Runtime for MemoryRuntime<'_> {
     async fn claim(&self, _: &mut Cursor) -> Result<bool, AppError> {
         Ok(true)
     }
-    async fn ready(&self, _: &Cursor) -> Result<bool, AppError> {
+    async fn ready(&self, _: &mut Cursor) -> Result<bool, AppError> {
         Ok(true)
     }
     async fn human(&self, _: &Cursor, _: &Value) -> Result<StepResult, AppError> {
@@ -305,7 +385,7 @@ impl Runtime for MemoryRuntime<'_> {
                 id: Uuid::new_v4(),
                 node: node.clone(),
                 log_id: None,
-                parallel_group: parallel.then_some(cursor.id),
+                parallel_group: parallel.then_some(cursor.id).or(cursor.parallel_group),
                 ..cursor.clone()
             })
             .collect())
@@ -347,7 +427,7 @@ mod tests {
         async fn claim(&self, cursor: &mut Cursor) -> Result<bool, AppError> {
             self.inner.claim(cursor).await
         }
-        async fn ready(&self, cursor: &Cursor) -> Result<bool, AppError> {
+        async fn ready(&self, cursor: &mut Cursor) -> Result<bool, AppError> {
             self.visits
                 .lock()
                 .unwrap()
@@ -414,6 +494,7 @@ mod tests {
                 outputs: HashMap::from([("trigger-1".into(), json!({"amount":100}))]),
                 operator: "test".into(),
                 run_id: None,
+                branch_id: None,
             },
         }
     }
@@ -499,6 +580,7 @@ mod tests {
             )]),
             operator: "test".into(),
             run_id: None,
+            branch_id: None,
         };
         let branch = json!({"mode":"rules","rules":[
             {"id":"group","isGroup":true,"logicalOperator":"and"},

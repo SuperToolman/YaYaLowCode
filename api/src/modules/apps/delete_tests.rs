@@ -77,7 +77,6 @@ async fn verify_application_deletion(db: DatabaseConnection) {
         CREATE TABLE app_custom_buttons (app_route_app_id TEXT REFERENCES apps(route_app_id) ON DELETE CASCADE);
         CREATE TABLE app_navigation_items (app_route_app_id TEXT);
         CREATE TABLE iam_role_permissions (permission TEXT);
-        CREATE TABLE agent_sessions (app_route_app_id TEXT);
         CREATE TABLE automation_flow_versions (flow_id UUID REFERENCES automation_flows(id));
         CREATE TABLE automation_nodes (flow_id UUID REFERENCES automation_flows(id));
         CREATE TABLE automation_edges (flow_id UUID REFERENCES automation_flows(id));
@@ -104,7 +103,6 @@ async fn verify_application_deletion(db: DatabaseConnection) {
             INSERT INTO workflow_comments VALUES ('{app_id}_workflow');
             INSERT INTO app_custom_buttons VALUES ('{app_id}'),('{app_id}');
             INSERT INTO app_navigation_items VALUES ('{app_id}');
-            INSERT INTO agent_sessions VALUES ('{app_id}');
             INSERT INTO iam_role_permissions VALUES ('app:{app_id}:display'),('form:{app_id}_basic:display');
             INSERT INTO market_installations VALUES (gen_random_uuid(),'{app_id}');
             INSERT INTO market_installation_resources SELECT installation_id FROM market_installations WHERE local_app_id='{app_id}';
@@ -214,7 +212,6 @@ async fn verify_application_deletion(db: DatabaseConnection) {
         ("market_installation_resources", 1),
         ("market_installation_versions", 1),
         ("market_installation_events", 1),
-        ("agent_sessions", 2),
     ] {
         assert_eq!(
             count(&db, table).await,

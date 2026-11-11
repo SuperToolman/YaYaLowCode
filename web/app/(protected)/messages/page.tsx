@@ -1,62 +1,35 @@
 "use client";
-import { notify } from "@lib/notify";
-/* eslint-disable @next/next/no-img-element -- authenticated attachment URLs cannot use the server-side image optimizer */
+import { notify } from "@/shared/lib/notify";
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import {
-  Button,
-  Card,
-  Checkbox,
-  Input,
-  Modal,
-  ScrollShadow,
-  Tabs,
-  Tooltip,
-} from "@heroui/react";
-import {
-  Plus,
-  TrashBin,
-} from "@gravity-ui/icons";
-import { useAuth } from "@components/AuthProvider";
-import { getCommunicationAvailability } from "@features/communication/api";
-import { PageContentLayout } from "@components/PageContentLayout";
-import { Empty } from "./components/Empty";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Button, Card, Modal, Tooltip } from "@heroui/react";
+import { Plus, TrashBin } from "@gravity-ui/icons";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { getCommunicationAvailability } from "@/features/communication/api";
+import { PageContentLayout } from "@/shared/ui/PageContentLayout";
+
 import { ConversationList } from "./components/ConversationList";
 import { MessageDisplay } from "./components/MessageDisplay";
 import { NewConversationModal as NewConversationDialog } from "./components/NewConversationModal";
 import { ManageGroupModal as ManageGroupDialog } from "./components/ManageGroupModal";
 import { MessageComposer, EmailMessageModal } from "./components/message-send-box";
 import { sortConversations } from "./components/conversation-sort";
-import { useRouter } from "next/navigation";
-import {
-  createDirectConversation,
-  createGroupConversation,
-  listCommunicationConversations,
-  listCommunicationUsers,
-  markCommunicationConversationRead,
-  recallCommunicationMessage,
-  reeditCommunicationMessage,
-  sendCommunicationMessage,
-  updateGroupConversation,
-  type CommunicationConversationResponse,
-  type CommunicationMessageResponse,
-  type CommunicationUserResponse,
-} from "@/features/communication/api";
-import { approveWorkflowTask, rejectWorkflowTask } from "@/app/lib/http";
-import {
-  ImClientAdapter,
-  type ImEnvelope,
-} from "@features/communication/im-client";
-import type { PendingImMessage } from "@features/communication/im-store";
+
+import { listCommunicationConversations, markCommunicationConversationRead, recallCommunicationMessage, reeditCommunicationMessage, sendCommunicationMessage, type CommunicationConversationResponse, type CommunicationMessageResponse } from "@/features/communication/api";
+import { approveWorkflowTask, rejectWorkflowTask } from "@/shared/lib/http";
+import { ImClientAdapter, type ImEnvelope, type ImConnectionState } from "@/features/communication/im-client";
+import type { PendingImMessage } from "@/features/communication/im-store";
 
 type ApiResult<T> = { data?: T; error?: unknown };
 type UiMessage = CommunicationMessageResponse & {
   deliveryState?: "sending" | "failed" | "delivered";
+};
+type RealtimePayload = Partial<CommunicationMessageResponse> & {
+  state?: ImConnectionState;
+  items?: CommunicationConversationResponse[];
+  userId?: string;
+  typing?: boolean;
+  messageId?: string;
 };
 
 function createClientMessageId() {
@@ -70,7 +43,7 @@ function createClientMessageId() {
 }
 
 export default function MessagesPage() {
-  const router = useRouter();
+
   const { token, user } = useAuth();
   const [conversations, setConversations] = useState<
     CommunicationConversationResponse[]
@@ -103,7 +76,9 @@ export default function MessagesPage() {
   const typingExpiryTimers = useRef(new Map<string, number>());
   const presenceExpiryTimers = useRef(new Map<string, number>());
   const selectedIdRef = useRef<string | null>(selectedId);
-  selectedIdRef.current = selectedId;
+  useLayoutEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
 
   const selected = conversations.find((item) => item.id === selectedId) ?? null;
   const systemSelected = selected?.conversationType === "system";
@@ -144,10 +119,11 @@ export default function MessagesPage() {
 
   const markConversationRead = useCallback(
     async (conversationId: string, sequence: number) => {
-      await markCommunicationConversationRead({
+      const result = await markCommunicationConversationRead({
         path: { conversationId },
         body: { sequence },
       });
+      if (result.error) throw result.error;
       setConversations((current) =>
         current.map((item) =>
           item.id === conversationId ? { ...item, unreadCount: 0 } : item,
@@ -197,6 +173,14 @@ export default function MessagesPage() {
         .catch((cause) => setError(messageOf(cause)));
     }, 0);
     return () => window.clearTimeout(timer);
+  }, [loadConversations]);
+  useEffect(() => {
+    const refresh = () => {
+      void loadConversations().catch((cause) => setError(messageOf(cause)));
+    };
+    window.addEventListener("yaya-workflow-notifications-updated", refresh);
+    return () =>
+      window.removeEventListener("yaya-workflow-notifications-updated", refresh);
   }, [loadConversations]);
   useEffect(() => {
     const updateCurrentTime = () => setCurrentTime(Date.now());
@@ -287,7 +271,8 @@ export default function MessagesPage() {
     };
     const unsubscribe = adapter.subscribe((envelope: ImEnvelope) => {
       const eventType = envelope.event;
-      const payload = (envelope.data ?? {}) as any;
+      const payload = (envelope.data ?? {}) as RealtimePayload;
+      const { userId: eventUserId, items: snapshotItems } = payload;
       if (eventType === "connection.state") {
         setRealtimeOnline(payload.state === "online");
         if (payload.state === "reset_required") {
@@ -303,30 +288,34 @@ export default function MessagesPage() {
         setMessages((current) => current.map((item) => item.localId === envelope.localId ? { ...item, deliveryState: "failed" } : item));
       if (
         eventType === "conversation.snapshot" &&
-        Array.isArray(payload.items)
+        Array.isArray(snapshotItems)
       ) {
-        setConversations(sortConversations(payload.items));
-        setSelectedId((current) => current ?? payload.items[0]?.id ?? null);
+        setConversations(sortConversations(snapshotItems));
+        setSelectedId((current) => current ?? snapshotItems[0]?.id ?? null);
+      }
+      if (eventType === "conversation.read") {
+        window.dispatchEvent(new Event("yaya-communication-read-updated"));
+        void loadConversations().catch((cause) => setError(messageOf(cause)));
       }
       if (
         eventType === "conversation.typing" &&
-        payload.userId &&
-        payload.userId !== user?.id
+        eventUserId &&
+        eventUserId !== user?.id
       ) {
         setTypingUsers((current) =>
           payload.typing
-            ? [...new Set([...current, payload.userId])]
-            : current.filter((id) => id !== payload.userId),
+            ? [...new Set([...current, eventUserId])]
+            : current.filter((id) => id !== eventUserId),
         );
-        if (payload.typing) refreshUserExpiry("typing", payload.userId);
+        if (payload.typing) refreshUserExpiry("typing", eventUserId);
       }
       if (
         eventType === "conversation.presence" &&
-        payload.userId &&
-        payload.userId !== user?.id
+        eventUserId &&
+        eventUserId !== user?.id
       ) {
-        setOnlineUsers((current) => [...new Set([...current, payload.userId])]);
-        refreshUserExpiry("presence", payload.userId);
+        setOnlineUsers((current) => [...new Set([...current, eventUserId])]);
+        refreshUserExpiry("presence", eventUserId);
       }
       if (
         eventType === "message.created" &&
@@ -338,7 +327,11 @@ export default function MessagesPage() {
           conversationId: payload.conversationId ?? envelope.conversationId,
           sequence: payload.sequence ?? envelope.conversationSeq,
         } as CommunicationMessageResponse;
+        const systemConversation =
+          messagePayload.conversationId?.startsWith("system-") ?? false;
         const open = messagePayload.conversationId === selectedIdRef.current;
+        if (systemConversation && !open)
+          void loadConversations().catch((cause) => setError(messageOf(cause)));
         if (open) {
           setMessages((current) => mergeMessages(current, [messagePayload]));
           if (messagePayload.sequence)
@@ -360,7 +353,11 @@ export default function MessagesPage() {
                   lastMessageAt: messagePayload.createdAt,
                   lastMessageSequence: messagePayload.sequence,
                   lastMessagePreview: previewMessage(messagePayload),
-                  unreadCount: open ? 0 : item.unreadCount,
+                  unreadCount: open
+                    ? 0
+                    : systemConversation
+                      ? item.unreadCount
+                      : item.unreadCount + 1,
                 }
               : item,
           ));
@@ -648,313 +645,6 @@ export default function MessagesPage() {
   );
 }
 
-
-function NewConversationModal({
-  open,
-  onClose,
-  onCreated,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onCreated: (id: string) => void;
-}) {
-  const [users, setUsers] = useState<CommunicationUserResponse[]>([]);
-  const [mode, setMode] = useState("direct");
-  const [selected, setSelected] = useState<string[]>([]);
-  const [title, setTitle] = useState("");
-  const [userQuery, setUserQuery] = useState("");
-  const [error, setError] = useState("");
-  const [creating, setCreating] = useState(false);
-  useEffect(() => {
-    if (open)
-      void listCommunicationUsers().then((result) => {
-        const payload = result.data as
-          | { data?: CommunicationUserResponse[] | null }
-          | undefined;
-        setUsers(payload?.data ?? []);
-      });
-  }, [open]);
-  const normalizedUserQuery = userQuery.trim().toLocaleLowerCase("zh-CN");
-  const filteredUsers = users.filter(
-    (item) =>
-      !normalizedUserQuery ||
-      item.displayName.toLocaleLowerCase("zh-CN").includes(normalizedUserQuery),
-  );
-  async function create() {
-    setCreating(true);
-    setError("");
-    try {
-      const generatedTitle = users
-        .filter((item) => selected.includes(item.id))
-        .map((item) => item.displayName)
-        .join("、")
-        .slice(0, 160);
-      const result =
-        mode === "direct"
-          ? await createDirectConversation({ body: { userId: selected[0] } })
-          : await createGroupConversation({
-              body: {
-                title: title.trim() || generatedTitle || "新建群聊",
-                memberIds: selected,
-              },
-            });
-      const payload = result.data as
-        | { data?: CommunicationConversationResponse | null; message?: string }
-        | undefined;
-      if (!payload?.data) throw new Error(payload?.message ?? "创建失败");
-      onCreated(payload.data.id);
-      setSelected([]);
-      setTitle("");
-    } catch (cause) {
-      setError(messageOf(cause));
-    } finally {
-      setCreating(false);
-    }
-  }
-  const close = () => {
-    setUserQuery("");
-    onClose();
-  };
-  return (
-    <Modal
-      isOpen={open}
-      onOpenChange={(value) => !creating && !value && close()}
-    >
-      <Modal.Backdrop
-        className="theme-modal-backdrop"
-        isDismissable={!creating}
-      >
-        <Modal.Container placement="center" size="md">
-          <Modal.Dialog>
-            <Modal.Header>
-              <Modal.Heading>新建会话</Modal.Heading>
-              <Modal.CloseTrigger aria-label="关闭" isDisabled={creating} />
-            </Modal.Header>
-            <Modal.Body>
-              <Tabs
-                selectedKey={mode}
-                onSelectionChange={(key) => {
-                  setMode(String(key));
-                  setSelected([]);
-                  setUserQuery("");
-                  setError("");
-                }}
-              >
-                <Tabs.List aria-label="会话类型">
-                  <Tabs.Tab id="direct">
-                    单聊
-                    <Tabs.Indicator />
-                  </Tabs.Tab>
-                  <Tabs.Tab id="group">
-                    群聊
-                    <Tabs.Indicator />
-                  </Tabs.Tab>
-                </Tabs.List>
-              </Tabs>
-              <div className={mode === "group" ? "grid grid-cols-2 gap-3" : ""}>
-                {mode === "group" ? (
-                  <label className="block min-w-0 text-sm font-medium text-[var(--color-text-primary)]">
-                    群聊名称
-                    <Input
-                      className="mt-2"
-                      fullWidth
-                      placeholder="按成员自动命名"
-                      value={title}
-                      disabled={creating}
-                      onChange={(event) => setTitle(event.currentTarget.value)}
-                    />
-                  </label>
-                ) : null}
-                <label className="block min-w-0 text-sm font-medium text-[var(--color-text-primary)]">
-                  搜索用户
-                  <Input
-                    className="mt-2"
-                    aria-label="搜索用户"
-                    fullWidth
-                    placeholder="输入用户名称"
-                    value={userQuery}
-                    disabled={creating}
-                    onChange={(event) =>
-                      setUserQuery(event.currentTarget.value)
-                    }
-                  />
-                </label>
-              </div>
-              <div className="max-h-72 space-y-1 overflow-y-auto">
-                {filteredUsers.map((item) => (
-                  <Checkbox
-                    key={item.id}
-                    isSelected={selected.includes(item.id)}
-                    isDisabled={creating}
-                    onChange={(checked) =>
-                      setSelected(
-                        mode === "direct"
-                          ? checked
-                            ? [item.id]
-                            : []
-                          : checked
-                            ? [...selected, item.id]
-                            : selected.filter((id) => id !== item.id),
-                      )
-                    }
-                    className="w-full rounded-md px-2 py-2 hover:bg-[var(--color-control-soft-hover)]"
-                  >
-                    <Checkbox.Content>
-                      <Checkbox.Control>
-                        <Checkbox.Indicator />
-                      </Checkbox.Control>
-                      {item.displayName}
-                    </Checkbox.Content>
-                  </Checkbox>
-                ))}
-                {filteredUsers.length === 0 ? (
-                  <p className="px-2 py-6 text-center text-sm text-[var(--color-text-secondary)]">
-                    未找到匹配的用户
-                  </p>
-                ) : null}
-              </div>
-              {error ? (
-                <p className="text-xs text-[var(--color-danger)]">{error}</p>
-              ) : null}
-            </Modal.Body>
-            <Modal.Footer>
-              <Button isDisabled={creating} onPress={close}>
-                取消
-              </Button>
-              <Button
-                isDisabled={creating || selected.length === 0}
-                onPress={() => void create()}
-              >
-                {creating ? "正在创建…" : "创建"}
-              </Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
-  );
-}
-
-function ManageGroupModal({
-  open,
-  conversation,
-  onClose,
-  onSaved,
-}: {
-  open: boolean;
-  conversation: CommunicationConversationResponse;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [users, setUsers] = useState<CommunicationUserResponse[]>([]);
-  const [title, setTitle] = useState(conversation.title);
-  const [memberIds, setMemberIds] = useState<string[]>(
-    conversation.members.map((member) => member.userId),
-  );
-  const [error, setError] = useState("");
-  useEffect(() => {
-    if (!open) return;
-    const timer = window.setTimeout(() => {
-      setTitle(conversation.title);
-      setMemberIds(conversation.members.map((member) => member.userId));
-      void listCommunicationUsers().then((result) => {
-        const payload = result.data as
-          | { data?: CommunicationUserResponse[] | null }
-          | undefined;
-        setUsers(payload?.data ?? []);
-      });
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [open, conversation]);
-  async function save() {
-    try {
-      const original = new Set(
-        conversation.members.map((member) => member.userId),
-      );
-      const next = new Set(memberIds);
-      const result = await updateGroupConversation({
-        path: { conversationId: conversation.id },
-        body: {
-          title,
-          addMemberIds: [...next].filter((id) => !original.has(id)),
-          removeMemberIds: [...original].filter((id) => !next.has(id)),
-        },
-      });
-      if (result.error) throw new Error("群聊更新失败");
-      onSaved();
-    } catch (cause) {
-      setError(messageOf(cause));
-    }
-  }
-  return (
-    <Modal isOpen={open} onOpenChange={(value) => !value && onClose()}>
-      <Modal.Backdrop className="theme-modal-backdrop" isDismissable>
-        <Modal.Container placement="center" size="md">
-          <Modal.Dialog>
-            <Modal.Header>
-              <Modal.Heading>管理群聊</Modal.Heading>
-              <Modal.CloseTrigger aria-label="关闭" />
-            </Modal.Header>
-            <Modal.Body>
-              <Input
-                fullWidth
-                value={title}
-                onChange={(event) => setTitle(event.currentTarget.value)}
-              />
-              <div className="max-h-72 space-y-1 overflow-y-auto">
-                {[
-                  ...conversation.members.map((member) => ({
-                    id: member.userId,
-                    displayName: member.displayName,
-                  })),
-                  ...users.filter(
-                    (item) =>
-                      !conversation.members.some(
-                        (member) => member.userId === item.id,
-                      ),
-                  ),
-                ].map((item) => (
-                  <Checkbox
-                    key={item.id}
-                    isSelected={memberIds.includes(item.id)}
-                    onChange={(checked) =>
-                      setMemberIds((current) =>
-                        checked
-                          ? [...new Set([...current, item.id])]
-                          : current.filter((id) => id !== item.id),
-                      )
-                    }
-                    className="w-full rounded-md px-2 py-2"
-                  >
-                    <Checkbox.Content>
-                      <Checkbox.Control>
-                        <Checkbox.Indicator />
-                      </Checkbox.Control>
-                      {item.displayName}
-                    </Checkbox.Content>
-                  </Checkbox>
-                ))}
-              </div>
-              {error ? (
-                <p className="text-xs text-[var(--color-danger)]">{error}</p>
-              ) : null}
-            </Modal.Body>
-            <Modal.Footer>
-              <Button onPress={onClose}>取消</Button>
-              <Button
-                isDisabled={!title.trim() || memberIds.length < 2}
-                onPress={() => void save()}
-              >
-                保存
-              </Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
-  );
-}
-
 function messageOf(value: unknown) {
   if (value instanceof Error) return value.message;
   if (typeof value === "string" && value.trim()) return value;
@@ -1023,11 +713,7 @@ function formatConversationTime(value: string) {
     });
   return date.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" });
 }
-function formatBytes(value: number) {
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${(value / 1024 / 1024).toFixed(1)} MB`;
-}
+
 function previewMessage(message: CommunicationMessageResponse) {
   if (message.status === "recalled") return "消息已撤回";
   if (message.messageType === "file") return `[文件] ${message.content}`;

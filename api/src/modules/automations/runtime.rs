@@ -10,4 +10,5 @@ pub(crate) struct AutomationExecutionContext {
     pub(crate) outputs: HashMap<String, Value>,
     pub(crate) operator: String,
     pub(crate) run_id: Option<Uuid>,
+    pub(crate) branch_id: Option<Uuid>,
 }

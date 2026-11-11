@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -20,14 +24,9 @@
     ],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"],
-      "@app/*": ["./app/*"],
-      "@features/*": ["./features/*"],
-      "@components/*": ["./app/components/*"],
-      "@shared/*": ["./components/*"],
-      "@global-components/*": ["./components/*"],
-      "@lib/*": ["./app/lib/*"]
-      ,"@yaya/dsh-workbench-client": ["./packages/dsh-workbench-client/src"]
+      "@/*": [
+        "./*"
+      ]
     }
   },
   "include": [
@@ -38,5 +37,9 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    ".cache",
+    "tauri-dist"
+  ]
 }

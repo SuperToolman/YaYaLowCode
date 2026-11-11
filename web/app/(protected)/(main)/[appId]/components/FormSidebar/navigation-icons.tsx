@@ -1,16 +1,4 @@
-import {
-  ArrowRightArrowLeft as WorkflowFormIcon,
-  Code as DefinedPageIcon,
-  Copy as CopiedIcon,
-  CirclePlus as CreatedIcon,
-  CircleCheck as ProcessedIcon,
-  Clock as TodoIcon,
-  FileText as FormIcon,
-  Folder as FolderIcon,
-  FolderOpen as FolderOpenIcon,
-  LayoutRows as DetailFormIcon,
-  Link as LinkIcon,
-} from "@gravity-ui/icons";
+import { ArrowRightArrowLeft as WorkflowFormIcon, Code as DefinedPageIcon, Copy as CopiedIcon, CirclePlus as CreatedIcon, CircleCheck as ProcessedIcon, Clock as TodoIcon, FileText as FormIcon, Folder as FolderIcon, FolderOpen as FolderOpenIcon, LayoutRows as DetailFormIcon, Link as LinkIcon } from "@gravity-ui/icons";
 import type { NavigationItem } from "./types";
 
 export function getSidebarNodeIcon(itemType: NavigationItem["itemType"], pathSlug: string, isExpanded = false, formType: NavigationItem["formType"]) {

@@ -121,8 +121,8 @@ pub(crate) async fn create_navigation_group(
     ))
 }
 
-pub(crate) async fn create_navigation_group_definition(
-    db: &DatabaseConnection,
+pub(crate) async fn create_navigation_group_definition<C: ConnectionTrait>(
+    db: &C,
     app_id: &str,
     payload: CreateNavigationGroupRequest,
 ) -> Result<app_navigation_entity::Model, AppError> {
@@ -230,8 +230,8 @@ pub(crate) async fn delete_navigation_group(
     Ok(Json(success_response("删除分组成功", result)))
 }
 
-pub(crate) async fn delete_navigation_group_definition(
-    db: &DatabaseConnection,
+pub(crate) async fn delete_navigation_group_definition<C: ConnectionTrait>(
+    db: &C,
     app_id: &str,
     group_id: &str,
 ) -> Result<DeleteNavigationGroupResponse, AppError> {
@@ -387,8 +387,8 @@ pub(crate) async fn set_default_navigation_entry(
     )))
 }
 
-pub(crate) async fn sync_navigation_title(
-    db: &DatabaseConnection,
+pub(crate) async fn sync_navigation_title<C: ConnectionTrait>(
+    db: &C,
     form_uuid: &str,
     name: &str,
     slug: &str,
@@ -428,8 +428,8 @@ pub(crate) async fn ensure_system_navigation_items(
     Ok(())
 }
 
-pub(crate) async fn ensure_system_navigation_for_app(
-    db: &DatabaseConnection,
+pub(crate) async fn ensure_system_navigation_for_app<C: ConnectionTrait>(
+    db: &C,
     app_id: &str,
 ) -> Result<(), AppError> {
     let now = Utc::now();
@@ -472,8 +472,8 @@ pub(crate) async fn ensure_system_navigation_for_app(
     Ok(())
 }
 
-pub(crate) async fn resolve_group_parent_id(
-    db: &DatabaseConnection,
+pub(crate) async fn resolve_group_parent_id<C: ConnectionTrait>(
+    db: &C,
     app_id: &str,
     parent_id: Option<&str>,
 ) -> Result<Option<Uuid>, AppError> {
@@ -495,8 +495,8 @@ pub(crate) async fn resolve_group_parent_id(
     Ok(Some(parent_uuid))
 }
 
-pub(crate) async fn next_navigation_sort_order(
-    db: &DatabaseConnection,
+pub(crate) async fn next_navigation_sort_order<C: ConnectionTrait>(
+    db: &C,
     app_id: &str,
     parent_id: Option<Uuid>,
 ) -> Result<i32, AppError> {
@@ -520,8 +520,8 @@ pub(crate) async fn next_navigation_sort_order(
 
 const ROOT_NON_SYSTEM_SORT_BASE: i32 = 100;
 
-pub(crate) async fn normalize_navigation_orders(
-    db: &DatabaseConnection,
+pub(crate) async fn normalize_navigation_orders<C: ConnectionTrait>(
+    db: &C,
     app_id: &str,
 ) -> Result<(), AppError> {
     let items = AppNavigationEntity::find()
@@ -581,8 +581,8 @@ pub(crate) async fn normalize_navigation_orders(
     normalize_child_orders_recursive(db, &grouped_children, None, now).await
 }
 
-pub(crate) async fn normalize_child_orders_recursive(
-    db: &DatabaseConnection,
+pub(crate) async fn normalize_child_orders_recursive<C: ConnectionTrait>(
+    db: &C,
     grouped_children: &std::collections::HashMap<Option<Uuid>, Vec<app_navigation_entity::Model>>,
     parent_id: Option<Uuid>,
     now: DateTime<Utc>,
@@ -732,8 +732,8 @@ pub(crate) async fn apply_navigation_reorder(
     Ok(())
 }
 
-pub(crate) async fn move_form_navigation_to_group(
-    db: &DatabaseConnection,
+pub(crate) async fn move_form_navigation_to_group<C: ConnectionTrait>(
+    db: &C,
     app_id: &str,
     form_uuid: &str,
     parent_id: Option<&str>,

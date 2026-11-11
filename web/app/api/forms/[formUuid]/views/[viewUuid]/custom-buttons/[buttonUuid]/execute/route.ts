@@ -1,4 +1,4 @@
-import { executeViewButton } from "@/app/lib/http";
+import { executeViewButton } from "@/shared/lib/http";
 import { createBackendSdkClient, sdkJsonResponse } from "../../../../../../../_lib/backend-sdk-client";
 type Context = { params: Promise<{ formUuid: string; viewUuid: string; buttonUuid: string }> };
 export async function POST(request: Request, { params }: Context) { return sdkJsonResponse(executeViewButton({ client: createBackendSdkClient(request), path: await params, body: await request.json() })); }

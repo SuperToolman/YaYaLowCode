@@ -32,6 +32,62 @@ fn open_page_configuration() {
     validate_configuration(&mut p, &json!({}), false).unwrap();
 }
 #[test]
+fn page_parameters_roundtrip_and_validation() {
+    assert!(payload().action_config.parameters.is_empty());
+    let row = json!({"id":"p1","name":"customerCode","type":"field","fieldId":"text"});
+    let parameters: Vec<ButtonPageParameter> =
+        serde_json::from_value(json!([row.clone()])).unwrap();
+    validate_page_parameters(&parameters, Some(&valid_condition_fields(&schema(), false))).unwrap();
+    let stored = serde_json::to_value(&parameters).unwrap();
+    let restored: Vec<ButtonPageParameter> = serde_json::from_value(stored).unwrap();
+    assert_eq!(restored[0].field_id.as_deref(), Some("text"));
+    for invalid in [
+        json!({"name":""}),
+        json!({"name":"x".repeat(21)}),
+        json!({"fieldId":"missing"}),
+        json!({"type":"unknown"}),
+        json!({"id":""}),
+    ] {
+        let mut item = row.clone();
+        for (key, value) in invalid.as_object().unwrap() {
+            item[key] = value.clone();
+        }
+        let items = serde_json::from_value::<Vec<ButtonPageParameter>>(json!([item])).unwrap();
+        assert!(
+            validate_page_parameters(&items, Some(&valid_condition_fields(&schema(), false)))
+                .is_err()
+        );
+    }
+    for name in [
+        "appId",
+        "formUuid",
+        "buttonPageMode",
+        "record",
+        "task",
+        "viewUuid",
+    ] {
+        let mut item = row.clone();
+        item["name"] = json!(name);
+        assert!(
+            validate_page_parameters(
+                &serde_json::from_value::<Vec<ButtonPageParameter>>(json!([item])).unwrap(),
+                None
+            )
+            .is_err()
+        );
+    }
+    let mut duplicate = row.clone();
+    duplicate["id"] = json!("p2");
+    duplicate["name"] = json!(" customerCode ");
+    assert!(
+        validate_page_parameters(
+            &serde_json::from_value::<Vec<ButtonPageParameter>>(json!([row, duplicate])).unwrap(),
+            None
+        )
+        .is_err()
+    );
+}
+#[test]
 fn nested_conditions_validate_and_reject_cycles() {
     let mut p = payload();
     p.availability=serde_json::from_value(json!({"mode":"conditions","rules":[{"id":"root","isGroup":true,"logicalOperator":"and"},{"id":"child","parentId":"root","fieldKey":"text","operator":"eq","rawValue":"yes"}]})).unwrap();
@@ -85,6 +141,16 @@ fn missing_values_and_field_references() {
 #[tokio::test]
 #[ignore = "requires CUSTOM_BUTTON_TEST_DATABASE_SETTINGS_PATH; isolated schema"]
 async fn custom_buttons_database_lifecycle() {
+    database_lifecycle(true).await;
+}
+
+#[tokio::test]
+#[ignore = "requires CUSTOM_BUTTON_TEST_DATABASE_SETTINGS_PATH; isolated schema"]
+async fn fill_buttons_database_lifecycle() {
+    database_lifecycle(false).await;
+}
+
+async fn database_lifecycle(include_automation: bool) {
     use sea_orm::{ConnectOptions, Database, Schema};
     let raw: Value = serde_json::from_slice(
         &std::fs::read(std::env::var("CUSTOM_BUTTON_TEST_DATABASE_SETTINGS_PATH").unwrap())
@@ -141,13 +207,35 @@ async fn custom_buttons_database_lifecycle() {
         for permission in ["app:app-a:edit_form", "app:app-a:view_development"] { iam_role_permission_entity::ActiveModel{id:Set(Uuid::new_v4()),role_id:Set(role),permission:Set(permission.into()),created_at:Set(now),updated_at:Set(now)}.insert(&db).await.unwrap(); }
         let Json(created)=create_custom_button(State(state.clone()),headers.clone(),Path("form".into()),Json(input.clone())).await.unwrap();
         let created=created.data.unwrap();input.name="Changed".into();
-        let Json(updated)=update_custom_button(State(state.clone()),headers,Path(("form".into(),created.id.clone())),Json(input)).await.unwrap();assert_eq!(updated.data.unwrap().name,"Changed");
+        let Json(updated)=update_custom_button(State(state.clone()),headers.clone(),Path(("form".into(),created.id.clone())),Json(input)).await.unwrap();assert_eq!(updated.data.unwrap().name,"Changed");
         // View binding reads do not require automation management; runtime invocation
         // still rechecks source conditions, saved binding and target create permission.
         use crate::modules::{forms, view_custom_buttons as views};
         use crate::infrastructure::entities::{form_view_entity, form_storage_definition_entity};
         db.execute(&schema.create_table_from_entity(form_view_entity::Entity)).await.unwrap();
         db.execute(&schema.create_table_from_entity(form_storage_definition_entity::Entity)).await.unwrap();
+        // Persist page parameters through the real handlers in this isolated schema.
+        let mut page = payload();
+        page.name = "Parameter link".into();
+        page.action_type = "open_page".into();
+        page.action_config.link_type = Some("external".into());
+        page.action_config.open_mode = Some("sidebar".into());
+        page.action_config.url = Some("https://example.com?keep=yes#anchor".into());
+        page.availability = serde_json::from_value(json!({"mode":"conditions","rules":[{"id":"available","fieldKey":"text","operator":"eq","rawValue":"yes","valueType":"value"}]})).unwrap();
+        page.action_config.parameters = serde_json::from_value(json!([
+            {"id":"fixed","name":"fixed","type":"constant","value":"中文 &"},
+            {"id":"code","name":"customerCode","type":"field","fieldId":"text"}
+        ])).unwrap();
+        let Json(saved) = create_custom_button(State(state.clone()), headers.clone(), Path("form".into()), Json(page.clone())).await.unwrap();
+        let page_id = saved.data.unwrap().id;
+        let Json(loaded) = get_custom_button(State(state.clone()), Path(("form".into(), page_id.clone()))).await.unwrap();
+        assert_eq!(loaded.data.unwrap().action_config.parameters[0].value.as_deref(), Some("中文 &"));
+        page.action_config.parameters[1].field_id = Some("missing".into());
+        assert!(update_custom_button(State(state.clone()), headers.clone(), Path(("form".into(), page_id.clone())), Json(page.clone())).await.is_err());
+        page.action_config.parameters[1].field_id = Some("createdAt".into());
+        let Json(updated) = update_custom_button(State(state.clone()), headers.clone(), Path(("form".into(), page_id.clone())), Json(page)).await.unwrap();
+        assert_eq!(updated.data.unwrap().action_config.parameters[1].field_id.as_deref(), Some("createdAt"));
+        let _ = delete_custom_button(State(state.clone()), Path(("form".into(), page_id))).await.unwrap();
         crate::platform::form_storage::sync_current_storage_plan(&db,"form",1,&super::tests::schema()).await.unwrap();
         let source_definition = forms::find_form_definition(&db,"form").await.unwrap();
         let source = crate::platform::records::RecordRepository::new(&db).insert(&source_definition,json!({"text":"yes"}),"test",now).await.unwrap();
@@ -163,16 +251,22 @@ async fn custom_buttons_database_lifecycle() {
         let invoke = || views::ButtonInvocation { record_id: source.record_uuid.clone(), data: None };
         assert!(views::prepare_view_button(State(state.clone()),role_headers.clone(),Path(("form".into(),"default".into(),created.id.clone())),Json(invoke())).await.is_err());
         let _ = forms::update_form_view(State(state.clone()),Path(("form".into(),"default".into())),Json(forms::SaveFormViewRequest{name:"全部数据".into(),config:config.clone()})).await.unwrap();
-        assert!(views::prepare_view_button(State(state.clone()),role_headers.clone(),Path(("form".into(),"default".into(),created.id.clone())),Json(invoke())).await.is_err());
+        let _ = views::prepare_view_button(State(state.clone()),role_headers.clone(),Path(("form".into(),"default".into(),created.id.clone())),Json(invoke())).await.unwrap();
         iam_role_permission_entity::ActiveModel{id:Set(Uuid::new_v4()),role_id:Set(role),permission:Set("form:form:create".into()),created_at:Set(now),updated_at:Set(now)}.insert(&db).await.unwrap();
         let _ = views::prepare_view_button(State(state.clone()),role_headers.clone(),Path(("form".into(),"default".into(),created.id.clone())),Json(invoke())).await.unwrap();
-        let bad_data = views::ButtonInvocation { record_id: source.record_uuid.clone(), data:Some(json!({"computed":1})) };
+        let bad_data = views::SubmitButtonFillRequest { record_id: source.record_uuid.clone(), target_record_id: Some(source.record_uuid.clone()), operation: "update".into(), request_id: Uuid::new_v4(), configuration_version: created.updated_at.clone(), data: json!({"computed":1}) };
         assert!(views::submit_view_button(State(state.clone()),role_headers.clone(),Path(("form".into(),"default".into(),created.id.clone())),Json(bad_data)).await.is_err());
         let _ = forms::update_form_view(State(state.clone()),Path(("form".into(),"default".into())),Json(forms::SaveFormViewRequest{name:"全部数据".into(),config})).await.unwrap();
-        automation_tests::verify(&state, &role_headers, actor, role, &source.record_uuid).await;
+        if include_automation {
+            automation_tests::verify(&state, &role_headers, actor, role, &source.record_uuid).await;
+        } else {
+            for statement in [schema.create_table_from_entity(crate::infrastructure::entities::workflow_instance_entity::Entity), schema.create_table_from_entity(crate::infrastructure::entities::workflow_notification_entity::Entity), schema.create_table_from_entity(crate::infrastructure::entities::workflow_task_entity::Entity), schema.create_table_from_entity(AutomationFlowEntity), schema.create_table_from_entity(AutomationFlowVersionEntity), schema.create_table_from_entity(AutomationNodeEntity), schema.create_table_from_entity(AutomationEdgeEntity), schema.create_table_from_entity(AutomationRunEntity), schema.create_table_from_entity(AutomationRunNodeEntity)] { db.execute(&statement).await.unwrap(); }
+            db.execute_unprepared(include_str!("../automations/execution_schema.sql")).await.unwrap();
+            crate::modules::view_custom_buttons::fill::tests::verify(&state, &role_headers, role, &source.record_uuid).await;
+        }
         let _=delete_custom_button(State(state.clone()),Path(("form".into(),created.id))).await.unwrap();
         let Json(runtime)=views::list_view_buttons(State(state.clone()),Path(("form".into(),"default".into()))).await.unwrap();
-        assert!(runtime.data.unwrap()[0].definition.is_none());
+        assert!(runtime.data.unwrap().is_empty());
         let Json(list)=list_custom_buttons(State(state.clone()),Path("form".into()),Query(ListButtonsQuery{search:Some("按钮".into()),page:Some(1),page_size:Some(1)})).await.unwrap();assert_eq!(list.data.unwrap().total,1);
         let _ = delete_custom_button(State(state),Path(("form".into(),"BTN-test".into()))).await.unwrap();assert!(find_button(&db,"form","BTN-test").await.is_err());
         // Exercise conversion of legacy structure, binding cleanup, repeat migration,

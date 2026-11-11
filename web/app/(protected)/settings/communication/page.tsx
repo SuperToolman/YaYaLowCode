@@ -1,27 +1,14 @@
 "use client";
-import { notifyRequestError } from "@lib/notify";
-import { useAuth } from "@components/AuthProvider";
-import { notify } from "@lib/notify";
+import { notifyRequestError } from "@/shared/lib/notify";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { notify } from "@/shared/lib/notify";
 
 import { useEffect, useState } from "react";
-import {
-  Button,
-  Modal,
-  Switch,
-  Description,
-  InputGroup,
-  Label,
-  TextField,
-} from "@heroui/react";
+import { Button, Modal, Switch, Description, InputGroup, Label, TextField } from "@heroui/react";
 import { FileTypeSelect } from "./components/FileTypeSelect";
-import { openLicenseManagementModal } from "@components/LicenseManagementModal";
+import { openLicenseManagementModal } from "@/features/settings/components/LicenseManagementModal";
 import { SettingsContentCard } from "../components/SettingsContentCard";
-import {
-  getCommunicationSettings,
-  getCommunicationStats,
-  cleanupCommunication,
-  updateCommunicationSettings,
-} from "@features/settings/api";
+import { getCommunicationSettings, getCommunicationStats, cleanupCommunication, updateCommunicationSettings } from "@/features/settings/api";
 
 type CommunicationModuleSettings = {
   installed: boolean;
@@ -279,7 +266,6 @@ export default function CommunicationSettingsPage() {
                   </InputGroup>
                   <Description>0 表示永久保留。</Description>
                 </TextField>
-
 
                 <div className="flex items-end">
                   <Button

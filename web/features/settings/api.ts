@@ -1,28 +1,6 @@
-import * as sdk from "@lib/http";
-import {
-  cleanupCommunicationData,
-  getCommunicationModuleSettings,
-  getCommunicationStorageStats,
-  updateCommunicationModuleSettings,
-  getDatabaseSettings,
-  updateDatabaseSettings,
-  testDatabaseConnection,
-  getValkeySettings,
-  updateValkeySettings,
-  testValkeyConnection,
-  getPlatformLicenseStatus,
-  activatePlatformLicense,
-  applyLatestPlatformLicense,
-  clearDingTalkData,
-  getIdentitySourceSettings,
-  refreshDingTalkAccessToken,
-  syncDingTalkDepartments,
-  syncDingTalkUsers,
-  updateIdentitySourceSettings,
-  getAiEmployeeMarket,
-  installAiEmployee,
-} from "@lib/http";
-import { unwrapApiResult } from "@lib/api-request";
+import * as sdk from "@/shared/lib/http";
+import { cleanupCommunicationData, getCommunicationModuleSettings, getCommunicationStorageStats, updateCommunicationModuleSettings, getDatabaseSettings, updateDatabaseSettings, testDatabaseConnection, getValkeySettings, updateValkeySettings, testValkeyConnection, getPlatformLicenseStatus, activatePlatformLicense, applyLatestPlatformLicense, clearDingTalkData, getIdentitySourceSettings, refreshDingTalkAccessToken, syncDingTalkDepartments, syncDingTalkUsers, updateIdentitySourceSettings, getAiEmployeeMarket, installAiEmployee } from "@/shared/lib/http";
+import { unwrapApiResult } from "@/shared/lib/api-request";
 
 export async function getCommunicationSettings() {
   const result = await getCommunicationModuleSettings({ responseStyle: "fields" });
@@ -34,7 +12,7 @@ export async function getCommunicationStats() {
   return unwrapApiResult(result, "无法加载存储统计");
 }
 
-export async function updateCommunicationSettings(settings: import("@lib/http").CommunicationModuleSettings) {
+export async function updateCommunicationSettings(settings: import("@/shared/lib/http").CommunicationModuleSettings) {
   const result = await updateCommunicationModuleSettings({ body: settings, responseStyle: "fields" });
   return unwrapApiResult(result, "保存通讯模块设置失败");
 }
@@ -91,7 +69,7 @@ export async function getIdentitySettings() {
   return unwrapApiResult(result, "无法加载身份源配置");
 }
 
-export async function saveIdentitySettings(body: import("@lib/http").UpdateIdentitySourceSettingsRequest) {
+export async function saveIdentitySettings(body: import("@/shared/lib/http").UpdateIdentitySourceSettingsRequest) {
   const result = await updateIdentitySourceSettings({ body: body, responseStyle: "fields" });
   return unwrapApiResult(result, "保存身份源配置失败");
 }
@@ -123,7 +101,9 @@ export async function getAiEmployees() {
 
 export async function installMarketAiEmployee(employeeId: string) {
   const result = await installAiEmployee({ path: { employee_id: employeeId }, responseStyle: "fields" });
-  return unwrapApiResult(result, "安装 AI 员工失败");
+  const installed = unwrapApiResult(result, "安装 AI 员工失败");
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("yaya-ai-employees-updated"));
+  return installed;
 }
 
 export async function uninstallMarketAiEmployee(employeeId: string) {
@@ -136,5 +116,11 @@ export async function listModelRoutes() { return unwrapApiResult(await sdk.listM
 export async function createModelRoute(body: sdk.ModelRouteRequest) { return unwrapApiResult(await sdk.createModelRoute({ body })); }
 export async function updateModelRoute(id: string, body: sdk.ModelRouteRequest) { return unwrapApiResult(await sdk.updateModelRoute({ path: { id }, body })); }
 export async function deleteModelRoute(id: string) { return unwrapApiResult(await sdk.deleteModelRoute({ path: { id } })); }
+export async function testModelRoute(id: string, body: sdk.TestModelRouteRequest) {
+  return unwrapApiResult(await sdk.testModelRoute({ path: { id }, body }));
+}
+export async function fetchModelRouteModels(id: string, body: sdk.TestModelRouteRequest) {
+  return unwrapApiResult(await sdk.fetchModelRouteModels({ path: { id }, body }));
+}
 export async function listPlatformLogs(query: { limit: number; offset: number; level?: string }) { return unwrapApiResult(await sdk.listPlatformLogs({ query })); }
 export async function clearPlatformLogs() { return unwrapApiResult(await sdk.clearPlatformLogs()); }

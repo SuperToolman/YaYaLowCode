@@ -1,6 +1,23 @@
 # Per-customer deployment
 
-Each customer receives one isolated platform container. The container runs the Next.js Web BFF, Rust API, PostgreSQL, internal Valkey, and the DSH Agent runtime. Only Web and API host ports are published.
+Each customer receives one isolated platform container. The container runs the Next.js Web BFF, Rust API, PostgreSQL, internal Valkey, and the AgentV2 Rust Worker and independent Cordis Host. Only Web and API host ports are published.
+
+## SMS login
+
+Set the following in `deploy/.env` (or the Rust API process environment for local development):
+
+```dotenv
+ALIYUN_ACCESS_KEY_ID=<RAM access key ID>
+ALIYUN_ACCESS_KEY_SECRET=<RAM access key secret>
+ALIYUN_SMS_SIGN_NAME=深圳兆元信息技术
+ALIYUN_SMS_LOGIN_TEMPLATE_CODE=SMS_276325873
+ALIYUN_SMS_CODE_PARAM=code
+ALIYUN_SMS_REGION=cn-hangzhou
+```
+
+Use a RAM identity authorized to send SMS. Keep credentials in the server environment. Compose passes these settings to the API; recreate the container after changing them. Local development also requires the existing `VALKEY_URL` or saved Valkey settings.
+
+Only an existing, active system user with a unique bound mainland China (+86) mobile number can log in. SMS login never creates users. The template must use `${code}` and should describe a one-minute validity period. Codes expire automatically in Valkey **60 seconds after creation** and are deleted immediately on successful verification or after five failed attempts. Resends require 60 seconds, with at most ten send attempts per phone per hour. Valkey failures block sending and verification. No live SMS is sent by tests; verify actual delivery after configuring credentials and confirming template approval.
 
 ## Mail workbench (phase 1)
 
@@ -28,7 +45,7 @@ The chat WebSocket follows the page protocol automatically: `ws://` for HTTP and
 
 1. Copy `.env.example` to `.env` and replace every secret with a unique value. Generate the Valkey password as URL-safe hexadecimal text, for example `openssl rand -hex 32`.
 2. Create `secrets/license-public.pem` from the public key issued by the central license service. Do not place private keys in this directory.
-3. Configure the platform secrets in `.env`. The initialization script generates missing Agent runtime and model-key encryption secrets, then builds and starts the complete single container.
+3. Configure the platform secrets in `.env`. The initialization script generates missing AgentV2 Worker and model-key encryption secrets, then builds and starts the complete single container.
 4. Reach `http://host:WEB_PORT/settings/license` and activate that customer's license. Production license centers must use HTTPS.
 
 ## Publish From Windows
@@ -45,7 +62,7 @@ On an empty database, startup creates the `yaya` super administrator, its local 
 
 ## Agent Runtime
 
-The old Agent and LangGraph Worker have been removed. DSH Harness under `agent/deepseek-harness` is built into the single platform image and supervised on internal port `8789`. Customers configure model providers after first login at `/settings/model-providers`.
+The legacy DSH runtime has been removed. The image builds the AgentV2 Worker and Office helper and installs the pinned Cordis Host. Supervisor runs `agent-v2`; the old runtime port is no longer used. API and Worker share `YAYA_AGENT_V2_WORKER_SECRET`; configure it before deployment. Customers configure model providers at `/settings/model-providers`. Legacy Agent tables are retired through platform incremental migrations; deployment scripts do not back up legacy Agent content. Supervisor also runs `agent-executor` inside the application container. Scripts run as the application account in persistent per-session environments, with no nested execution container, Docker socket or dependency-image preparation. Employee installation does not run pip/npm; dependencies are installed by independent Agent shell calls when needed. This is not an OS sandbox. Linux image/runtime acceptance remains pending; see `docs/agent-v2-local-execution-report.md`.
 
 For a new server, initialize its `.env` and public key from this workstation once:
 

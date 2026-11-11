@@ -1,13 +1,13 @@
 "use client";
-import { notifyRequestError } from "@lib/notify";
+import { notifyRequestError } from "@/shared/lib/notify";
 
 /* eslint-disable @next/next/no-img-element -- authenticated original image URLs */
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { Button } from "@heroui/react";
-import { listCommunicationMessages, type CommunicationMessageResponse } from "@features/communication/api";
+import { listCommunicationMessages, type CommunicationMessageResponse } from "@/features/communication/api";
 import styles from "./MessageImage.module.css";
-import { notify } from "@lib/notify";
+
 import { messageImages, type ConversationImage } from "./message-images";
 const Viewer = dynamic(() => import("./MessageImageViewer"), { ssr: false });
 const GalleryContext = createContext<((image: ConversationImage) => void) | null>(null);
@@ -54,9 +54,9 @@ export function MessageImage({ imageId, src, alt }: { imageId: string; src: stri
   const [localOpen, setLocalOpen] = useState(false);
   const image = { id: imageId, src, alt };
   return <>
-    <Button variant="ghost" className={`h-auto min-w-0 max-w-full overflow-hidden rounded-[inherit] p-0 ${styles.image}`} aria-label={`查看图片：${alt}`} onPress={() => open ? open(image) : setLocalOpen(true)}>
+    <Button variant="ghost" className={`h-auto min-w-0 max-w-full overflow-hidden rounded-[inherit] p-0 ${styles["messages-image__trigger"]}`} aria-label={`查看图片：${alt}`} onPress={() => open ? open(image) : setLocalOpen(true)}>
       {broken ? <span>图片加载失败：{alt}</span> : <img src={src} alt={alt} loading="lazy" className="block max-h-64 max-w-full object-contain" onError={() => setBroken(true)} />}
-      {!broken ? <span className={styles.caption} aria-hidden="true">{alt}</span> : null}
+      {!broken ? <span className={styles["messages-image__caption"]} aria-hidden="true">{alt}</span> : null}
     </Button>
     {localOpen ? <Viewer images={[image]} activeId={imageId} onClose={() => setLocalOpen(false)} onView={() => {}} /> : null}
   </>;

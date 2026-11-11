@@ -7,7 +7,7 @@ mod shared;
 
 use std::net::SocketAddr;
 
-use modules::{agents, locations, navigation};
+use modules::{locations, navigation};
 use platform::config::{
     AppConfig, communication_module_enabled, migrate_legacy_runtime_layout,
     validate_production_environment,
@@ -54,6 +54,7 @@ async fn main() -> Result<(), AppError> {
 
     migrate_legacy_runtime_layout().map_err(AppError::Server)?;
     validate_production_environment().map_err(AppError::Server)?;
+    platform::config::seal_existing_skill_configurations().map_err(AppError::Server)?;
     let config = AppConfig::from_env();
     let db = Database::connect(&config.database_url).await?;
     let valkey = connect_valkey(config.valkey_url.as_deref()).await;
@@ -61,20 +62,12 @@ async fn main() -> Result<(), AppError> {
     locations::prepare_legacy_location_catalog_schema(&db).await?;
     infrastructure::legacy_bootstrap::ensure_form_tables(&db).await?;
     infrastructure::legacy_bootstrap::ensure_identity_tables(&db).await?;
-    infrastructure::legacy_bootstrap::ensure_agent_tables(&db).await?;
     infrastructure::legacy_bootstrap::ensure_file_tables(&db).await?;
     infrastructure::migrator::reconcile_legacy_names(&db).await?;
     infrastructure::migrator::Migrator::up(&db, None).await?;
     if std::env::args().any(|arg| arg == "--migrate-only") {
         info!("database migrations completed; no worker or HTTP server started");
         return Ok(());
-    }
-    agents::cleanup_native_workbench_reset(&db).await?;
-    if let Err(error) = agents::cleanup_expired_agent_workspaces(&db).await {
-        warn!(
-            ?error,
-            "agent workspace retention cleanup failed; continuing startup"
-        );
     }
     platform::logging::start_persistence();
     locations::ensure_location_catalog_schema(&db).await?;
@@ -97,6 +90,11 @@ async fn main() -> Result<(), AppError> {
         modules::communication::start_delivery_worker(state.clone());
     }
     let execution_worker = modules::automations::execution::start_worker(state.clone());
+    modules::agent_v2::submissions::start_cleanup(state.clone());
+    modules::agent_v2::executions::start_cleanup(state.clone());
+    modules::agent_v2::session_deletion::start_cleanup(state.clone());
+    modules::knowledge::parsing::start(state.clone());
+    modules::knowledge::vectors::start(state.clone());
     let app = http::router::build(state);
 
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;

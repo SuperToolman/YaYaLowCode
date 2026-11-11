@@ -1,13 +1,6 @@
 "use client";
 import type { ReactNode } from "react";
-import {
-  Card,
-  Checkbox,
-  Description,
-  Label,
-  Radio,
-  RadioGroup,
-} from "@heroui/react";
+import { Card, Checkbox, Description, Label, Radio, RadioGroup } from "@heroui/react";
 import { actionLabels } from "./permission-config";
 export function PermissionPanel({
   title,

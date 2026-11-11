@@ -9,7 +9,7 @@ function run(command, args, cwd = web) {
   const result = spawnSync(command, args, { cwd, stdio: "inherit", shell: process.platform === "win32" });
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
-function snapshot(directory = path.join(web, "app/lib/api-client")) {
+function snapshot(directory = path.join(web, "shared/lib/api-client")) {
   const hash = createHash("sha256");
   function visit(dir) {
     for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {

@@ -61,8 +61,6 @@ pub(crate) async fn delete_app_contents<C: ConnectionTrait>(
         format!("DELETE FROM form_schemas WHERE form_uuid IN ({forms_sql})"),
         // Permission strings are scoped by an exact prefix, not LIKE (IDs contain '_').
         "DELETE FROM iam_role_permissions WHERE starts_with(permission, 'app:' || $1 || ':') OR EXISTS (SELECT 1 FROM form_definitions f WHERE f.app_route_app_id = $1 AND starts_with(permission, 'form:' || f.form_uuid || ':'))".into(),
-        // Conversations belong to their users. Remove the invalid application association.
-        "UPDATE agent_sessions SET app_route_app_id = NULL WHERE app_route_app_id = $1".into(),
         "DELETE FROM app_navigation_items WHERE app_route_app_id = $1".into(),
     ] {
         db.execute_raw(Statement::from_sql_and_values(

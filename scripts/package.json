@@ -1,0 +1,16 @@
+{
+  "name": "@yaya-low-code/scripts",
+  "private": true,
+  "scripts": {
+    "package:platform": "node package-platform.mjs",
+    "test:package": "node --test package-platform.test.mjs"
+  },
+  "description": "Yaya low-code platform. package:platform builds, smoke-tests, and exports a complete offline Linux image ZIP.",
+  "engines": { "node": ">=24" },
+  "dependencies": {
+    "archiver": "5.3.2"
+  },
+  "devDependencies": {
+    "jszip": "3.10.2"
+  }
+}

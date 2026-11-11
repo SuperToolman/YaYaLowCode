@@ -1,17 +1,12 @@
 "use client";
-import { assertApiResult } from "@lib/api-request";
+import { assertApiResult } from "@/shared/lib/api-request";
 
-import { notifyRequestError } from "@lib/notify";
+import { notifyRequestError } from "@/shared/lib/notify";
 
 import { useCallback, useEffect, useMemo, useState, type Key } from "react";
-import { notify } from "@lib/notify";
+import { notify } from "@/shared/lib/notify";
 import { Avatar, Button, Input, ListBox, Modal, Select } from "@heroui/react";
-import {
-  createLocalOrganizationUnit,
-  listOrganizationUnits,
-  listUsers,
-} from "@/features/identity-access/api";
-import type { ApiEnvelope } from "@/app/lib/api-request";
+import { createLocalOrganizationUnit, listOrganizationUnits, listUsers } from "@/features/identity-access/api";
 
 type OrganizationMember = {
   id: string;
@@ -30,10 +25,7 @@ type OrganizationUnit = {
   memberCount: number;
   members?: OrganizationMember[];
 };
-type OrganizationUser = OrganizationMember & {
-  sourceType: string;
-  departments: string[];
-};
+
 type OrganizationNode = OrganizationUnit & { children: OrganizationNode[] };
 
 export function OrganizationArchitectureSection({

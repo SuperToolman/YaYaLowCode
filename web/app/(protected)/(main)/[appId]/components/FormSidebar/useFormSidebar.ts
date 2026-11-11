@@ -1,54 +1,21 @@
 "use client";
-import { notifyRequestError } from "@lib/notify";
+import { notifyRequestError } from "@/shared/lib/notify";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useTransition,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import {
-  createForm,
-  createNavigationGroup,
-  deleteForm,
-  deleteNavigationGroup,
-  moveFormNavigation,
-  updateNavigationGroup,
-  updateFormName,
-} from "@/features/application/api";
-import {
-  getAppNavigation,
-  getAppForms,
-  invalidateAppResources,
-} from "@lib/app-resources";
-import { useAuth } from "@components/AuthProvider";
-import {
-  APP_NAVIGATION_CHANGED_EVENT,
-  type AppNavigationChangedDetail,
-} from "../app-navigation-events";
+import { createForm, createNavigationGroup, deleteForm, deleteNavigationGroup, moveFormNavigation, updateNavigationGroup, updateFormName } from "@/features/application/api";
+import { getAppNavigation, getAppForms } from "@/features/application/resources";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { APP_NAVIGATION_CHANGED_EVENT, notifyAppNavigationChanged, type AppNavigationChangedDetail } from "@/features/application/navigation-events";
 
-import {
-  applyFormTypes,
-  buildNavigationTree,
-  expandGroupsFromItems,
-  flattenGroups,
-  isNavigationDescendant,
-} from "./navigation-utils";
-import type {
-  FormSidebarProps,
-  NavigationItem,
-  SidebarNode,
-  GroupAction,
-  FormAction,
-} from "./types";
+import { applyFormTypes, buildNavigationTree, expandGroupsFromItems, filterNavigationTree, flattenGroups, isNavigationDescendant } from "./navigation-utils";
+import type { FormSidebarProps, NavigationItem, SidebarNode, GroupAction, FormAction } from "./types";
 
 import { ROOT_PARENT_VALUE } from "./constants";
 import { useNavigationDrag } from "./useNavigationDrag";
+import { useExpandedGroups } from "./useExpandedGroups";
 import { copyEmptyNavigationGroup, copyFormSchema, nextCopyName } from "@/features/application/copy-navigation";
-import { notify } from "@lib/notify";
+import { notify } from "@/shared/lib/notify";
 
 export function useFormSidebar({ routeAppId }: FormSidebarProps) {
   const pathname = usePathname();
@@ -57,9 +24,8 @@ export function useFormSidebar({ routeAppId }: FormSidebarProps) {
   const canCreateForm = hasPermission(`app:${routeAppId}:create_form`);
   const canCreateGroup = hasPermission(`app:${routeAppId}:create_group`);
   const [items, setItems] = useState<NavigationItem[]>([]);
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(
-    {},
-  );
+  const [searchQuery, setSearchQuery] = useState("");
+  const [expandedGroups, setExpandedGroups] = useExpandedGroups(routeAppId);
   const [isPending, startTransition] = useTransition();
   const [errorMessage, setErrorMessage] = useState("");
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
@@ -74,15 +40,18 @@ export function useFormSidebar({ routeAppId }: FormSidebarProps) {
   const [selectedGroup, setSelectedGroup] = useState<NavigationItem | null>(
     null,
   );
+  const [groupActionOpen, setGroupActionOpen] = useState(false);
   const [groupAction, setGroupAction] = useState<GroupAction | null>(null);
   const [groupActionValue, setGroupActionValue] = useState("");
   const [groupActionPending, setGroupActionPending] = useState(false);
   const [selectedForm, setSelectedForm] = useState<NavigationItem | null>(null);
+  const [formActionOpen, setFormActionOpen] = useState(false);
   const [formAction, setFormAction] = useState<FormAction | null>(null);
   const [formActionValue, setFormActionValue] = useState("");
   const [formActionPending, setFormActionPending] = useState(false);
   const formActionInFlight = useRef(false);
   const copyInFlight = useRef(false);
+  const navigationRequestId = useRef(0);
   const tree = useMemo(
     () =>
       buildNavigationTree(
@@ -92,6 +61,22 @@ export function useFormSidebar({ routeAppId }: FormSidebarProps) {
     [permissionsReady, routeAppId, items],
   );
   const groupOptions = useMemo(() => flattenGroups(tree), [tree]);
+  const visibleTree = useMemo(
+    () => filterNavigationTree(tree, searchQuery),
+    [searchQuery, tree],
+  );
+  const visibleExpandedGroups = useMemo(() => {
+    if (!searchQuery.trim()) return expandedGroups;
+    const next = { ...expandedGroups };
+    const expandVisibleGroups = (nodes: SidebarNode[]) => {
+      for (const node of nodes) {
+        if (node.itemType === "group") next[node.id] = true;
+        expandVisibleGroups(node.children);
+      }
+    };
+    expandVisibleGroups(visibleTree);
+    return next;
+  }, [expandedGroups, searchQuery, visibleTree]);
   const moveGroupOptions = useMemo(() => {
     if (!selectedGroup) return groupOptions;
     return groupOptions.filter(
@@ -101,56 +86,22 @@ export function useFormSidebar({ routeAppId }: FormSidebarProps) {
     );
   }, [groupOptions, items, selectedGroup]);
 
-  useEffect(() => {
-    if (!permissionsReady) return;
-    let cancelled = false;
-
+  const refreshNavigation = useCallback((force = true) => {
+    const requestId = ++navigationRequestId.current;
     void (async () => {
       try {
         const [navigation, forms] = await Promise.all([
-          getAppNavigation(routeAppId),
-          getAppForms(routeAppId),
+          getAppNavigation(routeAppId, force),
+          getAppForms(routeAppId, force),
         ]);
-        const nextItems = applyFormTypes(
-          navigation as unknown as NavigationItem[],
-          forms,
-        );
-        if (!cancelled) {
-          startTransition(() => {
-            setItems(nextItems as unknown as NavigationItem[]);
-            setExpandedGroups((current) =>
-              expandGroupsFromItems(
-                nextItems as unknown as NavigationItem[],
-                current,
-              ),
-            );
-          });
-        }
-      } catch {
-        if (!cancelled) {
-          setErrorMessage("导航加载失败，当前展示本地数据。");
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [permissionsReady, routeAppId]);
-
-  const refreshNavigation = useCallback(() => {
-    void (async () => {
-      try {
-        const [navigation, forms] = await Promise.all([
-          getAppNavigation(routeAppId, true),
-          getAppForms(routeAppId, true),
-        ]);
+        if (requestId !== navigationRequestId.current) return;
         const nextItems = applyFormTypes(
           navigation as unknown as NavigationItem[],
           forms,
         );
         startTransition(() => {
           setItems(nextItems as unknown as NavigationItem[]);
+          setErrorMessage("");
           setExpandedGroups((current) =>
             expandGroupsFromItems(
               nextItems as unknown as NavigationItem[],
@@ -159,10 +110,21 @@ export function useFormSidebar({ routeAppId }: FormSidebarProps) {
           );
         });
       } catch {
-        setErrorMessage("导航刷新失败，请稍后重试。");
+        if (requestId === navigationRequestId.current) {
+          setErrorMessage("导航刷新失败，请稍后重试。");
+        }
       }
     })();
-  }, [routeAppId, startTransition]);
+  }, [routeAppId, setExpandedGroups, startTransition]);
+
+  useEffect(() => {
+    if (permissionsReady) refreshNavigation(false);
+    return () => {
+      // Discard responses from an earlier app, refresh or unmounted sidebar.
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- This is a request counter, not a DOM ref.
+      navigationRequestId.current++;
+    };
+  }, [permissionsReady, refreshNavigation]);
 
   useEffect(() => {
     function handleNavigationChanged(event: Event) {
@@ -234,8 +196,7 @@ export function useFormSidebar({ routeAppId }: FormSidebarProps) {
         }
 
         setCreateFormOpen(false);
-        invalidateAppResources(routeAppId, ["forms", "navigation"]);
-        refreshNavigation();
+        notifyAppNavigationChanged(routeAppId);
         if (nameUpdateFailed) return;
         router.push(`/designer/${data.data.id}?appId=${routeAppId}`);
       } catch {
@@ -274,8 +235,7 @@ export function useFormSidebar({ routeAppId }: FormSidebarProps) {
         setGroupName("");
         setGroupParentId(ROOT_PARENT_VALUE);
         setCreateGroupOpen(false);
-        invalidateAppResources(routeAppId, ["navigation"]);
-        refreshNavigation();
+        notifyAppNavigationChanged(routeAppId);
       } catch {
         setErrorMessage("创建分组失败，请稍后重试。");
       }
@@ -312,8 +272,7 @@ export function useFormSidebar({ routeAppId }: FormSidebarProps) {
     } catch (error) {
       notifyRequestError(error, "复制失败", { description: error instanceof Error ? error.message : "请稍后重试。" });
     } finally {
-      invalidateAppResources(routeAppId, ["forms", "navigation"]);
-      refreshNavigation();
+      notifyAppNavigationChanged(routeAppId);
       copyInFlight.current = false;
     }
   }
@@ -324,6 +283,7 @@ export function useFormSidebar({ routeAppId }: FormSidebarProps) {
     if (!group) return;
     setSelectedGroup(group);
     setGroupAction(action);
+    setGroupActionOpen(true);
     setGroupActionValue(
       action === "rename" ? group.title : (group.parentId ?? ROOT_PARENT_VALUE),
     );
@@ -331,9 +291,7 @@ export function useFormSidebar({ routeAppId }: FormSidebarProps) {
 
   function closeGroupAction() {
     if (groupActionPending) return;
-    setSelectedGroup(null);
-    setGroupAction(null);
-    setGroupActionValue("");
+    setGroupActionOpen(false);
   }
 
   function handleGroupAction() {
@@ -374,8 +332,7 @@ export function useFormSidebar({ routeAppId }: FormSidebarProps) {
           return;
         }
         closeGroupAction();
-        invalidateAppResources(routeAppId, ["navigation"]);
-        refreshNavigation();
+        notifyAppNavigationChanged(routeAppId);
       } catch {
         setErrorMessage(
           `${groupAction === "delete" ? "删除" : "更新"}分组失败，请稍后重试。`,
@@ -392,6 +349,7 @@ export function useFormSidebar({ routeAppId }: FormSidebarProps) {
     if (!form?.targetFormUuid) return;
     setSelectedForm(form);
     setFormAction(action);
+    setFormActionOpen(true);
     setFormActionValue(
       action === "rename" ? form.title : (form.parentId ?? ROOT_PARENT_VALUE),
     );
@@ -399,9 +357,7 @@ export function useFormSidebar({ routeAppId }: FormSidebarProps) {
 
   function closeFormAction() {
     if (formActionInFlight.current) return;
-    setSelectedForm(null);
-    setFormAction(null);
-    setFormActionValue("");
+    setFormActionOpen(false);
   }
 
   function handleFormAction() {
@@ -449,17 +405,24 @@ export function useFormSidebar({ routeAppId }: FormSidebarProps) {
           });
           return;
         }
-        setSelectedForm(null);
-        setFormAction(null);
-        setFormActionValue("");
+        if (formAction === "rename") {
+          setItems((current) =>
+            current.map((item) =>
+              item.id === selectedForm.id
+                ? { ...item, title: name }
+                : item,
+            ),
+          );
+          notify.success("表单名称已更新");
+        }
+        setFormActionOpen(false);
         if (formAction === "delete") {
           setItems((current) => current.filter(
             (item) => item.targetFormUuid !== selectedForm.targetFormUuid,
           ));
           notify.success("表单已删除");
         }
-        invalidateAppResources(routeAppId, ["forms", "navigation"]);
-        refreshNavigation();
+        notifyAppNavigationChanged(routeAppId);
         if (
           formAction === "delete" &&
           pathname === `/${routeAppId}/${selectedForm.targetFormUuid}`
@@ -498,7 +461,11 @@ export function useFormSidebar({ routeAppId }: FormSidebarProps) {
     canCreateForm,
     canCreateGroup,
     items,
+    searchQuery,
+    setSearchQuery,
     expandedGroups,
+    visibleTree,
+    visibleExpandedGroups,
     isPending,
     errorMessage,
     createGroupOpen,
@@ -516,11 +483,13 @@ export function useFormSidebar({ routeAppId }: FormSidebarProps) {
     groupParentId,
     setGroupParentId,
     selectedGroup,
+    groupActionOpen,
     groupAction,
     groupActionValue,
     setGroupActionValue,
     groupActionPending,
     selectedForm,
+    formActionOpen,
     formAction,
     formActionValue,
     setFormActionValue,

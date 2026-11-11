@@ -2,16 +2,15 @@
 
 import { useState, type ReactNode } from "react";
 import { Button, Label, Table } from "@heroui/react";
-import type {
-  RuntimeFieldProps,
-  RuntimeSchemaField,
-} from "./RuntimeFormRenderer";
+import { SubformPagination } from "./SubformLayout";
+import type { RuntimeFieldProps, RuntimeSchemaField } from "@/features/form-model/runtime-types";
 
 type RuntimeSubformTableProps = {
   childFields: RuntimeSchemaField[];
   props: RuntimeFieldProps;
   rows: Array<Record<string, unknown>>;
   showActions: boolean;
+  emptyState?: ReactNode;
   renderCell: (
     field: RuntimeSchemaField,
     row: Record<string, unknown>,
@@ -25,6 +24,7 @@ export function RuntimeSubformTable({
   props,
   rows,
   showActions,
+  emptyState,
   renderCell,
   renderActions,
 }: RuntimeSubformTableProps) {
@@ -107,7 +107,7 @@ export function RuntimeSubformTable({
                 id: pageStart + index,
                 row,
               }))}
-              renderEmptyState={() => (
+              renderEmptyState={() => emptyState ?? (
                 <p className="px-4 py-8 text-center text-sm text-[var(--color-text-secondary)]">
                   暂无子表单数据，点击“
                   {props.subformAddButtonText ?? "新增一项"}”开始填写。
@@ -139,12 +139,7 @@ export function RuntimeSubformTable({
           </Table.Content>
         </Table.ScrollContainer>
       </Table>
-      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-[var(--color-text-secondary)]">
-        <span>共 {rows.length} 行</span>
-        <div className="flex items-center gap-2">
-          <span>
-            第 {activePage}/{pageCount} 页 · 每页 {pageSize} 行
-          </span>
+      <SubformPagination total={rows.length} page={activePage} pageCount={pageCount} pageSize={pageSize}>
           {pageCount > 1 ? (
             <>
               <Button
@@ -165,8 +160,7 @@ export function RuntimeSubformTable({
               </Button>
             </>
           ) : null}
-        </div>
-      </div>
+      </SubformPagination>
     </>
   );
 }

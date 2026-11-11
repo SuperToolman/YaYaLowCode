@@ -1,21 +1,14 @@
 "use client";
-import { notifyRequestError } from "@lib/notify";
-import { useAuth } from "@components/AuthProvider";
+import { notifyRequestError } from "@/shared/lib/notify";
+import { useAuth } from "@/features/auth/components/AuthProvider";
 
 import { useEffect, useState } from "react";
-import { notify } from "@lib/notify";
+import { notify } from "@/shared/lib/notify";
 import { Button, Input, Modal, Switch, Tabs } from "@heroui/react";
 import { Field } from "../components/Field";
 import { SettingsContentCard } from "../components/SettingsContentCard";
 import { OrganizationArchitectureSection } from "../components/OrganizationArchitectureSection";
-import {
-  clearDingTalkIdentityData,
-  getIdentitySettings,
-  refreshDingTalkToken,
-  saveIdentitySettings,
-  synchronizeDingTalkDepartments,
-  synchronizeDingTalkUsers,
-} from "@features/settings/api";
+import { clearDingTalkIdentityData, getIdentitySettings, refreshDingTalkToken, saveIdentitySettings, synchronizeDingTalkDepartments, synchronizeDingTalkUsers } from "@/features/settings/api";
 
 type ProviderTab = "local" | "dingtalk" | "wecom" | "feishu";
 type DingTalkSettings = {

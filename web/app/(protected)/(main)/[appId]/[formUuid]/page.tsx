@@ -1,4 +1,4 @@
-import { FormRecordsScreen } from "./components/FormRecordsScreen";
+import { RecordsWorkspace } from "@/features/records/screen/RecordsWorkspace";
 
 export default async function FormRecordsPage({
   params,
@@ -7,5 +7,5 @@ export default async function FormRecordsPage({
 }) {
   const { appId, formUuid } = await params;
 
-  return <FormRecordsScreen appId={appId} formUuid={formUuid} />;
+  return <RecordsWorkspace appId={appId} formUuid={formUuid} />;
 }

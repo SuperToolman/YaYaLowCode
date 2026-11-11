@@ -1,22 +1,21 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useTransition, type ReactNode } from "react";
+import { LicenseCustomerIdentity } from "@/features/settings/components/LicenseCustomerIdentity";
 import { useRouter } from "next/navigation";
-import MarkdownPreview from "@uiw/react-markdown-preview";
-import { useTheme } from "@global-components/ThemeProvider";
+import { MarkdownRenderer } from "@/shared/ui/MarkdownRenderer";
 import { Button, Chip, Surface } from "@heroui/react";
-import { useAuth } from "@components/AuthProvider";
-import { openLicenseManagementModal } from "@components/LicenseManagementModal";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { openLicenseManagementModal } from "@/features/settings/components/LicenseManagementModal";
 import { SettingsContentCard } from "../components/SettingsContentCard";
-import { getLicenseStatus, getValkeyRuntimeStatus, type ValkeyRuntimeStatus } from "@features/settings/api";
+import { getLicenseStatus, getValkeyRuntimeStatus, type ValkeyRuntimeStatus } from "@/features/settings/api";
 
-type LicenseStatus = import("@lib/http").PlatformLicenseStatus;
+type LicenseStatus = import("@/shared/lib/http").PlatformLicenseStatus;
 
 export default function AboutPlatformClient({ changelog }: {
   changelog: { markdown: string; version: string | null } | null;
 }) {
   const { hasPermission } = useAuth();
-  const { resolvedTheme } = useTheme();
   const router = useRouter();
   const [refreshingChangelog, startChangelogRefresh] = useTransition();
   const [license, setLicense] = useState<LicenseStatus | null>(null);
@@ -84,7 +83,7 @@ export default function AboutPlatformClient({ changelog }: {
                   <h3 className="m-0 text-sm font-semibold">平台授权</h3>
                 </div>
                 <dl className="mt-3.5 grid gap-2.5 text-sm">
-                  <Info label="授权主体" value={license?.subject ?? "-"} />
+                  <Info label="授权客户" value={<LicenseCustomerIdentity license={license} />} />
                   <Info
                     label="许可证编号"
                     value={license?.licenseId ?? "-"}
@@ -154,8 +153,8 @@ export default function AboutPlatformClient({ changelog }: {
                 </div>
               </div>
               {changelog?.markdown ? (
-                <div className="mt-3.5 max-h-[36rem] overflow-auto pe-2 lg:max-h-none lg:min-h-0 lg:flex-1" data-color-mode={resolvedTheme} tabIndex={0} role="region" aria-label="更新日志内容">
-                  <MarkdownPreview source={changelog.markdown} style={{ backgroundColor: "transparent" }} />
+                <div className="mt-3.5 max-h-[36rem] overflow-auto pe-2 lg:max-h-none lg:min-h-0 lg:flex-1" tabIndex={0} role="region" aria-label="更新日志内容">
+                  <MarkdownRenderer content={changelog.markdown} showHeadingAnchors />
                 </div>
               ) : (
                 <p className="m-0 py-3 text-sm text-muted">暂时无法读取更新日志</p>
@@ -244,7 +243,7 @@ function Info({
   mono = false,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   mono?: boolean;
 }) {
   return (

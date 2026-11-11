@@ -1,4 +1,4 @@
-import { AutomationEditorPageClient } from "./components/AutomationEditorPageClientLazy";
+import { AutomationEditorPageClient } from "../../../../../../features/automation-editor/editor/components/AutomationEditorPageClientLazy";
 
 export default async function AutomationEditorPage({
   params,

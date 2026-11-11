@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 
 export const TOKEN_TTL_SECONDS = 8 * 60 * 60;
 
-export type { AuthUser } from "@lib/auth";
-import type { AuthUser } from "@lib/auth";
+export type { AuthUser } from "@/shared/lib/auth";
+import type { AuthUser } from "@/shared/lib/auth";
 
 export function createLoginResponse(user: AuthUser) {
   const now = Math.floor(Date.now() / 1000);

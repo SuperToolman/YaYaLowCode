@@ -1,9 +1,9 @@
 "use client";
 
-import { DisplayTag } from "@shared/DisplayTag";
+import { DisplayTag } from "@/shared/ui/DisplayTag";
 
 import { Avatar } from "@heroui/react";
-import type { UserItem } from "@features/identity-access";
+import type { UserItem } from "@/features/identity-access";
 
 export function SourceTag({ source }: { source: string }) {
   return (

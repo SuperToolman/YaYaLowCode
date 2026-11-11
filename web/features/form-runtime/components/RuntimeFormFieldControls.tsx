@@ -1,51 +1,19 @@
 "use client";
-import { notifyRequestError } from "@lib/notify";
-import { notify } from "@lib/notify";
+import { notifyRequestError } from "@/shared/lib/notify";
+import { notify } from "@/shared/lib/notify";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ComponentProps, Key } from "react";
 import Image from "next/image";
-import {
-  Button,
-  Calendar,
-  DatePicker,
-  FieldError,
-  DateRangePicker,
-  Input,
-  ListBox,
-  Popover,
-  RangeCalendar,
-  Select,
-  TimeField,
-  Label,
-  Link,
-  Spinner,
-} from "@heroui/react";
+import { Button, Calendar, Checkbox, CheckboxGroup, DatePicker, FieldError, DateRangePicker, Input, ListBox, Popover, RangeCalendar, Select, TimeField, Label, Link, Spinner } from "@heroui/react";
 import { DateInputGroup } from "@heroui/react/date-input-group";
 import { ChevronDown, Paperclip, Picture, TrashBin } from "@gravity-ui/icons";
-import {
-  parseDate,
-  parseDateTime,
-  parseZonedDateTime,
-  toCalendarDate,
-  toCalendarDateTime,
-} from "@internationalized/date";
-import { getDateBounds, getDateValidation } from "./date-validation";
-import { uploadFile } from "@features/files/api";
-import {
-  getLocationLabel,
-  listLocationChildren,
-  normalizeCountryCityValue,
-  toStoredLocationItem,
-  type CountryCityValue,
-  type LocationCatalogItem,
-} from "@lib/location-catalog";
-import type {
-  RuntimeFieldOption,
-  RuntimeFieldProps,
-  RuntimeSchemaField,
-} from "./runtime-form-types";
-import { MySurface } from "@/components/ui/MySurface";
+import { parseDate, parseDateTime, parseZonedDateTime, toCalendarDate, toCalendarDateTime } from "@internationalized/date";
+import { getDateBounds, getDateValidation } from "../../form-model/date-validation";
+import { uploadFile } from "@/features/files/api";
+import { getLocationLabel, listLocationChildren, normalizeCountryCityValue, toStoredLocationItem, type CountryCityValue, type LocationCatalogItem } from "@/shared/lib/location-catalog";
+import type { RuntimeFieldOption, RuntimeFieldProps, RuntimeSchemaField } from "../../form-model/runtime-types";
+import { MySurface } from "@/shared/ui/MySurface";
 
 function getOptionLabel(options: RuntimeFieldOption[], value: string) {
   return options.find((option) => option.value === value)?.label ?? "";
@@ -98,6 +66,7 @@ export function RuntimeDatePicker({
   const bounds = getDateBounds(getDateValidation(props));
   return (
     <DatePicker
+      className="flex"
       style={{ width: "100%", minWidth: 0, maxWidth: "100%" }}
       minValue={
         bounds.minValue as unknown as ComponentProps<
@@ -385,13 +354,14 @@ export function RuntimeCountryCitySelect({
                     aria-label={`搜索第${columnIndex + 1}级地区`}
                     placeholder={`搜索第${columnIndex + 1}级地区`}
                     value={searches[columnIndex] ?? ""}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const searchValue = event.currentTarget.value;
                       setSearches((current) => {
                         const next = [...current];
-                        next[columnIndex] = event.currentTarget.value;
+                        next[columnIndex] = searchValue;
                         return next;
-                      })
-                    }
+                      });
+                    }}
                     fullWidth
                   />
                   </div>
@@ -499,6 +469,7 @@ export function RuntimeCheckboxOptions({
   ariaLabel,
   className,
   isDisabled,
+  isInvalid,
   isRequired,
   onChange,
   options,
@@ -507,43 +478,34 @@ export function RuntimeCheckboxOptions({
   ariaLabel: string;
   className?: string;
   isDisabled: boolean;
+  isInvalid?: boolean;
   isRequired?: boolean;
   onChange: (value: string[]) => void;
   options: RuntimeFieldOption[];
   value: string[];
 }) {
   return (
-    <div aria-label={ariaLabel} className={className} role="group">
-      {options.map((option) => {
-        const isSelected = value.includes(option.value);
-        return (
-          <label
-            key={option.value}
-            className={[
-              "inline-flex items-center gap-2 text-[12px] text-[var(--color-text-primary)]",
-              isDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
-            ].join(" ")}
-          >
-            <input
-              aria-required={isRequired || undefined}
-              type="checkbox"
-              value={option.value}
-              checked={isSelected}
-              disabled={isDisabled}
-              onChange={(event) =>
-                onChange(
-                  event.target.checked
-                    ? [...value, option.value]
-                    : value.filter((item) => item !== option.value),
-                )
-              }
-              className="h-4 w-4 accent-[var(--color-primary)]"
-            />
-            <span>{option.label}</span>
-          </label>
-        );
-      })}
-    </div>
+    <CheckboxGroup
+      aria-label={ariaLabel}
+      className={[className, "[&>[data-slot=checkbox]]:mt-0"].filter(Boolean).join(" ")}
+      value={value}
+      onChange={onChange}
+      isDisabled={isDisabled}
+      isRequired={isRequired}
+      isInvalid={isInvalid}
+      validationBehavior="aria"
+    >
+      {options.map((option) => (
+        <Checkbox key={option.value} value={option.value}>
+          <Checkbox.Content className="text-[12px]">
+            <Checkbox.Control>
+              <Checkbox.Indicator />
+            </Checkbox.Control>
+            {option.label}
+          </Checkbox.Content>
+        </Checkbox>
+      ))}
+    </CheckboxGroup>
   );
 }
 
@@ -854,6 +816,7 @@ export function RuntimeDateRangePicker({
 
   return (
     <DateRangePicker
+      className="flex"
       style={{ width: "100%", minWidth: 0, maxWidth: "100%" }}
       minValue={
         bounds.minValue as unknown as ComponentProps<

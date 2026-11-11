@@ -1,12 +1,8 @@
 import { notFound } from "next/navigation";
-import {
-  getAppByRouteId,
-  normalizeAppColorTone,
-  type AppItem,
-} from "@lib/apps";
+import { getAppByRouteId, normalizeAppColorTone, type AppItem } from "@/features/application/types";
 import { AppMainContent, AppShell } from "./components/AppShell";
 import { FormSidebar } from "./components/FormSidebar";
-import { getRuntimeApp } from "@features/application/server-api";
+import { getRuntimeApp } from "@/features/application/server-api";
 import { AppLayoutHeader } from "./components/AppLayoutHeader";
 
 export default async function AppLayout({

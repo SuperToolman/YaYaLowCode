@@ -1,4 +1,4 @@
-import { createCustomButton, listCustomButtons } from "@/app/lib/http";
+import { createCustomButton, listCustomButtons } from "@/shared/lib/http";
 import { createBackendSdkClient, sdkJsonResponse } from "../../../_lib/backend-sdk-client";
 
 type Context = { params: Promise<{ formUuid: string }> };

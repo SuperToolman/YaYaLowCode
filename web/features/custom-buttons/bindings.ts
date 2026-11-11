@@ -1,4 +1,5 @@
-import type { BranchRule, SourceFieldChoice } from "@/features/automation-editor/condition-rules";
+import { evaluateRuleTree } from "@/features/conditions/evaluate";
+import type { SourceFieldChoice } from "@/features/conditions";
 import type { FormRecord } from "@/features/records/types";
 import type { ButtonDefinition } from "./model";
 
@@ -21,18 +22,17 @@ export function validateButtonConditions(availability: ButtonDefinition["availab
   }
   return "";
 }
-const scalar = (value: unknown): string => value == null ? "" : typeof value === "string" ? value.trim() : typeof value === "object" ? JSON.stringify(value) : String(value);
-const hasValue = (value: unknown): boolean => value != null && (typeof value === "string" ? !!value.trim() : Array.isArray(value) ? value.length > 0 : typeof value === "object" ? Object.keys(value).length > 0 : true);
 export function evaluateBinding(button: Pick<ButtonDefinition, "availability">, record: FormRecord): boolean {
   if (button.availability.mode === "all") return true;
-  const data: Record<string, unknown> = { instanceId: record.id, instanceTitle: `${record.createdBy || "用户"}发起的记录`, submitter: record.createdBy, submitterOrganization: record.submitterOrganization, createdAt: record.createdAt, updatedAt: record.updatedAt, ...record.data };
-  const rules: BranchRule[] = button.availability.rules;
-  if (!rules.length) return false;
-  function leaf(rule: BranchRule): boolean {
-    const actual = data[rule.fieldKey || ""];
-    const expected = rule.valueType === "field" ? scalar(data[rule.sourceFieldKey || ""]) : rule.rawValue?.trim() || "";
-    switch (rule.operator || "eq") { case "hasValue": return hasValue(actual); case "noValue": return !hasValue(actual); case "neq": return actual == null || scalar(actual) !== expected; case "inAny": return actual != null && expected.split(",").map(s => s.trim()).filter(Boolean).includes(scalar(actual)); case "notInAny": return actual == null || !expected.split(",").map(s => s.trim()).filter(Boolean).includes(scalar(actual)); default: return actual != null && scalar(actual) === expected; }
+  return evaluateRuleTree(button.availability.rules, { instanceId: record.id, instanceTitle: `${record.createdBy || "用户"}发起的记录`, submitter: record.createdBy, submitterOrganization: record.submitterOrganization, createdAt: record.createdAt, updatedAt: record.updatedAt, ...record.data });
+}
+
+export function validateAssociationRules(rules: import("@/features/conditions").BranchRule[], targets: SourceFieldChoice[], sources: SourceFieldChoice[]): string {
+  const targetKeys = new Set(targets.map(field => field.key));
+  const sourceKeys = new Set(sources.map(field => field.key));
+  for (const rule of rules.filter(rule => !rule.isGroup)) {
+    if (!targetKeys.has(rule.fieldKey || "")) return "关联条件目标字段已失效";
+    if (rule.valueType === "field" && !["hasValue", "noValue"].includes(rule.operator || "eq") && !sourceKeys.has(rule.sourceFieldKey || "")) return "关联条件来源字段已失效";
   }
-  function group(parent?: string, depth = 0): boolean { if (depth > 200) return false; const siblings = rules.filter(r => (r.parentId || undefined) === parent); if (!siblings.length) return true; const matches = siblings.map(r => { const children = rules.filter(child => child.parentId === r.id); if (r.isGroup) return group(r.id, depth + 1); if (!children.length) return leaf(r); return children[0].logicalOperator === "or" ? leaf(r) || group(r.id, depth + 1) : leaf(r) && group(r.id, depth + 1); }); return siblings[0].logicalOperator === "or" ? matches.some(Boolean) : matches.every(Boolean); }
-  return group();
+  return validateButtonConditions({ mode: "conditions", rules: rules.map(rule => rule.valueType === "field" ? { ...rule, valueType: "value", rawValue: "source" } : rule) }, targets);
 }

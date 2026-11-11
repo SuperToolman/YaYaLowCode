@@ -1,9 +1,5 @@
-import { getAiEmployees } from "@features/settings/api";
-import type {
-  Agent,
-  AiEmployeeMarketItem,
-  ApiEnvelope,
-} from "./permission-types";
+import { getAiEmployees } from "@/features/settings/api";
+import type { Agent, ApiEnvelope } from "./permission-types";
 export async function listAiEmployeePermissionAgents(): Promise<{
   data?: ApiEnvelope<Agent[]>;
   error?: unknown;

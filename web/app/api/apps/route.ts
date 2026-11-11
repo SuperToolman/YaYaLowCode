@@ -1,4 +1,4 @@
-import { createApp, listApps } from "../../lib/http";
+import { createApp, listApps } from "../../../shared/lib/http";
 import { createBackendSdkClient, sdkJsonResponse } from "../_lib/backend-sdk-client";
 
 export async function GET(request: Request) {

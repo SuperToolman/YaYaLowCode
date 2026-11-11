@@ -1,5 +1,5 @@
-import { getFormSchema, listFormRecords, listRoles, listUsers, validateFormRecord } from "@/app/lib/http";
-import { ApiRequestError, unwrapApiResult } from "@/app/lib/api-request";
+import { getFormSchema, listFormRecords, listRoles, listUsers, validateFormRecord } from "@/shared/lib/http";
+import { ApiRequestError, unwrapApiResult } from "@/shared/lib/api-request";
 import type { AssociationRecord, RuntimeFormSchema, RuntimeIdentityCatalog } from "./types";
 
 export async function fetchCurrentFormSchema(formUuid: string): Promise<RuntimeFormSchema> {
@@ -13,17 +13,19 @@ export async function fetchCurrentFormSchema(formUuid: string): Promise<RuntimeF
 }
 
 export async function fetchAssociationRecords(formUuid: string, signal?: AbortSignal): Promise<AssociationRecord[]> {
-  const result = await listFormRecords({
-    path: { formUuid },
-    query: { page: 1, pageSize: 100 },
-    responseStyle: "fields",
-    signal,
-  });
-  const page = unwrapApiResult(result, "无法加载关联记录");
-  return page.items.map((record) => ({
-    id: record.id,
-    data: isRecordData(record.data) ? record.data : {},
-  }));
+  const records: AssociationRecord[] = [];
+  let pageNumber = 1;
+  while (true) {
+    const result = await listFormRecords({
+      path: { formUuid }, query: { page: pageNumber, pageSize: 100 },
+      responseStyle: "fields", signal,
+    });
+    const page = unwrapApiResult(result, "无法加载关联记录");
+    records.push(...page.items.map(record => ({ id: record.id, createdAt: record.createdAt, data: isRecordData(record.data) ? record.data : {} })));
+    if (!page.items.length || pageNumber * page.pageSize >= page.total) break;
+    pageNumber += 1;
+  }
+  return records;
 }
 
 export async function fetchRuntimeIdentityCatalog(signal?: AbortSignal): Promise<RuntimeIdentityCatalog> {
@@ -58,7 +60,7 @@ export {
   getFormSchema,
   listFormViews,
   updateFormView,
-} from "@/app/lib/http";
+} from "@/shared/lib/http";
 
 export async function validateFormSubmission(schema: RuntimeFormSchema, values: Record<string, unknown>, recordUuid?: string) {
   const result = await validateFormRecord({

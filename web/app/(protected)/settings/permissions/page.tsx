@@ -1,25 +1,14 @@
 "use client";
-import { assertApiResult, assertApiEnvelope } from "@lib/api-request";
+import { assertApiResult, assertApiEnvelope } from "@/shared/lib/api-request";
 
-import { notifyRequestError } from "@lib/notify";
+import { notifyRequestError } from "@/shared/lib/notify";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Alert,
-  Button,
-  Card,
-  Description,
-  ScrollShadow,
-  Tabs,
-} from "@heroui/react";
-import { normalizePlatformGrants } from "@features/identity-access/platform-permissions";
-import { useAuth } from "@components/AuthProvider";
-import { notify } from "@lib/notify";
-import { mapWithConcurrency } from "@lib/async";
-import {
-  getRolePermissions,
-  listRoles,
-  updateRolePermissions,
-} from "@/features/identity-access/api";
+import { Alert, Button, Card, Description, ScrollShadow, Tabs } from "@heroui/react";
+import { normalizePlatformGrants } from "@/features/identity-access/platform-permissions";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { notify } from "@/shared/lib/notify";
+import { mapWithConcurrency } from "@/shared/lib/async";
+import { getRolePermissions, listRoles, updateRolePermissions } from "@/features/identity-access/api";
 import { listAppNavigation, listApps } from "@/features/application/api";
 import { AppTree } from "./components/AppTree";
 import { Empty } from "./components/PermissionFeedback";
@@ -28,15 +17,8 @@ import { ResourcePermissions } from "./components/ResourcePermissions";
 import { RoleNavigation } from "./components/RoleNavigation";
 import { formActions } from "./components/permission-config";
 import { listAiEmployeePermissionAgents } from "./components/permission-resources";
-import { MySurface } from "@/components/ui/MySurface";
-import type {
-  Agent,
-  App,
-  NavigationItem,
-  PermissionResource,
-  Role,
-  Tab,
-} from "./components/permission-types";
+import { MySurface } from "@/shared/ui/MySurface";
+import type { Agent, App, NavigationItem, PermissionResource, Role, Tab } from "./components/permission-types";
 
 export default function PermissionsSettingsPage() {
   const { hasPermission } = useAuth();

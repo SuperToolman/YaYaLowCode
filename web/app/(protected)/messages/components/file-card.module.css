@@ -1,8 +1,8 @@
-.fileCard {
+.messages-file__card {
   background: color-mix(in srgb, var(--file-color) 14%, var(--surface));
   box-shadow: inset 3px 0 var(--file-color);
 }
-.icon {
+.messages-file__icon {
   display: inline-flex;
   position: relative;
   align-items: center;
@@ -16,7 +16,7 @@
   font-size: 0.75rem;
   font-weight: 700;
 }
-.icon::after {
+.messages-file__icon::after {
   content: "";
   position: absolute;
   top: 0;

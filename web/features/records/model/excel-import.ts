@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import type { RuntimeSchemaField } from "@features/form-runtime/components";
+import type { RuntimeSchemaField } from "@/features/form-model/runtime-types";
 
 export function buildImportTemplate(
   fields: ImportSchemaField[],
@@ -80,6 +80,7 @@ export function getExcelImportFields(
       [
         "description",
         "groupContainer",
+        "separator",
         "button",
         "link",
         "html",

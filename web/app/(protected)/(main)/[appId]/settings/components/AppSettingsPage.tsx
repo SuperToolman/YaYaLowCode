@@ -1,30 +1,14 @@
 "use client";
-import { assertApiResult } from "@lib/api-request";
+import { assertApiResult } from "@/shared/lib/api-request";
 
-import { notifyRequestError } from "@lib/notify";
+import { notifyRequestError } from "@/shared/lib/notify";
 
-import { notify } from "@lib/notify";
+import { notify } from "@/shared/lib/notify";
 import { use, useEffect, useState, type Key } from "react";
-import {
-  Button,
-  Card,
-  Description,
-  Input,
-  Label,
-  ListBox,
-  Select,
-  TextArea,
-  TextField,
-  Typography,
-} from "@heroui/react";
+import { Button, Card, Description, Input, Label, ListBox, Select, TextArea, TextField, Typography } from "@heroui/react";
 import { AppSettingsLayout } from "./AppSettingsLayout";
 import { setDefaultNavigationEntry, updateApp } from "@/features/application/api";
-import {
-  getAppForms,
-  getAppNavigation,
-  getAppResource,
-  invalidateAppResources,
-} from "@lib/app-resources";
+import { getAppForms, getAppNavigation, getAppResource, invalidateAppResources } from "@/features/application/resources";
 
 type FormSettingsItem = { id: string; name: string };
 const SYSTEM_PAGE_PREFIX = "system:";

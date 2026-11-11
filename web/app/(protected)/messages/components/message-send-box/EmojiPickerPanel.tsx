@@ -1,5 +1,5 @@
 "use client";
-import { useTheme } from "@/components/ThemeProvider";
+import { useTheme } from "@/shared/providers/ThemeProvider";
 import Picker, { EmojiStyle, Theme } from "emoji-picker-react";
 export function EmojiPickerPanel({ onSelect }: { onSelect: (emoji: string) => void }) {
   const { resolvedTheme } = useTheme();

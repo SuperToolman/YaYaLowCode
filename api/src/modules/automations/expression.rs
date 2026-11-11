@@ -9,6 +9,8 @@ use crate::platform::records::StoredFormRecord;
 use super::graph::{read_json_string, read_json_value};
 use super::runtime::AutomationExecutionContext;
 
+const STRUCTURED_FIELD_VALUE_PREFIX: &str = "__yaya_json_value_v1__:";
+
 pub(super) fn build_record_data_from_rows(
     rows: &[Value],
     outputs: &HashMap<String, Value>,
@@ -31,7 +33,7 @@ pub(super) fn build_record_data_from_rows(
             .next()
             .unwrap_or(Value::Null),
             "formula" => Value::String(read_json_string(row.get("formula")).unwrap_or_default()),
-            _ => read_json_value(row.get("rawValue")),
+            _ => decode_structured_field_value(read_json_value(row.get("rawValue"))),
         };
         result.insert(field_id, next_value);
     }
@@ -39,20 +41,14 @@ pub(super) fn build_record_data_from_rows(
     Value::Object(result)
 }
 
-pub(super) fn filter_records_by_expression(
-    records: Vec<StoredFormRecord>,
-    expression: Option<&Value>,
-    context: &AutomationExecutionContext,
-) -> Vec<StoredFormRecord> {
-    let expression = read_json_string(expression).unwrap_or_default();
-    if expression.trim().is_empty() {
-        return records;
-    }
-
-    records
-        .into_iter()
-        .filter(|record| evaluate_record_expression(&expression, &record.record_data, context))
-        .collect()
+fn decode_structured_field_value(value: Value) -> Value {
+    let Some(text) = value.as_str() else {
+        return value;
+    };
+    let Some(encoded) = text.strip_prefix(STRUCTURED_FIELD_VALUE_PREFIX) else {
+        return value;
+    };
+    serde_json::from_str(encoded).unwrap_or_else(|_| Value::String(text.to_string()))
 }
 
 pub(super) fn filter_records_by_rules(
@@ -374,5 +370,43 @@ pub(super) fn resolve_source_field_values(
             .filter_map(|item| item.get(field_id).cloned())
             .collect(),
         _ => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_record_data_from_rows;
+    use serde_json::{Value, json};
+    use std::collections::HashMap;
+
+    #[test]
+    fn build_record_data_decodes_structured_literal_values_and_keeps_strings() {
+        let rows = [
+            json!({"fieldId":"region","rawValue":"__yaya_json_value_v1__:{\"code\":\"CN-11\",\"depth\":1,\"path\":[]}"}),
+            json!({"fieldId":"tags","rawValue":"__yaya_json_value_v1__:[\"a\",\"b\"]"}),
+            json!({"fieldId":"name","rawValue":"{\"literal\":true}"}),
+        ];
+
+        let data = build_record_data_from_rows(&rows, &HashMap::new());
+
+        assert_eq!(
+            data,
+            json!({
+                "region":{"code":"CN-11","depth":1,"path":[]},
+                "tags":["a","b"],
+                "name":"{\"literal\":true}"
+            })
+        );
+    }
+
+    #[test]
+    fn malformed_structured_literal_is_preserved_as_string() {
+        let rows = [json!({"fieldId":"value","rawValue":"__yaya_json_value_v1__:{"})];
+        let data = build_record_data_from_rows(&rows, &HashMap::new());
+
+        assert_eq!(
+            data["value"],
+            Value::String("__yaya_json_value_v1__:{".into())
+        );
     }
 }

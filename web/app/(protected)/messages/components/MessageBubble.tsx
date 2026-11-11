@@ -1,30 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@heroui/react";
-import { Envelope } from "@gravity-ui/icons";
-import { MyAvatar } from "@components/my-fields/MyAvatar";
-import type { CommunicationMessageResponse } from "@features/communication/api";
-import { isAttachmentOnlyMessage } from "./file-presentation";
-import { MessageFile } from "./MessageFile";
-import { MessageImage } from "./MessageImage";
 import { MessageBubbleMain } from "./MessageBubbleMain";
-
-export type BubbleMessage = CommunicationMessageResponse & {
-  deliveryState?: "sending" | "failed" | "delivered";
-};
-export type MessageBubbleProps = {
-  message: BubbleMessage;
-  mine: boolean;
-  showSenderIdentity: boolean;
-  canRecall: boolean;
-  senderName: string;
-  senderAvatarUrl?: string | null;
-  senderAvatar?: ReactNode;
-  children?: ReactNode;
-  onRecall: () => void;
-  onReedit: () => void;
-  onRetry: () => void;
-  onApprovalAction: (action: "approve" | "reject") => Promise<void>;
-};
+import type { MessageBubbleProps } from "./message-bubble-types";
+export type { BubbleMessage, MessageBubbleProps } from "./message-bubble-types";
+export { MessageAvatar, MessageAttachments, MessageBubbleContent } from "./MessageBubbleContent";
 
 export function MessageBubble(props: MessageBubbleProps) {
   const {
@@ -100,48 +79,5 @@ export function MessageBubble(props: MessageBubbleProps) {
         </div>
       ) : null}
     </>
-  );
-}
-
-export function MessageBubbleContent({ message }: { message: BubbleMessage }) {
-  if (message.status === "recalled") return <p>消息已撤回</p>;
-  return (
-    <>
-      {message.messageType === "email" ? (
-        <p>
-          <Envelope />
-          {message.emailSubject}
-        </p>
-      ) : null}
-      {!isAttachmentOnlyMessage(message) && message.content ? <p className="whitespace-pre-wrap break-words">{message.content}</p> : null}
-      <MessageAttachments message={message} />
-    </>
-  );
-}
-
-export function MessageAttachments({ message }: { message: BubbleMessage }) {
-  if (message.status === "recalled") return null;
-  return <>{message.attachments.map(attachment => attachment.isImage || attachment.mimeType.startsWith("image/") ?
-    <MessageImage key={attachment.fileId} imageId={`${message.id}:${attachment.fileId}`} src={`/api/files/${attachment.fileId}/download`} alt={attachment.name} /> :
-    <MessageFile key={attachment.fileId} attachment={attachment} />
-  )}</>;
-}
-
-export function MessageAvatar({
-  name,
-  imageUrl,
-  className,
-}: {
-  name: string;
-  imageUrl?: string | null;
-  className?: string;
-}) {
-  return (
-    <MyAvatar
-      name={name}
-      imageUrl={imageUrl}
-      className={className}
-      style={{ borderRadius: "50%", boxShadow: "var(--shadow-lg, 0 10px 15px -3px rgb(0 0 0 / 0.1))" }}
-    />
   );
 }

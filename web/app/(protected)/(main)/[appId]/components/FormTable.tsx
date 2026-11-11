@@ -1,12 +1,8 @@
 "use client";
 
-import { Avatar, Button, Chip, Table, ButtonGroup, } from "@heroui/react";
-import type { FormColumn, FormRow } from "@lib/apps";
-import {
-  Ellipsis,
-  Picture,
-  Video,
-} from "@gravity-ui/icons";
+import { Avatar, Button, Chip, Table, ButtonGroup } from "@heroui/react";
+import type { FormColumn, FormRow } from "@/features/application/types";
+import { Ellipsis, Picture, Video } from "@gravity-ui/icons";
 
 export function FormTable({
   title,

@@ -177,7 +177,7 @@ pub(super) async fn verify(
     .await
     .unwrap();
     assert!(
-        automations::delete_automation_definition(state, &flow_id)
+        automations::ensure_no_button_references(&state.db, &flow_id)
             .await
             .is_err()
     );
@@ -347,6 +347,43 @@ pub(super) async fn verify(
     )
     .await
     .unwrap();
+    automations::delete_automation_definition(state, &flow_id)
+        .await
+        .unwrap();
+    for id in [&a.id, &b.id] {
+        let button = find_button(&state.db, "form", id).await.unwrap();
+        assert_eq!(button.action_type, "run_automation");
+        assert!(button.action_config.get("automationId").is_none());
+    }
+    assert!(
+        AutomationFlowEntity::find_by_id(flow.id)
+            .one(&state.db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        views::validate_view_config(state, "form", &config)
+            .await
+            .is_ok()
+    );
+    let Json(buttons) = views::list_view_buttons(
+        State(state.clone()),
+        Path(("form".into(), "default".into())),
+    )
+    .await
+    .unwrap();
+    assert_eq!(buttons.data.unwrap().len(), 2);
+    assert!(
+        views::execute_view_button(
+            State(state.clone()),
+            headers.clone(),
+            path(),
+            Json(invoke()),
+        )
+        .await
+        .is_err()
+    );
     let _ = delete_custom_button(State(state.clone()), Path(("form".into(), a.id)))
         .await
         .unwrap();

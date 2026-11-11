@@ -2,9 +2,9 @@
 
 import type { KeyboardEvent, ReactNode } from "react";
 import { Calendar, Clock, Ellipsis } from "@gravity-ui/icons";
-import { Avatar, Typography, Card, Chip, Dropdown } from "@heroui/react";
-import type { AppItem } from "@/app/lib/apps";
-import { MyAvatar } from "@/app/components/my-fields/MyAvatar";
+import { Typography, Card, Chip, Dropdown } from "@heroui/react";
+import type { AppItem } from "@/features/application/types";
+import { MyAvatar } from "@/shared/ui/MyAvatar";
 
 type AppCardProps = {
   app: AppItem;

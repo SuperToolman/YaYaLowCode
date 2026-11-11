@@ -1,4 +1,4 @@
-import { apps } from "@/app/lib/apps";
+import { apps } from "@/features/application/types";
 import { MyAppPageClient } from "./components/MyAppPageClient";
 
 export default function MyAppPage() {

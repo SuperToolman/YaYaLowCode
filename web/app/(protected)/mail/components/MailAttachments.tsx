@@ -1,11 +1,10 @@
 "use client";
-import { notifyRequestError } from "@lib/notify";
+import { notifyRequestError } from "@/shared/lib/notify";
 
 import { useRef, useState } from "react";
 import { Button, Spinner } from "@heroui/react";
 import { ArrowDownToLine, Paperclip } from "@gravity-ui/icons";
-import { downloadMailAttachment, type MailDetailResponse, type MailMessageIdentity } from "@features/mail/api";
-import { notify } from "@lib/notify";
+import { downloadMailAttachment, type MailDetailResponse, type MailMessageIdentity } from "@/features/mail/api";
 
 function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;

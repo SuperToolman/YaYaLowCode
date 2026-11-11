@@ -1,4 +1,4 @@
-import type { CommunicationMessageResponse } from "@features/communication/api";
+import type { CommunicationMessageResponse } from "@/features/communication/api";
 export function fileCategory(name: string, mime: string) {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (["doc", "docx", "odt"].includes(ext)) return "Word";

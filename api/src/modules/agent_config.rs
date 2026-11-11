@@ -12,85 +12,13 @@ use crate::infrastructure::entities::agent_provider_model_entity::{
     self, Entity as AgentProviderModelEntity,
 };
 use crate::infrastructure::entities::agent_resource_entity::{self, Entity as AgentResourceEntity};
-use crate::platform::config::{AgentPluginDefinition, AgentSkillDefinition, import_skill_package};
+use crate::platform::config::AgentSkillDefinition;
 use crate::platform::license::PlatformAiEmployeeSkill;
 use crate::platform::prelude::{ApiResponse, AppError, AppState};
 use crate::shared::success_response;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter,
 };
-
-fn resources_of_kind<T: serde::de::DeserializeOwned>(
-    rows: &[agent_resource_entity::Model],
-    kind: &str,
-) -> Result<Vec<T>, serde_json::Error> {
-    rows.iter()
-        .filter(|row| row.kind == kind)
-        .map(|row| serde_json::from_value(row.configuration_json.clone()))
-        .collect()
-}
-
-async fn insert_resource<T: Serialize>(
-    db: &sea_orm::DatabaseConnection,
-    kind: &str,
-    id: &str,
-    name: &str,
-    value: &T,
-    now: chrono::DateTime<chrono::Utc>,
-) -> Result<(), AppError> {
-    agent_resource_entity::ActiveModel {
-        id: Set(id.to_string()),
-        kind: Set(kind.to_string()),
-        name: Set(name.to_string()),
-        configuration_json: Set(
-            serde_json::to_value(value).map_err(|error| AppError::BadRequest(error.to_string()))?
-        ),
-        created_at: Set(now),
-        updated_at: Set(now),
-    }
-    .insert(db)
-    .await?;
-    Ok(())
-}
-
-async fn save_resource<T: Serialize>(
-    db: &sea_orm::DatabaseConnection,
-    kind: &str,
-    id: &str,
-    name: &str,
-    value: &T,
-) -> Result<(), AppError> {
-    let row = AgentResourceEntity::find_by_id(id)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("{kind} not found")))?;
-    if row.kind != kind {
-        return Err(AppError::NotFound(format!("{kind} not found")));
-    }
-    let mut active: agent_resource_entity::ActiveModel = row.into();
-    active.name = Set(name.to_string());
-    active.configuration_json =
-        Set(serde_json::to_value(value).map_err(|error| AppError::BadRequest(error.to_string()))?);
-    active.updated_at = Set(chrono::Utc::now());
-    active.update(db).await?;
-    Ok(())
-}
-
-async fn delete_resource(
-    db: &sea_orm::DatabaseConnection,
-    kind: &str,
-    id: &str,
-) -> Result<(), AppError> {
-    let result = AgentResourceEntity::delete_many()
-        .filter(agent_resource_entity::Column::Id.eq(id))
-        .filter(agent_resource_entity::Column::Kind.eq(kind))
-        .exec(db)
-        .await?;
-    if result.rows_affected == 0 {
-        return Err(AppError::NotFound(format!("{kind} not found")));
-    }
-    Ok(())
-}
 
 #[derive(Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -133,19 +61,6 @@ pub(crate) struct SystemAiStatusResponse {
     provider_id: Option<String>,
     provider_name: Option<String>,
     reason: Option<String>,
-}
-
-#[derive(Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct PluginRequest {
-    name: String,
-    description: String,
-    enabled: bool,
-    version: String,
-    entrypoint: String,
-    #[serde(default)]
-    manifest_json: String,
-    requires_confirmation: bool,
 }
 
 pub(crate) async fn get_system_ai_status(
@@ -206,15 +121,20 @@ pub(crate) async fn list_providers(
     )))
 }
 
-pub(crate) async fn install_ai_employee_skill_package(
-    state: &AppState,
+/// Prepare an immutable employee-owned version. Never writes legacy skill directories.
+pub(crate) fn prepare_ai_employee_skill_package(
     skill: &PlatformAiEmployeeSkill,
     archive: &[u8],
-) -> Result<(), AppError> {
+    root: &std::path::Path,
+) -> Result<AgentSkillDefinition, AppError> {
     let mut item = AgentSkillDefinition {
         id: skill.id.clone(),
         name: skill.title.clone(),
-        package_name: market_skill_package_name(skill),
+        package_name: format!(
+            "{}-{}",
+            market_skill_package_name(skill),
+            &yaya_agent_v2::store::fingerprint(&serde_json::json!(skill.id))[..12]
+        ),
         source: "market".to_string(),
         version: skill.version.clone(),
         package_path: String::new(),
@@ -232,17 +152,22 @@ pub(crate) async fn install_ai_employee_skill_package(
         })
         .to_string(),
     };
-    import_skill_package(&mut item, archive).map_err(AppError::BadRequest)?;
+    crate::platform::config::import_skill_package_at(&mut item, archive, root)
+        .map_err(AppError::BadRequest)?;
     item.source = "market".to_string();
     item.version = skill.version.clone();
     item.name = skill.title.clone();
     item.description = skill.description.clone();
 
+    Ok(item)
+}
+
+pub(crate) async fn publish_ai_employee_skill_package(
+    db: &impl sea_orm::ConnectionTrait,
+    item: &AgentSkillDefinition,
+) -> Result<(), AppError> {
     let now = chrono::Utc::now();
-    if let Some(existing) = AgentResourceEntity::find_by_id(&item.id)
-        .one(&state.db)
-        .await?
-    {
+    if let Some(existing) = AgentResourceEntity::find_by_id(&item.id).one(db).await? {
         if existing.kind != "skill" {
             return Err(AppError::BadRequest(format!(
                 "AI 员工 Skill ID 与本地 {} 资源冲突",
@@ -255,13 +180,20 @@ pub(crate) async fn install_ai_employee_skill_package(
             Set(serde_json::to_value(&item)
                 .map_err(|error| AppError::BadRequest(error.to_string()))?);
         active.updated_at = Set(now);
-        active.update(&state.db).await?;
+        active.update(db).await?;
     } else {
-        insert_resource(&state.db, "skill", &item.id, &item.name, &item, now).await?;
+        agent_resource_entity::ActiveModel {
+            id: Set(item.id.clone()),
+            kind: Set("skill".into()),
+            name: Set(item.name.clone()),
+            configuration_json: Set(serde_json::to_value(item)
+                .map_err(|error| AppError::BadRequest(error.to_string()))?),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(db)
+        .await?;
     }
-    state
-        .bump_cache_version("yaya:v1:agent-runtime:version")
-        .await;
     Ok(())
 }
 
@@ -327,9 +259,6 @@ pub(crate) async fn create_provider(
     state
         .bump_cache_version("yaya:v1:agent-providers:version")
         .await;
-    state
-        .bump_cache_version("yaya:v1:agent-runtime:version")
-        .await;
     Ok((
         StatusCode::CREATED,
         Json(success_response(
@@ -390,9 +319,6 @@ pub(crate) async fn update_provider(
     state
         .bump_cache_version("yaya:v1:agent-providers:version")
         .await;
-    state
-        .bump_cache_version("yaya:v1:agent-runtime:version")
-        .await;
     Ok(Json(success_response("provider updated", response)))
 }
 
@@ -409,114 +335,10 @@ pub(crate) async fn delete_provider(
     state
         .bump_cache_version("yaya:v1:agent-providers:version")
         .await;
-    state
-        .bump_cache_version("yaya:v1:agent-runtime:version")
-        .await;
     Ok(Json(success_response(
         "provider deleted",
         serde_json::json!({ "id": id }),
     )))
-}
-
-pub(crate) async fn list_plugins(
-    State(state): State<AppState>,
-) -> Result<Json<ApiResponse<Vec<AgentPluginDefinition>>>, AppError> {
-    let rows = AgentResourceEntity::find()
-        .filter(agent_resource_entity::Column::Kind.eq("plugin"))
-        .all(&state.db)
-        .await?;
-    Ok(Json(success_response(
-        "agent plugins loaded",
-        resources_of_kind(&rows, "plugin")
-            .map_err(|error| AppError::BadRequest(error.to_string()))?,
-    )))
-}
-
-pub(crate) async fn create_plugin(
-    State(state): State<AppState>,
-    Json(payload): Json<PluginRequest>,
-) -> Result<(StatusCode, Json<ApiResponse<AgentPluginDefinition>>), AppError> {
-    validate_plugin(&payload)?;
-    let item = AgentPluginDefinition {
-        id: format!("plugin-{}", Uuid::new_v4().simple()),
-        name: payload.name.trim().to_string(),
-        description: payload.description.trim().to_string(),
-        enabled: payload.enabled,
-        version: payload.version.trim().to_string(),
-        entrypoint: payload.entrypoint.trim().to_string(),
-        manifest_json: payload.manifest_json.trim().to_string(),
-        requires_confirmation: payload.requires_confirmation,
-    };
-    insert_resource(
-        &state.db,
-        "plugin",
-        &item.id,
-        &item.name,
-        &item,
-        chrono::Utc::now(),
-    )
-    .await?;
-    state
-        .bump_cache_version("yaya:v1:agent-runtime:version")
-        .await;
-    Ok((
-        StatusCode::CREATED,
-        Json(success_response("plugin created", item)),
-    ))
-}
-
-pub(crate) async fn update_plugin(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(payload): Json<PluginRequest>,
-) -> Result<Json<ApiResponse<AgentPluginDefinition>>, AppError> {
-    validate_plugin(&payload)?;
-    let item = AgentPluginDefinition {
-        id,
-        name: payload.name.trim().to_string(),
-        description: payload.description.trim().to_string(),
-        enabled: payload.enabled,
-        version: payload.version.trim().to_string(),
-        entrypoint: payload.entrypoint.trim().to_string(),
-        manifest_json: payload.manifest_json.trim().to_string(),
-        requires_confirmation: payload.requires_confirmation,
-    };
-    save_resource(&state.db, "plugin", &item.id, &item.name, &item).await?;
-    state
-        .bump_cache_version("yaya:v1:agent-runtime:version")
-        .await;
-    Ok(Json(success_response("plugin updated", item)))
-}
-
-pub(crate) async fn delete_plugin(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
-    delete_resource(&state.db, "plugin", &id).await?;
-    state
-        .bump_cache_version("yaya:v1:agent-runtime:version")
-        .await;
-    Ok(Json(success_response(
-        "plugin deleted",
-        serde_json::json!({"id": id}),
-    )))
-}
-
-fn validate_resource_name(name: &str) -> Result<(), AppError> {
-    if name.trim().is_empty() {
-        Err(AppError::BadRequest(
-            "resource name is required".to_string(),
-        ))
-    } else {
-        Ok(())
-    }
-}
-
-fn validate_plugin(payload: &PluginRequest) -> Result<(), AppError> {
-    validate_resource_name(&payload.name)?;
-    crate::platform::config::parse_plugin_manifest(&payload.manifest_json)
-        .map_err(AppError::BadRequest)?;
-    Ok(())
 }
 
 fn validate_provider(payload: &ProviderRequest) -> Result<(), AppError> {

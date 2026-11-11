@@ -4,28 +4,11 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { useDndMonitor, useDraggable } from "@dnd-kit/core";
 import { Dropdown } from "@heroui/react";
-import {
-  Copy,
-  PencilToSquare,
-  ArrowDownToSquare,
-  TrashBin,
-} from "@gravity-ui/icons";
+import { Copy, PencilToSquare, ArrowDownToSquare, TrashBin } from "@gravity-ui/icons";
 
-import type {
-  SidebarNode,
-  GroupAction,
-  FormAction,
-  NavigationDragData,
-  DragState,
-} from "./types";
-import {
-  getSidebarNodeIcon,
-  getSidebarNodeIconColor,
-} from "./navigation-icons";
-import {
-  NavigationItemDropZones,
-  EmptyGroupDropZone,
-} from "./NavigationDropZones";
+import type { SidebarNode, GroupAction, FormAction, NavigationDragData, DragState } from "./types";
+import { getSidebarNodeIcon, getSidebarNodeIconColor } from "./navigation-icons";
+import { NavigationItemDropZones, EmptyGroupDropZone } from "./NavigationDropZones";
 import { NAVIGATION_DRAG_DELAY_MS } from "./navigation-interaction";
 
 export function SidebarTreeItem({

@@ -1,14 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getFormsByRouteAppId, isRuntimeAppId } from "@lib/apps";
-import { getRuntimeAppNavigation } from "@features/application/server-api";
-
-type NavigationItem = {
-  itemType: string;
-  targetFormUuid?: string | null;
-  isDefaultEntry: boolean;
-  pathSlug: string;
-};
+import { getFormsByRouteAppId, isRuntimeAppId } from "@/features/application/types";
+import { getRuntimeAppNavigation } from "@/features/application/server-api";
 
 export default async function AppEntryPage({
   params,

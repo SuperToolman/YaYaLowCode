@@ -1,29 +1,30 @@
 "use client";
+import { evaluateRuleTree } from "@/features/conditions/evaluate";
+import { validateRuleTree } from "@/features/conditions";
 
 import { FieldError, Label, ListBox, Select } from "@heroui/react";
-import { useEffect, useMemo, useState, type Key } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type Key } from "react";
 import { fetchAssociationRecords } from "@/features/form-runtime/api";
 import type { AssociationRecord } from "@/features/form-runtime/types";
-import type { RuntimeFieldProps, RuntimeSchemaField } from "./RuntimeFormRenderer";
+import type { RuntimeFieldProps, RuntimeSchemaField } from "@/features/form-model/runtime-types";
+
+import { RuntimeTransactionContext } from "./runtime-form-transaction";
+
+export const AssociationDefaultsContext = createContext(false);
 
 const recordsCache = new Map<string, Promise<AssociationRecord[]>>();
-const MAX_CACHED_FORMS = 50;
 
 function loadRecords(formId: string) {
   const cached = recordsCache.get(formId);
   if (cached) return cached;
 
   const request = fetchAssociationRecords(formId)
-    .catch((error) => {
-      recordsCache.delete(formId);
-      throw error;
+    .finally(() => {
+      // Share requests only while loading; each new form opening must read fresh records.
+      if (recordsCache.get(formId) === request) recordsCache.delete(formId);
     });
 
   recordsCache.set(formId, request);
-  if (recordsCache.size > MAX_CACHED_FORMS) {
-    const oldestFormId = recordsCache.keys().next().value;
-    if (oldestFormId) recordsCache.delete(oldestFormId);
-  }
 
   return request;
 }
@@ -43,8 +44,11 @@ export function RuntimeAssociationField({
   showLabel?: boolean;
   value: unknown;
 }) {
+  const transaction = useContext(RuntimeTransactionContext);
   const props = useMemo(() => field.props ?? {}, [field.props]);
   const [records, setRecords] = useState<AssociationRecord[]>([]);
+  const allowDefault = useContext(AssociationDefaultsContext);
+  const defaultHandled = useRef(false);
   const selectedId = typeof value === "string" ? value : "";
 
   useEffect(() => {
@@ -68,6 +72,19 @@ export function RuntimeAssociationField({
     () => applySettings(records, props),
     [props, records],
   );
+  useEffect(() => {
+    if (selectedId) defaultHandled.current = true;
+    if (!allowDefault || defaultHandled.current || props.isDisabled || props.isReadOnly || !props.associationFormId || props.defaultValueType !== "filter" || !props.associationDefaultRules?.length || !records.length) return;
+    if (validateRuleTree(props.associationDefaultRules)) return;
+    defaultHandled.current = true;
+    const record = visibleRecords.reduce<AssociationRecord | undefined>((latest, item) => {
+      if (!evaluateRuleTree(props.associationDefaultRules!, item.data)) return latest;
+      if (!latest || Date.parse(item.createdAt) > Date.parse(latest.createdAt)) return item;
+      return latest;
+    }, undefined);
+    if (record) transaction(() => { onChange(record.id); onFill(record.data); });
+  }, [allowDefault, selectedId, props, records, visibleRecords, onChange, onFill, transaction]);
+
   const selected = visibleRecords.find((record) => record.id === selectedId);
   const primary = (record: AssociationRecord) =>
     String(record.data[props.associationPrimaryFieldId ?? ""] ?? record.id);
@@ -95,8 +112,10 @@ export function RuntimeAssociationField({
         onSelectionChange={(key: Key | null) => {
           const recordId = key === null ? "" : String(key);
           const record = visibleRecords.find((item) => item.id === recordId);
-          onChange(recordId);
-          if (record) onFill(record.data);
+          transaction(() => {
+            onChange(recordId);
+            if (record) onFill(record.data);
+          });
         }}
         isDisabled={Boolean(props.isDisabled || props.isReadOnly || !props.associationFormId)}
         isRequired={props.isRequired}

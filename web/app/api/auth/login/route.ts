@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { createLoginResponse } from "../_lib";
-import { localLogin } from "@lib/http";
-import { createBackendSdkClient } from "@lib/backend-client";
+import { localLogin } from "@/shared/lib/http";
+import { createBackendSdkClient } from "@/shared/lib/backend-client";
 
-import type { LoginRequest } from "@features/auth/contracts";
+import type { LoginRequest } from "@/features/auth/contracts";
 
 export async function POST(request: Request) {
   let payload: LoginRequest;

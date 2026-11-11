@@ -37,7 +37,7 @@ pub(super) fn validate_query_config(config: &Value) -> Result<(), AppError> {
     }
 }
 
-fn validate_query_rules(
+pub(super) fn validate_query_rules(
     value: Option<&Value>,
     fields: Option<&HashSet<String>>,
 ) -> Result<(), AppError> {
@@ -177,6 +177,19 @@ pub(super) fn source_form(
                 .map(str::to_string)
                 .ok_or_else(|| AppError::BadRequest("触发表单未配置".into()));
         }
+        if kind == "add-data"
+            && node
+                .pointer("/data/config/targetMode")
+                .and_then(Value::as_str)
+                != Some("subtable")
+        {
+            return node
+                .pointer("/data/config/targetFormUuid")
+                .and_then(Value::as_str)
+                .filter(|s| !s.trim().is_empty())
+                .map(str::to_string)
+                .ok_or_else(|| AppError::BadRequest("新增节点未配置目标表单".into()));
+        }
         if !matches!(kind, "get-one" | "get-many") {
             return Err(AppError::BadRequest("来源节点没有记录输出".into()));
         }
@@ -264,7 +277,7 @@ pub(super) async fn validate_subform_config<C: ConnectionTrait>(
         .filter(|field| {
             !matches!(
                 field.get("type").and_then(Value::as_str),
-                Some("groupContainer" | "button" | "subform")
+                Some("groupContainer" | "separator" | "button" | "subform")
             )
         })
         .filter_map(|field| field.get("id").and_then(Value::as_str))
@@ -293,6 +306,7 @@ pub(crate) async fn validate_get_nodes<C: ConnectionTrait>(
     edges: &Value,
     trigger_form: Option<&str>,
 ) -> Result<(), AppError> {
+    super::delete_data::validate_consumed_sources(nodes, edges)?;
     for node in nodes.as_array().into_iter().flatten().filter(|node| {
         node.pointer("/data/kind").and_then(Value::as_str) == Some("add-data")
             && node
@@ -366,7 +380,7 @@ pub(crate) async fn validate_get_nodes<C: ConnectionTrait>(
             .filter(|f| {
                 !matches!(
                     f.get("type").and_then(Value::as_str),
-                    Some("groupContainer" | "button")
+                    Some("groupContainer" | "separator" | "button")
                 )
             })
             .filter_map(|f| f.get("id").and_then(Value::as_str).map(str::to_string))
@@ -377,6 +391,7 @@ pub(crate) async fn validate_get_nodes<C: ConnectionTrait>(
             validate_query_rules(config.get("rules"), Some(&fields))?;
         }
     }
+    super::delete_data::validate_nodes(db, nodes, edges, trigger_form).await?;
     Ok(())
 }
 
@@ -500,6 +515,7 @@ mod tests {
             outputs: HashMap::new(),
             operator: "test".into(),
             run_id: None,
+            branch_id: None,
         };
         for empty in [Value::Null, json!([])] {
             context.outputs.insert("source".into(), empty);

@@ -1,4 +1,4 @@
-import { DesignerScreen } from "./components/DesignerScreen";
+import { DesignerScreen } from "../../../../../features/form-designer/editor/components/DesignerScreen";
 
 export default async function DesignerPage({
   params,

@@ -2,7 +2,7 @@
 
 import { Button, Card, Description, Input, TextField } from "@heroui/react";
 import { Plus, TrashBin } from "@gravity-ui/icons";
-import type { EmailAddressItem } from "@features/identity-access";
+import type { EmailAddressItem } from "@/features/identity-access";
 
 export function AdditionalEmailFields({
   value,

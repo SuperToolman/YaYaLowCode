@@ -1,18 +1,18 @@
 "use client";
 
 import { Dropdown, SearchField, Button } from "@heroui/react";
-import {
-  Plus as AddIcon,
-  FileText as FormIcon,
-  Code as DefinedPageIcon,
-  ArrowRightArrowLeft as WorkflowFormIcon,
-} from "@gravity-ui/icons";
+import { Plus as AddIcon, FileText as FormIcon, Code as DefinedPageIcon, ArrowRightArrowLeft as WorkflowFormIcon } from "@gravity-ui/icons";
 import { AppSidebarToggle } from "../AppSidebarToggle";
 import type { useFormSidebar } from "./useFormSidebar";
 
 type Props = Pick<
   ReturnType<typeof useFormSidebar>,
-  "canCreateForm" | "canCreateGroup" | "handleCreateForm" | "setCreateGroupOpen"
+  | "canCreateForm"
+  | "canCreateGroup"
+  | "handleCreateForm"
+  | "setCreateGroupOpen"
+  | "searchQuery"
+  | "setSearchQuery"
 >;
 
 export function NavigationActions({
@@ -20,18 +20,22 @@ export function NavigationActions({
   canCreateGroup,
   handleCreateForm,
   setCreateGroupOpen,
+  searchQuery,
+  setSearchQuery,
 }: Props) {
   return (
     <div className="flex min-w-0 shrink-0 items-center gap-2">
       <SearchField
         aria-label="搜索表单"
         name="search"
+        value={searchQuery}
+        onChange={setSearchQuery}
         className="min-w-0 flex-1"
       >
         <SearchField.Group>
           <SearchField.SearchIcon />
           <SearchField.Input placeholder="搜索表单..." />
-          <SearchField.ClearButton />
+          <SearchField.ClearButton aria-label="清除表单搜索" />
         </SearchField.Group>
       </SearchField>
       <div className="flex items-center gap-1">

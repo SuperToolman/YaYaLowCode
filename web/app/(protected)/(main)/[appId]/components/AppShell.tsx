@@ -1,40 +1,13 @@
 "use client";
 
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { Card } from "@heroui/react";
 
-const MIN_SIDEBAR_WIDTH = 200;
-const MAX_SIDEBAR_WIDTH = 350;
-const DEFAULT_SIDEBAR_WIDTH = 250;
-const SIDEBAR_WIDTH_STORAGE_KEY = "yaya-app-sidebar-width";
-const SIDEBAR_COLLAPSED_STORAGE_KEY = "yaya-app-sidebar-collapsed";
+import { MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, useSidebarPreferences } from "@/features/application/sidebar-preferences";
 const SIDEBAR_ENTER_STYLE = `@keyframes sidebar-enter { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }`;
-const AppShellContext = createContext<{
-  collapsed: boolean;
-  toggleCollapsed: () => void;
-  headerActionsTarget: HTMLDivElement | null;
-  setHeaderActionsTarget: (target: HTMLDivElement | null) => void;
-} | null>(null);
-export function useAppShellSidebar() {
-  const context = useContext(AppShellContext);
-  if (!context)
-    throw new Error("useAppShellSidebar must be used within AppShell");
-  return context;
-}
-export function useAppHeaderActions() {
-  const context = useContext(AppShellContext);
-  if (!context)
-    throw new Error("useAppHeaderActions must be used within AppShell");
-  return context;
-}
+import { AppShellContext } from "@/features/application/shell-context";
+export { useAppHeaderActions, useAppShellSidebar } from "@/features/application/shell-context";
 
 export function AppShell({
   sidebar,
@@ -44,8 +17,7 @@ export function AppShell({
   children: ReactNode;
 }) {
   const pathname = usePathname();
-  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
-  const [collapsed, setCollapsed] = useState(false);
+  const { sidebarWidth, collapsed, setSidebarWidth, toggleCollapsed } = useSidebarPreferences();
   const [headerActionsTarget, setHeaderActionsTarget] =
     useState<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -54,32 +26,10 @@ export function AppShell({
     null,
   );
   const sidebarRef = useRef<HTMLDivElement | null>(null);
-  const pendingWidthRef = useRef(DEFAULT_SIDEBAR_WIDTH);
+  const pendingWidthRef = useRef(sidebarWidth);
   const hideSidebar =
     /\/automations(?:\/|$)/.test(pathname) ||
     /\/settings(?:\/|$)/.test(pathname);
-  // Hydrate persisted layout preferences after the browser storage is available.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => {
-    const width = Number.parseInt(
-      window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY) ?? "",
-      10,
-    );
-    if (Number.isFinite(width))
-      setSidebarWidth(
-        Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width)),
-      );
-    setCollapsed(
-      window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "true",
-    );
-  }, []);
-  function toggleCollapsed() {
-    setCollapsed((current) => {
-      const next = !current;
-      window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(next));
-      return next;
-    });
-  }
 
   useEffect(() => {
     if (!dragging) {
@@ -117,10 +67,6 @@ export function AppShell({
         frameRef.current = null;
       }
       setSidebarWidth(pendingWidthRef.current);
-      window.localStorage.setItem(
-        SIDEBAR_WIDTH_STORAGE_KEY,
-        String(pendingWidthRef.current),
-      );
       dragOriginRef.current = null;
       setDragging(false);
     };
@@ -137,7 +83,7 @@ export function AppShell({
         cancelAnimationFrame(frameRef.current);
       }
     };
-  }, [dragging]);
+  }, [dragging, setSidebarWidth]);
 
   return (
     <AppShellContext.Provider

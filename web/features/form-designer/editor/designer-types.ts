@@ -1,0 +1,107 @@
+import type { DesignerComponentType, DesignerFieldProps } from "./components/CompTool";
+
+export type FormDesignerProps = {
+  params: Promise<{ formUuid: string }>;
+};
+
+export type PlacedField = {
+  id: string;
+  type: DesignerComponentType;
+  label: string;
+  row: number;
+  column: number;
+  rowSpan: number;
+  colSpan: number;
+  props: DesignerFieldProps;
+  parentGroupId?: string | null;
+};
+
+export type ActiveCell = {
+  row: number;
+  column: number;
+};
+
+export type DesignerDragData =
+  | {
+      kind: "component";
+      componentType: DesignerComponentType;
+    }
+  | {
+      kind: "field";
+      fieldId: string;
+    };
+
+export type DesignerDropData = {
+  kind: "cell";
+  row: number;
+  column: number;
+  parentGroupId: string | null;
+  insertionDirection?:
+    | "before-row"
+    | "after-row"
+    | "before-column"
+    | "after-column";
+  targetFieldId?: string;
+  allowRowInsertion?: boolean;
+};
+
+export type DesignerInsertionIndicator = {
+  kind: "edge";
+  fieldId: string;
+  direction: NonNullable<DesignerDropData["insertionDirection"]>;
+};
+
+export type ResizeDirection = "columns" | "rows" | "both";
+
+export type ResizeState = {
+  fieldId: string;
+  startX: number;
+  startY: number;
+  startRowSpan: number;
+  startColSpan: number;
+  direction: ResizeDirection;
+};
+
+export type FieldPropsChangeHandler = (
+  fieldId: string,
+  props: DesignerFieldProps,
+) => void;
+
+export type DesignerDataSource = {
+  id: string;
+  name: string;
+  kind: "string" | "number" | "boolean" | "object";
+  initialValue: string;
+  description?: string;
+};
+
+export type DesignerPageAsset = {
+  id: string;
+  name: string;
+  type: "script" | "style";
+  url: string;
+  integrity?: string;
+  enabled: boolean;
+};
+
+export type DesignerFieldAction = {
+  id: string;
+  fieldId: string;
+  eventName: string;
+  script: string;
+};
+
+export type DesignerActionPanelState = {
+  code: string;
+  didMount?: string;
+  onSubmit?: string;
+  fieldEvents?: DesignerFieldAction[];
+};
+
+export type PageDesignerProps = {
+  submitButtonText: string;
+  dataSources: DesignerDataSource[];
+  assets: DesignerPageAsset[];
+  indexedFieldIds: string[];
+  actionPanel: DesignerActionPanelState;
+};

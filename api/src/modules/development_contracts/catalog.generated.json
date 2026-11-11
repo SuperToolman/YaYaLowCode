@@ -1,0 +1,4731 @@
+{
+  "formatVersion": 1,
+  "sourceHash": "52046e3bbb238ab2d4fca4ba9bf46083db3decda500779d443f14114418872f8",
+  "componentContractVersion": 1,
+  "components": [
+    {
+      "id": "groupContainer",
+      "label": "分组组件",
+      "category": "layout",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "groupStyle": "simple",
+        "groupTitleType": "h4",
+        "titlePosition": "top",
+        "description": "",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false
+      },
+      "defaultPropertyNames": [
+        "groupStyle",
+        "groupTitleType",
+        "titlePosition",
+        "description",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test."
+    },
+    {
+      "id": "subform",
+      "label": "子表单",
+      "category": "advanced",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "none",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "subformAddButtonText": "新增一项",
+        "subformButtonState": "normal",
+        "subformAllowBatchImport": true,
+        "subformAllowExcelExport": true,
+        "subformAllowBatchDelete": false,
+        "subformFilterEmptyRows": true,
+        "subformShowActionColumn": true,
+        "subformShowCopyButton": false,
+        "subformShowDeleteButton": true,
+        "subformDeleteButtonText": "删除",
+        "subformShowSort": false,
+        "subformDisplayMode": "desktop",
+        "subformArrangement": "table",
+        "subformTheme": "divider",
+        "subformShowHeader": true,
+        "subformShowIndex": true,
+        "subformLayoutMode": "fixed",
+        "subformPageSize": 20,
+        "subformMaxRows": 500,
+        "subformFrozenLeftColumns": 0,
+        "subformFreezeActionColumn": true,
+        "subformActionColumnWidth": 70,
+        "subformAllowCustomColumns": false,
+        "subformEnableTotals": false
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "subformAddButtonText",
+        "subformButtonState",
+        "subformAllowBatchImport",
+        "subformAllowExcelExport",
+        "subformAllowBatchDelete",
+        "subformFilterEmptyRows",
+        "subformShowActionColumn",
+        "subformShowCopyButton",
+        "subformShowDeleteButton",
+        "subformDeleteButtonText",
+        "subformShowSort",
+        "subformDisplayMode",
+        "subformArrangement",
+        "subformTheme",
+        "subformShowHeader",
+        "subformShowIndex",
+        "subformLayoutMode",
+        "subformPageSize",
+        "subformMaxRows",
+        "subformFrozenLeftColumns",
+        "subformFreezeActionColumn",
+        "subformActionColumnWidth",
+        "subformAllowCustomColumns",
+        "subformEnableTotals"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test.",
+      "propertyEditors": [
+        {
+          "property": "subformArrangement",
+          "label": "排列方式",
+          "editor": "select",
+          "valueType": "string",
+          "options": [
+            {
+              "label": "表格",
+              "value": "table"
+            },
+            {
+              "label": "卡片",
+              "value": "tile"
+            }
+          ]
+        },
+        {
+          "property": "subformShowActionColumn",
+          "label": "显示操作列",
+          "editor": "switch",
+          "valueType": "boolean"
+        },
+        {
+          "property": "subformPageSize",
+          "label": "分页大小",
+          "editor": "number",
+          "valueType": "number"
+        }
+      ],
+      "guidance": {
+        "purpose": "在主表单内维护多行明细数据",
+        "goodFor": [
+          "订单明细",
+          "费用明细",
+          "批量项目"
+        ],
+        "badFor": [
+          "单值字段"
+        ],
+        "capabilities": [
+          "create",
+          "configure",
+          "readValue"
+        ],
+        "constraints": [
+          {
+            "id": "layout",
+            "description": "table 布局必须设置列字段"
+          }
+        ],
+        "recipes": [
+          {
+            "id": "subform-table",
+            "intent": "创建桌面端明细表",
+            "description": "使用表格布局并显示操作列",
+            "patch": [
+              {
+                "op": "replace",
+                "path": "/props/subformArrangement",
+                "value": "table"
+              },
+              {
+                "op": "replace",
+                "path": "/props/subformDisplayMode",
+                "value": "desktop"
+              },
+              {
+                "op": "replace",
+                "path": "/props/subformShowHeader",
+                "value": true
+              },
+              {
+                "op": "replace",
+                "path": "/props/subformShowActionColumn",
+                "value": true
+              }
+            ],
+            "expected": {
+              "rows": "array"
+            }
+          }
+        ],
+        "limitations": [
+          "行数据需要用户逐行确认"
+        ]
+      }
+    },
+    {
+      "id": "richText",
+      "label": "富文本",
+      "category": "advanced",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "description": "",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false
+      },
+      "defaultPropertyNames": [
+        "description",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test."
+    },
+    {
+      "id": "html",
+      "label": "HTML 组件",
+      "category": "advanced",
+      "version": 1,
+      "supportedFormTypes": [
+        "defined"
+      ],
+      "designWriteSupported": false,
+      "defaults": {
+        "description": "",
+        "code": "<div class=\"custom-html-card\">\n  <strong>HTML 组件</strong>\n  <p>可通过 ctx.form 读写表单字段。</p>\n</div>",
+        "allowedResourceOrigins": []
+      },
+      "defaultPropertyNames": [
+        "description",
+        "code",
+        "allowedResourceOrigins"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test."
+    },
+    {
+      "id": "tsx",
+      "label": "TSX 组件",
+      "category": "advanced",
+      "version": 1,
+      "supportedFormTypes": [
+        "defined"
+      ],
+      "designWriteSupported": false,
+      "defaults": {
+        "description": "",
+        "code": "function render(ctx) {\n  return <div className=\"custom-tsx-card\">\n    <strong>TSX 组件</strong>\n    <button onClick={() => ctx.form.setValue('singleLineText-1', '已更新')}>更新字段</button>\n  </div>;\n}",
+        "allowedResourceOrigins": []
+      },
+      "defaultPropertyNames": [
+        "description",
+        "code",
+        "allowedResourceOrigins"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test."
+    },
+    {
+      "id": "serialNumber",
+      "label": "流水号",
+      "category": "advanced",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "none",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": true,
+        "placeholder": "自动生成",
+        "serialNumberDigits": 4,
+        "serialNumberFixedDigits": true,
+        "serialNumberResetPeriod": "never",
+        "serialNumberInitialValue": 1,
+        "serialNumberRules": [
+          {
+            "id": "auto-count",
+            "type": "autoCount",
+            "digits": 4,
+            "fixedDigits": true,
+            "resetPeriod": "never",
+            "initialValue": 1
+          }
+        ]
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "placeholder",
+        "serialNumberDigits",
+        "serialNumberFixedDigits",
+        "serialNumberResetPeriod",
+        "serialNumberInitialValue",
+        "serialNumberRules"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test.",
+      "propertyEditors": [
+        {
+          "property": "serialNumberRules",
+          "label": "流水号规则",
+          "editor": "serial-rule-list",
+          "valueType": "array",
+          "required": true
+        }
+      ],
+      "guidance": {
+        "purpose": "生成可配置规则的只读流水号",
+        "goodFor": [
+          "订单号",
+          "工单号",
+          "业务编号"
+        ],
+        "badFor": [
+          "用户手工输入编号"
+        ],
+        "capabilities": [
+          "create",
+          "configure",
+          "readValue"
+        ],
+        "constraints": [
+          {
+            "id": "rules",
+            "description": "至少配置一个流水号规则"
+          }
+        ],
+        "recipes": [
+          {
+            "id": "serial-year-count",
+            "intent": "创建按年度重置的订单号",
+            "description": "使用年份和自增序号",
+            "patch": [
+              {
+                "op": "replace",
+                "path": "/props/serialNumberRules",
+                "value": [
+                  {
+                    "id": "year",
+                    "type": "submittedDate",
+                    "format": "year"
+                  },
+                  {
+                    "id": "count",
+                    "type": "autoCount",
+                    "digits": 5,
+                    "fixedDigits": true,
+                    "resetPeriod": "yearly",
+                    "initialValue": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "limitations": [
+          "生成后不可由 Agent 直接填写"
+        ]
+      }
+    },
+    {
+      "id": "associationFormField",
+      "label": "关联表单",
+      "category": "advanced",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "none",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "placeholder": "请选择关联记录",
+        "associationDefaultRules": [],
+        "associationFormId": "",
+        "associationAppId": "",
+        "associationPrimaryFieldId": "",
+        "associationSecondaryFieldId": "",
+        "associationTableFieldIds": [],
+        "associationFilters": [],
+        "associationFills": [],
+        "associationSubformFills": [],
+        "associationSorts": []
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "placeholder",
+        "associationDefaultRules",
+        "associationFormId",
+        "associationAppId",
+        "associationPrimaryFieldId",
+        "associationSecondaryFieldId",
+        "associationTableFieldIds",
+        "associationFilters",
+        "associationFills",
+        "associationSubformFills",
+        "associationSorts"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test.",
+      "propertyEditors": [
+        {
+          "property": "associationFormId",
+          "label": "关联表单",
+          "editor": "form-ref",
+          "valueType": "string",
+          "required": true
+        },
+        {
+          "property": "associationPrimaryFieldId",
+          "label": "主字段",
+          "editor": "field-ref",
+          "valueType": "string",
+          "required": true
+        },
+        {
+          "property": "associationFills",
+          "label": "回填映射",
+          "editor": "field-mapping-list",
+          "valueType": "array"
+        }
+      ],
+      "guidance": {
+        "purpose": "从其他表单选择记录并按映射回填字段",
+        "goodFor": [
+          "跨表查询",
+          "关联记录",
+          "字段回填"
+        ],
+        "badFor": [
+          "自由文本输入"
+        ],
+        "capabilities": [
+          "create",
+          "configure",
+          "writeValue",
+          "readValue"
+        ],
+        "constraints": [
+          {
+            "id": "source",
+            "description": "必须指定目标表单和主字段"
+          }
+        ],
+        "recipes": [
+          {
+            "id": "association-basic",
+            "intent": "创建一个关联数据字段",
+            "description": "选择目标表单记录并回填字段",
+            "patch": [
+              {
+                "op": "replace",
+                "path": "/props/associationFormId",
+                "value": "<form-id>"
+              },
+              {
+                "op": "replace",
+                "path": "/props/associationPrimaryFieldId",
+                "value": "<field-id>"
+              }
+            ]
+          }
+        ],
+        "limitations": [
+          "目标表单删除后需要重新配置"
+        ]
+      }
+    },
+    {
+      "id": "countryCity",
+      "label": "国家/地区",
+      "category": "advanced",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "custom",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "defaultValue": {
+          "code": "",
+          "depth": 0,
+          "path": []
+        },
+        "placeholder": "请选择国家/地区",
+        "locationDepth": 3
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "defaultValue",
+        "placeholder",
+        "locationDepth"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test."
+    },
+    {
+      "id": "cascader",
+      "label": "级联选择",
+      "category": "advanced",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "custom",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "defaultValue": "",
+        "placeholder": "请选择",
+        "dataSource": [
+          {
+            "value": "part",
+            "label": {
+              "type": "i18n",
+              "zh_CN": "部门",
+              "en_US": "dep"
+            },
+            "children": [
+              {
+                "value": "part_a",
+                "label": "A部门"
+              },
+              {
+                "value": "part_b",
+                "label": "B部门"
+              }
+            ]
+          },
+          {
+            "value": "product",
+            "label": "产品",
+            "children": [
+              {
+                "value": "product_a",
+                "label": "a产品"
+              },
+              {
+                "value": "product_b",
+                "label": "b产品"
+              }
+            ]
+          }
+        ]
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "defaultValue",
+        "placeholder",
+        "dataSource"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test.",
+      "propertyEditors": [
+        {
+          "property": "dataSource",
+          "label": "数据源",
+          "editor": "tree-data",
+          "valueType": "object",
+          "required": true
+        }
+      ],
+      "guidance": {
+        "purpose": "按层级路径选择一个最终节点",
+        "goodFor": [
+          "组织层级",
+          "区域选择",
+          "分类目录"
+        ],
+        "badFor": [
+          "平级多选"
+        ],
+        "capabilities": [
+          "create",
+          "configure",
+          "writeValue",
+          "readValue"
+        ],
+        "constraints": [
+          {
+            "id": "data-source",
+            "description": "必须提供层级数据源"
+          }
+        ],
+        "recipes": [
+          {
+            "id": "cascader-basic",
+            "intent": "创建分类级联选择",
+            "description": "使用层级数据源选择分类",
+            "patch": [
+              {
+                "op": "replace",
+                "path": "/props/dataSource",
+                "value": [
+                  {
+                    "value": "category",
+                    "label": "分类",
+                    "children": [
+                      {
+                        "value": "item",
+                        "label": "项目"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "limitations": [
+          "存储值是用 . 拼接的路径字符串"
+        ]
+      }
+    },
+    {
+      "id": "singleLineText",
+      "label": "单行文本",
+      "category": "basic",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "custom",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "defaultValue": "",
+        "placeholder": "请输入单行文本",
+        "showClearButton": false,
+        "showCounter": false
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "defaultValue",
+        "placeholder",
+        "showClearButton",
+        "showCounter"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test."
+    },
+    {
+      "id": "description",
+      "label": "描述",
+      "category": "layout",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "custom",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "defaultValue": "这是一段描述说明。",
+        "placeholder": "请输入描述内容"
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "defaultValue",
+        "placeholder"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test."
+    },
+    {
+      "id": "separator",
+      "label": "分割线",
+      "category": "layout",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "separatorStyle": "solid",
+        "separatorVariant": "default",
+        "orientation": "horizontal",
+        "description": "",
+        "isHidden": false
+      },
+      "defaultPropertyNames": [
+        "separatorStyle",
+        "separatorVariant",
+        "orientation",
+        "description",
+        "isHidden"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test.",
+      "propertyEditors": [
+        {
+          "property": "orientation",
+          "label": "方向",
+          "editor": "select",
+          "valueType": "string",
+          "defaultValue": "horizontal",
+          "options": [
+            {
+              "value": "horizontal",
+              "label": "横向"
+            },
+            {
+              "value": "vertical",
+              "label": "纵向"
+            }
+          ]
+        },
+        {
+          "property": "separatorStyle",
+          "label": "风格",
+          "editor": "select",
+          "valueType": "string",
+          "defaultValue": "solid",
+          "options": [
+            {
+              "value": "solid",
+              "label": "实线"
+            },
+            {
+              "value": "dashed",
+              "label": "虚线"
+            },
+            {
+              "value": "dotted",
+              "label": "点线"
+            }
+          ]
+        },
+        {
+          "property": "separatorVariant",
+          "label": "变体",
+          "editor": "select",
+          "valueType": "string",
+          "defaultValue": "default",
+          "options": [
+            {
+              "value": "default",
+              "label": "默认"
+            },
+            {
+              "value": "secondary",
+              "label": "次级"
+            },
+            {
+              "value": "tertiary",
+              "label": "三级"
+            }
+          ]
+        }
+      ],
+      "guidance": {
+        "purpose": "使用 HeroUI Separator 分隔表单内容，不产生表单值",
+        "goodFor": [
+          "内容分隔",
+          "布局"
+        ],
+        "badFor": [
+          "用户输入",
+          "子表单列"
+        ],
+        "capabilities": [
+          "create",
+          "configure"
+        ],
+        "constraints": [
+          {
+            "id": "layout-only",
+            "description": "仅用于主画布或分组，不能作为子表单列或数据字段"
+          }
+        ],
+        "recipes": [],
+        "limitations": []
+      }
+    },
+    {
+      "id": "multiLineText",
+      "label": "多行文本",
+      "category": "basic",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "custom",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "defaultValue": "",
+        "placeholder": "请输入多行文本",
+        "showClearButton": false,
+        "showCounter": false
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "defaultValue",
+        "placeholder",
+        "showClearButton",
+        "showCounter"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test."
+    },
+    {
+      "id": "radio",
+      "label": "单选框",
+      "category": "basic",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "custom",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "defaultValue": "选项一",
+        "options": [
+          {
+            "label": "选项一",
+            "value": "选项一"
+          },
+          {
+            "label": "选项二",
+            "value": "选项二"
+          }
+        ],
+        "orientation": "horizontal"
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "defaultValue",
+        "options",
+        "orientation"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test.",
+      "propertyEditors": [
+        {
+          "property": "options",
+          "label": "选项",
+          "editor": "option-list",
+          "valueType": "array",
+          "required": true
+        }
+      ],
+      "guidance": {
+        "purpose": "从有限选项中选择一个值",
+        "goodFor": [
+          "互斥选项"
+        ],
+        "badFor": [
+          "多选"
+        ],
+        "capabilities": [
+          "create",
+          "configure",
+          "writeValue",
+          "readValue"
+        ],
+        "constraints": [
+          {
+            "id": "options",
+            "description": "至少需要一个选项"
+          }
+        ],
+        "recipes": [],
+        "limitations": []
+      }
+    },
+    {
+      "id": "checkbox",
+      "label": "复选框",
+      "category": "basic",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "custom",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "defaultValue": [],
+        "options": [
+          {
+            "label": "选项一",
+            "value": "选项一"
+          },
+          {
+            "label": "选项二",
+            "value": "选项二"
+          }
+        ],
+        "orientation": "horizontal",
+        "placeholder": ""
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "defaultValue",
+        "options",
+        "orientation",
+        "placeholder"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test."
+    },
+    {
+      "id": "select",
+      "label": "下拉菜单",
+      "category": "basic",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "custom",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "defaultValue": "",
+        "options": [
+          {
+            "label": "选项一",
+            "value": "选项一"
+          },
+          {
+            "label": "选项二",
+            "value": "选项二"
+          }
+        ],
+        "placeholder": "请选择"
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "defaultValue",
+        "options",
+        "placeholder"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test.",
+      "propertyEditors": [
+        {
+          "property": "options",
+          "label": "选项",
+          "editor": "option-list",
+          "valueType": "array",
+          "required": true
+        }
+      ],
+      "guidance": {
+        "purpose": "从有限选项中选择一个值",
+        "goodFor": [
+          "状态",
+          "分类",
+          "级别"
+        ],
+        "badFor": [
+          "长文本"
+        ],
+        "capabilities": [
+          "create",
+          "configure",
+          "writeValue",
+          "readValue"
+        ],
+        "constraints": [
+          {
+            "id": "options",
+            "description": "至少需要一个选项"
+          }
+        ],
+        "recipes": [
+          {
+            "id": "select-status",
+            "intent": "创建状态下拉字段",
+            "description": "提供启用和停用选项",
+            "patch": [
+              {
+                "op": "replace",
+                "path": "/props/options",
+                "value": [
+                  {
+                    "label": "启用",
+                    "value": "active"
+                  },
+                  {
+                    "label": "停用",
+                    "value": "inactive"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "limitations": []
+      }
+    },
+    {
+      "id": "multiSelect",
+      "label": "下拉复选",
+      "category": "basic",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "custom",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "defaultValue": [],
+        "options": [
+          {
+            "label": "选项一",
+            "value": "选项一"
+          },
+          {
+            "label": "选项二",
+            "value": "选项二"
+          }
+        ],
+        "orientation": "horizontal",
+        "placeholder": "请选择多项"
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "defaultValue",
+        "options",
+        "orientation",
+        "placeholder"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test.",
+      "propertyEditors": [
+        {
+          "property": "options",
+          "label": "选项",
+          "editor": "option-list",
+          "valueType": "array",
+          "required": true
+        }
+      ],
+      "guidance": {
+        "purpose": "从有限选项中选择多个值",
+        "goodFor": [
+          "标签",
+          "技能"
+        ],
+        "badFor": [
+          "互斥状态"
+        ],
+        "capabilities": [
+          "create",
+          "configure",
+          "writeValue",
+          "readValue"
+        ],
+        "constraints": [
+          {
+            "id": "options",
+            "description": "至少需要一个选项"
+          }
+        ],
+        "recipes": [],
+        "limitations": []
+      }
+    },
+    {
+      "id": "link",
+      "label": "链接",
+      "category": "basic",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "custom",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "defaultValue": "打开链接",
+        "href": "https://example.com",
+        "target": "_blank"
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "defaultValue",
+        "href",
+        "target"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test."
+    },
+    {
+      "id": "date",
+      "label": "日期",
+      "category": "basic",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "custom",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "defaultValue": "",
+        "placeholder": "请选择日期"
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "defaultValue",
+        "placeholder"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test."
+    },
+    {
+      "id": "dateRange",
+      "label": "日期区间",
+      "category": "basic",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "custom",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "defaultValue": [
+          "",
+          ""
+        ],
+        "placeholder": "请选择日期区间"
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "defaultValue",
+        "placeholder"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test."
+    },
+    {
+      "id": "attachment",
+      "label": "附件",
+      "category": "advanced",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "none",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "accept": "",
+        "buttonText": "上传附件",
+        "multiple": false,
+        "maxFileSizeMb": 20,
+        "showUploadLimitHint": true,
+        "placeholder": "上传附件"
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "accept",
+        "buttonText",
+        "multiple",
+        "maxFileSizeMb",
+        "showUploadLimitHint",
+        "placeholder"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test."
+    },
+    {
+      "id": "imageUpload",
+      "label": "图片上传",
+      "category": "advanced",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "none",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "accept": "image/*",
+        "buttonText": "上传图片",
+        "multiple": false,
+        "maxFileSizeMb": 20,
+        "showUploadLimitHint": true,
+        "placeholder": "上传图片"
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "accept",
+        "buttonText",
+        "multiple",
+        "maxFileSizeMb",
+        "showUploadLimitHint",
+        "placeholder"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test."
+    },
+    {
+      "id": "member",
+      "label": "成员",
+      "category": "basic",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "none",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "defaultValue": "",
+        "placeholder": "请选择成员",
+        "memberOrganizationSource": "local",
+        "memberSelectableScope": "all",
+        "memberRoleIds": [],
+        "memberUserIds": [],
+        "memberDisplayFormat": "name",
+        "memberMultiple": false
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "defaultValue",
+        "placeholder",
+        "memberOrganizationSource",
+        "memberSelectableScope",
+        "memberRoleIds",
+        "memberUserIds",
+        "memberDisplayFormat",
+        "memberMultiple"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test.",
+      "propertyEditors": [
+        {
+          "property": "memberMultiple",
+          "label": "允许多选",
+          "editor": "switch",
+          "valueType": "boolean"
+        },
+        {
+          "property": "memberSelectableScope",
+          "label": "可选范围",
+          "editor": "select",
+          "valueType": "string"
+        }
+      ],
+      "guidance": {
+        "purpose": "从组织成员目录选择成员",
+        "goodFor": [
+          "负责人",
+          "审批人",
+          "执行人"
+        ],
+        "badFor": [
+          "外部联系人"
+        ],
+        "capabilities": [
+          "create",
+          "configure",
+          "writeValue",
+          "readValue"
+        ],
+        "constraints": [
+          {
+            "id": "scope",
+            "description": "成员范围必须属于当前组织目录"
+          }
+        ],
+        "recipes": [
+          {
+            "id": "member-owner",
+            "intent": "创建负责人字段",
+            "description": "允许选择一个组织成员",
+            "patch": [
+              {
+                "op": "replace",
+                "path": "/props/memberMultiple",
+                "value": false
+              },
+              {
+                "op": "replace",
+                "path": "/props/memberSelectableScope",
+                "value": "all"
+              }
+            ]
+          }
+        ],
+        "limitations": [
+          "成员 ID 必须来自组织目录"
+        ]
+      }
+    },
+    {
+      "id": "department",
+      "label": "部门",
+      "category": "basic",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "custom",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "defaultValue": "",
+        "options": [
+          {
+            "label": "产品部",
+            "value": "product"
+          },
+          {
+            "label": "研发部",
+            "value": "engineering"
+          },
+          {
+            "label": "运营部",
+            "value": "operations"
+          }
+        ],
+        "placeholder": "请选择部门"
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "defaultValue",
+        "options",
+        "placeholder"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test.",
+      "propertyEditors": [
+        {
+          "property": "memberMultiple",
+          "label": "允许多选",
+          "editor": "switch",
+          "valueType": "boolean"
+        }
+      ],
+      "guidance": {
+        "purpose": "从组织架构选择部门",
+        "goodFor": [
+          "归属部门",
+          "数据权限范围"
+        ],
+        "badFor": [
+          "个人成员"
+        ],
+        "capabilities": [
+          "create",
+          "configure",
+          "writeValue",
+          "readValue"
+        ],
+        "constraints": [
+          {
+            "id": "scope",
+            "description": "部门必须来自当前组织架构"
+          }
+        ],
+        "recipes": [
+          {
+            "id": "department-owner",
+            "intent": "创建归属部门字段",
+            "description": "选择一个组织部门",
+            "patch": [
+              {
+                "op": "replace",
+                "path": "/props/memberMultiple",
+                "value": false
+              }
+            ]
+          }
+        ],
+        "limitations": [
+          "部门 ID 必须来自组织架构"
+        ]
+      }
+    },
+    {
+      "id": "button",
+      "label": "按钮",
+      "category": "basic",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "custom",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "buttonText": "按钮"
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "buttonText"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test."
+    },
+    {
+      "id": "number",
+      "label": "数值",
+      "category": "basic",
+      "version": 1,
+      "supportedFormTypes": [
+        "normal",
+        "workflow"
+      ],
+      "designWriteSupported": true,
+      "defaults": {
+        "titlePosition": "top",
+        "description": "",
+        "defaultValueFormula": "",
+        "defaultValueLinkage": "",
+        "defaultValueType": "custom",
+        "isDisabled": false,
+        "isHidden": false,
+        "isReadOnly": false,
+        "isRequired": false,
+        "defaultValue": 0,
+        "placeholder": "请输入数值",
+        "showClearButton": false,
+        "showCounter": false
+      },
+      "defaultPropertyNames": [
+        "titlePosition",
+        "description",
+        "defaultValueFormula",
+        "defaultValueLinkage",
+        "defaultValueType",
+        "isDisabled",
+        "isHidden",
+        "isReadOnly",
+        "isRequired",
+        "defaultValue",
+        "placeholder",
+        "showClearButton",
+        "showCounter"
+      ],
+      "propsSchema": {
+        "$ref": "#/$defs/type1"
+      },
+      "runtimePropsSchema": {
+        "$ref": "#/$defs/type18"
+      },
+      "coverage": "Designer-wide property types and exact per-component defaults. Not every generic property applies to this component. Component-specific semantic coverage is partial; API validation is required and is not a runtime test."
+    }
+  ],
+  "nodes": [
+    {
+      "id": "trigger",
+      "configSchema": {
+        "$ref": "#/$defs/type29"
+      },
+      "sourceType": "TriggerConfig",
+      "coverage": "Typed editor configuration; API semantic validation is additionally required. Not a guarantee of runtime success.",
+      "supportedFlowTypes": [
+        "trigger",
+        "process"
+      ]
+    },
+    {
+      "id": "condition",
+      "configSchema": {
+        "$ref": "#/$defs/type30"
+      },
+      "sourceType": "ConditionConfig",
+      "coverage": "Typed editor configuration; API semantic validation is additionally required. Not a guarantee of runtime success.",
+      "supportedFlowTypes": [
+        "trigger",
+        "process"
+      ]
+    },
+    {
+      "id": "parallel-condition",
+      "configSchema": {
+        "$ref": "#/$defs/type30"
+      },
+      "sourceType": "ConditionConfig",
+      "coverage": "Typed editor configuration; API semantic validation is additionally required. Not a guarantee of runtime success.",
+      "supportedFlowTypes": [
+        "trigger",
+        "process"
+      ]
+    },
+    {
+      "id": "get-one",
+      "configSchema": {
+        "$ref": "#/$defs/type32"
+      },
+      "sourceType": "GetDataConfig",
+      "coverage": "Typed editor configuration; API semantic validation is additionally required. Not a guarantee of runtime success.",
+      "supportedFlowTypes": [
+        "trigger",
+        "process"
+      ]
+    },
+    {
+      "id": "get-many",
+      "configSchema": {
+        "$ref": "#/$defs/type32"
+      },
+      "sourceType": "GetDataConfig",
+      "coverage": "Typed editor configuration; API semantic validation is additionally required. Not a guarantee of runtime success.",
+      "supportedFlowTypes": [
+        "trigger",
+        "process"
+      ]
+    },
+    {
+      "id": "add-data",
+      "configSchema": {
+        "$ref": "#/$defs/type33"
+      },
+      "sourceType": "AddDataConfig",
+      "coverage": "Typed editor configuration; API semantic validation is additionally required. Not a guarantee of runtime success.",
+      "supportedFlowTypes": [
+        "trigger",
+        "process"
+      ]
+    },
+    {
+      "id": "update-data",
+      "configSchema": {
+        "$ref": "#/$defs/type35"
+      },
+      "sourceType": "ActionConfig",
+      "coverage": "Typed editor configuration; API semantic validation is additionally required. Not a guarantee of runtime success.",
+      "supportedFlowTypes": [
+        "trigger",
+        "process"
+      ]
+    },
+    {
+      "id": "delete-data",
+      "configSchema": {
+        "$ref": "#/$defs/type35"
+      },
+      "sourceType": "ActionConfig",
+      "coverage": "Typed editor configuration; API semantic validation is additionally required. Not a guarantee of runtime success.",
+      "supportedFlowTypes": [
+        "trigger",
+        "process"
+      ]
+    },
+    {
+      "id": "http-request",
+      "configSchema": {
+        "$ref": "#/$defs/type35"
+      },
+      "sourceType": "ActionConfig",
+      "coverage": "Typed editor configuration; API semantic validation is additionally required. Not a guarantee of runtime success.",
+      "supportedFlowTypes": [
+        "trigger",
+        "process"
+      ]
+    },
+    {
+      "id": "initiate-approval",
+      "configSchema": {
+        "$ref": "#/$defs/type37"
+      },
+      "sourceType": "InitiateApprovalConfig",
+      "coverage": "Typed editor configuration; API semantic validation is additionally required. Not a guarantee of runtime success.",
+      "supportedFlowTypes": [
+        "trigger",
+        "process"
+      ]
+    },
+    {
+      "id": "approval",
+      "configSchema": {
+        "$ref": "#/$defs/type38"
+      },
+      "sourceType": "AssigneeConfig",
+      "coverage": "Typed editor configuration; API semantic validation is additionally required. Not a guarantee of runtime success.",
+      "supportedFlowTypes": [
+        "process"
+      ]
+    },
+    {
+      "id": "executor",
+      "configSchema": {
+        "$ref": "#/$defs/type38"
+      },
+      "sourceType": "AssigneeConfig",
+      "coverage": "Typed editor configuration; API semantic validation is additionally required. Not a guarantee of runtime success.",
+      "supportedFlowTypes": [
+        "process"
+      ]
+    },
+    {
+      "id": "copy",
+      "configSchema": {
+        "$ref": "#/$defs/type39"
+      },
+      "sourceType": "CopyConfig",
+      "coverage": "Typed editor configuration; API semantic validation is additionally required. Not a guarantee of runtime success.",
+      "supportedFlowTypes": [
+        "process"
+      ]
+    }
+  ],
+  "$defs": {
+    "type1": {
+      "type": "object",
+      "properties": {
+        "separatorStyle": {
+          "anyOf": [
+            {
+              "const": "solid"
+            },
+            {
+              "const": "dashed"
+            },
+            {
+              "const": "dotted"
+            }
+          ]
+        },
+        "separatorVariant": {
+          "anyOf": [
+            {
+              "const": "default"
+            },
+            {
+              "const": "secondary"
+            },
+            {
+              "const": "tertiary"
+            }
+          ]
+        },
+        "groupStyle": {
+          "anyOf": [
+            {
+              "const": "simple"
+            },
+            {
+              "const": "surface"
+            },
+            {
+              "const": "bordered"
+            },
+            {
+              "const": "divider"
+            }
+          ]
+        },
+        "groupTitleType": {
+          "anyOf": [
+            {
+              "const": "h1"
+            },
+            {
+              "const": "h2"
+            },
+            {
+              "const": "h3"
+            },
+            {
+              "const": "h4"
+            },
+            {
+              "const": "h5"
+            },
+            {
+              "const": "h6"
+            },
+            {
+              "const": "body"
+            },
+            {
+              "const": "body-sm"
+            },
+            {
+              "const": "body-xs"
+            },
+            {
+              "const": "code"
+            }
+          ]
+        },
+        "dateValidation": {
+          "anyOf": [
+            {
+              "const": "none"
+            },
+            {
+              "const": "beforeToday"
+            },
+            {
+              "const": "onOrBeforeToday"
+            },
+            {
+              "const": "onOrAfterToday"
+            },
+            {
+              "const": "afterToday"
+            }
+          ]
+        },
+        "titlePosition": {
+          "anyOf": [
+            {
+              "const": "top"
+            },
+            {
+              "const": "left"
+            },
+            {
+              "const": "inside"
+            }
+          ]
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "granularity": {
+          "anyOf": [
+            {
+              "const": "day"
+            },
+            {
+              "const": "hour"
+            },
+            {
+              "const": "minute"
+            },
+            {
+              "const": "second"
+            }
+          ]
+        },
+        "hourCycle": {
+          "anyOf": [
+            {
+              "const": 12
+            },
+            {
+              "const": 24
+            }
+          ]
+        },
+        "hideTimeZone": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "shouldForceLeadingZeros": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "defaultValueType": {
+          "anyOf": [
+            {
+              "const": "none"
+            },
+            {
+              "const": "custom"
+            },
+            {
+              "const": "formula"
+            },
+            {
+              "const": "linkage"
+            },
+            {
+              "const": "filter"
+            },
+            {
+              "const": "currentUser"
+            }
+          ]
+        },
+        "defaultValue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "$ref": "#/$defs/type2"
+            }
+          ]
+        },
+        "defaultValueFormula": {
+          "type": "string"
+        },
+        "defaultValueLinkage": {
+          "type": "string"
+        },
+        "isDisabled": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "isHidden": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "isReadOnly": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "isRequired": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "dateTodayOrFuture": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "isUnique": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "formatValidation": {
+          "anyOf": [
+            {
+              "const": "email"
+            },
+            {
+              "const": "phoneCN"
+            },
+            {
+              "const": "idCardCN"
+            }
+          ]
+        },
+        "showClearButton": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "showCounter": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "minValue": {
+          "type": "number"
+        },
+        "maxValue": {
+          "type": "number"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type5"
+          }
+        },
+        "orientation": {
+          "anyOf": [
+            {
+              "const": "horizontal"
+            },
+            {
+              "const": "vertical"
+            }
+          ]
+        },
+        "href": {
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "const": "_self"
+            },
+            {
+              "const": "_blank"
+            }
+          ]
+        },
+        "buttonText": {
+          "type": "string"
+        },
+        "accept": {
+          "type": "string"
+        },
+        "multiple": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "maxFileSizeMb": {
+          "type": "number"
+        },
+        "showUploadLimitHint": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformAddButtonText": {
+          "type": "string"
+        },
+        "subformButtonState": {
+          "anyOf": [
+            {
+              "const": "normal"
+            },
+            {
+              "const": "disabled"
+            },
+            {
+              "const": "hidden"
+            }
+          ]
+        },
+        "subformAllowBatchImport": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformAllowExcelExport": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformAllowBatchDelete": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformFilterEmptyRows": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformShowActionColumn": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformShowCopyButton": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformShowDeleteButton": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformDeleteButtonText": {
+          "type": "string"
+        },
+        "subformConfirmDelete": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformShowSort": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformDisplayMode": {
+          "anyOf": [
+            {
+              "const": "desktop"
+            },
+            {
+              "const": "mobile"
+            }
+          ]
+        },
+        "subformArrangement": {
+          "anyOf": [
+            {
+              "const": "tile"
+            },
+            {
+              "const": "table"
+            }
+          ]
+        },
+        "subformTheme": {
+          "anyOf": [
+            {
+              "const": "divider"
+            },
+            {
+              "const": "zebra"
+            },
+            {
+              "const": "border"
+            }
+          ]
+        },
+        "subformShowHeader": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformShowIndex": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformLayoutMode": {
+          "anyOf": [
+            {
+              "const": "auto"
+            },
+            {
+              "const": "fixed"
+            }
+          ]
+        },
+        "subformPageSize": {
+          "type": "number"
+        },
+        "subformMaxRows": {
+          "type": "number"
+        },
+        "subformFrozenLeftColumns": {
+          "type": "number"
+        },
+        "subformFreezeActionColumn": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformActionColumnWidth": {
+          "type": "number"
+        },
+        "subformAllowCustomColumns": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformEnableTotals": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "serialNumberDigits": {
+          "type": "number"
+        },
+        "serialNumberFixedDigits": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "serialNumberResetPeriod": {
+          "anyOf": [
+            {
+              "const": "never"
+            },
+            {
+              "const": "daily"
+            },
+            {
+              "const": "monthly"
+            },
+            {
+              "const": "yearly"
+            }
+          ]
+        },
+        "serialNumberInitialValue": {
+          "type": "number"
+        },
+        "serialNumberRules": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/type6"
+              },
+              {
+                "$ref": "#/$defs/type7"
+              },
+              {
+                "$ref": "#/$defs/type8"
+              },
+              {
+                "$ref": "#/$defs/type9"
+              }
+            ]
+          }
+        },
+        "associationFormId": {
+          "type": "string"
+        },
+        "associationFormName": {
+          "type": "string"
+        },
+        "associationAppId": {
+          "type": "string"
+        },
+        "associationPrimaryFieldId": {
+          "type": "string"
+        },
+        "associationSecondaryFieldId": {
+          "type": "string"
+        },
+        "associationTableFieldIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "associationTableFieldMode": {
+          "anyOf": [
+            {
+              "const": "default"
+            },
+            {
+              "const": "custom"
+            }
+          ]
+        },
+        "associationFilters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type10"
+          }
+        },
+        "associationFiltersEnabled": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "associationDefaultRules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type11"
+          }
+        },
+        "associationFills": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type12"
+          }
+        },
+        "associationSubformFills": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type13"
+          }
+        },
+        "associationFillsEnabled": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "associationSorts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type15"
+          }
+        },
+        "associationSortsEnabled": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "memberOrganizationSource": {
+          "anyOf": [
+            {
+              "const": "local"
+            },
+            {
+              "const": "dingtalk"
+            },
+            {
+              "const": "wecom"
+            },
+            {
+              "const": "feishu"
+            }
+          ]
+        },
+        "memberSelectableScope": {
+          "anyOf": [
+            {
+              "const": "all"
+            },
+            {
+              "const": "roles"
+            },
+            {
+              "const": "members"
+            }
+          ]
+        },
+        "memberRoleIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "memberUserIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "memberDisplayFormat": {
+          "anyOf": [
+            {
+              "const": "name"
+            },
+            {
+              "const": "nameJobNumber"
+            },
+            {
+              "const": "nameUserId"
+            }
+          ]
+        },
+        "memberMultiple": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "locationDepth": {
+          "type": "number"
+        },
+        "dataSource": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type16"
+          }
+        },
+        "code": {
+          "type": "string"
+        },
+        "allowedResourceOrigins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "type2": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "depth": {
+          "type": "number"
+        },
+        "path": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type3"
+          }
+        }
+      },
+      "required": [
+        "code",
+        "depth",
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "type3": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "depth": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "labels": {
+          "$ref": "#/$defs/type4"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parentId": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "depth",
+        "id",
+        "kind",
+        "labels",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "type4": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "type5": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "type6": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "autoCount"
+        },
+        "digits": {
+          "type": "number"
+        },
+        "fixedDigits": {
+          "type": "boolean"
+        },
+        "resetPeriod": {
+          "anyOf": [
+            {
+              "const": "never"
+            },
+            {
+              "const": "daily"
+            },
+            {
+              "const": "monthly"
+            },
+            {
+              "const": "yearly"
+            }
+          ]
+        },
+        "initialValue": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "digits",
+        "fixedDigits",
+        "resetPeriod",
+        "initialValue"
+      ],
+      "additionalProperties": false
+    },
+    "type7": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "fixedText"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "type8": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "submittedDate"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "const": "year"
+            },
+            {
+              "const": "yearMonth"
+            },
+            {
+              "const": "yearMonthDay"
+            },
+            {
+              "const": "yearMonthDayHourMinute"
+            },
+            {
+              "const": "yearMonthDayHourMinuteSecond"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "format"
+      ],
+      "additionalProperties": false
+    },
+    "type9": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "formField"
+        },
+        "fieldId": {
+          "type": "string"
+        },
+        "fallback": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "fieldId",
+        "fallback"
+      ],
+      "additionalProperties": false
+    },
+    "type10": {
+      "type": "object",
+      "properties": {
+        "fieldId": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "fieldId",
+        "operator",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "type11": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "parentId": {
+          "type": "string"
+        },
+        "isGroup": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "logicalOperator": {
+          "anyOf": [
+            {
+              "const": "and"
+            },
+            {
+              "const": "or"
+            }
+          ]
+        },
+        "fieldKey": {
+          "type": "string"
+        },
+        "operator": {
+          "anyOf": [
+            {
+              "const": "eq"
+            },
+            {
+              "const": "neq"
+            },
+            {
+              "const": "inAny"
+            },
+            {
+              "const": "notInAny"
+            },
+            {
+              "const": "hasValue"
+            },
+            {
+              "const": "noValue"
+            }
+          ]
+        },
+        "rawValue": {
+          "type": "string"
+        },
+        "valueType": {
+          "anyOf": [
+            {
+              "const": "value"
+            },
+            {
+              "const": "field"
+            }
+          ]
+        },
+        "sourceFieldKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "type12": {
+      "type": "object",
+      "properties": {
+        "sourceFieldId": {
+          "type": "string"
+        },
+        "targetFieldId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceFieldId",
+        "targetFieldId"
+      ],
+      "additionalProperties": false
+    },
+    "type13": {
+      "type": "object",
+      "properties": {
+        "sourceSubformId": {
+          "type": "string"
+        },
+        "targetSubformId": {
+          "type": "string"
+        },
+        "mappings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type14"
+          }
+        }
+      },
+      "required": [
+        "sourceSubformId",
+        "targetSubformId",
+        "mappings"
+      ],
+      "additionalProperties": false
+    },
+    "type14": {
+      "type": "object",
+      "properties": {
+        "sourceFieldId": {
+          "type": "string"
+        },
+        "targetFieldId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceFieldId",
+        "targetFieldId"
+      ],
+      "additionalProperties": false
+    },
+    "type15": {
+      "type": "object",
+      "properties": {
+        "fieldId": {
+          "type": "string"
+        },
+        "direction": {
+          "anyOf": [
+            {
+              "const": "asc"
+            },
+            {
+              "const": "desc"
+            }
+          ]
+        }
+      },
+      "required": [
+        "fieldId",
+        "direction"
+      ],
+      "additionalProperties": false
+    },
+    "type16": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/type17"
+            }
+          ]
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type16"
+          }
+        }
+      },
+      "required": [
+        "value",
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "type17": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "i18n"
+        },
+        "zh_CN": {
+          "type": "string"
+        },
+        "en_US": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "type18": {
+      "type": "object",
+      "properties": {
+        "separatorStyle": {
+          "anyOf": [
+            {
+              "const": "solid"
+            },
+            {
+              "const": "dashed"
+            },
+            {
+              "const": "dotted"
+            }
+          ]
+        },
+        "separatorVariant": {
+          "anyOf": [
+            {
+              "const": "default"
+            },
+            {
+              "const": "secondary"
+            },
+            {
+              "const": "tertiary"
+            }
+          ]
+        },
+        "groupStyle": {
+          "anyOf": [
+            {
+              "const": "simple"
+            },
+            {
+              "const": "surface"
+            },
+            {
+              "const": "bordered"
+            },
+            {
+              "const": "divider"
+            }
+          ]
+        },
+        "groupTitleType": {
+          "anyOf": [
+            {
+              "const": "h1"
+            },
+            {
+              "const": "h2"
+            },
+            {
+              "const": "h3"
+            },
+            {
+              "const": "h4"
+            },
+            {
+              "const": "h5"
+            },
+            {
+              "const": "h6"
+            },
+            {
+              "const": "body"
+            },
+            {
+              "const": "body-sm"
+            },
+            {
+              "const": "body-xs"
+            },
+            {
+              "const": "code"
+            }
+          ]
+        },
+        "titlePosition": {
+          "anyOf": [
+            {
+              "const": "top"
+            },
+            {
+              "const": "left"
+            },
+            {
+              "const": "inside"
+            }
+          ]
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "granularity": {
+          "anyOf": [
+            {
+              "const": "day"
+            },
+            {
+              "const": "hour"
+            },
+            {
+              "const": "minute"
+            },
+            {
+              "const": "second"
+            }
+          ]
+        },
+        "hourCycle": {
+          "anyOf": [
+            {
+              "const": 12
+            },
+            {
+              "const": 24
+            }
+          ]
+        },
+        "hideTimeZone": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "shouldForceLeadingZeros": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "defaultValueType": {
+          "anyOf": [
+            {
+              "const": "none"
+            },
+            {
+              "const": "custom"
+            },
+            {
+              "const": "formula"
+            },
+            {
+              "const": "linkage"
+            },
+            {
+              "const": "filter"
+            },
+            {
+              "const": "currentUser"
+            }
+          ]
+        },
+        "defaultValue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "$ref": "#/$defs/type2"
+            }
+          ]
+        },
+        "defaultValueFormula": {
+          "type": "string"
+        },
+        "defaultValueLinkage": {
+          "type": "string"
+        },
+        "isDisabled": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "isHidden": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "isReadOnly": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "isRequired": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "dateTodayOrFuture": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "dateValidation": {
+          "anyOf": [
+            {
+              "const": "none"
+            },
+            {
+              "const": "beforeToday"
+            },
+            {
+              "const": "onOrBeforeToday"
+            },
+            {
+              "const": "onOrAfterToday"
+            },
+            {
+              "const": "afterToday"
+            }
+          ]
+        },
+        "isUnique": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "formatValidation": {
+          "anyOf": [
+            {
+              "const": "email"
+            },
+            {
+              "const": "phoneCN"
+            },
+            {
+              "const": "idCardCN"
+            }
+          ]
+        },
+        "showClearButton": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "showCounter": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "minValue": {
+          "type": "number"
+        },
+        "maxValue": {
+          "type": "number"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type19"
+          }
+        },
+        "orientation": {
+          "anyOf": [
+            {
+              "const": "horizontal"
+            },
+            {
+              "const": "vertical"
+            }
+          ]
+        },
+        "href": {
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "const": "_self"
+            },
+            {
+              "const": "_blank"
+            }
+          ]
+        },
+        "buttonText": {
+          "type": "string"
+        },
+        "accept": {
+          "type": "string"
+        },
+        "multiple": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "maxFileSizeMb": {
+          "type": "number"
+        },
+        "showUploadLimitHint": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformAddButtonText": {
+          "type": "string"
+        },
+        "subformButtonState": {
+          "anyOf": [
+            {
+              "const": "normal"
+            },
+            {
+              "const": "disabled"
+            },
+            {
+              "const": "hidden"
+            }
+          ]
+        },
+        "subformAllowBatchImport": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformAllowExcelExport": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformAllowBatchDelete": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformFilterEmptyRows": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformShowActionColumn": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformShowCopyButton": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformShowDeleteButton": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformDeleteButtonText": {
+          "type": "string"
+        },
+        "subformConfirmDelete": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformShowSort": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformDisplayMode": {
+          "anyOf": [
+            {
+              "const": "desktop"
+            },
+            {
+              "const": "mobile"
+            }
+          ]
+        },
+        "subformArrangement": {
+          "anyOf": [
+            {
+              "const": "tile"
+            },
+            {
+              "const": "table"
+            }
+          ]
+        },
+        "subformTheme": {
+          "anyOf": [
+            {
+              "const": "divider"
+            },
+            {
+              "const": "zebra"
+            },
+            {
+              "const": "border"
+            }
+          ]
+        },
+        "subformShowHeader": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformShowIndex": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformLayoutMode": {
+          "anyOf": [
+            {
+              "const": "auto"
+            },
+            {
+              "const": "fixed"
+            }
+          ]
+        },
+        "subformPageSize": {
+          "type": "number"
+        },
+        "subformMaxRows": {
+          "type": "number"
+        },
+        "subformFrozenLeftColumns": {
+          "type": "number"
+        },
+        "subformFreezeActionColumn": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformActionColumnWidth": {
+          "type": "number"
+        },
+        "subformAllowCustomColumns": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "subformEnableTotals": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "serialNumberDigits": {
+          "type": "number"
+        },
+        "serialNumberFixedDigits": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "serialNumberResetPeriod": {
+          "anyOf": [
+            {
+              "const": "never"
+            },
+            {
+              "const": "daily"
+            },
+            {
+              "const": "monthly"
+            },
+            {
+              "const": "yearly"
+            }
+          ]
+        },
+        "serialNumberInitialValue": {
+          "type": "number"
+        },
+        "serialNumberRules": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/type20"
+              },
+              {
+                "$ref": "#/$defs/type21"
+              },
+              {
+                "$ref": "#/$defs/type22"
+              },
+              {
+                "$ref": "#/$defs/type23"
+              }
+            ]
+          }
+        },
+        "associationFormId": {
+          "type": "string"
+        },
+        "associationAppId": {
+          "type": "string"
+        },
+        "associationPrimaryFieldId": {
+          "type": "string"
+        },
+        "associationSecondaryFieldId": {
+          "type": "string"
+        },
+        "associationTableFieldIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "associationTableFieldMode": {
+          "anyOf": [
+            {
+              "const": "default"
+            },
+            {
+              "const": "custom"
+            }
+          ]
+        },
+        "associationDefaultRules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type11"
+          }
+        },
+        "associationFilters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type24"
+          }
+        },
+        "associationFills": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type25"
+          }
+        },
+        "associationSubformFills": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type26"
+          }
+        },
+        "associationSorts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type28"
+          }
+        },
+        "memberOrganizationSource": {
+          "anyOf": [
+            {
+              "const": "local"
+            },
+            {
+              "const": "dingtalk"
+            },
+            {
+              "const": "wecom"
+            },
+            {
+              "const": "feishu"
+            }
+          ]
+        },
+        "memberSelectableScope": {
+          "anyOf": [
+            {
+              "const": "all"
+            },
+            {
+              "const": "roles"
+            },
+            {
+              "const": "members"
+            }
+          ]
+        },
+        "memberRoleIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "memberUserIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "memberDisplayFormat": {
+          "anyOf": [
+            {
+              "const": "name"
+            },
+            {
+              "const": "nameJobNumber"
+            },
+            {
+              "const": "nameUserId"
+            }
+          ]
+        },
+        "memberMultiple": {
+          "anyOf": [
+            {
+              "const": false
+            },
+            {
+              "const": true
+            }
+          ]
+        },
+        "locationDepth": {
+          "type": "number"
+        },
+        "dataSource": {
+          "description": "Product source leaves this value unconstrained; semantic validation still required."
+        },
+        "code": {
+          "type": "string"
+        },
+        "allowedResourceOrigins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "type19": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "type20": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "autoCount"
+        },
+        "digits": {
+          "type": "number"
+        },
+        "fixedDigits": {
+          "type": "boolean"
+        },
+        "resetPeriod": {
+          "anyOf": [
+            {
+              "const": "never"
+            },
+            {
+              "const": "daily"
+            },
+            {
+              "const": "monthly"
+            },
+            {
+              "const": "yearly"
+            }
+          ]
+        },
+        "initialValue": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "digits",
+        "fixedDigits",
+        "resetPeriod",
+        "initialValue"
+      ],
+      "additionalProperties": false
+    },
+    "type21": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "fixedText"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "type22": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "submittedDate"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "const": "year"
+            },
+            {
+              "const": "yearMonth"
+            },
+            {
+              "const": "yearMonthDay"
+            },
+            {
+              "const": "yearMonthDayHourMinute"
+            },
+            {
+              "const": "yearMonthDayHourMinuteSecond"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "format"
+      ],
+      "additionalProperties": false
+    },
+    "type23": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "formField"
+        },
+        "fieldId": {
+          "type": "string"
+        },
+        "fallback": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "fieldId",
+        "fallback"
+      ],
+      "additionalProperties": false
+    },
+    "type24": {
+      "type": "object",
+      "properties": {
+        "fieldId": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "fieldId",
+        "operator",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "type25": {
+      "type": "object",
+      "properties": {
+        "sourceFieldId": {
+          "type": "string"
+        },
+        "targetFieldId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceFieldId",
+        "targetFieldId"
+      ],
+      "additionalProperties": false
+    },
+    "type26": {
+      "type": "object",
+      "properties": {
+        "sourceSubformId": {
+          "type": "string"
+        },
+        "targetSubformId": {
+          "type": "string"
+        },
+        "mappings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type27"
+          }
+        }
+      },
+      "required": [
+        "sourceSubformId",
+        "targetSubformId",
+        "mappings"
+      ],
+      "additionalProperties": false
+    },
+    "type27": {
+      "type": "object",
+      "properties": {
+        "sourceFieldId": {
+          "type": "string"
+        },
+        "targetFieldId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceFieldId",
+        "targetFieldId"
+      ],
+      "additionalProperties": false
+    },
+    "type28": {
+      "type": "object",
+      "properties": {
+        "fieldId": {
+          "type": "string"
+        },
+        "direction": {
+          "anyOf": [
+            {
+              "const": "asc"
+            },
+            {
+              "const": "desc"
+            }
+          ]
+        }
+      },
+      "required": [
+        "fieldId",
+        "direction"
+      ],
+      "additionalProperties": false
+    },
+    "type29": {
+      "type": "object",
+      "properties": {
+        "changedFieldMode": {
+          "anyOf": [
+            {
+              "const": "any"
+            },
+            {
+              "const": "specific"
+            }
+          ]
+        },
+        "changedFieldId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "type30": {
+      "type": "object",
+      "properties": {
+        "branches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type31"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "type31": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "const": "all"
+            },
+            {
+              "const": "rules"
+            },
+            {
+              "const": "expression"
+            }
+          ]
+        },
+        "priority": {
+          "type": "number"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type11"
+          }
+        },
+        "expression": {
+          "type": "string"
+        },
+        "entryMode": {
+          "anyOf": [
+            {
+              "const": "condition"
+            },
+            {
+              "const": "otherwise"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "mode",
+        "priority",
+        "rules",
+        "expression",
+        "entryMode"
+      ],
+      "additionalProperties": false
+    },
+    "type32": {
+      "type": "object",
+      "properties": {
+        "sourceMode": {
+          "anyOf": [
+            {
+              "const": "form"
+            },
+            {
+              "const": "data-node"
+            },
+            {
+              "const": "trigger"
+            }
+          ]
+        },
+        "formUuid": {
+          "type": "string"
+        },
+        "dataNodeId": {
+          "type": "string"
+        },
+        "filterMode": {
+          "anyOf": [
+            {
+              "const": "all"
+            },
+            {
+              "const": "rules"
+            }
+          ]
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type11"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "type33": {
+      "type": "object",
+      "properties": {
+        "subformFieldId": {
+          "type": "string"
+        },
+        "parentDataNodeId": {
+          "type": "string"
+        },
+        "targetMode": {
+          "anyOf": [
+            {
+              "const": "form"
+            },
+            {
+              "const": "subtable"
+            }
+          ]
+        },
+        "targetFormUuid": {
+          "type": "string"
+        },
+        "recordMode": {
+          "anyOf": [
+            {
+              "const": "single"
+            },
+            {
+              "const": "multiple"
+            }
+          ]
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type34"
+          }
+        },
+        "multipleSourceMode": {
+          "anyOf": [
+            {
+              "const": "form"
+            },
+            {
+              "const": "data-node"
+            }
+          ]
+        },
+        "multipleSourceNodeId": {
+          "type": "string"
+        },
+        "multipleFormula": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "type34": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "fieldId": {
+          "type": "string"
+        },
+        "valueType": {
+          "anyOf": [
+            {
+              "const": "value"
+            },
+            {
+              "const": "formula"
+            },
+            {
+              "const": "field"
+            }
+          ]
+        },
+        "rawValue": {
+          "type": "string"
+        },
+        "sourceFieldKey": {
+          "type": "string"
+        },
+        "formula": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "fieldId",
+        "valueType"
+      ],
+      "additionalProperties": false
+    },
+    "type35": {
+      "type": "object",
+      "properties": {
+        "deleteMode": {
+          "anyOf": [
+            {
+              "const": "form"
+            },
+            {
+              "const": "data-node"
+            }
+          ]
+        },
+        "filterMode": {
+          "anyOf": [
+            {
+              "const": "all"
+            },
+            {
+              "const": "rules"
+            }
+          ]
+        },
+        "updateMode": {
+          "anyOf": [
+            {
+              "const": "form"
+            },
+            {
+              "const": "data-node"
+            }
+          ]
+        },
+        "sourceNodeId": {
+          "type": "string"
+        },
+        "targetFormUuid": {
+          "type": "string"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type11"
+          }
+        },
+        "matchRule": {
+          "type": "string"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type34"
+          }
+        },
+        "bodyTemplate": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "headersText": {
+          "type": "string"
+        },
+        "compensationRequest": {
+          "$ref": "#/$defs/type36"
+        }
+      },
+      "additionalProperties": false
+    },
+    "type36": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "headersText": {
+          "type": "string"
+        },
+        "bodyTemplate": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "type37": {
+      "type": "object",
+      "properties": {
+        "targetFormUuid": {
+          "type": "string"
+        },
+        "targetAppId": {
+          "type": "string"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/type34"
+          }
+        },
+        "initiatorMode": {
+          "anyOf": [
+            {
+              "const": "field"
+            },
+            {
+              "const": "member"
+            }
+          ]
+        },
+        "initiatorId": {
+          "type": "string"
+        },
+        "initiatorFieldId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "type38": {
+      "type": "object",
+      "properties": {
+        "assigneeIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "assigneeMode": {
+          "anyOf": [
+            {
+              "const": "roles"
+            },
+            {
+              "const": "members"
+            },
+            {
+              "const": "self"
+            }
+          ]
+        },
+        "roleIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "approvalMode": {
+          "anyOf": [
+            {
+              "const": "all"
+            },
+            {
+              "const": "any"
+            }
+          ]
+        },
+        "requiredFieldIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "type39": {
+      "type": "object",
+      "properties": {
+        "recipientIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "recipientMode": {
+          "anyOf": [
+            {
+              "const": "roles"
+            },
+            {
+              "const": "members"
+            }
+          ]
+        },
+        "roleIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "limitations": [
+    "Unconstrained source type: unknown"
+  ]
+}

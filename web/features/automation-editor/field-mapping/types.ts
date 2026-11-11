@@ -16,4 +16,5 @@ export type FormFieldDescriptor = {
   parentGroupId?: string;
   isRequired: boolean;
   options: Array<{ label: string; value: string }>;
+  props?: import("@/features/form-model/runtime-types").RuntimeFieldProps;
 };

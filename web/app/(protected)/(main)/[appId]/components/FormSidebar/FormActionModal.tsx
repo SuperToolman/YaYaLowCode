@@ -1,21 +1,21 @@
 "use client";
 
-import { Button, Input, Select, ListBox } from "@heroui/react";
+import { Button, Input, Label, Select, ListBox } from "@heroui/react";
 import { Modal } from "@heroui/react/modal";
 import { ROOT_PARENT_VALUE } from "./constants";
 import type { useFormSidebar } from "./useFormSidebar";
 
-type Props = Pick<ReturnType<typeof useFormSidebar>, "selectedForm" | "formAction" | "closeFormAction" | "formActionPending" | "formActionValue" | "setFormActionValue" | "groupOptions" | "handleFormAction">;
+type Props = Pick<ReturnType<typeof useFormSidebar>, "selectedForm" | "formAction" | "formActionOpen" | "closeFormAction" | "formActionPending" | "formActionValue" | "setFormActionValue" | "groupOptions" | "handleFormAction">;
 
-export function FormActionModal({ selectedForm, formAction, closeFormAction, formActionPending, formActionValue, setFormActionValue, groupOptions, handleFormAction }: Props) {
+export function FormActionModal({ selectedForm, formAction, formActionOpen, closeFormAction, formActionPending, formActionValue, setFormActionValue, groupOptions, handleFormAction }: Props) {
   return (
         <Modal.Backdrop
-          isOpen={Boolean(selectedForm && formAction)}
+          isOpen={formActionOpen}
           onOpenChange={(open) => !open && closeFormAction()}
           className="theme-modal-backdrop"
           isDismissable={!formActionPending}
         >
-          <Modal.Container placement="center" size="md">
+          <Modal.Container placement="center" size="sm">
             <Modal.Dialog>
               <Modal.Header>
                 <Modal.Heading>
@@ -28,13 +28,17 @@ export function FormActionModal({ selectedForm, formAction, closeFormAction, for
               </Modal.Header>
               <Modal.Body className="space-y-4">
                 {formAction === "rename" ? (
-                  <Input
-                    aria-label="表单名称"
-                    value={formActionValue}
-                    onChange={(event) =>
-                      setFormActionValue(event.currentTarget.value)
-                    }
-                  />
+                  <div>
+                    <Label htmlFor="form-action-name">表单名称</Label>
+                    <Input
+                      id="form-action-name"
+                      fullWidth
+                      value={formActionValue}
+                      onChange={(event) =>
+                        setFormActionValue(event.currentTarget.value)
+                      }
+                    />
+                  </div>
                 ) : null}
                 {formAction === "move" ? (
                   <Select

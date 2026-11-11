@@ -6,3 +6,8 @@ allowBuilds:
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver
+
+# 3.3.0 shares slot closures between instances, leaking drawer variants into page tabs.
+# HeroUI 3.2.3 pins that version; 3.3.1 restores per-instance slot isolation.
+overrides:
+  tailwind-variants: 3.3.1

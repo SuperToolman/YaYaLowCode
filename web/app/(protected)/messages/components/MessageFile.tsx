@@ -1,9 +1,9 @@
 "use client";
 import type { CSSProperties } from "react";
-import { Card, Link, Separator, Typography } from "@heroui/react";
+import { Card, Link, Typography } from "@heroui/react";
 import { buttonVariants } from "@heroui/styles";
 import { ArrowDownToLine } from "@gravity-ui/icons";
-import type { CommunicationAttachmentResponse } from "@lib/http";
+import type { CommunicationAttachmentResponse } from "@/shared/lib/http";
 import { FileTypeIcon } from "./FileTypeIcon";
 import { filePresentation, formatFileSize } from "./file-presentation";
 import styles from "./file-card.module.css";
@@ -18,7 +18,7 @@ export function MessageFile({
     <Card
       aria-label={`文件：${attachment.name}`}
       data-file-type={type.category}
-      className={`w-80 max-w-full gap-3 p-3 text-start ${styles.fileCard}`}
+      className={`w-80 max-w-full gap-3 p-3 text-start ${styles["messages-file__card"]}`}
       style={{ "--file-color": type.color } as CSSProperties}
     >
       <div className="flex min-w-0 items-center gap-3">

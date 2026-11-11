@@ -116,24 +116,7 @@ pub(crate) fn build_blank_schema(form_uuid: &str, form_name: &str) -> Value {
         "columns": 6,
         "rows": 1,
         "pageProps": {
-            "formulaValidations": [
-                { "id": "formula-dictionary-exists", "label": "EXIST(字典项)" },
-                { "id": "formula-sequence-exists", "label": "EXIST(序号)" }
-            ],
-            "serviceValidations": [],
-            "customServiceValidations": [],
-            "stopRulesOnFailure": false,
-            "businessFailureRules": [],
-            "integrationAutomations": [
-                { "id": "integration-1", "label": "集成&自动化" }
-            ],
-            "serviceExecutions": [],
-            "customServiceExecutions": [],
             "submitButtonText": "提交",
-            "beforeSubmitActions": [],
-            "afterSubmitActions": [],
-            "afterDataInitActions": [],
-            "dataSourceCode": "",
             "indexedFieldIds": []
         },
         "fields": []
@@ -409,5 +392,60 @@ mod download_filename_tests {
                 .unwrap(),
             "attachment; filename=\"report.xlsx\"; filename*=UTF-8''report.xlsx"
         );
+    }
+}
+
+/// Remove retired designer placeholders while preserving active and extension properties.
+pub(crate) fn clean_retired_page_props(schema: &mut Value) {
+    if let Some(props) = schema.get_mut("pageProps").and_then(Value::as_object_mut) {
+        for key in [
+            "formulaValidations",
+            "serviceValidations",
+            "customServiceValidations",
+            "stopRulesOnFailure",
+            "businessFailureRules",
+            "integrationAutomations",
+            "serviceExecutions",
+            "customServiceExecutions",
+            "beforeSubmitActions",
+            "afterSubmitActions",
+            "afterDataInitActions",
+            "dataSourceCode",
+            "agent",
+        ] {
+            props.remove(key);
+        }
+    }
+}
+
+#[cfg(test)]
+mod retired_page_props_tests {
+    use super::*;
+
+    #[test]
+    fn removes_retired_page_props_and_preserves_active_configuration() {
+        let mut schema = json!({"pageProps": {"submitButtonText": "保存", "dataSources": [], "actionPanel": {"code": "active"}, "assets": [], "indexedFieldIds": [], "extension": true}, "fields": []});
+        let expected = schema.clone();
+        for key in [
+            "formulaValidations",
+            "serviceValidations",
+            "customServiceValidations",
+            "stopRulesOnFailure",
+            "businessFailureRules",
+            "integrationAutomations",
+            "serviceExecutions",
+            "customServiceExecutions",
+            "beforeSubmitActions",
+            "afterSubmitActions",
+            "afterDataInitActions",
+            "dataSourceCode",
+            "agent",
+        ] {
+            schema["pageProps"][key] = json!({"legacy": true});
+        }
+        clean_retired_page_props(&mut schema);
+        assert_eq!(schema, expected);
+        clean_retired_page_props(&mut schema);
+        assert_eq!(schema, expected);
     }
 }

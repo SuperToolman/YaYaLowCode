@@ -1,5 +1,5 @@
-import { unwrapApiResult } from "@lib/api-request";
-import { createForm, createNavigationGroup, deleteForm, getFormSchema, saveFormSchema } from "@/app/lib/http";
+import { unwrapApiResult } from "@/shared/lib/api-request";
+import { createForm, createNavigationGroup, deleteForm, getFormSchema, saveFormSchema } from "@/shared/lib/http";
 
 export function nextCopyName(name: string, existingNames: Iterable<string>) {
   const base = name.replace(/(?:\([1-9]\d*\)|（[1-9]\d*）)$/, "");

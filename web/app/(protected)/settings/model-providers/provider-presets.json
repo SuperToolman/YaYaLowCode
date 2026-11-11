@@ -5,7 +5,10 @@
     "kind": "openai",
     "apiBaseUrl": "https://api.openai.com/v1",
     "websiteUrl": "https://platform.openai.com",
-    "icon": "openai"
+    "icon": "openai",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openai",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "anthropic",
@@ -13,7 +16,10 @@
     "kind": "openai-compatible",
     "apiBaseUrl": "https://api.anthropic.com/v1",
     "websiteUrl": "https://console.anthropic.com",
-    "icon": "anthropic"
+    "icon": "anthropic",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openai",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "google",
@@ -21,7 +27,10 @@
     "kind": "openai-compatible",
     "apiBaseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
     "websiteUrl": "https://aistudio.google.com",
-    "icon": "google"
+    "icon": "google",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openai",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "deepseek",
@@ -29,7 +38,10 @@
     "kind": "deepseek",
     "apiBaseUrl": "https://api.deepseek.com/v1",
     "websiteUrl": "https://platform.deepseek.com",
-    "icon": "deepseek"
+    "icon": "deepseek",
+    "thinkingEnabled": true,
+    "reasoningProtocol": "deepseek",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "groq",
@@ -37,7 +49,10 @@
     "kind": "openai-compatible",
     "apiBaseUrl": "https://api.groq.com/openai/v1",
     "websiteUrl": "https://console.groq.com",
-    "icon": "groq"
+    "icon": "groq",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openai",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "mistral",
@@ -45,7 +60,10 @@
     "kind": "openai-compatible",
     "apiBaseUrl": "https://api.mistral.ai/v1",
     "websiteUrl": "https://console.mistral.ai",
-    "icon": "mistral"
+    "icon": "mistral",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openai",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "openrouter",
@@ -53,7 +71,10 @@
     "kind": "openai-compatible",
     "apiBaseUrl": "https://openrouter.ai/api/v1",
     "websiteUrl": "https://openrouter.ai",
-    "icon": "openrouter"
+    "icon": "openrouter",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openrouter",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "together",
@@ -61,7 +82,10 @@
     "kind": "openai-compatible",
     "apiBaseUrl": "https://api.together.xyz/v1",
     "websiteUrl": "https://api.together.ai",
-    "icon": "together"
+    "icon": "together",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openai",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "fireworks",
@@ -69,7 +93,10 @@
     "kind": "openai-compatible",
     "apiBaseUrl": "https://api.fireworks.ai/inference/v1",
     "websiteUrl": "https://fireworks.ai",
-    "icon": "fireworks"
+    "icon": "fireworks",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openai",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "cohere",
@@ -77,7 +104,10 @@
     "kind": "openai-compatible",
     "apiBaseUrl": "https://api.cohere.com/compatibility/v1",
     "websiteUrl": "https://dashboard.cohere.com",
-    "icon": "cohere"
+    "icon": "cohere",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openai",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "xai",
@@ -85,7 +115,10 @@
     "kind": "openai-compatible",
     "apiBaseUrl": "https://api.x.ai/v1",
     "websiteUrl": "https://console.x.ai",
-    "icon": "xai"
+    "icon": "xai",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openai",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "qwen",
@@ -93,7 +126,10 @@
     "kind": "openai-compatible",
     "apiBaseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "websiteUrl": "https://dashscope.aliyun.com",
-    "icon": "qwen"
+    "icon": "qwen",
+    "thinkingEnabled": true,
+    "reasoningProtocol": "qwen",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "zhipu",
@@ -101,7 +137,10 @@
     "kind": "openai-compatible",
     "apiBaseUrl": "https://open.bigmodel.cn/api/paas/v4",
     "websiteUrl": "https://open.bigmodel.cn",
-    "icon": "zhipu"
+    "icon": "zhipu",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openai",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "moonshot",
@@ -109,7 +148,10 @@
     "kind": "openai-compatible",
     "apiBaseUrl": "https://api.moonshot.cn/v1",
     "websiteUrl": "https://platform.moonshot.cn",
-    "icon": "moonshot"
+    "icon": "moonshot",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openai",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "minimax",
@@ -117,7 +159,10 @@
     "kind": "openai-compatible",
     "apiBaseUrl": "https://api.minimaxi.com/v1",
     "websiteUrl": "https://platform.minimaxi.com",
-    "icon": "minimax"
+    "icon": "minimax",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openai",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "doubao",
@@ -125,7 +170,10 @@
     "kind": "openai-compatible",
     "apiBaseUrl": "https://ark.cn-beijing.volces.com/api/v3",
     "websiteUrl": "https://console.volcengine.com/ark",
-    "icon": "doubao"
+    "icon": "doubao",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openai",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "volcengine",
@@ -133,7 +181,10 @@
     "kind": "openai-compatible",
     "apiBaseUrl": "https://ark.cn-beijing.volces.com/api/v3",
     "websiteUrl": "https://console.volcengine.com/ark",
-    "icon": "volcengine"
+    "icon": "volcengine",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openai",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "siliconcloud",
@@ -141,7 +192,10 @@
     "kind": "openai-compatible",
     "apiBaseUrl": "https://api.siliconflow.cn/v1",
     "websiteUrl": "https://cloud.siliconflow.cn",
-    "icon": "siliconcloud"
+    "icon": "siliconcloud",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openai",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "azure",
@@ -149,7 +203,10 @@
     "kind": "openai-compatible",
     "apiBaseUrl": "https://YOUR_RESOURCE_NAME.openai.azure.com/openai/v1",
     "websiteUrl": "https://portal.azure.com",
-    "icon": "azure"
+    "icon": "azure",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openai",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "ollama",
@@ -157,7 +214,10 @@
     "kind": "local",
     "apiBaseUrl": "http://localhost:11434/v1",
     "websiteUrl": "https://ollama.com",
-    "icon": "ollama"
+    "icon": "ollama",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openai",
+    "defaultReasoningEffort": "auto"
   },
   {
     "id": "compatible",
@@ -165,6 +225,9 @@
     "kind": "openai-compatible",
     "apiBaseUrl": "https://api.openai.com/v1",
     "websiteUrl": "https://platform.openai.com",
-    "icon": "openai"
+    "icon": "openai",
+    "thinkingEnabled": false,
+    "reasoningProtocol": "openai",
+    "defaultReasoningEffort": "auto"
   }
 ]

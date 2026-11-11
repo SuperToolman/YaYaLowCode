@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
-import {
-  assembleImportRecords,
-  buildImportTemplate,
-  getExcelImportFields,
-  parseImportWorksheet,
-} from "./excel-import";
-import type { RuntimeSchemaField } from "@features/form-runtime/components";
+import { assembleImportRecords, buildImportTemplate, getExcelImportFields, parseImportWorksheet } from "./excel-import";
+import type { RuntimeSchemaField } from "@/features/form-model/runtime-types";
 
 const field = (
   id: string,

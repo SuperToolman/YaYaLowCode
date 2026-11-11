@@ -1,4 +1,4 @@
-import { unwrapApiResult } from "@lib/api-request";
+import { unwrapApiResult } from "@/shared/lib/api-request";
 export {
   createLocalRole,
   createLocalOrganizationUnit,
@@ -17,18 +17,18 @@ export {
   updateProvider,
   updateRolePermissions,
   updateUser,
-} from "@/app/lib/http";
+} from "@/shared/lib/http";
 
 export type {
   CreateLocalUserRequest,
   UpdateUserRequest,
   UserResponse,
-} from "@/app/lib/http";
+} from "@/shared/lib/http";
 
-export type CredentialInitializationResult = import("@lib/http").InitializeLocalCredentialsResponse;
+export type CredentialInitializationResult = import("@/shared/lib/http").InitializeLocalCredentialsResponse;
 
 export async function initializeUserCredentials(): Promise<CredentialInitializationResult> {
-  const result = await import("@/app/lib/http").then(
+  const result = await import("@/shared/lib/http").then(
     ({ initializeLocalCredentials }) =>
       initializeLocalCredentials({ responseStyle: "fields" }),
   );

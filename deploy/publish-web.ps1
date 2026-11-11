@@ -90,13 +90,13 @@ try {
     'rm -rf /tmp/yaya-web-deploy',
     'docker exec "$container_name" supervisorctl start web',
     'attempt=0',
-    'until docker exec "$container_name" curl -fsS http://127.0.0.1:8787/agent >/dev/null; do attempt=$((attempt + 1)); [ "$attempt" -lt 30 ] || { docker logs --tail 80 "$container_name" >&2; exit 3; }; sleep 2; done',
+    'until docker exec "$container_name" curl -fsS http://127.0.0.1:8787/agent-v2 >/dev/null; do attempt=$((attempt + 1)); [ "$attempt" -lt 30 ] || { docker logs --tail 80 "$container_name" >&2; exit 3; }; sleep 2; done',
     'docker exec "$container_name" supervisorctl status web'
   ) -join "`n"
   $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remoteScript))
   Write-Host 'Installing frontend and restarting Web...'
   Invoke-Native 'ssh.exe' ($sshOptions + @($target, "echo $encoded | base64 -d | sh"))
-  Write-Host "Web publish completed: http://${ServerIp}:8787/agent"
+  Write-Host "Web publish completed: http://${ServerIp}:8787/agent-v2"
 }
 finally {
   if ($passwordBstr -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordBstr) }

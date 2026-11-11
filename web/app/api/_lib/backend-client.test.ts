@@ -2,10 +2,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBackendSdkClient, sdkJsonResponse } from "./backend-sdk-client";
 import { backendAuthorizationHeaders, proxyBackendJson } from "./backend-json-proxy";
-import { listApps } from "../../lib/http";
+import { listApps } from "../../../shared/lib/http";
 
 afterEach(() => vi.unstubAllGlobals());
 describe("backend forwarding", () => {
+  it("allows dependency preparation to exceed the ordinary proxy timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.stubGlobal("fetch", vi.fn().mockImplementation((_url,init:RequestInit)=>new Promise((resolve,reject)=>{
+        const timer=setTimeout(()=>resolve(Response.json({code:0,data:{installed:true}})),20000);
+        init.signal?.addEventListener("abort",()=>{clearTimeout(timer);reject(new Error("aborted"));});
+      })));
+      const result=proxyBackendJson(new Request("http://localhost",{method:"POST"}),"/api/settings/ai-employee-market/example/install","POST",30*60000);
+      await vi.advanceTimersByTimeAsync(20001);
+      expect((await result).status).toBe(200);
+    } finally {vi.useRealTimers();}
+  });
   it("keeps concurrent user credentials isolated", async () => {
     const tokens: string[] = [];
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (request: Request) => {

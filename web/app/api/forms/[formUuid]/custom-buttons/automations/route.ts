@@ -1,4 +1,4 @@
-import { createButtonAutomationForForm } from "@/app/lib/http";
+import { createButtonAutomationForForm } from "@/shared/lib/http";
 import { createBackendSdkClient, sdkJsonResponse } from "../../../../_lib/backend-sdk-client";
 
 type Context = { params: Promise<{ formUuid: string }> };

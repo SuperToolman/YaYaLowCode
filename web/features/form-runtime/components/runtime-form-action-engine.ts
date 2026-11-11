@@ -1,14 +1,16 @@
-import {
-  getCascaderPathByValue,
-  normalizeCascaderDataSource,
-  serializeCascaderLabel,
-} from "@lib/cascader-data-source";
-import {
-  isCountryCityValue,
-  normalizeCountryCityValue,
-  type CountryCityValue,
-} from "@lib/location-catalog";
-import type { RuntimeFieldType, RuntimeSchemaField } from "./runtime-form-types";
+import { getCascaderPathByValue, normalizeCascaderDataSource, serializeCascaderLabel } from "@/features/form-model/cascader-data-source";
+import { isCountryCityValue, normalizeCountryCityValue, type CountryCityValue } from "@/shared/lib/location-catalog";
+import type { RuntimeFieldType, RuntimeSchemaField } from "../../form-model/runtime-types";
+
+const runtimeFieldIndices = new WeakMap<RuntimeSchemaField[], Map<string, RuntimeSchemaField>>();
+function getRuntimeFieldsById(fields: RuntimeSchemaField[]) {
+  let index = runtimeFieldIndices.get(fields);
+  if (!index) {
+    index = new Map(fields.map((field) => [field.id, field]));
+    runtimeFieldIndices.set(fields, index);
+  }
+  return index;
+}
 
 let runtimeDebugEventSequence = 0;
 const recentDidMountExecutions = new Map<string, number>();
@@ -132,7 +134,7 @@ export function runRuntimeActionHandler({
 
   const state: RuntimeActionState = { values, urlParams, dataSources };
   const currentCascader = getRuntimeCascaderValue(fields, values, fieldId);
-  const fieldById = new Map(fields.map((field) => [field.id, field]));
+  const fieldById = getRuntimeFieldsById(fields);
   actionModule.setFieldAccessor((id) => {
     const field = fieldById.get(id);
     if (!field) return null;
@@ -227,7 +229,7 @@ function getRuntimeCascaderValue(
   values: Record<string, unknown>,
   fieldId: string,
 ) {
-  const field = fields.find((item) => item.id === fieldId);
+  const field = getRuntimeFieldsById(fields).get(fieldId);
   const value = values[fieldId];
   if (field?.type !== "cascader" || typeof value !== "string") return null;
   const path = getCascaderPathByValue(normalizeCascaderDataSource(field.props?.dataSource), value);

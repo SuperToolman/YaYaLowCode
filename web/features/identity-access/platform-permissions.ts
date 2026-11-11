@@ -42,8 +42,10 @@ export function settingsPagePermission(pathname: string): string | null {
     roles: "settings.roles.view",
     permissions: "settings.permissions.view",
     "model-providers": "settings.models.view",
-    "agent-archive": "settings.agent-archive.view",
     "ai-employee-market": "settings.ai-employees.view",
+    "ai-employees": "settings.ai-employees.view",
+    "agent-archives": "agent.window",
+    knowledge: "",
   };
   return routes[pathname.split("/")[2]] ?? null;
 }

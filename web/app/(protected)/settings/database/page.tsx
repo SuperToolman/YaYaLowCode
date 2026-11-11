@@ -1,7 +1,7 @@
 "use client";
-import { notifyRequestError } from "@lib/notify";
-import { useAuth } from "@components/AuthProvider";
-import { notify } from "@lib/notify";
+import { notifyRequestError } from "@/shared/lib/notify";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { notify } from "@/shared/lib/notify";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -9,15 +9,7 @@ import { Button, Input, Switch } from "@heroui/react";
 import { Card } from "@heroui/react/card";
 import { Field } from "../components/Field";
 import { SettingsContentCard } from "../components/SettingsContentCard";
-import {
-  getLicenseStatus,
-  loadDatabaseSettings,
-  loadValkeySettings,
-  saveDatabaseSettings,
-  saveValkeySettings as persistValkeySettings,
-  testDatabase,
-  testValkey,
-} from "@features/settings/api";
+import { getLicenseStatus, loadDatabaseSettings, loadValkeySettings, saveDatabaseSettings, saveValkeySettings as persistValkeySettings, testDatabase, testValkey } from "@/features/settings/api";
 
 type DatabaseSettings = {
   host: string;

@@ -1,8 +1,8 @@
-import { notifyRequestError } from "@lib/notify";
+import { notifyRequestError } from "@/shared/lib/notify";
 import { useEffect, useState } from "react";
-import { notify } from "@lib/notify";
+import { notify } from "@/shared/lib/notify";
 import { Button, Checkbox, Input, Modal } from "@heroui/react";
-import { listCommunicationUsers, updateGroupConversation, type CommunicationConversationResponse, type CommunicationUserResponse } from "@features/communication/api";
+import { listCommunicationUsers, updateGroupConversation, type CommunicationConversationResponse, type CommunicationUserResponse } from "@/features/communication/api";
 
 export function ManageGroupModal({ open, conversation, onClose, onSaved, messageOf }: { open: boolean; conversation: CommunicationConversationResponse; onClose: () => void; onSaved: () => void; messageOf: (value: unknown) => string }) {
   const [users, setUsers] = useState<CommunicationUserResponse[]>([]); const [title, setTitle] = useState(conversation.title); const [memberIds, setMemberIds] = useState(conversation.members.map((member) => member.userId));

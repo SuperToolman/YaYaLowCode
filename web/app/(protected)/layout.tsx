@@ -1,10 +1,9 @@
-import { AppToastProvider } from "../components/AppToastProvider";
-import { AuthProvider } from "../components/AuthProvider";
-import { AuthenticatedAppShell } from "../components/AuthenticatedAppShell";
-import { ThemeProvider } from "@shared/ThemeProvider";
-import { QueryProvider } from "../components/QueryProvider";
-import { AgentWorkbenchRuntimeProvider } from "@/features/agent-workbench/runtime";
-import { WorkflowToastListener } from "../components/WorkflowToastListener";
+import { AppToastProvider } from "../../shared/providers/AppToastProvider";
+import { AuthProvider } from "../../features/auth/components/AuthProvider";
+import { AuthenticatedAppShell } from "../_components/AuthenticatedAppShell";
+import { ThemeProvider } from "@/shared/providers/ThemeProvider";
+import { QueryProvider } from "../../shared/providers/QueryProvider";
+import { WorkflowToastListener } from "../../features/workflow/components/WorkflowToastListener";
 
 export default function ProtectedLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
@@ -12,9 +11,7 @@ export default function ProtectedLayout({ children }: Readonly<{ children: React
       <QueryProvider>
         <AuthProvider>
           <WorkflowToastListener />
-          <AgentWorkbenchRuntimeProvider>
             <AuthenticatedAppShell>{children}</AuthenticatedAppShell>
-          </AgentWorkbenchRuntimeProvider>
         </AuthProvider>
         <AppToastProvider />
       </QueryProvider>

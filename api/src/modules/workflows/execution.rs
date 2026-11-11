@@ -134,9 +134,10 @@ pub(crate) async fn queue_human_completion(
         vec![run.into()],
     ))
     .await?;
-    let row=db.query_one_raw(Statement::from_sql_and_values(DbBackend::Postgres,"SELECT outputs,depth FROM automation_execution_tokens WHERE id=$1 AND instance_id=$2 AND node_key=$3 AND status='waiting' FOR UPDATE",vec![token.into(),instance.id.into(),node_key.into()])).await?;
+    let row=db.query_one_raw(Statement::from_sql_and_values(DbBackend::Postgres,"SELECT outputs,depth,parallel_group,parallel_branch_id FROM automation_execution_tokens WHERE id=$1 AND instance_id=$2 AND node_key=$3 AND status='waiting' FOR UPDATE",vec![token.into(),instance.id.into(),node_key.into()])).await?;
     let Some(row) = row else { return Ok(false) };
-    let data = RecordRepository::new(db)
+    let branch_id: Option<Uuid> = row.try_get("", "parallel_branch_id")?;
+    let data = RecordRepository::for_automation_run(db, run, branch_id)
         .find(&instance.form_uuid, &instance.record_uuid)
         .await?
         .record_data;
@@ -145,12 +146,13 @@ pub(crate) async fn queue_human_completion(
         node: node_key.into(),
         depth: row.try_get::<i32>("", "depth")? as usize,
         log_id: None,
-        parallel_group: None,
+        parallel_group: row.try_get("", "parallel_group")?,
         context: AutomationExecutionContext {
             outputs: serde_json::from_value(row.try_get("", "outputs")?)
                 .map_err(|_| AppError::BadRequest("invalid outputs".into()))?,
             operator: "系统".into(),
             run_id: Some(run),
+            branch_id,
         },
     };
     cursor
@@ -174,8 +176,34 @@ pub(crate) async fn queue_human_completion(
             common::save_token(db, &cursor, "queued").await?;
         }
         Transition::Split { targets, parallel } => {
+            let group_id = parallel.then_some(token);
+            let mut branches = Vec::new();
             for target in targets {
-                common::sql(db,"INSERT INTO automation_execution_tokens(id,run_id,instance_id,parent_token_id,node_key,status,outputs,depth,parallel_group) VALUES($1,$2,$3,$4,$5,'queued',$6,$7,$8)",vec![Uuid::new_v4().into(),run.into(),instance.id.into(),token.into(),target.into(),json!(cursor.context.outputs).into(),(cursor.depth as i32).into(),parallel.then_some(token).into()]).await?;
+                let branch_token = Uuid::new_v4();
+                let branch_id = parallel
+                    .then_some(branch_token)
+                    .or(cursor.context.branch_id);
+                let branch = Cursor {
+                    id: branch_token,
+                    node: target.clone(),
+                    depth: cursor.depth,
+                    log_id: None,
+                    parallel_group: group_id.or(cursor.parallel_group),
+                    context: AutomationExecutionContext {
+                        branch_id,
+                        ..cursor.context.clone()
+                    },
+                };
+                common::sql(db,"INSERT INTO automation_execution_tokens(id,run_id,instance_id,parent_token_id,node_key,status,outputs,depth,parallel_group,parallel_branch_id) VALUES($1,$2,$3,$4,$5,'queued',$6,$7,$8,$9)",vec![branch_token.into(),run.into(),instance.id.into(),token.into(),target.into(),json!(cursor.context.outputs).into(),(cursor.depth as i32).into(),branch.parallel_group.into(),branch.context.branch_id.into()]).await?;
+                branches.push(branch);
+            }
+            if let Some(group_id) = group_id {
+                let expected = branches
+                    .iter()
+                    .filter_map(|branch| branch.context.branch_id)
+                    .collect::<Vec<_>>();
+                let join_node = engine::parallel_join_node(flow, &branches);
+                common::sql(db,"INSERT INTO automation_execution_parallel_groups(id,run_id,parent_group,parent_branch_id,fork_token_id,status,expected_branches,join_node_key) VALUES($1,$2,$3,$4,$5,'running',$6,$7)",vec![group_id.into(),run.into(),cursor.parallel_group.into(),cursor.context.branch_id.into(),token.into(),json!(expected).into(),join_node.into()]).await?;
             }
             common::save_token(db, &cursor, "completed").await?;
         }

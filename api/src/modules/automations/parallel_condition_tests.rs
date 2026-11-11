@@ -5,6 +5,7 @@ fn context() -> AutomationExecutionContext {
         outputs: HashMap::from([("trigger-1".into(), json!({"amount":100}))]),
         operator: "test".into(),
         run_id: None,
+        branch_id: None,
     }
 }
 

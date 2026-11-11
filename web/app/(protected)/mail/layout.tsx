@@ -1,9 +1,9 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { Button,Card } from "@heroui/react";
+import { Button, Card } from "@heroui/react";
 import { Envelope, EnvelopeOpen, Folder, Person, Star, TrashBin } from "@gravity-ui/icons";
-import { PageContentLayout } from "@/app/components/PageContentLayout";
+import { PageContentLayout } from "@/shared/ui/PageContentLayout";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 

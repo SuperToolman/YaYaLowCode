@@ -4,12 +4,7 @@ import { Button, Card } from "@heroui/react";
 import { Tree, type NodeRendererProps } from "react-arborist";
 import { appActions, formActions } from "./permission-config";
 import { Empty, PermissionCheckbox, StatusTag } from "./PermissionFeedback";
-import type {
-  App,
-  NavigationItem,
-  PermissionResource,
-  PermissionState,
-} from "./permission-types";
+import type { App, NavigationItem, PermissionResource, PermissionState } from "./permission-types";
 type PermissionTreeNode = {
   id: string;
   name: string;

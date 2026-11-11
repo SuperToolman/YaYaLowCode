@@ -149,6 +149,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.104"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
+
+[[package]]
 name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5131,6 +5137,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
 
 [[package]]
+name = "yaya-agent-v2"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
 name = "yaya-api"
 version = "0.2.0-alpha.0"
 dependencies = [
@@ -5164,9 +5184,11 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "unicode-normalization",
  "url",
  "utoipa",
  "uuid",
+ "yaya-agent-v2",
  "zip",
 ]
 

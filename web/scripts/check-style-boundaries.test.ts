@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  analyzeCss,
-  findCrossFeatureCssModuleImports,
-  findForbiddenGlobalCssImports,
-  findInvalidCssModuleClassNames,
-} from "./check-style-boundaries.mjs";
+import { analyzeCss, findCrossFeatureCssModuleImports, findForbiddenGlobalCssImports, findInvalidCssModuleClassNames } from "./check-style-boundaries.mjs";
 
 describe("style boundary checks", () => {
   it("allows theme tokens in the token owner", () => {
@@ -64,10 +59,10 @@ describe("style boundary checks", () => {
 
   it("rejects CSS Module imports across feature domains", () => {
     expect(findCrossFeatureCssModuleImports(
-      'import styles from "@features/identity/User.module.css";',
+      'import styles from "@/features/identity/User.module.css";',
       "features/records/components/Table.tsx",
     )).toEqual([
-      "features/records/components/Table.tsx must not import CSS Module from feature identity: @features/identity/User.module.css",
+      "features/records/components/Table.tsx must not import CSS Module from feature identity: @/features/identity/User.module.css",
     ]);
     expect(findCrossFeatureCssModuleImports(
       'import styles from "../styles/Table.module.css";',

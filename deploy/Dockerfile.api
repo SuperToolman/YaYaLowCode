@@ -7,6 +7,11 @@ RUN if [ -n "$CARGO_REGISTRIES_CRATES_IO_INDEX" ]; then \
     fi
 WORKDIR /workspace
 COPY api ./api
+COPY agent-v2/Cargo.toml agent-v2/Cargo.lock ./agent-v2/
+COPY agent-v2/core ./agent-v2/core
+COPY agent-v2/worker ./agent-v2/worker
+COPY agent-v2/office ./agent-v2/office
+COPY agent-v2/executor ./agent-v2/executor
 RUN --mount=type=cache,id=yaya-cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=yaya-cargo-git,target=/usr/local/cargo/git \
     --mount=type=cache,id=yaya-cargo-target,target=/workspace/api/target \
@@ -17,7 +22,9 @@ RUN --mount=type=cache,id=yaya-cargo-registry,target=/usr/local/cargo/registry \
       sleep 30; \
     done; \
     wait "$cargo_pid"; \
-    cp /workspace/api/target/release/yaya-api /workspace/yaya-api
+    cp /workspace/api/target/release/yaya-api /workspace/yaya-api; \
+    CARGO_TARGET_DIR=/workspace/api/target cargo build --release --locked --manifest-path agent-v2/Cargo.toml -p yaya-agent-v2-office; \
+    cp /workspace/api/target/release/yaya-agent-v2-office /workspace/yaya-agent-v2-office
 
 FROM debian:bookworm-slim
 RUN apt-get update \
@@ -25,6 +32,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --create-home --uid 10001 yaya
 COPY --from=build /workspace/yaya-api /usr/local/bin/yaya-api
+COPY --from=build /workspace/yaya-agent-v2-office /usr/local/bin/yaya-agent-v2-office
 WORKDIR /var/lib/yaya
 EXPOSE 8788
 CMD ["sh", "-c", "mkdir -p /var/lib/yaya && chown -R yaya:yaya /var/lib/yaya && exec runuser -u yaya -- yaya-api"]

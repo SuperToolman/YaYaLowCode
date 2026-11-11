@@ -16,7 +16,7 @@ export {
   retryAutomationVisit,
   resolveAutomationExecution,
   updateAutomationFlow,
-} from "@/app/lib/http";
+} from "@/shared/lib/http";
 export type {
   ApiAutomationRun,
   ApiAutomationRunNode,
@@ -29,6 +29,6 @@ export type {
   AutomationFlow,
   UpdateAutomationFlowRequest,
   RoleResponse,
-} from "@/app/lib/http";
+} from "@/shared/lib/http";
 
-export type { ApiAutomationFlowList as AutomationFlowList } from "@/app/lib/http";
+export type { ApiAutomationFlowList as AutomationFlowList } from "@/shared/lib/http";

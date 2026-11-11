@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { notify } from "@lib/notify";
-import { mailHtmlDocument } from "@features/mail/html-body";
+import { notify } from "@/shared/lib/notify";
+import { mailHtmlDocument } from "@/features/mail/html-body";
 
 function report(description: string) {
   notify.error("邮件内容渲染异常", { description });

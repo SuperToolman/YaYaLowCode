@@ -1,9 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 import { Button, ScrollShadow } from "@heroui/react";
-import type {
-  CommunicationConversationResponse,
-  CommunicationMessageResponse,
-} from "@features/communication/api";
+import type { CommunicationConversationResponse, CommunicationMessageResponse } from "@/features/communication/api";
 import { MessageImageGallery } from "./MessageImage";
 import { Empty } from "./Empty";
 import { MessageBubble } from "./MessageBubble";
@@ -100,7 +97,7 @@ export function MessageDisplay({
                     <time className="text-xs text-[var(--color-text-secondary)]">
                       {formatMessageDividerTime(
                         message.createdAt,
-                        currentTime ?? Date.now(),
+                        currentTime,
                       )}
                     </time>
                   </div>

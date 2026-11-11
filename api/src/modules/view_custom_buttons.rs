@@ -107,29 +107,19 @@ pub(crate) async fn list_view_button_options(
     State(state): State<AppState>,
     Path(form_uuid): Path<String>,
 ) -> Result<Json<ApiResponse<Vec<ApiCustomButton>>>, AppError> {
-    let form = forms::find_form_definition(&state.db, &form_uuid).await?;
+    forms::find_form_definition(&state.db, &form_uuid).await?;
     let rows = button::Entity::find()
         .filter(button::Column::FormUuid.eq(&form_uuid))
         .order_by_desc(button::Column::UpdatedAt)
         .all(&state.db)
         .await?;
-    let mut items = vec![];
+    // Binding options are the form-owned button definitions. Do not filter
+    // them by automation ownership here: doing so makes an existing binding
+    // appear as "失效按钮" merely because the option query used a different
+    // ownership check. Automation validity is checked when saved or executed.
+    let mut items = Vec::with_capacity(rows.len());
     for row in rows {
-        if row.action_type == "run_automation" {
-            let config: FillFormConfig = serde_json::from_value(row.action_config.clone())
-                .map_err(|_| AppError::BadRequest("按钮配置无效".into()))?;
-            if automation_for_button(&state, config.automation_id.as_deref().unwrap_or(""))
-                .await
-                .is_ok_and(|flow| {
-                    flow.app_route_app_id == form.app_route_app_id
-                        && flow.trigger_form_uuid.as_deref() == Some(form_uuid.as_str())
-                })
-            {
-                items.push(response(&state.db, row).await?);
-            }
-        } else {
-            items.push(response(&state.db, row).await?);
-        }
+        items.push(response(&state.db, row).await?);
     }
     Ok(Json(success_response("获取可绑定按钮成功", items)))
 }
@@ -137,11 +127,11 @@ pub(crate) async fn list_view_buttons(
     State(state): State<AppState>,
     Path((form_uuid, view_uuid)): Path<(String, String)>,
 ) -> Result<Json<ApiResponse<Vec<ViewButtonRuntime>>>, AppError> {
-    let form = forms::find_form_definition(&state.db, &form_uuid).await?;
+    forms::find_form_definition(&state.db, &form_uuid).await?;
     let mut items = vec![];
     for binding in saved_bindings(&state, &form_uuid, &view_uuid).await? {
         let row = button::Entity::find()
-            .filter(button::Column::AppRouteAppId.eq(&form.app_route_app_id))
+            .filter(button::Column::FormUuid.eq(&form_uuid))
             .filter(button::Column::ButtonUuid.eq(&binding.button_id))
             .one(&state.db)
             .await?;
@@ -178,6 +168,15 @@ async fn check_invocation(
         .ok_or_else(|| AppError::BadRequest("按钮尚未绑定到已保存视图，请先保存配置".into()))?;
     let row = find_button(&state.db, form_uuid, button_uuid).await?;
     let definition = response(&state.db, row.clone()).await?;
+    if definition.action_type == "open_page" {
+        validate_page_parameters(
+            &definition.action_config.parameters,
+            Some(&valid_condition_fields(
+                &schema(state, form_uuid).await?,
+                form.form_type == "workflow",
+            )),
+        )?;
+    }
     let record = RecordRepository::new(&state.db)
         .find(form_uuid, record_id)
         .await?;
@@ -263,10 +262,11 @@ async fn check_invocation(
         validate_target(state, headers, &mut payload).await?;
     }
     if definition.action_type == "fill_form" {
+        fill::validate_association(state, &definition, form_uuid).await?;
         authorization::authorize_request(
             headers,
             state,
-            &Method::POST,
+            &Method::GET,
             &format!(
                 "/api/forms/{}/records",
                 definition.action_config.target_form_uuid
@@ -293,50 +293,11 @@ pub(crate) async fn prepare_view_button(
     .await?;
     Ok(Json(success_response("按钮可执行", definition)))
 }
-pub(crate) async fn submit_view_button(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path((form_uuid, view_uuid, button_uuid)): Path<(String, String, String)>,
-    Json(payload): Json<ButtonInvocation>,
-) -> Result<
-    (
-        axum::http::StatusCode,
-        Json<ApiResponse<forms::ApiFormRecord>>,
-    ),
-    AppError,
-> {
-    let definition = check_invocation(
-        &state,
-        &headers,
-        &form_uuid,
-        &view_uuid,
-        &button_uuid,
-        &payload.record_id,
-    )
-    .await?;
-    let data = payload
-        .data
-        .ok_or_else(|| AppError::BadRequest("缺少填写数据".into()))?;
-    if definition.action_type != "fill_form" {
-        return Err(AppError::BadRequest("该按钮不支持提交表单".into()));
-    }
-    let values = data
-        .as_object()
-        .ok_or_else(|| AppError::BadRequest("填写数据必须为对象".into()))?;
-    if values
-        .keys()
-        .any(|id| !definition.action_config.field_ids.contains(id))
-    {
-        return Err(AppError::BadRequest("不能提交按钮配置之外的字段".into()));
-    }
-    forms::create_form_record(
-        State(state),
-        headers,
-        Path(definition.action_config.target_form_uuid),
-        Json(forms::CreateFormRecordRequest { data }),
-    )
-    .await
-}
+pub(crate) use fill::{
+    ResolveButtonFillRequest, ResolvedButtonFill, SubmitButtonFillRequest,
+    resolve_view_button_fill, submit_view_button,
+};
+pub(crate) mod fill;
 
 #[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

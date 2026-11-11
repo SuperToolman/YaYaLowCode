@@ -1,4 +1,4 @@
-import { loadPlatformChangelog } from "@features/settings/server/changelog";
+import { loadPlatformChangelog } from "@/features/settings/server/changelog";
 import AboutPlatformClient from "./AboutPlatformClient";
 
 export const dynamic = "force-dynamic";

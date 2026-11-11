@@ -1,7 +1,7 @@
-.image {
+.messages-image__trigger {
   position: relative;
 }
-.caption {
+.messages-image__caption {
   position: absolute;
   inset: auto 0 0;
   padding: 1.5rem 0.75rem 0.5rem;
@@ -15,10 +15,10 @@
   pointer-events: none;
   transition: opacity 150ms ease;
 }
-.image:hover .caption,
-.image:focus-visible .caption {
+.messages-image__trigger:hover .messages-image__caption,
+.messages-image__trigger:focus-visible .messages-image__caption {
   opacity: 1;
 }
 @media (prefers-reduced-motion: reduce) {
-  .caption { transition: none; }
+  .messages-image__caption { transition: none; }
 }

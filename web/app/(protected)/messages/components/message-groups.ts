@@ -30,21 +30,25 @@ export function groupMessages<T extends { senderUserId: string; createdAt: strin
   });
 }
 
-export function formatMessageDividerTime(value: string, now = Date.now()): string {
+export function formatMessageDividerTime(value: string, now: number | null = Date.now()): string {
   const date = new Date(value);
   const timestamp = date.getTime();
   if (!Number.isFinite(timestamp)) return "";
-
-  const elapsed = now - timestamp;
-  if (elapsed >= 0 && elapsed < 60_000) return "刚刚";
-  if (elapsed >= 60_000 && elapsed < 60 * 60_000)
-    return `${Math.floor(elapsed / 60_000)}分钟前`;
 
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   const hours = String(date.getHours()).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");
   const time = `${hours}:${minutes}`;
+  if (now === null) {
+    return `${date.getFullYear()}年 ${month}月${day}日 ${time}`;
+  }
+
+  const elapsed = now - timestamp;
+  if (elapsed >= 0 && elapsed < 60_000) return "刚刚";
+  if (elapsed >= 60_000 && elapsed < 60 * 60_000)
+    return `${Math.floor(elapsed / 60_000)}分钟前`;
+
   const nowDate = new Date(now);
   const isSameDay =
     date.getFullYear() === nowDate.getFullYear() &&

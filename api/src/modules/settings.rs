@@ -31,6 +31,7 @@ use crate::platform::license::{
 use crate::platform::prelude::{ApiResponse, AppError, AppState};
 
 const MAX_SKILL_ARCHIVE_BYTES: u64 = 10 * 1024 * 1024;
+static EMPLOYEE_INSTALL_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -106,8 +107,9 @@ pub(crate) struct AiEmployeeMarketItem {
     pub version: String,
     pub avatar_url: Option<String>,
     pub installed_version: Option<String>,
-    pub latest_package_version: String,
-    pub installed_package_version: Option<String>,
+    pub installed_at: Option<i64>,
+    /// Exact installed package capabilities; null when no installed definition is available.
+    pub allowed_tools: Option<Vec<String>>,
     pub owned: bool,
     pub installed: bool,
     pub expires_at: Option<i64>,
@@ -144,7 +146,7 @@ pub(crate) async fn get_ai_employee_avatar(
     let url = format!(
         "{}/api/ai-employees/{}/avatar",
         operation_url.trim_end_matches('/'),
-        employee_id
+        encode_path_segment(&employee_id)
     );
     let response = reqwest::Client::new()
         .get(url)
@@ -197,10 +199,19 @@ pub(crate) struct RuntimeAiEmployee {
     pub title: String,
     pub description: String,
     pub system_prompt: String,
+    #[serde(serialize_with = "serialize_public_skills")]
     pub skills: Vec<crate::platform::license::PlatformAiEmployeeSkill>,
     pub allowed_tools: Vec<String>,
     pub application_ids: Vec<String>,
     pub avatar_url: Option<String>,
+}
+
+fn serialize_public_skills<S: serde::Serializer>(
+    skills: &[crate::platform::license::PlatformAiEmployeeSkill],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let safe = skills.iter().map(|skill| serde_json::json!({"id":skill.id,"title":skill.title,"description":skill.description,"version":skill.version,"packageName":skill.package_name,"instructions":skill.instructions})).collect::<Vec<_>>();
+    safe.serialize(serializer)
 }
 
 fn require_local_deployment() -> Result<(), AppError> {
@@ -415,18 +426,32 @@ pub(crate) async fn get_ai_employee_market()
             let owned = status.valid
                 && entitlement
                     .is_some_and(|item| item.expires_at >= chrono::Utc::now().timestamp());
-            let installed_package_version = installed_packages
+            let installed_version = installed_packages
                 .get(&product.id)
-                .and_then(|package| package.get("templateVersion"))
+                .and_then(|package| package.get("employeeVersion"))
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_string);
+            let installed_at = installed_packages
+                .get(&product.id)
+                .and_then(|package| package.get("installedAt"))
+                .and_then(serde_json::Value::as_i64);
             AiEmployeeMarketItem {
+                allowed_tools: installed_ids
+                    .contains(&product.id)
+                    .then(|| {
+                        installed_packages
+                            .get(&product.id)
+                            .and_then(|package| package.get("allowedTools"))
+                            .and_then(|tools| {
+                                serde_json::from_value::<Vec<String>>(tools.clone()).ok()
+                            })
+                    })
+                    .flatten(),
                 // Preserve the local installation state after an entitlement expires so the
                 // client can surface it as expired and still allow the administrator to remove it.
                 installed: installed_ids.contains(&product.id),
-                installed_version: installed_package_version.clone(),
-                installed_package_version,
-                latest_package_version: product.version.clone(),
+                installed_version,
+                installed_at,
                 expires_at: entitlement.map(|value| value.expires_at),
                 owned,
                 id: product.id,
@@ -441,20 +466,6 @@ pub(crate) async fn get_ai_employee_market()
         })
         .collect();
     Ok(Json(success_response("AI 员工市场已读取", items)))
-}
-
-pub(crate) async fn list_authorized_runtime_ai_employees(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<ApiResponse<Vec<RuntimeAiEmployee>>>, AppError> {
-    let grants = crate::platform::authorization::grants(&headers, &state).await?;
-    let Json(mut response) = list_runtime_ai_employees().await?;
-    if !grants.contains("*") {
-        if let Some(ref mut employees) = response.data {
-            employees.retain(|employee| grants.contains(&format!("agent:{}:use", employee.id)));
-        }
-    }
-    Ok(Json(response))
 }
 
 pub(crate) async fn list_runtime_ai_employees()
@@ -482,6 +493,13 @@ pub(crate) async fn list_runtime_ai_employees()
                     serde_json::from_value::<PlatformAiEmployeeEntitlement>(value.clone()).ok()
                 })
                 .unwrap_or_else(|| entitlement.clone());
+            if packages
+                .get(&entitlement.id)
+                .and_then(|p| p["skills"].as_array())
+                .is_some_and(|skills| skills.iter().any(|s| s["configurationUnavailable"] == true))
+            {
+                return None;
+            }
             if package.expires_at < now {
                 return None;
             }
@@ -524,44 +542,142 @@ pub(crate) async fn list_runtime_ai_employees()
 
 pub(crate) async fn install_ai_employee(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(employee_id): Path<String>,
 ) -> Result<Json<ApiResponse<AiEmployeeInstallationStatus>>, AppError> {
-    license_status()
+    // Serialize package publication, including unrelated employees sharing the manifest.
+    let _guard = EMPLOYEE_INSTALL_LOCK.lock().await;
+    install_ai_employee_inner(state, employee_id, headers).await
+}
+async fn install_ai_employee_inner(
+    state: AppState,
+    employee_id: String,
+    headers: HeaderMap,
+) -> Result<Json<ApiResponse<AiEmployeeInstallationStatus>>, AppError> {
+    let status = license_status();
+    if !status.valid {
+        return Err(AppError::Forbidden("许可证无效，无法安装员工".into()));
+    }
+    status
         .ai_employees
-        .into_iter()
-        .find(|entitlement| {
-            entitlement.id == employee_id
-                && entitlement.expires_at >= chrono::Utc::now().timestamp()
-        })
-        .ok_or_else(|| AppError::Forbidden("当前许可证未包含该 AI 员工，无法安装".to_string()))?;
+        .iter()
+        .find(|item| item.id == employee_id && item.expires_at > chrono::Utc::now().timestamp())
+        .ok_or_else(|| AppError::Forbidden("当前许可证未包含该 AI 员工，无法安装".into()))?;
     let settings = load_platform_license_settings()
-        .ok_or_else(|| AppError::BadRequest("请先配置运营管理平台地址和许可证".to_string()))?;
-    let entitlement = fetch_owned_ai_employee_package(
+        .ok_or_else(|| AppError::BadRequest("请先配置运营管理平台地址和许可证".into()))?;
+    let mut entitlement = fetch_owned_ai_employee_package(
         &settings.license_center_url,
         &settings.license,
         &employee_id,
     )
     .await?;
+    validate_employee_package(&employee_id, &entitlement)?;
+    let knowledge_files=crate::modules::knowledge::employee_downloads(&entitlement,&settings.license_center_url,&settings.license).await?;
+    // Download everything before publishing anything. Staged files never replace active versions.
+    let mut archives = Vec::new();
+    let mut archive_bytes = 0usize;
     for skill in &entitlement.skills {
-        let archive = fetch_owned_ai_employee_skill_archive(
-            &settings.license_center_url,
-            &settings.license,
-            &employee_id,
-            &skill.id,
-        )
-        .await?;
-        crate::modules::agent_config::install_ai_employee_skill_package(&state, skill, &archive)
-            .await?;
+        archives.push(
+            fetch_owned_ai_employee_skill_archive(
+                &settings.license_center_url,
+                &settings.license,
+                &employee_id,
+                &skill.id,
+            )
+            .await?,
+        );
+        archive_bytes += archives.last().map_or(0, Vec::len);
+        if archive_bytes > 40 * 1024 * 1024 {
+            return Err(AppError::BadRequest(
+                "员工包 Skill 总大小超过 40 MB，保留原安装包".into(),
+            ));
+        }
     }
-    save_installed_ai_employee_package(
-        &employee_id,
-        serde_json::to_value(&entitlement)
-            .map_err(|error| AppError::Server(std::io::Error::other(error)))?,
-    )
-    .map_err(AppError::Server)?;
-    let mut installed = load_installed_ai_employees();
-    installed.insert(employee_id.clone());
-    save_installed_ai_employees(&installed).map_err(AppError::Server)?;
+    let content_hash = yaya_agent_v2::store::fingerprint(
+        &serde_json::json!({"package":entitlement,"archives":archives.iter().map(|bytes| {
+        use sha2::{Digest, Sha256}; format!("{:x}",Sha256::digest(bytes))
+    }).collect::<Vec<_>>()}),
+    );
+    let root = crate::platform::config::employee_package_assets_root();
+    std::fs::create_dir_all(&root).map_err(AppError::Server)?;
+    let staging = root.join(format!("staging-{}", uuid::Uuid::new_v4()));
+    let published = root.join(content_hash);
+    let prepared = (|| {
+        let mut items = Vec::new();
+        for (skill, archive) in entitlement.skills.iter_mut().zip(&archives) {
+            let mut item = crate::modules::agent_config::prepare_ai_employee_skill_package(
+                skill, archive, &staging,
+            )?;
+            let path = published.join(&item.package_path);
+            item.package_path = path.to_string_lossy().into_owned();
+            skill.package_path = item.package_path.clone();
+            skill.instructions = item.instructions.clone();
+            items.push(item);
+        }
+        if staging.exists() {
+            if published.exists() {
+                std::fs::remove_dir_all(&staging).map_err(AppError::Server)?;
+            } else {
+                std::fs::rename(&staging, &published).map_err(AppError::Server)?;
+            }
+        }
+        Ok::<_, AppError>(items)
+    })();
+    if prepared.is_err() {
+        let _ = std::fs::remove_dir_all(&staging);
+    }
+    let prepared = prepared?;
+    let current = license_status();
+    if !current.valid
+        || !current
+            .ai_employees
+            .iter()
+            .any(|item| item.id == employee_id && item.expires_at > chrono::Utc::now().timestamp())
+    {
+        return Err(AppError::Forbidden(
+            "下载期间员工许可证失效，保留原安装包".into(),
+        ));
+    }
+    let tx = state.db.begin().await?;
+    if entitlement.knowledge.is_some() {
+        let grants=authorization::grants(&headers,&state).await?;
+        if !grants.contains("*") && !grants.contains("settings.ai-employees.manage") {return Err(AppError::Forbidden("员工同步期间管理权限已失效".into()));}
+        let actor=authorization::current_user(&headers,&state).await?;
+        let scope=crate::modules::knowledge::deployment_scope(&state).await?;
+        crate::modules::knowledge::sync_employee(&tx,&entitlement,&knowledge_files,scope,actor.id).await?;
+    }
+    for item in &prepared {
+        crate::modules::agent_config::publish_ai_employee_skill_package(&tx, item).await?;
+    }
+    // Publication writes a single complete package. Failed validation/download never reaches here.
+    let previous = load_installed_ai_employee_packages().remove(&employee_id);
+    let mut installed_metadata = serde_json::to_value(&entitlement)
+        .map_err(|error| AppError::Server(std::io::Error::other(error)))?;
+    // Old templateVersion values may be composite versions. Never present them as employee versions.
+    installed_metadata["employeeVersion"] = serde_json::json!(entitlement.template_version);
+    installed_metadata["installedAt"] = previous
+        .as_ref()
+        .and_then(|package| package.get("installedAt"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!(chrono::Utc::now().timestamp()));
+    save_installed_ai_employee_package(&employee_id, installed_metadata)
+        .map_err(AppError::Server)?;
+    let original_ids = load_installed_ai_employees();
+    let mut installed = original_ids.clone();
+    let first_install = installed.insert(employee_id.clone());
+    if first_install {
+        if let Err(error) = save_installed_ai_employees(&installed) {
+            restore_employee_package(&employee_id, previous.clone())?;
+            return Err(AppError::Server(error));
+        }
+    }
+    if let Err(error) = tx.commit().await {
+        restore_employee_package(&employee_id, previous)?;
+        if first_install {
+            save_installed_ai_employees(&original_ids).map_err(AppError::Server)?;
+        }
+        return Err(error.into());
+    }
     Ok(Json(success_response(
         "AI 员工已安装",
         AiEmployeeInstallationStatus {
@@ -569,6 +685,45 @@ pub(crate) async fn install_ai_employee(
             installed: true,
         },
     )))
+}
+
+fn restore_employee_package(id: &str, previous: Option<serde_json::Value>) -> Result<(), AppError> {
+    match previous {
+        Some(package) => save_installed_ai_employee_package(id, package),
+        None => remove_installed_ai_employee_package(id),
+    }
+    .map_err(AppError::Server)
+}
+
+fn valid_employee_version(version: &str) -> bool {
+    let parts: Vec<_> = version.split('.').collect();
+    parts.len() == 3
+        && parts.iter().all(|part| {
+            !part.is_empty()
+                && part.bytes().all(|byte| byte.is_ascii_digit())
+                && part.parse::<u64>().is_ok()
+        })
+}
+
+fn validate_employee_package(
+    id: &str,
+    package: &PlatformAiEmployeeEntitlement,
+) -> Result<(), AppError> {
+    let mut ids = std::collections::HashSet::new();
+    if package.id != id
+        || package.expires_at <= chrono::Utc::now().timestamp()
+        || package.skills.len() > 64
+        || package.title.trim().is_empty()
+        || !valid_employee_version(&package.template_version)
+        || package.skills.iter().any(|skill| {
+            skill.id.trim().is_empty() || skill.version.trim().is_empty() || !ids.insert(&skill.id)
+        })
+    {
+        return Err(AppError::BadRequest(
+            "员工包身份、版本、有效期或 Skill 内容无效，保留原安装包".into(),
+        ));
+    }
+    Ok(())
 }
 
 async fn fetch_owned_ai_employee_skill_archive(
@@ -580,7 +735,7 @@ async fn fetch_owned_ai_employee_skill_archive(
     let url = format!(
         "{}/api/market/ai-employees/{}/skills/{}/archive",
         operation_url.trim_end_matches('/'),
-        encode_path_segment(employee_id),
+        encode_path_segment(&employee_id),
         encode_path_segment(skill_id),
     );
     let response = reqwest::Client::builder()
@@ -637,6 +792,7 @@ fn encode_path_segment(value: &str) -> String {
 pub(crate) async fn uninstall_ai_employee(
     Path(employee_id): Path<String>,
 ) -> Result<Json<ApiResponse<AiEmployeeInstallationStatus>>, AppError> {
+    let _guard = EMPLOYEE_INSTALL_LOCK.lock().await;
     let mut installed = load_installed_ai_employees();
     if !installed.remove(&employee_id) {
         return Err(AppError::NotFound("该 AI 员工尚未安装".to_string()));
@@ -660,7 +816,7 @@ async fn fetch_owned_ai_employee_package(
     let url = format!(
         "{}/api/market/ai-employees/{}/package",
         operation_url.trim_end_matches('/'),
-        employee_id
+        encode_path_segment(&employee_id)
     );
     let response = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
@@ -1379,3 +1535,7 @@ pub(crate) fn default_identity_source_settings() -> IdentitySourceSettings {
         },
     }
 }
+
+#[cfg(test)]
+#[path = "settings_employee_tests.rs"]
+pub(crate) mod employee_package_tests;

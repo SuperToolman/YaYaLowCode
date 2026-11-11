@@ -2,9 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Test-only base URL setup; production callers use the stable HTTP entry.
 // eslint-disable-next-line no-restricted-imports
-import { client } from "../app/lib/api-client/client.gen";
+import { client } from "../shared/lib/api-client/client.gen";
 import { createRecord, updateRecord, deleteRecord } from "./records/api";
-import { getNotificationSettings, updateNotificationSettings } from "../app/lib/http";
+import { getNotificationSettings, updateNotificationSettings } from "../shared/lib/http";
 import { listMarketplaceApplications, rollbackMarketplaceInstallation } from "./application/api";
 import { listModelRoutes } from "./settings/api";
 import { uploadFile } from "./files/api";

@@ -37,7 +37,7 @@ export function AttachmentPreview({ asset }: { asset?: DraftAsset }) {
           onError={() => setBroken(true)}
         />
       ) : (
-        <Card data-file-type={type.category} style={{ "--file-color": type.color } as CSSProperties} className={`inline-flex w-56 max-w-full flex-row items-center gap-2 p-2 ${styles.fileCard}`}>
+        <Card data-file-type={type.category} style={{ "--file-color": type.color } as CSSProperties} className={`inline-flex w-56 max-w-full flex-row items-center gap-2 p-2 ${styles["messages-file__card"]}`}>
           <FileTypeIcon name={asset.name} mimeType={asset.mimeType} />
           <span className="min-w-0 flex-1">
             <span className="block truncate" title={asset.name}>

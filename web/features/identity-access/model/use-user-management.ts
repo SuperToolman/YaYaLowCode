@@ -1,6 +1,6 @@
 "use client";
 
-import { unwrapApiResult } from "@lib/api-request";
+import { unwrapApiResult } from "@/shared/lib/api-request";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createLocalUser, deleteUser, initializeLocalCredentials, listRoles, listUsers, updateUser, type UpdateUserRequest, type CreateLocalUserRequest } from "../api";
 import { toUserFormValues } from "./user-form";

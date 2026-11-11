@@ -1,0 +1,70 @@
+{
+  "node": "v24.13.0",
+  "cpu": "Intel(R) Core(TM) Ultra 7 265H",
+  "platform": "win32 x64",
+  "warmup": 20,
+  "samples": 200,
+  "unit": "milliseconds, Node CPU only",
+  "results": [
+    {
+      "fixture": "50-plain",
+      "before": {
+        "p50_ms": 0.0031,
+        "p95_ms": 0.0084
+      },
+      "after": {
+        "p50_ms": 0.0006,
+        "p95_ms": 0.0009
+      },
+      "p95_reduction_percent": 89.3
+    },
+    {
+      "fixture": "150-plain",
+      "before": {
+        "p50_ms": 0.0072,
+        "p95_ms": 0.0117
+      },
+      "after": {
+        "p50_ms": 0.0009,
+        "p95_ms": 0.0045
+      },
+      "p95_reduction_percent": 61.5
+    },
+    {
+      "fixture": "300-plain",
+      "before": {
+        "p50_ms": 0.0106,
+        "p95_ms": 0.0168
+      },
+      "after": {
+        "p50_ms": 0.0006,
+        "p95_ms": 0.0009
+      },
+      "p95_reduction_percent": 94.6
+    },
+    {
+      "fixture": "100-reverse-chain",
+      "before": {
+        "p50_ms": 28.1805,
+        "p95_ms": 37.4029
+      },
+      "after": {
+        "p50_ms": 0.0163,
+        "p95_ms": 0.0708
+      },
+      "p95_reduction_percent": 99.8
+    },
+    {
+      "fixture": "100-branches",
+      "before": {
+        "p50_ms": 0.4452,
+        "p95_ms": 1.0802
+      },
+      "after": {
+        "p50_ms": 0.016,
+        "p95_ms": 0.0271
+      },
+      "p95_reduction_percent": 97.5
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { fetchWithControl } from "@lib/api-request";
+import { fetchWithControl } from "@/shared/lib/api-request";
 import { backendBaseUrl, backendAuthorizationHeaders } from "../../../_lib/backend-json-proxy";
 
 export async function GET(

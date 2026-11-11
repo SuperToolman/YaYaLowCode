@@ -1,6 +1,6 @@
-import { fetchWithControl, unwrapApiResult } from "@lib/api-request";
-import { resolveDingTalkLogin } from "@lib/http";
-import { createBackendSdkClient } from "@lib/backend-client";
+import { fetchWithControl, unwrapApiResult } from "@/shared/lib/api-request";
+import { resolveDingTalkLogin } from "@/shared/lib/http";
+import { createBackendSdkClient } from "@/shared/lib/backend-client";
 import { NextRequest, NextResponse } from "next/server";
 
 import { setAuthCookie, signToken, TOKEN_TTL_SECONDS } from "../../_lib";

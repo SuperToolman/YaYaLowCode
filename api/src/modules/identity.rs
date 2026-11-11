@@ -153,47 +153,85 @@ pub(crate) struct VerifySmsCodeRequest {
     pub code: String,
 }
 
-const SMS_CODE_TTL: u64 = 300;
+const SMS_CODE_TTL: u64 = 60;
 const SMS_SEND_COOLDOWN: u64 = 60;
+
+// Keep admission and code consumption atomic across API instances.
+const SMS_RESERVE_SCRIPT: &str = r#"
+if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
+local count = tonumber(redis.call('GET', KEYS[3]) or '0')
+if count >= 10 then return -1 end
+redis.call('SET', KEYS[1], '1', 'EX', ARGV[2])
+redis.call('SET', KEYS[2], ARGV[1], 'EX', ARGV[3])
+redis.call('DEL', KEYS[4])
+redis.call('INCR', KEYS[3])
+if count == 0 then redis.call('EXPIRE', KEYS[3], 3600) end
+return 1
+"#;
+
+const SMS_VERIFY_SCRIPT: &str = r#"
+local code = redis.call('GET', KEYS[1])
+if not code then return 0 end
+if code == ARGV[1] then
+    redis.call('DEL', KEYS[1], KEYS[2])
+    return 1
+end
+local attempts = redis.call('INCR', KEYS[2])
+if attempts == 1 then
+    redis.call('PEXPIRE', KEYS[2], math.max(redis.call('PTTL', KEYS[1]), 1))
+end
+if attempts >= 5 then redis.call('DEL', KEYS[1], KEYS[2]) end
+return 0
+"#;
+
+fn sms_cache_error(_: redis::RedisError) -> AppError {
+    AppError::Server(std::io::Error::other("验证码缓存服务不可用"))
+}
 
 pub(crate) async fn send_sms_code(
     State(state): State<AppState>,
     Json(payload): Json<SendSmsCodeRequest>,
 ) -> Result<Json<ApiResponse<SendSmsCodeResponse>>, AppError> {
     let mobile = normalize_mobile(&payload.mobile)?;
-    if state.valkey.is_none() {
-        return Err(AppError::Server(std::io::Error::other("验证码服务未配置")));
-    }
+    let mut connection = state
+        .valkey
+        .clone()
+        .ok_or_else(|| AppError::Server(std::io::Error::other("验证码服务未配置")))?;
     let _user = find_mobile_user(&state, &mobile).await?;
 
     let cooldown_key = format!("yaya:sms:login:cooldown:{mobile}");
-    if state.cache_get_text(&cooldown_key).await.is_some() {
-        return Err(AppError::BadRequest(
-            "验证码发送过于频繁，请稍后再试".to_string(),
-        ));
-    }
     let code = format!(
         "{:06}",
         u32::from_be_bytes(Uuid::new_v4().as_bytes()[..4].try_into().unwrap()) % 1_000_000
     );
     let code_key = format!("yaya:sms:login:code:{mobile}");
-    state
-        .cache_set_text(&code_key, code.clone(), SMS_CODE_TTL)
-        .await;
-    state
-        .cache_set_text(&cooldown_key, "1".to_string(), SMS_SEND_COOLDOWN)
-        .await;
+    let attempts_key = format!("yaya:sms:login:attempts:{mobile}");
+    let reserved: i64 = redis::cmd("EVAL")
+        .arg(SMS_RESERVE_SCRIPT)
+        .arg(4)
+        .arg(&cooldown_key)
+        .arg(&code_key)
+        .arg(format!("yaya:sms:login:hourly:{mobile}"))
+        .arg(&attempts_key)
+        .arg(&code)
+        .arg(SMS_SEND_COOLDOWN)
+        .arg(SMS_CODE_TTL)
+        .query_async(&mut connection)
+        .await
+        .map_err(sms_cache_error)?;
+    if reserved != 1 {
+        return Err(AppError::BadRequest(if reserved == -1 {
+            "当前手机号发送次数已达上限，请一小时后再试".to_string()
+        } else {
+            "验证码发送过于频繁，请稍后再试".to_string()
+        }));
+    }
     if let Err(error) = send_aliyun_sms(&mobile, &code).await {
-        if let Some(mut connection) = state.valkey.clone() {
-            let _: Result<(), _> = redis::cmd("DEL")
-                .arg(&code_key)
-                .query_async(&mut connection)
-                .await;
-            let _: Result<(), _> = redis::cmd("DEL")
-                .arg(&cooldown_key)
-                .query_async(&mut connection)
-                .await;
-        }
+        // A delayed failure must not delete a newer request's code.
+        let _: Result<i64, _> = redis::cmd("EVAL")
+            .arg("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1], KEYS[2]) end return 0")
+            .arg(2).arg(&code_key).arg(&attempts_key).arg(&code)
+            .query_async(&mut connection).await;
         return Err(error);
     }
     Ok(Json(success_response(
@@ -213,16 +251,22 @@ pub(crate) async fn verify_sms_code(
         return Err(AppError::BadRequest("验证码格式不正确".to_string()));
     }
     let key = format!("yaya:sms:login:code:{mobile}");
-    let stored = state.cache_get_text(&key).await;
-    if stored.as_deref() != Some(payload.code.trim()) {
-        return Err(AppError::BadRequest("验证码错误或已过期".to_string()));
-    }
     let user = find_mobile_user(&state, &mobile).await?;
-    if let Some(mut connection) = state.valkey.clone() {
-        let _: Result<(), _> = redis::cmd("DEL")
-            .arg(&key)
-            .query_async(&mut connection)
-            .await;
+    let mut connection = state
+        .valkey
+        .clone()
+        .ok_or_else(|| AppError::Server(std::io::Error::other("验证码服务未配置")))?;
+    let verified: i64 = redis::cmd("EVAL")
+        .arg(SMS_VERIFY_SCRIPT)
+        .arg(2)
+        .arg(&key)
+        .arg(format!("yaya:sms:login:attempts:{mobile}"))
+        .arg(&payload.code)
+        .query_async(&mut connection)
+        .await
+        .map_err(sms_cache_error)?;
+    if verified != 1 {
+        return Err(AppError::BadRequest("验证码错误或已过期".to_string()));
     }
     let username = iam_local_credential_entity::Entity::find()
         .filter(iam_local_credential_entity::Column::UserId.eq(user.id))
@@ -244,11 +288,21 @@ async fn find_mobile_user(
     state: &AppState,
     mobile: &str,
 ) -> Result<iam_user_entity::Model, AppError> {
-    let user = iam_user_entity::Entity::find()
-        .filter(iam_user_entity::Column::Mobile.eq(mobile))
-        .one(&state.db)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("当前系统用户不存在该手机号".to_string()))?;
+    let mut users = iam_user_entity::Entity::find()
+        .filter(iam_user_entity::Column::Mobile.is_in([mobile.to_string(), format!("+86{mobile}")]))
+        .all(&state.db)
+        .await?;
+    users.retain(|user| {
+        user.state_code
+            .as_deref()
+            .is_none_or(|code| matches!(code.trim(), "" | "86" | "+86"))
+    });
+    if users.len() != 1 {
+        return Err(AppError::BadRequest(
+            "手机号未绑定唯一的系统用户，请联系管理员".to_string(),
+        ));
+    }
+    let user = users.remove(0);
     if user.status != "active" {
         return Err(AppError::BadRequest(
             "当前手机号对应的系统用户已被禁用".to_string(),
@@ -260,7 +314,11 @@ async fn find_mobile_user(
 fn normalize_mobile(value: &str) -> Result<String, AppError> {
     let value = value.trim().replace([' ', '-'], "");
     let value = value.strip_prefix("+86").unwrap_or(&value);
-    if value.len() != 11 || !value.chars().all(|c| c.is_ascii_digit()) || !value.starts_with('1') {
+    if value.len() != 11
+        || !value.chars().all(|c| c.is_ascii_digit())
+        || !value.starts_with('1')
+        || !matches!(value.as_bytes()[1], b'3'..=b'9')
+    {
         return Err(AppError::BadRequest("手机号格式不正确".to_string()));
     }
     Ok(value.to_string())
@@ -291,7 +349,13 @@ async fn send_aliyun_sms(mobile: &str, code: &str) -> Result<(), AppError> {
         ("SignatureNonce", nonce),
         ("SignatureVersion", "1.0".into()),
         ("TemplateCode", template_code),
-        ("TemplateParam", format!("{{\"code\":\"{code}\"}}")),
+        (
+            "TemplateParam",
+            serde_json::json!({
+                (std::env::var("ALIYUN_SMS_CODE_PARAM").unwrap_or_else(|_| "code".into())): code
+            })
+            .to_string(),
+        ),
         ("Timestamp", timestamp),
         ("Version", "2017-05-25".into()),
     ];
@@ -310,7 +374,10 @@ async fn send_aliyun_sms(mobile: &str, code: &str) -> Result<(), AppError> {
         mac.finalize().into_bytes(),
     );
     params.push(("Signature", signature));
-    let response = Client::new()
+    let response = Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|_| AppError::Server(std::io::Error::other("短信客户端初始化失败")))?
         .get("https://dysmsapi.aliyuncs.com/")
         .query(&params)
         .send()
@@ -341,9 +408,15 @@ async fn send_aliyun_sms(mobile: &str, code: &str) -> Result<(), AppError> {
 }
 
 fn percent_encode(value: &str) -> String {
-    url::form_urlencoded::byte_serialize(value.as_bytes())
-        .collect::<String>()
-        .replace('+', "%20")
+    value
+        .bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (byte as char).to_string()
+            }
+            _ => format!("%{byte:02X}"),
+        })
+        .collect()
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -1481,6 +1554,36 @@ pub(crate) async fn resolve_dingtalk_login(
 
 fn optional_text(value: &str) -> Option<String> {
     (!value.trim().is_empty()).then(|| value.trim().to_string())
+}
+
+#[cfg(test)]
+mod sms_tests {
+    use super::*;
+
+    #[test]
+    fn mainland_mobile_numbers_are_normalized_and_foreign_numbers_rejected() {
+        assert_eq!(normalize_mobile("13800138000").unwrap(), "13800138000");
+        assert_eq!(
+            normalize_mobile(" +86 138-0013-8000 ").unwrap(),
+            "13800138000"
+        );
+        for mobile in [
+            "+85213800138000",
+            "+113800138000",
+            "12800138000",
+            "1380013800",
+            "1380013800x",
+            "１３８００１３８０００",
+        ] {
+            assert!(normalize_mobile(mobile).is_err(), "{mobile}");
+        }
+    }
+
+    #[test]
+    fn aliyun_signature_encoding_uses_rfc3986() {
+        assert_eq!(percent_encode("a b+c/*~"), "a%20b%2Bc%2F%2A~");
+        assert_eq!(percent_encode("深圳"), "%E6%B7%B1%E5%9C%B3");
+    }
 }
 
 #[cfg(test)]

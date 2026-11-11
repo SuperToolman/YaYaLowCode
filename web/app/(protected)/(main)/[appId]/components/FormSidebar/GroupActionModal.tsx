@@ -9,6 +9,7 @@ type Props = Pick<
   ReturnType<typeof useFormSidebar>,
   | "selectedGroup"
   | "groupAction"
+  | "groupActionOpen"
   | "closeGroupAction"
   | "groupActionPending"
   | "groupActionValue"
@@ -20,6 +21,7 @@ type Props = Pick<
 export function GroupActionModal({
   selectedGroup,
   groupAction,
+  groupActionOpen,
   closeGroupAction,
   groupActionPending,
   groupActionValue,
@@ -29,7 +31,7 @@ export function GroupActionModal({
 }: Props) {
   return (
     <Modal.Backdrop
-      isOpen={Boolean(selectedGroup && groupAction)}
+      isOpen={groupActionOpen}
       onOpenChange={(open) => !open && closeGroupAction()}
       isDismissable={!groupActionPending}
     >

@@ -53,6 +53,19 @@ export function buildNavigationTree(routeAppId: string, items: NavigationItem[])
   return roots;
 }
 
+export function filterNavigationTree(nodes: SidebarNode[], query: string): SidebarNode[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) return nodes;
+
+  return nodes.flatMap((node) => {
+    const matches = node.name.toLocaleLowerCase().includes(normalizedQuery);
+    if (matches) return [node];
+
+    const children = filterNavigationTree(node.children, normalizedQuery);
+    return children.length > 0 ? [{ ...node, children }] : [];
+  });
+}
+
 export function expandGroupsFromItems(items: NavigationItem[], current: Record<string, boolean>) {
   const next = { ...current };
   for (const item of items) if (item.itemType === "group" && next[item.id] === undefined) next[item.id] = false;

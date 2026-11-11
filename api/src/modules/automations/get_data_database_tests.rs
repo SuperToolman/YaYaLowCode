@@ -150,6 +150,7 @@ async fn verify_query_database(db: DatabaseConnection) {
         outputs: HashMap::from([("trigger-1".into(), json!({}))]),
         operator: "test".into(),
         run_id: None,
+        branch_id: None,
     };
     execute_memory_graph(&db, &loaded, "trigger-1", &mut context)
         .await
@@ -199,4 +200,65 @@ async fn verify_query_database(db: DatabaseConnection) {
     stale.nodes_json = invalid;
     assert!(validate_execution_sources(&db, &stale).await.is_err());
     assert_eq!(repo.list(&form.form_uuid).await.unwrap().len(), 2);
+    // 保存回读后按查询节点删除，只影响其输出的持久化记录。
+    let mut delete_nodes = nodes.clone();
+    delete_nodes.as_array_mut().unwrap().push(
+        json!({"id":"delete","data":{"kind":"delete-data","config":{
+            "deleteMode":"data-node","sourceNodeId":"many","targetFormUuid":form.form_uuid
+        }}}),
+    );
+    let mut delete_edges = edges.clone();
+    delete_edges
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id":"delete-edge","source":"one","target":"delete"}));
+    let delete_flow = update_automation_definition(
+        &state,
+        &flow.flow_uuid,
+        serde_json::from_value(json!({"nodes":delete_nodes,"edges":delete_edges})).unwrap(),
+    )
+    .await
+    .unwrap();
+    validate_execution_sources(&db, &delete_flow).await.unwrap();
+    let delete_config = &delete_flow.nodes_json[3]["data"]["config"];
+    execute_shared_node(
+        &db,
+        &delete_flow,
+        "delete",
+        "delete-data",
+        delete_config,
+        &mut context,
+    )
+    .await
+    .unwrap();
+    let remaining = repo.list(&form.form_uuid).await.unwrap();
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].record_data["status"], "inactive");
+    // 相同节点来源变为空时不能退化成全表删除。
+    context.outputs.insert("many".into(), json!([]));
+    execute_shared_node(
+        &db,
+        &delete_flow,
+        "delete",
+        "delete-data",
+        delete_config,
+        &mut context,
+    )
+    .await
+    .unwrap();
+    assert_eq!(repo.list(&form.form_uuid).await.unwrap().len(), 1);
+    let rules_config = json!({"deleteMode":"form","targetFormUuid":form.form_uuid,"filterMode":"rules","rules":[
+        {"id":"inactive","fieldKey":"status","operator":"eq","rawValue":"inactive"}
+    ]});
+    execute_shared_node(
+        &db,
+        &delete_flow,
+        "delete",
+        "delete-data",
+        &rules_config,
+        &mut context,
+    )
+    .await
+    .unwrap();
+    assert!(repo.list(&form.form_uuid).await.unwrap().is_empty());
 }

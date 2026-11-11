@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "yaya.sample.diagnostic-adapter",
+  "version": "1.0.0",
+  "runtime": "cordis-node",
+  "entry": "./entry.mjs",
+  "source": { "kind": "migration-example", "legacyApi": "defineTool/register" },
+  "compatibility": { "level": "C4", "status": "sample-only", "testedCordisVersion": "4.0.0-rc.12" },
+  "capabilities": ["migration_echo"],
+  "permissions": { "networkHosts": [], "workspace": "none" }
+}

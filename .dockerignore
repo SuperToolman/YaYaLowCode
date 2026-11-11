@@ -2,6 +2,10 @@
 .next
 node_modules
 api/target*
+agent-v2/target*
+agent-v2/runtime
+agent-v2/.env
+agent-v2/cordis-host/node_modules
 api/.codex-openapi-target
 api/.yaya-*
 api/.communication-test-private.pem
@@ -17,3 +21,38 @@ deploy/.env
 deploy/secrets
 *.log
 .yaya-*
+
+# Retired agent data must never enter images.
+agent/
+
+# Offline releases build directly from the working tree. Keep host data and
+# release exports out of both the build context and COPY api/web instructions.
+dist/
+yaya-website/
+**/node_modules
+**/target
+**/.next*
+api/runtime
+**/secrets
+**/backups
+**/test-results
+**/playwright-report
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.sqlite
+**/*.sqlite3
+**/*.sqlite-*
+**/*.sqlite3-*
+**/*.db
+**/*.db-*
+**/*.dump
+**/*.zip
+**/*.tar
+**/*.tar.gz
+**/*.tsbuildinfo
+**/*.backup-*

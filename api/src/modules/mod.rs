@@ -4,13 +4,13 @@
 //! persistence mappings remain in `infrastructure`.
 
 pub mod agent_config;
-pub mod agent_files;
-pub mod agents;
+pub mod agent_v2;
 pub mod app_market;
 pub mod apps;
 pub mod automations;
 pub mod byom;
 pub mod communication;
+pub(crate) mod development_contracts;
 pub mod dingtalk;
 pub mod files;
 pub mod forms;
@@ -26,3 +26,5 @@ pub mod workflows;
 pub mod custom_buttons;
 
 pub mod view_custom_buttons;
+
+pub mod knowledge;

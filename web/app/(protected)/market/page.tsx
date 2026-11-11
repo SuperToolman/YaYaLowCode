@@ -1,30 +1,18 @@
 "use client";
-import { notifyRequestError } from "@lib/notify";
-import { useAuth } from "@components/AuthProvider";
-import { notify } from "@lib/notify";
+import { notifyRequestError } from "@/shared/lib/notify";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { notify } from "@/shared/lib/notify";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Card, EmptyState, SearchField } from "@heroui/react";
 import { ArrowDownToLine, Box } from "@gravity-ui/icons";
-import { PageContentLayout } from "@components/PageContentLayout";
+import { PageContentLayout } from "@/shared/ui/PageContentLayout";
 import AiEmployeeMarketPage from "../settings/ai-employee-market/page";
-import {
-  archiveMarketplaceInstallation,
-  installMarketplaceApplication,
-  listMarketplaceApplications,
-  listMarketplaceInstallations,
-  preflightMarketplaceApplication,
-  preflightMarketplaceInstallation,
-  purgeMarketplaceInstallation,
-  restoreMarketplaceInstallation,
-  rollbackMarketplaceInstallation,
-  submitAppToMarketplace,
-  upgradeMarketplaceInstallation,
-} from "@features/application/api";
+import { archiveMarketplaceInstallation, installMarketplaceApplication, listMarketplaceApplications, listMarketplaceInstallations, preflightMarketplaceApplication, preflightMarketplaceInstallation, purgeMarketplaceInstallation, restoreMarketplaceInstallation, rollbackMarketplaceInstallation, submitAppToMarketplace, upgradeMarketplaceInstallation } from "@/features/application/api";
 
-type Product = Pick<import("@lib/http").MarketProduct, "productId" | "publisherAppId" | "publisherOwned" | "name" | "description" | "version" | "releaseId" | "resourceSummary">;
-type Installation = import("@lib/http").MarketInstallation;
+type Product = Pick<import("@/shared/lib/http").MarketProduct, "productId" | "publisherAppId" | "publisherOwned" | "name" | "description" | "version" | "releaseId" | "resourceSummary">;
+type Installation = import("@/shared/lib/http").MarketInstallation;
 
 export default function MarketPage() {
   return <Suspense><MarketPageContent /></Suspense>;

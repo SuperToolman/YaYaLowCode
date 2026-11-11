@@ -43,6 +43,8 @@ where
     C: ConnectionTrait,
 {
     db: &'a C,
+    automation_run: Option<Uuid>,
+    branch_id: Option<Uuid>,
 }
 
 impl<'a, C> RecordRepository<'a, C>
@@ -50,7 +52,37 @@ where
     C: ConnectionTrait,
 {
     pub(crate) fn new(db: &'a C) -> Self {
-        Self { db }
+        Self {
+            db,
+            automation_run: None,
+            branch_id: None,
+        }
+    }
+
+    /// Counts all stored main rows, including recycled rows that a structural
+    /// deletion also removes. A never-materialized or logical detail form owns no table.
+    pub(crate) async fn count_for_deletion(&self, form_uuid: &str) -> Result<i64, AppError> {
+        if load_storage_definition(self.db, form_uuid).await?.is_none() {
+            return Ok(0);
+        }
+        let plan = self.storage_plan(form_uuid).await?;
+        let row = self
+            .db
+            .query_one_raw(Statement::from_string(
+                DbBackend::Postgres,
+                format!("SELECT COUNT(*) AS total FROM \"{}\"", plan.main_table),
+            ))
+            .await?
+            .ok_or_else(|| AppError::BadRequest("record count unavailable".into()))?;
+        Ok(row.try_get("", "total")?)
+    }
+
+    pub(crate) fn for_automation_run(db: &'a C, run_id: Uuid, branch_id: Option<Uuid>) -> Self {
+        Self {
+            db,
+            automation_run: Some(run_id),
+            branch_id,
+        }
     }
 
     pub(crate) async fn list(&self, form_uuid: &str) -> Result<Vec<StoredFormRecord>, AppError> {
@@ -66,9 +98,11 @@ where
                 ),
             ))
             .await?;
-        rows.into_iter()
+        let records = rows
+            .into_iter()
             .map(|row| stored_record_from_row(&row, form_uuid).map_err(AppError::from))
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        self.overlay_automation_changes(form_uuid, records).await
     }
 
     pub(crate) async fn list_page(
@@ -112,6 +146,7 @@ where
             .into_iter()
             .map(|row| stored_record_from_row(&row, form_uuid).map_err(AppError::from))
             .collect::<Result<Vec<_>, _>>()?;
+        let records = self.overlay_automation_changes(form_uuid, records).await?;
         Ok((records, total))
     }
 
@@ -123,6 +158,19 @@ where
         page: u64,
         page_size: u64,
     ) -> Result<(Vec<StoredFormRecord>, i64), AppError> {
+        self.query_page_for_creators(form_uuid, request, field_kinds, page, page_size, None)
+            .await
+    }
+
+    pub(crate) async fn query_page_for_creators(
+        &self,
+        form_uuid: &str,
+        request: &forms::QueryFormRecordsRequest,
+        field_kinds: &HashMap<String, QueryFieldKind>,
+        page: u64,
+        page_size: u64,
+        creators: Option<&[String]>,
+    ) -> Result<(Vec<StoredFormRecord>, i64), AppError> {
         let plan = self.storage_plan(form_uuid).await?;
         let source_sql = format!(
             "SELECT {} FROM \"{}\" WHERE deleted_at IS NULL",
@@ -131,6 +179,21 @@ where
         );
         let mut values = Vec::<SeaValue>::new();
         let mut predicates = Vec::<String>::new();
+
+        if let Some(creators) = creators {
+            let placeholders = creators
+                .iter()
+                .map(|creator| {
+                    values.push(creator.clone().into());
+                    format!("${}", values.len())
+                })
+                .collect::<Vec<_>>();
+            predicates.push(if placeholders.is_empty() {
+                "FALSE".into()
+            } else {
+                format!("created_by IN ({})", placeholders.join(","))
+            });
+        }
 
         for filter in &request.filters {
             let field_kind = field_kinds
@@ -260,6 +323,155 @@ where
         Ok((records, total))
     }
 
+    pub(crate) async fn aggregate_for_creators(
+        &self,
+        form_uuid: &str,
+        request: &forms::QueryFormRecordsRequest,
+        field_kinds: &HashMap<String, QueryFieldKind>,
+        creators: Option<&[String]>,
+        operation: &str,
+        field: Option<&str>,
+        group: Option<&str>,
+    ) -> Result<Vec<Value>, AppError> {
+        let plan = self.storage_plan(form_uuid).await?;
+        let source_sql = format!(
+            "SELECT {} FROM \"{}\" WHERE deleted_at IS NULL",
+            base_select_columns(&plan),
+            plan.main_table,
+        );
+        let mut values = Vec::<SeaValue>::new();
+        let mut predicates = Vec::<String>::new();
+
+        if let Some(creators) = creators {
+            let placeholders = creators
+                .iter()
+                .map(|creator| {
+                    values.push(creator.clone().into());
+                    format!("${}", values.len())
+                })
+                .collect::<Vec<_>>();
+            predicates.push(if placeholders.is_empty() {
+                "FALSE".into()
+            } else {
+                format!("created_by IN ({})", placeholders.join(","))
+            });
+        }
+
+        for filter in &request.filters {
+            let field_kind = field_kinds
+                .get(&filter.field_id)
+                .copied()
+                .unwrap_or(QueryFieldKind::Text);
+            let expression = query_field_expression(&filter.field_id, field_kind, &mut values);
+            let predicate = match filter.operator {
+                forms::RecordFilterOperator::IsEmpty => format!("NULLIF({expression}, '') IS NULL"),
+                forms::RecordFilterOperator::IsNotEmpty => {
+                    format!("NULLIF({expression}, '') IS NOT NULL")
+                }
+                forms::RecordFilterOperator::In => {
+                    let items = filter
+                        .value
+                        .as_ref()
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default();
+                    if items.is_empty() {
+                        "FALSE".to_string()
+                    } else {
+                        let placeholders = items
+                            .into_iter()
+                            .map(|item| {
+                                values.push(SeaValue::String(Some(query_value_text(&item))));
+                                query_value_placeholder(field_kind, values.len())
+                            })
+                            .collect::<Vec<_>>();
+                        format!("{expression} IN ({})", placeholders.join(", "))
+                    }
+                }
+                operator => {
+                    let value = filter
+                        .value
+                        .as_ref()
+                        .map(query_value_text)
+                        .unwrap_or_default();
+                    values.push(SeaValue::String(Some(value)));
+                    let placeholder = query_value_placeholder(field_kind, values.len());
+                    match operator {
+                        forms::RecordFilterOperator::Eq => format!("{expression} = {placeholder}"),
+                        forms::RecordFilterOperator::Neq => {
+                            format!("{expression} IS DISTINCT FROM {placeholder}")
+                        }
+                        forms::RecordFilterOperator::Contains => {
+                            format!("COALESCE({expression}, '') ILIKE '%' || {placeholder} || '%'")
+                        }
+                        forms::RecordFilterOperator::Gt => format!("{expression} > {placeholder}"),
+                        forms::RecordFilterOperator::Gte => {
+                            format!("{expression} >= {placeholder}")
+                        }
+                        forms::RecordFilterOperator::Lt => format!("{expression} < {placeholder}"),
+                        forms::RecordFilterOperator::Lte => {
+                            format!("{expression} <= {placeholder}")
+                        }
+                        forms::RecordFilterOperator::In
+                        | forms::RecordFilterOperator::IsEmpty
+                        | forms::RecordFilterOperator::IsNotEmpty => unreachable!(),
+                    }
+                }
+            };
+            predicates.push(predicate);
+        }
+
+        let where_sql = if predicates.is_empty() {
+            "TRUE".to_string()
+        } else {
+            predicates.join(" AND ")
+        };
+
+        let group_expression = group
+            .map(|field| {
+                query_field_expression(
+                    field,
+                    *field_kinds.get(field).unwrap_or(&QueryFieldKind::Text),
+                    &mut values,
+                )
+            })
+            .unwrap_or_else(|| "NULL::text".into());
+        let metric = if operation == "count" {
+            "COUNT(*)".into()
+        } else {
+            let field =
+                field.ok_or_else(|| AppError::BadRequest("aggregate field required".into()))?;
+            if !matches!(field_kinds.get(field), Some(QueryFieldKind::Number)) {
+                return Err(AppError::BadRequest(
+                    "numeric aggregate field required".into(),
+                ));
+            }
+            let function = match operation {
+                "sum" => "SUM",
+                "avg" => "AVG",
+                "min" => "MIN",
+                "max" => "MAX",
+                _ => return Err(AppError::BadRequest("unsupported aggregate".into())),
+            };
+            format!(
+                "{}({})",
+                function,
+                query_field_expression(field, QueryFieldKind::Number, &mut values)
+            )
+        };
+        let group_clause = if group.is_some() {
+            " GROUP BY 1 ORDER BY 1"
+        } else {
+            ""
+        };
+        let sql = format!(
+            "SELECT jsonb_build_object('group',group_value,'value',metric)::text data FROM (SELECT {group_expression} group_value,{metric} metric FROM ({source_sql}) source WHERE {where_sql}{group_clause} LIMIT 201) grouped"
+        );
+        yaya_agent_v2::store::rows(self.db, &sql, values)
+            .await
+            .map_err(|_| AppError::BadRequest("aggregate query failed".into()))
+    }
+
     pub(crate) async fn find(
         &self,
         form_uuid: &str,
@@ -282,6 +494,32 @@ where
         record_uuid: &str,
         lock: bool,
     ) -> Result<StoredFormRecord, AppError> {
+        if let Some(run_id) = self.automation_run {
+            let staged = self
+                .db
+                .query_one_raw(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "SELECT operation,record_id,schema_version,record_data,created_by,updated_by,record_created_at,record_updated_at FROM automation_execution_record_changes WHERE run_id=$1 AND form_uuid=$2 AND record_uuid=$3",
+                    vec![run_id.into(), form_uuid.to_string().into(), record_uuid.to_string().into()],
+                ))
+                .await?;
+            if let Some(row) = staged {
+                if row.try_get::<String>("", "operation")? == "delete" {
+                    return Err(AppError::NotFound("record not found".to_string()));
+                }
+                return Ok(StoredFormRecord {
+                    id: row.try_get("", "record_id")?,
+                    record_uuid: record_uuid.to_string(),
+                    form_uuid: form_uuid.to_string(),
+                    schema_version: row.try_get("", "schema_version")?,
+                    record_data: row.try_get("", "record_data")?,
+                    created_by: row.try_get("", "created_by")?,
+                    updated_by: row.try_get("", "updated_by")?,
+                    created_at: row.try_get("", "record_created_at")?,
+                    updated_at: row.try_get("", "record_updated_at")?,
+                });
+            }
+        }
         let plan = self.storage_plan(form_uuid).await?;
         let row = self
             .db
@@ -352,7 +590,7 @@ where
         Ok(errors)
     }
 
-    async fn lock_validation_scope(&self, form_uuid: &str) -> Result<(), AppError> {
+    pub(crate) async fn lock_validation_scope(&self, form_uuid: &str) -> Result<(), AppError> {
         self.db
             .execute_raw(Statement::from_sql_and_values(
                 DbBackend::Postgres,
@@ -362,6 +600,26 @@ where
                 )))],
             ))
             .await?;
+        Ok(())
+    }
+
+    /// Guard a button request before synchronous hooks run. A concurrent retry
+    /// must retry later rather than execute the hooks a second time.
+    pub(crate) async fn lock_button_submission(&self, identity: &str) -> Result<(), AppError> {
+        let row = self
+            .db
+            .query_one_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0)) AS acquired",
+                vec![SeaValue::String(Some(format!(
+                    "button-submission:{identity}"
+                )))],
+            ))
+            .await?
+            .ok_or_else(|| AppError::Conflict("无法获取提交锁，请重试".into()))?;
+        if !row.try_get::<bool>("", "acquired")? {
+            return Err(AppError::Conflict("该请求正在提交，请稍后重试".into()));
+        }
         Ok(())
     }
 
@@ -378,6 +636,53 @@ where
         Ok(())
     }
 
+    async fn overlay_automation_changes(
+        &self,
+        form_uuid: &str,
+        mut records: Vec<StoredFormRecord>,
+    ) -> Result<Vec<StoredFormRecord>, AppError> {
+        let Some(run_id) = self.automation_run else {
+            return Ok(records);
+        };
+        let rows = self
+            .db
+            .query_all_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "SELECT operation,record_uuid,record_id,schema_version,record_data,created_by,updated_by,record_created_at,record_updated_at FROM automation_execution_record_changes WHERE run_id=$1 AND form_uuid=$2",
+                vec![run_id.into(), form_uuid.to_string().into()],
+            ))
+            .await?;
+        for row in rows {
+            let record_uuid: String = row.try_get("", "record_uuid")?;
+            let existing = records
+                .iter()
+                .position(|record| record.record_uuid == record_uuid);
+            if row.try_get::<String>("", "operation")? == "delete" {
+                if let Some(index) = existing {
+                    records.remove(index);
+                }
+                continue;
+            }
+            let staged = StoredFormRecord {
+                id: row.try_get("", "record_id")?,
+                record_uuid,
+                form_uuid: form_uuid.to_string(),
+                schema_version: row.try_get("", "schema_version")?,
+                record_data: row.try_get("", "record_data")?,
+                created_by: row.try_get("", "created_by")?,
+                updated_by: row.try_get("", "updated_by")?,
+                created_at: row.try_get("", "record_created_at")?,
+                updated_at: row.try_get("", "record_updated_at")?,
+            };
+            if let Some(index) = existing {
+                records[index] = staged;
+            } else {
+                records.push(staged);
+            }
+        }
+        Ok(records)
+    }
+
     pub(crate) async fn insert(
         &self,
         definition: &form_definition_entity::Model,
@@ -388,6 +693,62 @@ where
     where
         C: TransactionTrait,
     {
+        self.insert_with_record_uuid(definition, data, operator, now, None)
+            .await
+    }
+
+    pub(crate) async fn insert_with_record_uuid(
+        &self,
+        definition: &form_definition_entity::Model,
+        data: Value,
+        operator: &str,
+        now: DateTime<Utc>,
+        record_uuid: Option<&str>,
+    ) -> Result<StoredFormRecord, AppError>
+    where
+        C: TransactionTrait,
+    {
+        if let Some(run_id) = self.automation_run {
+            let record_uuid = record_uuid
+                .map(str::to_owned)
+                .unwrap_or_else(generate_record_uuid);
+            let record_data = normalize_record_payload(data);
+            self.lock_automation_record(run_id, &definition.form_uuid, &record_uuid)
+                .await?;
+            self.enforce_values(&definition.form_uuid, &record_data, None)
+                .await?;
+            let id = Uuid::new_v4();
+            let now = now;
+            self.db
+                .execute_raw(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "INSERT INTO automation_execution_record_changes(run_id,form_uuid,record_uuid,record_id,operation,schema_version,base_data,record_data,created_by,updated_by,record_created_at,record_updated_at,branch_id,changed_fields,operator) VALUES($1,$2,$3,$4,'upsert',$5,NULL,$6,$7,$7,$8,$8,$9,$10,$7)",
+                    vec![
+                        run_id.into(),
+                        definition.form_uuid.clone().into(),
+                        record_uuid.clone().into(),
+                        id.into(),
+                        definition.current_schema_version.into(),
+                        SeaValue::Json(Some(Box::new(record_data.clone()))),
+                        operator.to_string().into(),
+                        now.into(),
+                        self.branch_id.into(),
+                        SeaValue::Json(Some(Box::new(serde_json::json!(record_data.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()).unwrap_or_default())))),
+                    ],
+                ))
+                .await?;
+            return Ok(StoredFormRecord {
+                id,
+                record_uuid,
+                form_uuid: definition.form_uuid.clone(),
+                schema_version: definition.current_schema_version,
+                record_data,
+                created_by: operator.to_string(),
+                updated_by: operator.to_string(),
+                created_at: now,
+                updated_at: now,
+            });
+        }
         let txn = self.db.begin().await?;
         let repository = RecordRepository::new(&txn);
         repository
@@ -397,7 +758,7 @@ where
             .enforce_values(&definition.form_uuid, &data, None)
             .await?;
         let record = repository
-            .insert_validated(definition, data, operator, now)
+            .insert_validated(definition, data, operator, now, record_uuid)
             .await?;
         txn.commit().await?;
         Ok(record)
@@ -409,6 +770,7 @@ where
         data: Value,
         operator: &str,
         now: DateTime<Utc>,
+        record_uuid: Option<&str>,
     ) -> Result<StoredFormRecord, AppError> {
         let schema = forms::load_schema_version_for_connection(
             self.db,
@@ -419,7 +781,9 @@ where
         let plan = self.storage_plan(&definition.form_uuid).await?;
         let record_data = normalize_record_payload(data);
         let id = Uuid::new_v4();
-        let record_uuid = generate_record_uuid();
+        let record_uuid = record_uuid
+            .map(str::to_owned)
+            .unwrap_or_else(generate_record_uuid);
         let (column_names, value_expressions) = dynamic_column_sql(&plan, 4);
         let extension_expression = extension_data_expression(&plan, 4);
         let row = self
@@ -477,6 +841,82 @@ where
     where
         C: TransactionTrait,
     {
+        if let Some(run_id) = self.automation_run {
+            let record_data = normalize_record_payload(data);
+            self.lock_automation_record(run_id, &record.form_uuid, &record.record_uuid)
+                .await?;
+            let current = self
+                .db
+                .query_one_raw(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "SELECT base_data,record_data,branch_id,changed_fields FROM automation_execution_record_changes WHERE run_id=$1 AND form_uuid=$2 AND record_uuid=$3 FOR UPDATE",
+                    vec![run_id.into(), record.form_uuid.clone().into(), record.record_uuid.clone().into()],
+                ))
+                .await?;
+            let now = now;
+            if let Some(current) = current {
+                let base_data: Option<Value> = current.try_get("", "base_data")?;
+                let staged_data: Value = current.try_get("", "record_data")?;
+                let prior_branch: Option<Uuid> = current.try_get("", "branch_id")?;
+                let prior_fields: Vec<String> = current
+                    .try_get::<Value>("", "changed_fields")?
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect();
+                let base = base_data.as_ref().unwrap_or(&staged_data);
+                let changes = changed_top_level_fields(base, &record_data);
+                if prior_branch != self.branch_id
+                    && changes.iter().any(|field| prior_fields.contains(field))
+                {
+                    return Err(AppError::Conflict(format!(
+                        "parallel branches updated the same field on record {}",
+                        record.record_uuid
+                    )));
+                }
+                let mut merged = staged_data;
+                apply_top_level_changes(&mut merged, &record_data, &changes);
+                let mut changed_fields = prior_fields;
+                for field in changes {
+                    if !changed_fields.contains(&field) {
+                        changed_fields.push(field);
+                    }
+                }
+                self.enforce_values(&record.form_uuid, &merged, Some(&record.record_uuid))
+                    .await?;
+                self.db
+                    .execute_raw(Statement::from_sql_and_values(
+                        DbBackend::Postgres,
+                        "UPDATE automation_execution_record_changes SET operation='upsert',record_data=$4,updated_by=$5,record_updated_at=$6,changed_fields=$7,updated_at=NOW() WHERE run_id=$1 AND form_uuid=$2 AND record_uuid=$3",
+                        vec![run_id.into(),record.form_uuid.clone().into(),record.record_uuid.clone().into(),SeaValue::Json(Some(Box::new(merged.clone()))),operator.to_string().into(),now.into(),SeaValue::Json(Some(Box::new(serde_json::json!(changed_fields))))],
+                    ))
+                    .await?;
+                return Ok(StoredFormRecord {
+                    record_data: merged,
+                    updated_by: operator.to_string(),
+                    updated_at: now,
+                    ..record.clone()
+                });
+            }
+            self.enforce_values(&record.form_uuid, &record_data, Some(&record.record_uuid))
+                .await?;
+            let changes = changed_top_level_fields(&record.record_data, &record_data);
+            self.db
+                .execute_raw(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "INSERT INTO automation_execution_record_changes(run_id,form_uuid,record_uuid,record_id,operation,schema_version,base_data,record_data,base_updated_at,created_by,updated_by,record_created_at,record_updated_at,branch_id,changed_fields,operator) VALUES($1,$2,$3,$4,'upsert',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$10)",
+                    vec![run_id.into(),record.form_uuid.clone().into(),record.record_uuid.clone().into(),record.id.into(),record.schema_version.into(),SeaValue::Json(Some(Box::new(record.record_data.clone()))),SeaValue::Json(Some(Box::new(record_data.clone()))),record.updated_at.into(),record.created_by.clone().into(),operator.to_string().into(),record.created_at.into(),now.into(),self.branch_id.into(),SeaValue::Json(Some(Box::new(serde_json::json!(changes))))],
+                ))
+                .await?;
+            return Ok(StoredFormRecord {
+                record_data,
+                updated_by: operator.to_string(),
+                updated_at: now,
+                ..record.clone()
+            });
+        }
         let txn = self.db.begin().await?;
         let repository = RecordRepository::new(&txn);
         repository.lock_validation_scope(&record.form_uuid).await?;
@@ -549,6 +989,41 @@ where
         let Some(first) = records.first() else {
             return Ok(0);
         };
+        if let Some(run_id) = self.automation_run {
+            let mut affected = 0;
+            for record in records {
+                self.lock_automation_record(run_id, &record.form_uuid, &record.record_uuid)
+                    .await?;
+                let staged = self
+                    .db
+                    .query_one_raw(Statement::from_sql_and_values(
+                        DbBackend::Postgres,
+                        "SELECT base_data FROM automation_execution_record_changes WHERE run_id=$1 AND form_uuid=$2 AND record_uuid=$3 FOR UPDATE",
+                        vec![run_id.into(),record.form_uuid.clone().into(),record.record_uuid.clone().into()],
+                    ))
+                    .await?;
+                if staged.as_ref().is_some_and(|row| {
+                    row.try_get::<Option<Value>>("", "base_data")
+                        .ok()
+                        .flatten()
+                        .is_none()
+                }) {
+                    self.db.execute_raw(Statement::from_sql_and_values(
+                        DbBackend::Postgres,
+                        "DELETE FROM automation_execution_record_changes WHERE run_id=$1 AND form_uuid=$2 AND record_uuid=$3",
+                        vec![run_id.into(),record.form_uuid.clone().into(),record.record_uuid.clone().into()],
+                    )).await?;
+                } else {
+                    self.db.execute_raw(Statement::from_sql_and_values(
+                        DbBackend::Postgres,
+                        "INSERT INTO automation_execution_record_changes(run_id,form_uuid,record_uuid,record_id,operation,schema_version,base_data,record_data,base_updated_at,created_by,updated_by,record_created_at,record_updated_at,branch_id,operator) VALUES($1,$2,$3,$4,'delete',$5,$6,NULL,$7,$8,$9,$10,$11,$12,$9) ON CONFLICT(run_id,form_uuid,record_uuid) DO UPDATE SET operation='delete',record_data=NULL,branch_id=EXCLUDED.branch_id,operator=EXCLUDED.operator,updated_at=NOW()",
+                        vec![run_id.into(),record.form_uuid.clone().into(),record.record_uuid.clone().into(),record.id.into(),record.schema_version.into(),SeaValue::Json(Some(Box::new(record.record_data.clone()))),record.updated_at.into(),record.created_by.clone().into(),record.updated_by.clone().into(),record.created_at.into(),record.updated_at.into(),self.branch_id.into()],
+                    )).await?;
+                }
+                affected += 1;
+            }
+            return Ok(affected);
+        }
         let plan = self.storage_plan(&first.form_uuid).await?;
         let placeholders = (1..=records.len())
             .map(|index| format!("${index}"))
@@ -582,6 +1057,22 @@ where
             ))
             .await?;
         Ok(result.rows_affected())
+    }
+
+    async fn lock_automation_record(
+        &self,
+        run_id: Uuid,
+        form_uuid: &str,
+        record_uuid: &str,
+    ) -> Result<(), AppError> {
+        self.db
+            .execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
+                vec![format!("automation-record:{run_id}:{form_uuid}:{record_uuid}").into()],
+            ))
+            .await?;
+        Ok(())
     }
 
     pub(crate) async fn decrement_app_records_count(
@@ -661,6 +1152,186 @@ where
                 .await?;
         }
         Ok(())
+    }
+}
+
+pub(crate) async fn commit_automation_run<C>(db: &C, run_id: Uuid) -> Result<(), AppError>
+where
+    C: ConnectionTrait + TransactionTrait,
+{
+    let rows = db
+        .query_all_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT form_uuid,record_uuid,record_id,operation,schema_version,base_data,record_data,base_updated_at,created_by,updated_by,record_created_at,record_updated_at,operator FROM automation_execution_record_changes WHERE run_id=$1 ORDER BY form_uuid,record_uuid",
+            vec![run_id.into()],
+        ))
+        .await?;
+    let repository = RecordRepository::new(db);
+    let mut deleted_by_app = HashMap::<String, i64>::new();
+    for row in rows {
+        let form_uuid: String = row.try_get("", "form_uuid")?;
+        let record_uuid: String = row.try_get("", "record_uuid")?;
+        let operation: String = row.try_get("", "operation")?;
+        let base_data: Option<Value> = row.try_get("", "base_data")?;
+        let definition = form_definition_entity::Entity::find()
+            .filter(form_definition_entity::Column::FormUuid.eq(form_uuid.clone()))
+            .one(db)
+            .await?
+            .ok_or_else(|| {
+                AppError::Conflict(format!("form {form_uuid} was removed during automation"))
+            })?;
+        if let Some(base_data) = base_data {
+            // Lock every target row for the complete commit. This closes the
+            // read/validate/write window where another request could modify a
+            // record between the conflict check and the update.
+            let current = repository
+                .find_for_update(&form_uuid, &record_uuid)
+                .await
+                .map_err(|_| {
+                    AppError::Conflict(format!("record {record_uuid} changed during automation"))
+                })?;
+            let external_changes = changed_top_level_fields(&base_data, &current.record_data)
+                .into_iter()
+                .filter(|field| !is_workflow_control_field(field))
+                .collect::<Vec<_>>();
+            if !external_changes.is_empty() {
+                return Err(AppError::Conflict(format!(
+                    "record {record_uuid} changed outside this automation"
+                )));
+            }
+            if operation == "delete" {
+                repository
+                    .delete_many(std::slice::from_ref(&current))
+                    .await?;
+                *deleted_by_app
+                    .entry(definition.app_route_app_id.clone())
+                    .or_default() += 1;
+            } else {
+                repository.lock_validation_scope(&form_uuid).await?;
+                repository
+                    .enforce_values(
+                        &form_uuid,
+                        &row.try_get::<Value>("", "record_data")?,
+                        Some(&record_uuid),
+                    )
+                    .await?;
+                repository
+                    .update_validated(
+                        &current,
+                        preserve_workflow_control_fields(
+                            row.try_get("", "record_data")?,
+                            &current.record_data,
+                        ),
+                        &row.try_get::<String>("", "operator")?,
+                        row.try_get("", "record_updated_at")?,
+                    )
+                    .await?;
+            }
+        } else if operation == "upsert" {
+            if repository
+                .find_for_update(&form_uuid, &record_uuid)
+                .await
+                .is_ok()
+            {
+                return Err(AppError::Conflict(format!(
+                    "record ID {record_uuid} was created outside this automation"
+                )));
+            }
+            repository.lock_validation_scope(&form_uuid).await?;
+            repository
+                .enforce_values(&form_uuid, &row.try_get::<Value>("", "record_data")?, None)
+                .await?;
+            repository
+                .insert_validated(
+                    &definition,
+                    row.try_get("", "record_data")?,
+                    &row.try_get::<String>("", "operator")?,
+                    row.try_get("", "record_created_at")?,
+                    Some(&record_uuid),
+                )
+                .await?;
+        }
+    }
+    for (app_id, count) in deleted_by_app {
+        repository
+            .decrement_app_records_count(&app_id, count, Utc::now())
+            .await?;
+    }
+    sql_delete_automation_changes(db, run_id).await?;
+    Ok(())
+}
+
+async fn sql_delete_automation_changes<C: ConnectionTrait>(
+    db: &C,
+    run_id: Uuid,
+) -> Result<(), AppError> {
+    db.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "DELETE FROM automation_execution_record_changes WHERE run_id=$1",
+        vec![run_id.into()],
+    ))
+    .await?;
+    Ok(())
+}
+
+fn changed_top_level_fields(base: &Value, next: &Value) -> Vec<String> {
+    let base = base.as_object();
+    let next = next.as_object();
+    let mut keys = base
+        .into_iter()
+        .flat_map(|object| object.keys())
+        .chain(next.into_iter().flat_map(|object| object.keys()))
+        .cloned()
+        .collect::<Vec<_>>();
+    keys.sort();
+    keys.dedup();
+    keys.into_iter()
+        .filter(|key| {
+            base.and_then(|object| object.get(key)) != next.and_then(|object| object.get(key))
+        })
+        .collect()
+}
+
+fn is_workflow_control_field(field: &str) -> bool {
+    matches!(
+        field,
+        "workflowApprovalStatus" | "workflowInstanceStatus" | "workflowCurrentApprovalNode"
+    )
+}
+
+fn preserve_workflow_control_fields(mut staged: Value, current: &Value) -> Value {
+    let Some(staged) = staged.as_object_mut() else {
+        return staged;
+    };
+    let Some(current) = current.as_object() else {
+        return Value::Object(staged.clone());
+    };
+    for field in [
+        "workflowApprovalStatus",
+        "workflowInstanceStatus",
+        "workflowCurrentApprovalNode",
+    ] {
+        if let Some(value) = current.get(field) {
+            staged.insert(field.to_string(), value.clone());
+        }
+    }
+    Value::Object(staged.clone())
+}
+
+fn apply_top_level_changes(current: &mut Value, desired: &Value, fields: &[String]) {
+    let Some(current) = current.as_object_mut() else {
+        *current = Value::Object(serde_json::Map::new());
+        return apply_top_level_changes(current, desired, fields);
+    };
+    let Some(desired) = desired.as_object() else {
+        return;
+    };
+    for field in fields {
+        if let Some(value) = desired.get(field) {
+            current.insert(field.clone(), value.clone());
+        } else {
+            current.remove(field);
+        }
     }
 }
 
@@ -872,5 +1543,46 @@ mod tests {
     fn numeric_and_date_values_use_guarded_casts() {
         assert!(json_value_expression("amount", "NUMERIC", 1).contains("jsonb_typeof"));
         assert!(json_value_expression("date", "DATE", 1).contains("::date"));
+    }
+
+    #[test]
+    fn parallel_updates_merge_disjoint_top_level_fields() {
+        let base = json!({"name":"Acme","region":"North"});
+        let name_branch = json!({"name":"Contoso","region":"North"});
+        let region_branch = json!({"name":"Acme","region":"South"});
+        let mut merged = base.clone();
+        apply_top_level_changes(
+            &mut merged,
+            &name_branch,
+            &changed_top_level_fields(&base, &name_branch),
+        );
+        apply_top_level_changes(
+            &mut merged,
+            &region_branch,
+            &changed_top_level_fields(&base, &region_branch),
+        );
+        assert_eq!(merged, json!({"name":"Contoso","region":"South"}));
+    }
+
+    #[test]
+    fn parallel_updates_detect_same_field_and_preserve_workflow_state() {
+        let base = json!({"name":"Acme","workflowInstanceStatus":"running"});
+        let first = json!({"name":"Contoso","workflowInstanceStatus":"running"});
+        let second = json!({"name":"Northwind","workflowInstanceStatus":"running"});
+        assert_eq!(
+            changed_top_level_fields(&base, &first)
+                .iter()
+                .filter(|field| changed_top_level_fields(&base, &second).contains(field))
+                .count(),
+            1
+        );
+        assert!(is_workflow_control_field("workflowInstanceStatus"));
+        assert_eq!(
+            preserve_workflow_control_fields(
+                json!({"name":"Contoso","workflowInstanceStatus":"running"}),
+                &json!({"workflowInstanceStatus":"waiting"}),
+            )["workflowInstanceStatus"],
+            "waiting"
+        );
     }
 }

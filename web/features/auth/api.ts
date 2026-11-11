@@ -1,7 +1,7 @@
 import type { LoginSession } from "./contracts";
-import { getAuthorizationGrants as grants } from "@lib/http";
-import { unwrapApiResult } from "@lib/api-request";
-import { jsonRequest, requestApi } from "@lib/api-request";
+import { getAuthorizationGrants as grants } from "@/shared/lib/http";
+import { unwrapApiResult } from "@/shared/lib/api-request";
+import { jsonRequest, requestApi } from "@/shared/lib/api-request";
 
 export function loginWithPassword(username: string, password: string) {
   return requestApi<LoginSession>("/api/auth/login", { ...jsonRequest({ username, password }, { method: "POST" }), suppressAuthNotification: true });

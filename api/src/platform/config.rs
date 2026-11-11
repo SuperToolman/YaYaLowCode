@@ -40,64 +40,6 @@ pub struct ValkeySettings {
 
 #[derive(Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct AgentPluginDefinition {
-    pub id: String,
-    pub name: String,
-    #[serde(default)]
-    pub description: String,
-    pub enabled: bool,
-    pub version: String,
-    #[serde(default)]
-    pub entrypoint: String,
-    #[serde(default)]
-    pub manifest_json: String,
-    pub requires_confirmation: bool,
-}
-
-#[derive(Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PluginManifest {
-    #[serde(default)]
-    pub endpoint: String,
-    #[serde(default)]
-    pub tools: Vec<PluginManifestTool>,
-}
-
-#[derive(Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PluginManifestTool {
-    pub name: String,
-    pub description: String,
-    #[serde(default)]
-    pub requires_confirmation: bool,
-}
-
-pub fn parse_plugin_manifest(manifest_json: &str) -> Result<PluginManifest, String> {
-    if manifest_json.trim().is_empty() || manifest_json.trim() == "{}" {
-        return Ok(PluginManifest::default());
-    }
-    let manifest = serde_json::from_str::<PluginManifest>(manifest_json)
-        .map_err(|error| format!("plugin manifest must be valid JSON: {error}"))?;
-    if manifest.endpoint.trim().is_empty() {
-        return Err("plugin manifest endpoint is required when tools are declared".to_string());
-    }
-    let mut names = HashSet::new();
-    for tool in &manifest.tools {
-        if tool.name.trim().is_empty()
-            || !tool.name.chars().all(|character| {
-                character.is_ascii_alphanumeric() || matches!(character, '_' | '-')
-            })
-            || tool.description.trim().is_empty()
-            || !names.insert(tool.name.as_str())
-        {
-            return Err("plugin manifest contains an invalid or duplicate tool".to_string());
-        }
-    }
-    Ok(manifest)
-}
-
-#[derive(Clone, Deserialize, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct AgentSkillDefinition {
     pub id: String,
     pub name: String,
@@ -456,6 +398,14 @@ pub fn import_skill_package(
     skill: &mut AgentSkillDefinition,
     archive: &[u8],
 ) -> Result<(), String> {
+    import_skill_package_at(skill, archive, &skill_packages_root())
+}
+
+pub(crate) fn import_skill_package_at(
+    skill: &mut AgentSkillDefinition,
+    archive: &[u8],
+    root: &Path,
+) -> Result<(), String> {
     const MAX_ARCHIVE_BYTES: usize = 10 * 1024 * 1024;
     const MAX_FILES: usize = 256;
     const MAX_UNCOMPRESSED_BYTES: u64 = 20 * 1024 * 1024;
@@ -482,9 +432,11 @@ pub fn import_skill_package(
         if total_size > MAX_UNCOMPRESSED_BYTES {
             return Err("Skill 压缩包解压后不得超过 20 MB".to_string());
         }
-        if !file.is_dir() && path.file_name().is_some_and(|name| name == "SKILL.md") {
+        if skill_prefix.is_none()
+            && !file.is_dir()
+            && path.file_name().is_some_and(|name| name == "SKILL.md")
+        {
             skill_prefix = Some(path.parent().unwrap_or_else(|| Path::new("")).to_path_buf());
-            break;
         }
     }
     let prefix = skill_prefix.ok_or_else(|| "Skill 压缩包必须包含 SKILL.md".to_string())?;
@@ -492,7 +444,15 @@ pub fn import_skill_package(
     if skill.package_name.trim().is_empty() {
         skill.package_name = skill_package_name(&skill.id);
     }
-    let package_dir = skill_packages_root().join(&skill.package_name);
+    if Path::new(&skill.package_name).components().count() != 1
+        || !matches!(
+            Path::new(&skill.package_name).components().next(),
+            Some(std::path::Component::Normal(_))
+        )
+    {
+        return Err("Skill 包名称无效".into());
+    }
+    let package_dir = root.join(&skill.package_name);
     fs::create_dir_all(&package_dir).map_err(|error| error.to_string())?;
     let mut instructions = None;
     for index in 0..zip.len() {
@@ -519,9 +479,14 @@ pub fn import_skill_package(
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
-        let mut bytes = Vec::with_capacity(file.size() as usize);
-        file.read_to_end(&mut bytes)
+        let mut bytes = Vec::new();
+        file.by_ref()
+            .take(MAX_UNCOMPRESSED_BYTES + 1)
+            .read_to_end(&mut bytes)
             .map_err(|error| format!("无法解压 Skill 文件: {error}"))?;
+        if bytes.len() as u64 > MAX_UNCOMPRESSED_BYTES {
+            return Err("Skill 文件超出解压限制".into());
+        }
         if relative == Path::new("SKILL.md") {
             instructions = Some(
                 String::from_utf8(bytes.clone())
@@ -557,14 +522,9 @@ fn skill_package_name(value: &str) -> String {
 }
 
 fn skill_packages_root() -> PathBuf {
-    // Install skills to DSH agents home for automatic discovery by skill-filesystem provider
-    let agents_home = std::env::var("DSH_AGENTS_HOME").unwrap_or_else(|_| {
-        let home = std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE"))
-            .unwrap_or_else(|_| ".".to_string());
-        format!("{}/.agents", home)
-    });
-    PathBuf::from(agents_home).join("skills")
+    std::env::var_os("YAYA_SKILLS_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| api_runtime_root().join("skills"))
 }
 
 pub fn load_identity_source_settings() -> Option<IdentitySourceSettings> {
@@ -624,39 +584,6 @@ pub fn save_platform_license_settings(
         fs::remove_file(&path)?;
     }
     fs::rename(temporary_path, path)
-}
-
-/// Per-platform Agent workspace limits. The platform instance owns this root;
-/// user, AI employee, and session are the isolation segments below it.
-#[derive(Clone, Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentWorkspaceSettings {
-    pub root: String,
-    pub max_bytes: u64,
-    pub max_files: u64,
-    pub retention_days: u32,
-}
-
-pub fn agent_workspace_settings() -> AgentWorkspaceSettings {
-    AgentWorkspaceSettings {
-        // Local API runs from api/, while the DSH host runs from
-        // agent/deepseek-harness. Both fallbacks resolve to agent/runtime;
-        // production sets an absolute path through YAYA_AGENT_WORKSPACE_ROOT.
-        root: std::env::var("YAYA_AGENT_WORKSPACE_ROOT")
-            .unwrap_or_else(|_| "../agent/runtime/workspaces".to_string()),
-        max_bytes: env_u64("YAYA_AGENT_WORKSPACE_MAX_BYTES", 1_073_741_824),
-        max_files: env_u64("YAYA_AGENT_WORKSPACE_MAX_FILES", 10_000),
-        retention_days: env_u64("YAYA_AGENT_WORKSPACE_RETENTION_DAYS", 30).min(u32::MAX as u64)
-            as u32,
-    }
-}
-
-fn env_u64(name: &str, fallback: u64) -> u64 {
-    std::env::var(name)
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .filter(|value: &u64| *value > 0)
-        .unwrap_or(fallback)
 }
 
 impl IdentitySourceSettings {
@@ -739,6 +666,14 @@ fn installed_ai_employee_packages_path() -> PathBuf {
     )
 }
 
+pub(crate) fn employee_package_assets_root() -> PathBuf {
+    std::path::absolute(installed_ai_employee_packages_path())
+        .expect("runtime path resolution")
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("employee-skills")
+}
+
 pub fn load_installed_ai_employees() -> HashSet<String> {
     fs::read_to_string(installed_ai_employees_path())
         .ok()
@@ -753,9 +688,6 @@ pub fn save_installed_ai_employees(ids: &HashSet<String>) -> Result<(), std::io:
         &temporary_path,
         serde_json::to_vec_pretty(ids).expect("installed AI employees are serializable"),
     )?;
-    if path.exists() {
-        fs::remove_file(&path)?;
-    }
     fs::rename(temporary_path, path)
 }
 
@@ -769,20 +701,102 @@ pub fn save_installed_ai_employee_package(
     let temporary_path = path.with_extension("tmp");
     fs::write(
         &temporary_path,
-        serde_json::to_vec_pretty(&packages)
+        serde_json::to_vec_pretty(&seal_skill_configurations(&packages)?)
             .expect("installed AI employee packages are serializable"),
     )?;
-    if path.exists() {
-        fs::remove_file(&path)?;
-    }
     fs::rename(temporary_path, path)
 }
 
 pub fn load_installed_ai_employee_packages() -> HashMap<String, serde_json::Value> {
-    fs::read_to_string(installed_ai_employee_packages_path())
-        .ok()
-        .and_then(|content| serde_json::from_str(&content).ok())
-        .unwrap_or_default()
+    let mut packages: HashMap<String, serde_json::Value> =
+        fs::read_to_string(installed_ai_employee_packages_path())
+            .ok()
+            .and_then(|content| serde_json::from_str(&content).ok())
+            .unwrap_or_default();
+    for package in packages.values_mut() {
+        if let Some(skills) = package.get_mut("skills").and_then(|v| v.as_array_mut()) {
+            for skill in skills {
+                if let Some(sealed) = skill
+                    .get("encryptedEnvironmentValues")
+                    .and_then(|v| v.as_str())
+                {
+                    match crate::modules::byom::decrypt(sealed)
+                        .ok()
+                        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                    {
+                        Some(values) => skill["environmentValues"] = values,
+                        None => skill["configurationUnavailable"] = serde_json::json!(true),
+                    }
+                }
+            }
+        }
+    }
+    packages
+}
+
+fn seal_skill_configurations(
+    packages: &HashMap<String, serde_json::Value>,
+) -> Result<HashMap<String, serde_json::Value>, std::io::Error> {
+    let mut sealed = packages.clone();
+    for package in sealed.values_mut() {
+        if let Some(skills) = package.get_mut("skills").and_then(|v| v.as_array_mut()) {
+            for skill in skills {
+                if let Some(object) = skill.as_object_mut() {
+                    if let Some(values) = object.remove("environmentValues") {
+                        object.remove("encryptedEnvironmentValues");
+                        if values.as_object().is_some_and(|v| !v.is_empty()) {
+                            let encrypted = crate::modules::byom::encrypt(&values.to_string())
+                                .map_err(|_| {
+                                    std::io::Error::other(
+                                        "Skill configuration encryption unavailable",
+                                    )
+                                })?;
+                            object.insert(
+                                "encryptedEnvironmentValues".into(),
+                                serde_json::json!(encrypted),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(sealed)
+}
+
+#[cfg(test)]
+mod skill_configuration_tests {
+    #[test]
+    fn explicitly_empty_configuration_removes_previous_ciphertext() {
+        let packages = std::collections::HashMap::from([(
+            "employee".into(),
+            serde_json::json!({"skills":[{"id":"skill","environmentValues":{},"encryptedEnvironmentValues":"old-cipher"}]}),
+        )]);
+        let sealed = super::seal_skill_configurations(&packages).unwrap();
+        let skill = &sealed["employee"]["skills"][0];
+        assert!(skill.get("environmentValues").is_none());
+        assert!(skill.get("encryptedEnvironmentValues").is_none());
+    }
+}
+
+pub(crate) fn seal_existing_skill_configurations() -> Result<(), std::io::Error> {
+    let path = installed_ai_employee_packages_path();
+    if !path.exists() {
+        return Ok(());
+    }
+    let raw = fs::read(&path)?;
+    let packages: HashMap<String, serde_json::Value> =
+        serde_json::from_slice(&raw).map_err(std::io::Error::other)?;
+    let sealed = seal_skill_configurations(&packages)?;
+    if packages != sealed {
+        let temp = path.with_extension("tmp");
+        fs::write(
+            &temp,
+            serde_json::to_vec_pretty(&sealed).map_err(std::io::Error::other)?,
+        )?;
+        fs::rename(temp, path)?;
+    }
+    Ok(())
 }
 
 pub fn remove_installed_ai_employee_package(id: &str) -> Result<(), std::io::Error> {
@@ -792,11 +806,9 @@ pub fn remove_installed_ai_employee_package(id: &str) -> Result<(), std::io::Err
     let temporary_path = path.with_extension("tmp");
     fs::write(
         &temporary_path,
-        serde_json::to_vec_pretty(&packages).expect("installed AI employees are serializable"),
+        serde_json::to_vec_pretty(&seal_skill_configurations(&packages)?)
+            .expect("installed AI employees are serializable"),
     )?;
-    if path.exists() {
-        fs::remove_file(&path)?;
-    }
     fs::rename(temporary_path, path)
 }
 

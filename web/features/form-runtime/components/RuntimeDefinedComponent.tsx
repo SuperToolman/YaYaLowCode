@@ -24,14 +24,16 @@ type RuntimeDefinedComponentProps = {
   onSetFieldValue: (fieldId: string, value: unknown) => void;
 };
 
+const EMPTY_ORIGINS: string[] = [];
+const EMPTY_ASSETS: DefinedPageAsset[] = [];
 const MESSAGE_PREFIX = "yaya-defined-component";
 
 export function RuntimeDefinedComponent({
   type,
   code = "",
-  allowedResourceOrigins = [],
+  allowedResourceOrigins = EMPTY_ORIGINS,
   allowedFieldIds,
-  assets = [],
+  assets = EMPTY_ASSETS,
   values,
   isReadOnly = false,
   onSetFieldValue,

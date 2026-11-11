@@ -27,7 +27,7 @@ export function SettingsContentCard({
   footerClassName = "",
 }: SettingsContentCardProps) {
   return (
-    <Card className="h-full">
+    <Card className={`h-full ${className}`.trim()}>
       <Card.Header
         className={`shrink-0 flex flex-wrap items-start justify-between gap-4 ${headerClassName}`.trim()}
       >
@@ -47,6 +47,7 @@ export function SettingsContentCard({
       >
         {children}
       </div>
+      {footer ? <Card.Footer className={`shrink-0 ${footerClassName}`.trim()}>{footer}</Card.Footer> : null}
     </Card>
   );
 }

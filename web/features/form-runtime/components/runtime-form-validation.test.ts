@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { validateRuntimeFields } from "./runtime-form-validation";
 import { today, getLocalTimeZone } from "@internationalized/date";
-import type { RuntimeSchemaField } from "./runtime-form-types";
+import type { RuntimeSchemaField } from "../../form-model/runtime-types";
 
 function field(id: string, type: RuntimeSchemaField["type"], props: RuntimeSchemaField["props"] = { isRequired: true }): RuntimeSchemaField {
   return { id, label: id, type, row: 0, column: 0, props };

@@ -2,18 +2,10 @@
 
 import { Display, Moon, Sun } from "@gravity-ui/icons";
 import { Switch, Tabs } from "@heroui/react";
-import {
-  useTheme,
-  type AppearanceSettings,
-  type FontFamily,
-  type RadiusSize,
-  type SurfaceVariant,
-  type ThemeMode,
-  type ThemePreset,
-} from "@shared/ThemeProvider";
-import ColorPickerField from "@/app/components/my-fields/MyColorPicker";
-import InfoTooltip from "@/app/components/InfoTooltip";
-import OptionMenu, { type OptionMenuItem } from "@/app/components/OptionMenu";
+import { useTheme, type AppearanceSettings, type FontFamily, type RadiusSize, type SurfaceVariant, type ThemeMode, type ThemePreset } from "@/shared/providers/ThemeProvider";
+import ColorPickerField from "@/features/form-runtime/components/fields/MyColorPicker";
+import InfoTooltip from "@/shared/ui/InfoTooltip";
+import OptionMenu, { type OptionMenuItem } from "@/shared/ui/OptionMenu";
 import { SettingsContentCard } from "../components/SettingsContentCard";
 
 const modeOptions: Array<{ id: ThemeMode; label: string; icon: typeof Sun }> = [

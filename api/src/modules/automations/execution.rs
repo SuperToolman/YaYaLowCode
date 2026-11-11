@@ -165,6 +165,7 @@ pub(crate) async fn start_execution(
                 .unwrap_or_else(|| HashMap::from([("trigger-1".into(), request.input.clone())])),
             operator: request.identity.operator,
             run_id: Some(run.id),
+            branch_id: None,
         },
     };
     insert_token(db, run.id, request.instance_id, None, &cursor).await?;
@@ -177,8 +178,8 @@ async fn insert_token<C: ConnectionTrait>(
     parent: Option<Uuid>,
     cursor: &Cursor,
 ) -> Result<(), AppError> {
-    sql(db,"INSERT INTO automation_execution_tokens(id,run_id,instance_id,parent_token_id,node_key,status,outputs,depth,parallel_group) VALUES($1,$2,$3,$4,$5,'queued',$6,$7,$8)",
-        vec![cursor.id.into(),run.into(),instance.into(),parent.into(),cursor.node.clone().into(),json!(cursor.context.outputs).into(),(cursor.depth as i32).into(),cursor.parallel_group.into()]).await?;
+    sql(db,"INSERT INTO automation_execution_tokens(id,run_id,instance_id,parent_token_id,node_key,status,outputs,depth,parallel_group,parallel_branch_id) VALUES($1,$2,$3,$4,$5,'queued',$6,$7,$8,$9)",
+        vec![cursor.id.into(),run.into(),instance.into(),parent.into(),cursor.node.clone().into(),json!(cursor.context.outputs).into(),(cursor.depth as i32).into(),cursor.parallel_group.into(),cursor.context.branch_id.into()]).await?;
     Ok(())
 }
 
@@ -201,9 +202,16 @@ impl PersistentRuntime<'_> {
             ))
             .await?;
         }
-        let row=db.query_one_raw(Statement::from_sql_and_values(DbBackend::Postgres,
-            "SELECT r.status FROM automation_execution_runs e JOIN automation_flow_runs r ON r.id=e.run_id WHERE e.run_id=$1 AND e.owner=$2 AND e.fence=$3 AND e.lease_until>NOW() FOR SHARE OF e,r",
-            vec![self.run.into(),self.owner.into(),self.fence.into()])).await?;
+        let query = format!(
+            "SELECT r.status FROM automation_execution_runs e JOIN automation_flow_runs r ON r.id=e.run_id WHERE e.run_id=$1 AND e.owner=$2 AND e.fence=$3 AND e.lease_until>clock_timestamp() FOR SHARE OF e,r"
+        );
+        let row = db
+            .query_one_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                &query,
+                vec![self.run.into(), self.owner.into(), self.fence.into()],
+            ))
+            .await?;
         Ok(row.is_some_and(|r| {
             r.try_get::<String>("", "status")
                 .is_ok_and(|s| matches!(s.as_str(), "running" | "paused"))
@@ -227,12 +235,18 @@ impl PersistentRuntime<'_> {
             }
             Transition::Split { targets, parallel } => {
                 let mut children = Vec::new();
+                let group_id = parallel.then_some(cursor.id);
                 for target in targets {
+                    let child_id = Uuid::new_v4();
                     let child = Cursor {
-                        id: Uuid::new_v4(),
+                        id: child_id,
                         node: target,
                         log_id: None,
-                        parallel_group: parallel.then_some(cursor.id),
+                        parallel_group: group_id.or(cursor.parallel_group),
+                        context: AutomationExecutionContext {
+                            branch_id: parallel.then_some(child_id).or(cursor.context.branch_id),
+                            ..cursor.context.clone()
+                        },
                         ..cursor.clone()
                     };
                     insert_token(
@@ -245,6 +259,14 @@ impl PersistentRuntime<'_> {
                     .await?;
                     children.push(child);
                 }
+                if let Some(group_id) = group_id {
+                    let expected = children
+                        .iter()
+                        .filter_map(|child| child.context.branch_id)
+                        .collect::<Vec<_>>();
+                    let join_node = engine::parallel_join_node(&self.flow, &children);
+                    sql(db,"INSERT INTO automation_execution_parallel_groups(id,run_id,parent_group,parent_branch_id,fork_token_id,status,expected_branches,join_node_key) VALUES($1,$2,$3,$4,$5,'running',$6,$7)",vec![group_id.into(),self.run.into(),cursor.parallel_group.into(),cursor.context.branch_id.into(),cursor.id.into(),json!(expected).into(),join_node.into()]).await?;
+                }
                 save_token(db, cursor, "completed").await?;
                 Ok(AtomicStep::Split { children, parallel })
             }
@@ -256,18 +278,23 @@ impl PersistentRuntime<'_> {
         cursor: &mut Cursor,
         node: &Value,
     ) -> Result<(), AppError> {
+        let kind = node
+            .pointer("/data/kind")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let label = node
+            .pointer("/data/label")
+            .and_then(Value::as_str)
+            .unwrap_or(&cursor.node);
+        let input = json!(cursor.context.outputs);
         let log = crate::platform::automation_runs::create_branch_node_log(
             db,
             self.run,
             cursor.id,
             &cursor.node,
-            node.pointer("/data/kind")
-                .and_then(Value::as_str)
-                .unwrap_or_default(),
-            node.pointer("/data/label")
-                .and_then(Value::as_str)
-                .unwrap_or(&cursor.node),
-            json!(cursor.context.outputs),
+            kind,
+            label,
+            input,
         )
         .await?;
         let visit = Uuid::new_v4();
@@ -276,11 +303,36 @@ impl PersistentRuntime<'_> {
         cursor.log_id = Some(log);
         Ok(())
     }
+    async fn finalize_node_log(
+        &self,
+        db: &DatabaseTransaction,
+        log_id: Uuid,
+        status: &str,
+        output: Option<Value>,
+        error: Option<String>,
+    ) -> Result<(), AppError> {
+        crate::platform::automation_runs::finalize_automation_run_node_log(
+            db, log_id, status, output, error,
+        )
+        .await
+    }
     async fn step(&self, cursor: &mut Cursor, node: &Value) -> Result<AtomicStep, AppError> {
-        let kind = node
-            .pointer("/data/kind")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
+        if node.pointer("/data/kind").and_then(Value::as_str) == Some("http-request") {
+            return self.step_http_request(cursor, node).await;
+        }
+        let txn = self.state.db.begin().await?;
+        let result = self.step_in_transaction(&txn, cursor, node).await;
+        if result.is_ok() {
+            txn.commit().await?;
+        }
+        result
+    }
+
+    async fn step_http_request(
+        &self,
+        cursor: &mut Cursor,
+        node: &Value,
+    ) -> Result<AtomicStep, AppError> {
         let config = node
             .pointer("/data/config")
             .cloned()
@@ -292,11 +344,87 @@ impl PersistentRuntime<'_> {
         let run = AutomationRunEntity::find_by_id(self.run)
             .one(&txn)
             .await?
-            .unwrap();
+            .ok_or_else(|| AppError::NotFound("automation run not found".into()))?;
         if run.status == "paused" {
             return Ok(AtomicStep::Stopped);
         }
         self.log(&txn, cursor, node).await?;
+        let effect_id = start_external_effect(&txn, self.run, cursor, &config).await?;
+        txn.commit().await?;
+
+        let output = execute_http_request_node(&config, &cursor.context).await;
+        let txn = self.state.db.begin().await?;
+        if !self.guard(&txn).await? {
+            return Ok(AtomicStep::Stopped);
+        }
+        match output {
+            Ok(value) => {
+                cursor.context.outputs.insert(cursor.node.clone(), value);
+                complete_external_effect(
+                    &txn,
+                    effect_id,
+                    self.run,
+                    cursor,
+                    &config,
+                    cursor.context.outputs.get(&cursor.node).cloned(),
+                )
+                .await?;
+            }
+            Err(error) => {
+                sql(&txn,"UPDATE automation_execution_external_effects SET status='uncertain',error_message=$2,updated_at=NOW() WHERE id=$1",vec![effect_id.into(),format!("{error:?}").into()]).await?;
+                sql(&txn,"UPDATE automation_execution_tokens SET status='needs_attention',error_message=$2 WHERE id=$1",vec![cursor.id.into(),format!("{error:?}").into()]).await?;
+                finalize_automation_run_node_log(
+                    &txn,
+                    cursor.log_id.unwrap(),
+                    "needs_attention",
+                    None,
+                    Some(format!("{error:?}")),
+                )
+                .await?;
+                txn.commit().await?;
+                cursor.log_id = None;
+                return Ok(AtomicStep::Stopped);
+            }
+        }
+        finalize_automation_run_node_log(
+            &txn,
+            cursor.log_id.unwrap(),
+            "success",
+            cursor.context.outputs.get(&cursor.node).cloned(),
+            None,
+        )
+        .await?;
+        let step = self.advance(&txn, cursor, node).await?;
+        txn.commit().await?;
+        cursor.log_id = None;
+        Ok(step)
+    }
+
+    async fn step_in_transaction(
+        &self,
+        txn: &DatabaseTransaction,
+        cursor: &mut Cursor,
+        node: &Value,
+    ) -> Result<AtomicStep, AppError> {
+        let kind = node
+            .pointer("/data/kind")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let config = node
+            .pointer("/data/config")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        if !self.guard(txn).await? {
+            return Ok(AtomicStep::Stopped);
+        }
+        let run = AutomationRunEntity::find_by_id(self.run)
+            .one(txn)
+            .await?
+            .unwrap();
+        if run.status == "paused" {
+            return Ok(AtomicStep::Stopped);
+        }
+        self.log(txn, cursor, node).await?;
         if kind == "trigger" && self.flow.trigger_form_uuid.is_some() {
             let source_form_uuid = self.flow.trigger_form_uuid.as_deref().unwrap();
             let source_record = cursor
@@ -337,40 +465,47 @@ impl PersistentRuntime<'_> {
                 .insert("trigger-1".into(), source_record);
         }
         if kind == "http-request" {
-            txn.commit().await?;
+            let effect_id = start_external_effect(txn, self.run, cursor, &config).await?;
             let output = execute_http_request_node(&config, &cursor.context).await;
-            let txn = self.state.db.begin().await?;
-            if !self.guard(&txn).await? {
+            if !self.guard(txn).await? {
                 return Ok(AtomicStep::Stopped);
             }
             match output {
                 Ok(value) => {
                     cursor.context.outputs.insert(cursor.node.clone(), value);
+                    complete_external_effect(
+                        txn,
+                        effect_id,
+                        self.run,
+                        cursor,
+                        &config,
+                        cursor.context.outputs.get(&cursor.node).cloned(),
+                    )
+                    .await?;
                 }
                 Err(error) => {
-                    sql(&txn,"UPDATE automation_execution_tokens SET status='needs_attention',error_message=$2 WHERE id=$1",vec![cursor.id.into(),format!("{error:?}").into()]).await?;
-                    finalize_automation_run_node_log(
-                        &txn,
+                    sql(txn,"UPDATE automation_execution_external_effects SET status='uncertain',error_message=$2,updated_at=NOW() WHERE id=$1",vec![effect_id.into(),format!("{error:?}").into()]).await?;
+                    sql(txn,"UPDATE automation_execution_tokens SET status='needs_attention',error_message=$2 WHERE id=$1",vec![cursor.id.into(),format!("{error:?}").into()]).await?;
+                    self.finalize_node_log(
+                        txn,
                         cursor.log_id.unwrap(),
                         "needs_attention",
                         None,
                         Some(format!("{error:?}")),
                     )
                     .await?;
-                    txn.commit().await?;
                     return Ok(AtomicStep::Stopped);
                 }
             }
-            finalize_automation_run_node_log(
-                &txn,
+            self.finalize_node_log(
+                txn,
                 cursor.log_id.unwrap(),
                 "success",
                 cursor.context.outputs.get(&cursor.node).cloned(),
                 None,
             )
             .await?;
-            let step = self.advance(&txn, cursor, node).await?;
-            txn.commit().await?;
+            let step = self.advance(txn, cursor, node).await?;
             cursor.log_id = None;
             return Ok(step);
         }
@@ -379,20 +514,19 @@ impl PersistentRuntime<'_> {
                 AppError::BadRequest("human node requires workflow business binding".into())
             })?;
             let output =
-                workflows::execute_human_node(&txn, self.state, instance, cursor, node).await?;
+                workflows::execute_human_node(txn, self.state, instance, cursor, node).await?;
             if let Some(output) = output {
                 cursor.context.outputs.insert(cursor.node.clone(), output);
             } else {
-                save_token(&txn, cursor, "waiting").await?;
-                crate::platform::automation_runs::wait_node_log(&txn, cursor.log_id.unwrap())
+                save_token(txn, cursor, "waiting").await?;
+                crate::platform::automation_runs::wait_node_log(txn, cursor.log_id.unwrap())
                     .await?;
-                txn.commit().await?;
                 cursor.log_id = None;
                 return Ok(AtomicStep::Stopped);
             }
         } else {
             execute_shared_node(
-                &txn,
+                txn,
                 &self.flow,
                 &cursor.node,
                 kind,
@@ -401,27 +535,57 @@ impl PersistentRuntime<'_> {
             )
             .await?;
         }
-        finalize_automation_run_node_log(
-            &txn,
+        self.finalize_node_log(
+            txn,
             cursor.log_id.unwrap(),
             "success",
             cursor.context.outputs.get(&cursor.node).cloned(),
             None,
         )
         .await?;
-        let step = self.advance(&txn, cursor, node).await?;
-        txn.commit().await?;
+        let step = self.advance(txn, cursor, node).await?;
         cursor.log_id = None;
         Ok(step)
     }
 }
+async fn start_external_effect(
+    txn: &DatabaseTransaction,
+    run_id: Uuid,
+    cursor: &Cursor,
+    config: &Value,
+) -> Result<Uuid, AppError> {
+    let id = Uuid::new_v4();
+    let compensation = config
+        .get("compensationRequest")
+        .filter(|value| value.is_object())
+        .map(|request| json!({"request": request, "outputs": cursor.context.outputs}));
+    sql(txn, "INSERT INTO automation_execution_external_effects(id,run_id,token_id,node_key,status,compensation,request_config,request_context) VALUES($1,$2,$3,$4,'requesting',$5,$6,$7)", vec![id.into(), run_id.into(), cursor.id.into(), cursor.node.clone().into(), compensation.into(), config.clone().into(), json!(cursor.context.outputs).into()]).await?;
+    Ok(id)
+}
+
+async fn complete_external_effect(
+    txn: &DatabaseTransaction,
+    effect_id: Uuid,
+    run_id: Uuid,
+    cursor: &Cursor,
+    config: &Value,
+    output: Option<Value>,
+) -> Result<(), AppError> {
+    let compensation = config
+        .get("compensationRequest")
+        .filter(|value| value.is_object())
+        .map(|request| json!({"request": request, "outputs": cursor.context.outputs}));
+    sql(txn, "UPDATE automation_execution_external_effects SET status='completed',compensation=$2,result_json=$3,request_config=$4,request_context=$5,updated_at=NOW() WHERE id=$1 AND run_id=$6", vec![effect_id.into(), compensation.into(), output.into(), config.clone().into(), json!(cursor.context.outputs).into(), run_id.into()]).await?;
+    Ok(())
+}
+
 pub(crate) async fn save_token<C: ConnectionTrait>(
     db: &C,
     cursor: &Cursor,
     status: &str,
 ) -> Result<(), AppError> {
-    sql(db,"UPDATE automation_execution_tokens SET node_key=$2,status=$3,outputs=$4,depth=$5,updated_at=NOW() WHERE id=$1",
-        vec![cursor.id.into(),cursor.node.clone().into(),status.into(),json!(cursor.context.outputs).into(),(cursor.depth as i32).into()]).await?;
+    sql(db,"UPDATE automation_execution_tokens SET node_key=$2,status=$3,outputs=$4,depth=$5,parallel_group=$6,parallel_branch_id=$7,updated_at=NOW() WHERE id=$1",
+        vec![cursor.id.into(),cursor.node.clone().into(),status.into(),json!(cursor.context.outputs).into(),(cursor.depth as i32).into(),cursor.parallel_group.into(),cursor.context.branch_id.into()]).await?;
     Ok(())
 }
 impl Runtime for PersistentRuntime<'_> {
@@ -440,6 +604,15 @@ impl Runtime for PersistentRuntime<'_> {
         let result = self.step(&mut working, node).await;
         if result.is_ok() {
             *cursor = working;
+        } else if let (Some(log), Err(error)) = (working.log_id, &result) {
+            crate::platform::automation_runs::finalize_automation_run_node_log(
+                &self.state.db,
+                log,
+                "failed",
+                None,
+                Some(format!("{error:?}")),
+            )
+            .await?;
         }
         result.map(Some)
     }
@@ -449,7 +622,7 @@ impl Runtime for PersistentRuntime<'_> {
             return Ok(false);
         }
         let row=txn.query_one_raw(Statement::from_sql_and_values(DbBackend::Postgres,
-            "SELECT node_key,outputs,depth,status FROM automation_execution_tokens WHERE id=$1 AND run_id=$2 FOR UPDATE",
+            "SELECT node_key,outputs,depth,status,parallel_group,parallel_branch_id FROM automation_execution_tokens WHERE id=$1 AND run_id=$2 FOR UPDATE",
             vec![cursor.id.into(),self.run.into()])).await?;
         let Some(row) = row else { return Ok(false) };
         if row.try_get::<String>("", "status")? != "queued" {
@@ -460,10 +633,103 @@ impl Runtime for PersistentRuntime<'_> {
         cursor.context.outputs = serde_json::from_value(row.try_get("", "outputs")?)
             .map_err(|_| AppError::BadRequest("invalid execution outputs".into()))?;
         cursor.context.run_id = Some(self.run);
+        cursor.context.branch_id = row.try_get("", "parallel_branch_id")?;
         txn.commit().await?;
         Ok(true)
     }
-    async fn ready(&self, _: &Cursor) -> Result<bool, AppError> {
+    async fn ready(&self, cursor: &mut Cursor) -> Result<bool, AppError> {
+        let Some(group_id) = cursor.parallel_group else {
+            return Ok(true);
+        };
+        let Some(branch_id) = cursor.context.branch_id else {
+            return Err(AppError::BadRequest(
+                "parallel token is missing branch identity".into(),
+            ));
+        };
+        let txn = self.state.db.begin().await?;
+        if !self.guard(&txn).await? {
+            return Ok(false);
+        }
+        let row = txn
+            .query_one_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "SELECT expected_branches,arrived_branches,parent_group,parent_branch_id,join_node_key FROM automation_execution_parallel_groups WHERE id=$1 AND run_id=$2 FOR UPDATE",
+                vec![group_id.into(), self.run.into()],
+            ))
+            .await?;
+        let Some(row) = row else {
+            txn.commit().await?;
+            return Ok(true);
+        };
+        let join_node: Option<String> = row.try_get("", "join_node_key")?;
+        if join_node.as_deref() != Some(cursor.node.as_str()) {
+            txn.commit().await?;
+            return Ok(true);
+        }
+        let expected: Value = row.try_get("", "expected_branches")?;
+        let mut arrived: Value = row.try_get("", "arrived_branches")?;
+        let expected = expected
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect::<HashSet<_>>();
+        let arrived_items = arrived
+            .as_array_mut()
+            .ok_or_else(|| AppError::BadRequest("parallel join state is invalid".into()))?;
+        if !arrived_items
+            .iter()
+            .any(|item| item.as_str() == Some(&branch_id.to_string()))
+        {
+            arrived_items.push(json!(branch_id));
+        }
+        let all_arrived = expected.iter().all(|expected_id| {
+            arrived_items
+                .iter()
+                .any(|item| item.as_str() == Some(expected_id))
+        });
+        sql(&txn,"UPDATE automation_execution_tokens SET status='waiting_join',updated_at=NOW() WHERE id=$1 AND status='queued'",vec![cursor.id.into()]).await?;
+        sql(&txn,"UPDATE automation_execution_parallel_groups SET status='joining',arrived_branches=$2,updated_at=NOW() WHERE id=$1",vec![group_id.into(),arrived.clone().into()]).await?;
+        if !all_arrived {
+            txn.commit().await?;
+            return Ok(false);
+        }
+        let rows = txn
+            .query_all_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "SELECT id,outputs FROM automation_execution_tokens WHERE run_id=$1 AND parallel_group=$2 AND node_key=$3 AND status='waiting_join' ORDER BY sequence FOR UPDATE",
+                vec![self.run.into(), group_id.into(), cursor.node.clone().into()],
+            ))
+            .await?;
+        let mut merged = HashMap::<String, Value>::new();
+        let mut token_ids = Vec::new();
+        for token in rows {
+            let outputs: HashMap<String, Value> =
+                serde_json::from_value(token.try_get("", "outputs")?)
+                    .map_err(|_| AppError::BadRequest("invalid parallel branch outputs".into()))?;
+            for (key, value) in outputs {
+                if merged.get(&key).is_some_and(|existing| existing != &value) {
+                    return Err(AppError::Conflict(format!(
+                        "parallel branches produced conflicting output for node {key}"
+                    )));
+                }
+                merged.insert(key, value);
+            }
+            token_ids.push(token.try_get::<Uuid>("", "id")?);
+        }
+        let parent_group: Option<Uuid> = row.try_get("", "parent_group")?;
+        let parent_branch: Option<Uuid> = row.try_get("", "parent_branch_id")?;
+        for token_id in &token_ids {
+            if *token_id != cursor.id {
+                sql(&txn,"UPDATE automation_execution_tokens SET status='completed',updated_at=NOW() WHERE id=$1",vec![(*token_id).into()]).await?;
+            }
+        }
+        cursor.context.outputs = merged;
+        cursor.parallel_group = parent_group;
+        cursor.context.branch_id = parent_branch;
+        sql(&txn,"UPDATE automation_execution_tokens SET status='queued',outputs=$2,parallel_group=$3,parallel_branch_id=$4,updated_at=NOW() WHERE id=$1",vec![cursor.id.into(),json!(cursor.context.outputs).into(),parent_group.into(),parent_branch.into()]).await?;
+        sql(&txn,"UPDATE automation_execution_parallel_groups SET status='completed',merged_outputs=$2,updated_at=NOW() WHERE id=$1",vec![group_id.into(),json!(cursor.context.outputs).into()]).await?;
+        txn.commit().await?;
         Ok(true)
     }
     async fn checkpoint(&self, _: &Cursor) -> Result<bool, AppError> {
@@ -507,24 +773,38 @@ impl Runtime for PersistentRuntime<'_> {
             .and_then(|n| n.pointer("/data/kind"))
             .and_then(Value::as_str)
             .unwrap_or("unknown");
-        let log = crate::platform::automation_runs::create_branch_node_log(
-            &txn,
-            self.run,
-            cursor.id,
-            &cursor.node,
-            kind,
-            "执行失败",
-            json!(cursor.context.outputs),
-        )
-        .await?;
-        sql(
-            &txn,
-            "UPDATE automation_flow_run_nodes SET visit_id=$2 WHERE id=$1",
-            vec![log.into(), Uuid::new_v4().into()],
-        )
-        .await?;
-        finalize_automation_run_node_log(&txn, log, "failed", None, Some(format!("{error:?}")))
+        let existing = txn.query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT 1 FROM automation_flow_run_nodes WHERE run_id=$1 AND branch_id=$2 AND status='failed' ORDER BY created_at DESC LIMIT 1",
+            vec![self.run.into(), cursor.id.into()],
+        )).await?;
+        if existing.is_some() {
+            sql(
+                &txn,
+                "UPDATE automation_execution_tokens SET visit_id=$2 WHERE id=$1",
+                vec![cursor.id.into(), Uuid::new_v4().into()],
+            )
             .await?;
+        } else {
+            let log = crate::platform::automation_runs::create_branch_node_log(
+                &txn,
+                self.run,
+                cursor.id,
+                &cursor.node,
+                kind,
+                "执行失败",
+                json!(cursor.context.outputs),
+            )
+            .await?;
+            sql(
+                &txn,
+                "UPDATE automation_flow_run_nodes SET visit_id=$2 WHERE id=$1",
+                vec![log.into(), Uuid::new_v4().into()],
+            )
+            .await?;
+            finalize_automation_run_node_log(&txn, log, "failed", None, Some(format!("{error:?}")))
+                .await?;
+        }
         txn.commit().await?;
         Ok(())
     }
@@ -543,7 +823,7 @@ pub(crate) async fn drive_execution(state: &AppState, run: Uuid) -> Result<(), A
     let lease = config_number("YAYA_EXECUTION_LEASE_SECONDS", 60) as i64;
     let txn = state.db.begin().await?;
     let claimed=txn.query_one_raw(Statement::from_sql_and_values(DbBackend::Postgres,
-        "SELECT e.fence FROM automation_execution_runs e JOIN automation_flow_runs r ON r.id=e.run_id WHERE e.run_id=$1 AND r.status IN ('queued','running','waiting') AND (e.owner IS NULL OR e.lease_until<NOW()) FOR UPDATE OF e,r SKIP LOCKED",vec![run.into()])).await?;
+        "SELECT e.fence FROM automation_execution_runs e JOIN automation_flow_runs r ON r.id=e.run_id WHERE e.run_id=$1 AND r.status IN ('queued','running','waiting','waiting_join') AND (e.owner IS NULL OR e.lease_until<NOW()) FOR UPDATE OF e,r SKIP LOCKED",vec![run.into()])).await?;
     let Some(claimed) = claimed else {
         return Ok(());
     };
@@ -622,21 +902,22 @@ async fn drive_claimed(
         fence,
         instance,
     };
-    let result=async {
-        validate_execution_definition(&runtime.flow)?;
-        validate_execution_sources(&state.db,&runtime.flow).await?;
-        let rows=state.db.query_all_raw(Statement::from_sql_and_values(DbBackend::Postgres,"SELECT id,parallel_group FROM automation_execution_tokens WHERE run_id=$1 AND status='queued' ORDER BY sequence",vec![run.into()])).await?;
-        let mut groups:Vec<(Option<Uuid>,Vec<Cursor>)>=Vec::new();
-        for row in rows {
-            let cursor=Cursor{id:row.try_get("","id")?,parallel_group:row.try_get("","parallel_group")?,node:String::new(),depth:0,log_id:None,
-                context:AutomationExecutionContext{outputs:HashMap::new(),operator:identity.operator.clone(),run_id:Some(run)}};
-            if cursor.parallel_group.is_some()&&groups.last().is_some_and(|(g,_)|*g==cursor.parallel_group){groups.last_mut().unwrap().1.push(cursor);}
-            else{groups.push((cursor.parallel_group,vec![cursor]));}
+    let result = async {
+            validate_execution_definition(&runtime.flow)?;
+            validate_execution_sources(&state.db,&runtime.flow).await?;
+            let rows=state.db.query_all_raw(Statement::from_sql_and_values(DbBackend::Postgres,"SELECT id,parallel_group,parallel_branch_id FROM automation_execution_tokens WHERE run_id=$1 AND status='queued' ORDER BY sequence",vec![run.into()])).await?;
+            let mut groups:Vec<(Option<Uuid>,Vec<Cursor>)>=Vec::new();
+            for row in rows {
+                let cursor=Cursor{id:row.try_get("","id")?,parallel_group:row.try_get("","parallel_group")?,node:String::new(),depth:0,log_id:None,
+                    context:AutomationExecutionContext{outputs:HashMap::new(),operator:identity.operator.clone(),run_id:Some(run),branch_id:row.try_get("","parallel_branch_id")?}};
+                if cursor.parallel_group.is_some()&&groups.last().is_some_and(|(g,_)|*g==cursor.parallel_group){groups.last_mut().unwrap().1.push(cursor);}
+                else{groups.push((cursor.parallel_group,vec![cursor]));}
+            }
+            let mut error=None;
+            for (parallel,cursors) in groups{if let Err(e)=engine::schedule(&runtime,cursors,parallel.is_some()).await{if error.is_none(){error=Some(e);}}}
+            error.map_or(Ok(()),Err)
         }
-        let mut error=None;
-        for (parallel,cursors) in groups{if let Err(e)=engine::schedule(&runtime,cursors,parallel.is_some()).await{if error.is_none(){error=Some(e);}}}
-        error.map_or(Ok(()),Err)
-    }.await;
+        .await;
     finalize_execution(&runtime, result.as_ref().err()).await?;
     result
 }
@@ -644,6 +925,34 @@ async fn finalize_execution(
     runtime: &PersistentRuntime<'_>,
     error: Option<&AppError>,
 ) -> Result<(), AppError> {
+    let failed_token = runtime
+        .state
+        .db
+        .query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT id FROM automation_execution_tokens WHERE run_id=$1 AND status='failed' LIMIT 1",
+            vec![runtime.run.into()],
+        ))
+        .await?
+        .is_some();
+    let compensation_attention = if error.is_some() || failed_token {
+        // Do not let a stale worker compensate after its lease has been
+        // taken over. The effect rows also have their own claim guard below,
+        // but this check prevents a stale worker from starting compensation
+        // in the normal path.
+        let owner_valid = runtime.state.db.query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT 1 FROM automation_execution_runs WHERE run_id=$1 AND owner=$2 AND fence=$3 AND lease_until>NOW()",
+            vec![runtime.run.into(), runtime.owner.into(), runtime.fence.into()],
+        )).await?.is_some();
+        if owner_valid {
+            compensate_external_effects(&runtime.state, runtime.run).await?
+        } else {
+            return Ok(());
+        }
+    } else {
+        false
+    };
     let txn = runtime.state.db.begin().await?;
     if let Some(instance) = &runtime.instance {
         txn.query_one_raw(Statement::from_sql_and_values(
@@ -671,7 +980,7 @@ async fn finalize_execution(
         .iter()
         .map(|r| r.try_get::<String>("", "status"))
         .collect::<Result<Vec<_>, _>>()?;
-    let status = if statuses.iter().any(|s| s == "needs_attention") {
+    let mut status = if compensation_attention || statuses.iter().any(|s| s == "needs_attention") {
         "needs_attention"
     } else if error.is_some() || statuses.iter().any(|s| s == "failed") {
         "failed"
@@ -679,12 +988,49 @@ async fn finalize_execution(
         "success"
     } else if statuses.iter().any(|s| s == "queued") {
         "queued"
+    } else if statuses.iter().any(|s| s == "waiting_join") {
+        "waiting_join"
     } else {
         "waiting"
     };
+    let mut final_error = error.map(|e| format!("{e:?}"));
+    let mut compensate_after_commit = false;
+    if status == "success" {
+        sql(&txn, "SAVEPOINT automation_business_commit", vec![]).await?;
+        if let Err(commit_error) =
+            crate::platform::records::commit_automation_run(&txn, runtime.run).await
+        {
+            sql(
+                &txn,
+                "ROLLBACK TO SAVEPOINT automation_business_commit",
+                vec![],
+            )
+            .await?;
+            sql(&txn, "RELEASE SAVEPOINT automation_business_commit", vec![]).await?;
+            status = "compensating";
+            compensate_after_commit = true;
+            final_error = Some(format!("{commit_error:?}"));
+            sql(
+                &txn,
+                "DELETE FROM automation_execution_record_changes WHERE run_id=$1",
+                vec![runtime.run.into()],
+            )
+            .await?;
+        } else {
+            sql(&txn, "RELEASE SAVEPOINT automation_business_commit", vec![]).await?;
+        }
+    } else if status == "failed" {
+        sql(
+            &txn,
+            "DELETE FROM automation_execution_record_changes WHERE run_id=$1",
+            vec![runtime.run.into()],
+        )
+        .await?;
+    }
     if matches!(status, "success" | "failed") {
         if status == "failed" {
-            sql(&txn,"UPDATE automation_execution_tokens SET status='cancelled' WHERE run_id=$1 AND status IN ('queued','running','waiting')",vec![runtime.run.into()]).await?;
+            sql(&txn,"UPDATE automation_execution_tokens SET status='cancelled' WHERE run_id=$1 AND status IN ('queued','running','waiting','waiting_join')",vec![runtime.run.into()]).await?;
+            sql(&txn,"UPDATE automation_execution_parallel_groups SET status='failed',updated_at=NOW() WHERE run_id=$1 AND status IN ('running','joining')",vec![runtime.run.into()]).await?;
         }
         if let Some(instance) = &runtime.instance {
             if status == "success" {
@@ -720,7 +1066,7 @@ async fn finalize_execution(
                 .await?;
             }
         }
-        finalize_automation_run(&txn, runtime.run, status, error.map(|e| format!("{e:?}"))).await?;
+        finalize_automation_run(&txn, runtime.run, status, final_error.clone()).await?;
     } else {
         if status == "waiting" {
             if let Some(instance) = &runtime.instance {
@@ -747,7 +1093,122 @@ async fn finalize_execution(
         sql(&txn,"UPDATE automation_flow_runs SET status=$2,error_message=$3,updated_at=NOW() WHERE id=$1",vec![runtime.run.into(),status.into(),(status=="needs_attention").then(||"外部调用结果不确定，请核实后处理".to_string()).into()]).await?;
     }
     txn.commit().await?;
+    if compensate_after_commit {
+        let needs_attention = compensate_external_effects(&runtime.state, runtime.run).await?;
+        let txn = runtime.state.db.begin().await?;
+        let final_status = if needs_attention {
+            "needs_attention"
+        } else {
+            "failed"
+        };
+        if !needs_attention {
+            if let Some(instance) = &runtime.instance {
+                workflows::skip_pending_tasks(
+                    &txn,
+                    instance,
+                    None,
+                    "业务数据提交冲突，流程已回滚",
+                    Utc::now(),
+                    None,
+                )
+                .await?;
+                workflows::complete_instance(
+                    &txn,
+                    instance,
+                    "failed",
+                    "reviewing",
+                    "failed",
+                    "执行失败",
+                    "系统",
+                )
+                .await?;
+            }
+        }
+        finalize_automation_run(&txn, runtime.run, final_status, final_error).await?;
+        txn.commit().await?;
+    }
     Ok(())
+}
+
+pub(crate) async fn compensate_external_effects(
+    state: &AppState,
+    run_id: Uuid,
+) -> Result<bool, AppError> {
+    let rows = state
+        .db
+        .query_all_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT id,compensation FROM automation_execution_external_effects WHERE run_id=$1 AND status IN ('completed','compensating','failed') ORDER BY sequence DESC",
+            vec![run_id.into()],
+        ))
+        .await?;
+    let mut needs_attention = false;
+    let unresolved = state.db.query_one_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "SELECT 1 FROM automation_execution_external_effects WHERE run_id=$1 AND status IN ('manual','uncertain') LIMIT 1",
+        vec![run_id.into()],
+    )).await?.is_some();
+    needs_attention |= unresolved;
+    for row in rows {
+        let effect_id: Uuid = row.try_get("", "id")?;
+        let compensation: Option<Value> = row.try_get("", "compensation")?;
+        let Some(compensation) = compensation else {
+            sql(
+                &state.db,
+                "UPDATE automation_execution_external_effects SET status='manual',error_message='no compensation configured',updated_at=NOW() WHERE id=$1 AND status IN ('completed','compensating','failed')",
+                vec![effect_id.into()],
+            )
+            .await?;
+            needs_attention = true;
+            continue;
+        };
+        let request = compensation.get("request").cloned().unwrap_or(Value::Null);
+        let outputs: HashMap<String, Value> = serde_json::from_value(
+            compensation
+                .get("outputs")
+                .cloned()
+                .unwrap_or_else(|| json!({})),
+        )
+        .map_err(|_| AppError::BadRequest("invalid compensation output snapshot".into()))?;
+        let context = AutomationExecutionContext {
+            outputs,
+            operator: "系统补偿".into(),
+            run_id: Some(run_id),
+            branch_id: None,
+        };
+        // Claim the effect before calling the remote endpoint. Recovery and
+        // administrator retries can run concurrently, so only the caller
+        // that transitions the row to `compensating` may issue the request.
+        let claimed = state.db.query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "UPDATE automation_execution_external_effects SET status='compensating',error_message=NULL,updated_at=NOW() WHERE id=$1 AND (status IN ('completed','failed') OR (status='compensating' AND updated_at < NOW() - INTERVAL '30 seconds')) RETURNING id",
+            vec![effect_id.into()],
+        )).await?.is_some();
+        if !claimed {
+            continue;
+        }
+        let result = super::execute_http_request_node(&request, &context).await;
+        match result {
+            Ok(_) => {
+                sql(
+                    &state.db,
+                    "UPDATE automation_execution_external_effects SET status='compensated',updated_at=NOW() WHERE id=$1",
+                    vec![effect_id.into()],
+                )
+                .await?;
+            }
+            Err(error) => {
+                sql(
+                    &state.db,
+                    "UPDATE automation_execution_external_effects SET status='failed',error_message=$2,updated_at=NOW() WHERE id=$1",
+                    vec![effect_id.into(), format!("{error:?}").into()],
+                )
+                .await?;
+                needs_attention = true;
+            }
+        }
+    }
+    Ok(needs_attention)
 }
 
 pub(crate) fn start_worker(state: AppState) -> tokio::task::JoinHandle<()> {
@@ -771,7 +1232,7 @@ pub(crate) fn start_worker(state: AppState) -> tokio::task::JoinHandle<()> {
                     let notification_state=state.clone();
                     if tasks.len()<8{tasks.spawn(async move{if let Err(e)=workflows::dispatch_pending_notifications(&notification_state).await{error!(?e,"workflow notification dispatch failed");}});}
                     let rows=state.db.query_all_raw(Statement::from_string(DbBackend::Postgres,
-                        "SELECT e.run_id FROM automation_execution_runs e JOIN automation_flow_runs r ON r.id=e.run_id WHERE e.policy<>'before' AND r.status IN ('queued','running') AND e.owner IS NULL ORDER BY r.created_at LIMIT 32".to_string())).await;
+                        "SELECT e.run_id FROM automation_execution_runs e JOIN automation_flow_runs r ON r.id=e.run_id WHERE e.policy<>'before' AND r.status IN ('queued','running','waiting_join') AND e.owner IS NULL AND EXISTS(SELECT 1 FROM automation_execution_tokens t WHERE t.run_id=e.run_id AND t.status='queued') ORDER BY r.created_at LIMIT 32".to_string())).await;
                     match rows{Ok(rows)=>for row in rows{
                         let Ok(permit)=semaphore.clone().try_acquire_owned()else{break};
                         let Ok(run)=row.try_get::<Uuid>("","run_id")else{continue};let state=state.clone();
@@ -786,13 +1247,26 @@ pub(crate) fn start_worker(state: AppState) -> tokio::task::JoinHandle<()> {
 pub(crate) async fn recover_expired(state: &AppState) -> Result<(), AppError> {
     let txn = state.db.begin().await?;
     let rows=txn.query_all_raw(Statement::from_string(DbBackend::Postgres,
-        "SELECT e.run_id,e.policy FROM automation_execution_runs e JOIN automation_flow_runs r ON r.id=e.run_id WHERE ((e.owner IS NOT NULL AND e.lease_until<NOW()) OR (e.owner IS NULL AND r.status='running')) AND r.status IN ('running','queued') FOR UPDATE OF e,r SKIP LOCKED".to_string())).await?;
+        "SELECT e.run_id,e.policy,r.status FROM automation_execution_runs e JOIN automation_flow_runs r ON r.id=e.run_id WHERE ((e.owner IS NOT NULL AND e.lease_until<NOW()) OR (e.owner IS NULL AND r.status='running') OR (r.status='compensating' AND (e.owner IS NULL OR e.lease_until<NOW()))) AND r.status IN ('running','queued','compensating') FOR UPDATE OF e,r SKIP LOCKED".to_string())).await?;
+    let mut compensating_runs = Vec::new();
     for row in rows {
         let run: Uuid = row.try_get("", "run_id")?;
         let policy: String = row.try_get("", "policy")?;
+        let run_status: String = row.try_get("", "status")?;
         sql(&txn,"UPDATE automation_execution_runs SET owner=NULL,lease_until=NULL,fence=fence+1 WHERE run_id=$1",vec![run.into()]).await?;
+        sql(&txn,"UPDATE automation_execution_external_effects SET status='uncertain',error_message=COALESCE(error_message,'worker lease expired while external request was in flight'),updated_at=NOW() WHERE run_id=$1 AND status='requesting'",vec![run.into()]).await?;
+        if run_status == "compensating" {
+            compensating_runs.push(run);
+            continue;
+        }
         if policy == "before" {
             sql(&txn,"UPDATE automation_execution_tokens SET status='failed',error_message='synchronous caller interrupted' WHERE run_id=$1 AND status NOT IN ('completed','cancelled')",vec![run.into()]).await?;
+            sql(
+                &txn,
+                "DELETE FROM automation_execution_record_changes WHERE run_id=$1",
+                vec![run.into()],
+            )
+            .await?;
             finalize_automation_run(
                 &txn,
                 run,
@@ -808,6 +1282,61 @@ pub(crate) async fn recover_expired(state: &AppState) -> Result<(), AppError> {
         }
     }
     txn.commit().await?;
+    for run in compensating_runs {
+        let needs_attention = compensate_external_effects(state, run).await?;
+        let txn = state.db.begin().await?;
+        let status = if needs_attention {
+            "needs_attention"
+        } else {
+            "failed"
+        };
+        if !needs_attention {
+            sql(
+                &txn,
+                "DELETE FROM automation_execution_record_changes WHERE run_id=$1",
+                vec![run.into()],
+            )
+            .await?;
+            let row = txn
+                .query_one_raw(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "SELECT workflow_instance_id FROM automation_flow_runs WHERE id=$1",
+                    vec![run.into()],
+                ))
+                .await?;
+            let instance_id: Option<Uuid> = row
+                .map(|row| row.try_get("", "workflow_instance_id"))
+                .transpose()?;
+            if let Some(instance_id) = instance_id {
+                if let Some(instance) = workflow_instance_entity::Entity::find_by_id(instance_id)
+                    .one(&txn)
+                    .await?
+                {
+                    workflows::skip_pending_tasks(
+                        &txn,
+                        &instance,
+                        None,
+                        "外部副作用补偿完成，流程已回滚",
+                        Utc::now(),
+                        None,
+                    )
+                    .await?;
+                    workflows::complete_instance(
+                        &txn,
+                        &instance,
+                        "failed",
+                        "reviewing",
+                        "failed",
+                        "执行失败",
+                        "系统",
+                    )
+                    .await?;
+                }
+            }
+        }
+        finalize_automation_run(&txn, run, status, Some("外部副作用补偿恢复完成".into())).await?;
+        txn.commit().await?;
+    }
     Ok(())
 }
 

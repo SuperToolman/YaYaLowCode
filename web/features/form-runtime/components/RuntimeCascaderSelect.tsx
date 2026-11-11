@@ -3,14 +3,7 @@
 import { useMemo, useState } from "react";
 import { Button, Input, Popover } from "@heroui/react";
 import { ChevronDown } from "@gravity-ui/icons";
-import {
-  getCascaderLabel,
-  getCascaderPath,
-  getCascaderPathByValue,
-  normalizeCascaderDataSource,
-  serializeCascaderValue,
-  type CascaderOption,
-} from "@lib/cascader-data-source";
+import { getCascaderLabel, getCascaderPath, getCascaderPathByValue, normalizeCascaderDataSource, serializeCascaderValue, type CascaderOption } from "@/features/form-model/cascader-data-source";
 
 export function RuntimeCascaderSelect({
   ariaLabel,

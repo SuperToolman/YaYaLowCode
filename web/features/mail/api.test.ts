@@ -1,9 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
-// eslint-disable-next-line no-restricted-imports -- Mock the generated transport while testing the mail API boundary.
-import { sendMail as command, listMailMessages as listCommand, getMailMessage as detailCommand } from "@/app/lib/http";
+import { sendMail as command, listMailMessages as listCommand, getMailMessage as detailCommand } from "@/shared/lib/http";
 import { sendMail, listMailMessages, getMailMessage } from "./api";
 
-vi.mock("@/app/lib/http", () => ({ sendMail: vi.fn(), listMailMessages: vi.fn(), getMailMessage: vi.fn() }));
+vi.mock("@/shared/lib/http", () => ({ sendMail: vi.fn(), listMailMessages: vi.fn(), getMailMessage: vi.fn() }));
 beforeEach(() => vi.clearAllMocks());
 const payload = { to: ["to@example.com"], cc: ["cc@example.com"], bcc: ["bcc@example.com"], subject: "主题", text: "正文" };
 

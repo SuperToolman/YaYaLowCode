@@ -90,4 +90,10 @@ describe("message display groups", () => {
   it("returns an empty label for invalid dates", () => {
     expect(formatMessageDividerTime("invalid")).toBe("");
   });
+
+  it("uses an absolute timestamp before the client clock is available", () => {
+    const value = new Date(2026, 9, 6, 18, 6).toISOString();
+    expect(formatMessageDividerTime(value, null)).toBe("2026年 10月06日 18:06");
+    expect(formatMessageDividerTime("invalid", null)).toBe("");
+  });
 });

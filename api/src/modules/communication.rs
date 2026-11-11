@@ -749,6 +749,15 @@ pub(crate) async fn list_conversations(
                 .map(|item| item.display_name.clone())
                 .unwrap_or_else(|| "单聊".into())
         });
+        let unread_count = conversation_unread_count(
+            &state,
+            model.id,
+            &model.conversation_type,
+            current.id,
+            model.last_message_sequence,
+            current_read,
+        )
+        .await?;
         items.push(CommunicationConversationResponse {
             id: model.conversation_uuid,
             conversation_type: model.conversation_type,
@@ -757,7 +766,7 @@ pub(crate) async fn list_conversations(
             last_message_sequence: model.last_message_sequence,
             last_message_at: model.last_message_at.map(format_datetime),
             last_message_preview: previews.remove(&model.id),
-            unread_count: (model.last_message_sequence - current_read).max(0),
+            unread_count,
         });
     }
     items.sort_by(|a, b| b.last_message_at.cmp(&a.last_message_at));
@@ -991,9 +1000,8 @@ pub(crate) async fn mark_read(
         .sequence
         .unwrap_or(conversation.last_message_sequence)
         .clamp(0, conversation.last_message_sequence);
-    state
-        .db
-        .execute_raw(Statement::from_sql_and_values(
+    let txn = state.db.begin().await?;
+    txn.execute_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
             "UPDATE im_conversation_members SET last_read_sequence=GREATEST(last_read_sequence,$3) WHERE conversation_id=$1 AND user_id=$2",
             vec![
@@ -1003,6 +1011,19 @@ pub(crate) async fn mark_read(
             ],
         ))
         .await?;
+    if conversation.conversation_type == "system" {
+        txn.execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "UPDATE workflow_notifications n SET read_at=COALESCE(n.read_at,NOW()) FROM im_messages m WHERE m.conversation_id=$1 AND m.conversation_seq<=$2 AND m.message_uuid=n.notification_uuid AND n.recipient_user_id=$3",
+            vec![
+                SeaValue::Uuid(Some(conversation.id)),
+                SeaValue::BigInt(Some(sequence)),
+                SeaValue::Uuid(Some(current.id)),
+            ],
+        ))
+        .await?;
+    }
+    txn.commit().await?;
     let event =
         json!({ "conversationId": conversation_uuid, "userId": current.id, "sequence": sequence });
     state.publish_communication_event("conversation.read", &event);
@@ -1348,6 +1369,7 @@ pub(crate) async fn create_system_notification_message(
     instance_id: Uuid,
     form_uuid: &str,
     record_uuid: &str,
+    card_context: serde_json::Value,
 ) -> Result<(), AppError> {
     let now = Utc::now();
     let conversation_uuid = format!("system-{recipient_user_id}");
@@ -1394,7 +1416,12 @@ pub(crate) async fn create_system_notification_message(
     let public_business_id = task_uuid
         .map(str::to_string)
         .unwrap_or_else(|| instance_id.to_string());
-    let payload = json!({"type":"yaya.system_card","cardType":card_type,"businessId":public_business_id,"taskUuid":task_uuid,"version":1,"title":title,"content":content,"notificationType":notification_type,"formUuid":form_uuid,"recordUuid":record_uuid,"actions":if card_type == "approval" {json!([{"id":"approve","label":"同意"},{"id":"reject","label":"拒绝"}])}else{json!([])}});
+    let mut payload = json!({"type":"yaya.system_card","cardType":card_type,"businessId":public_business_id,"taskUuid":task_uuid,"version":1,"title":title,"content":content,"notificationType":notification_type,"formUuid":form_uuid,"recordUuid":record_uuid,"actions":if card_type == "approval" {json!([{"id":"approve","label":"同意"},{"id":"reject","label":"拒绝"}])}else{json!([])}});
+    if let (Some(payload), Some(context)) = (payload.as_object_mut(), card_context.as_object()) {
+        for (key, value) in context {
+            payload.insert(key.clone(), value.clone());
+        }
+    }
     txn.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         "INSERT INTO im_messages(id,message_uuid,conversation_id,sender_user_id,conversation_seq,local_id,message_type,content,payload_json,status,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,'system',$7,$8,'active',$9,$9)",
@@ -1523,6 +1550,15 @@ async fn conversation_response(
                 item.content.chars().take(80).collect()
             }
         });
+    let unread_count = conversation_unread_count(
+        state,
+        model.id,
+        &model.conversation_type,
+        current_user_id,
+        model.last_message_sequence,
+        current_read,
+    )
+    .await?;
     Ok(CommunicationConversationResponse {
         id: model.conversation_uuid,
         conversation_type: model.conversation_type,
@@ -1531,8 +1567,38 @@ async fn conversation_response(
         last_message_sequence: model.last_message_sequence,
         last_message_at: model.last_message_at.map(format_datetime),
         last_message_preview,
-        unread_count: (model.last_message_sequence - current_read).max(0),
+        unread_count,
     })
+}
+
+async fn conversation_unread_count(
+    state: &AppState,
+    conversation_id: Uuid,
+    conversation_type: &str,
+    user_id: Uuid,
+    last_message_sequence: i64,
+    last_read_sequence: i64,
+) -> Result<i64, AppError> {
+    if conversation_type != "system" {
+        return Ok((last_message_sequence - last_read_sequence).max(0));
+    }
+
+    let row = state
+        .db
+        .query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT (SELECT COUNT(*) FROM workflow_notifications n LEFT JOIN im_messages linked ON linked.message_uuid=n.notification_uuid AND linked.conversation_id=$1 WHERE n.recipient_user_id=$2 AND n.read_at IS NULL AND (linked.id IS NULL OR linked.conversation_seq>$3)) + (SELECT COUNT(*) FROM im_messages m LEFT JOIN workflow_notifications n ON n.notification_uuid=m.message_uuid AND n.recipient_user_id=$2 WHERE m.conversation_id=$1 AND m.conversation_seq>$3 AND n.id IS NULL) AS unread_count",
+            vec![
+                SeaValue::Uuid(Some(conversation_id)),
+                SeaValue::Uuid(Some(user_id)),
+                SeaValue::BigInt(Some(last_read_sequence)),
+            ],
+        ))
+        .await?;
+    let count = row
+        .ok_or_else(|| AppError::BadRequest("无法计算系统通知未读数".into()))?
+        .try_get::<i64>("", "unread_count")?;
+    Ok(count)
 }
 
 async fn persist_message(

@@ -2,27 +2,23 @@ use crate::modules::custom_buttons::{
     ApiCustomButton, ApiCustomButtonList, ButtonAutomationOption, SaveCustomButtonRequest,
 };
 use crate::modules::view_custom_buttons::{
-    ButtonInvocation, ExecuteButtonRequest, ExecuteButtonResponse, ViewButtonRuntime,
+    ButtonInvocation, ExecuteButtonRequest, ExecuteButtonResponse, ResolveButtonFillRequest,
+    ResolvedButtonFill, SubmitButtonFillRequest, ViewButtonRuntime,
 };
 use axum::Json;
 use serde_json::Value;
 use std::path::Path;
 use utoipa::OpenApi;
 
-use crate::modules::agent_config::{
-    PluginRequest, ProviderRequest, ProviderResponse, SystemAiStatusResponse,
-};
-use crate::modules::files::UploadedFileResponse;
+use crate::modules::agent_config::{ProviderRequest, ProviderResponse, SystemAiStatusResponse};
 use crate::modules::app_market::*;
-use crate::modules::agents::{
-    ApiAgentSession, CreateAgentSessionRequest, UpdateAgentSessionRequest,
-};
 use crate::modules::apps::{ApiApp, CreateAppRequest, UpdateAppRequest};
 use crate::modules::automations::{
     ApiAutomationFlow, ApiAutomationFlowDetail, ApiAutomationFlowList,
     ApiAutomationFlowVersionSummary, ApiAutomationRun, CreateAutomationFlowRequest,
     CreateButtonAutomationRequest, ResolveExecutionRequest, UpdateAutomationFlowRequest,
 };
+use crate::modules::byom::{ModelRouteRequest, ModelRouteResponse, TestModelRouteRequest, TestModelRouteResponse};
 use crate::modules::communication::{
     CommunicationAvailabilityResponse, CommunicationConversationResponse,
     CommunicationMessagePageResponse, CommunicationMessageResponse, CommunicationUserResponse,
@@ -33,6 +29,7 @@ use crate::modules::communication::{
 use crate::modules::dingtalk::{
     AccessTokenResponse, ClearDingTalkDataResponse, DepartmentSyncResponse, UserSyncResponse,
 };
+use crate::modules::files::UploadedFileResponse;
 use crate::modules::forms::{
     ApiAppFieldOutline, ApiDetailForm, ApiFormRecord, ApiFormRecordList, ApiFormSummary,
     ApiFormVersionSummary, ApiSchemaPayload, CreateDetailFormRequest, CreateFormRecordRequest,
@@ -46,6 +43,7 @@ use crate::modules::identity::{
     UpdateUserRequest, UserResponse,
 };
 use crate::modules::locations::{ImportLocationsRequest, LocationResponse};
+use crate::modules::logs::{ClearPlatformLogsResponse, PlatformLogListResponse};
 use crate::modules::mail::{
     MailComposeContext, MailContact, MailDetailResponse, MailPageResponse, SendMailRequest,
     SendMailResponse,
@@ -63,18 +61,14 @@ use crate::modules::settings::{
     UpdateIdentitySourceSettingsRequest, UpdateRolePermissionsRequest, UpdateValkeySettingsRequest,
     ValkeyRuntimeStatusResponse, ValkeySettingsResponse,
 };
-use crate::modules::byom::{ModelRouteRequest, ModelRouteResponse};
-use crate::modules::logs::{PlatformLogListResponse, ClearPlatformLogsResponse};
 use crate::modules::workflows::{
-    WorkflowCommentRequest, WorkflowExecutionRequest, WorkflowPauseRequest,
-    WorkflowRuntimeResponse, WorkflowTaskActionRequest,
+    WorkflowCommentRequest, WorkflowExecutionRequest, WorkflowRuntimeResponse,
+    WorkflowTaskActionRequest,
 };
 
 use crate::platform::api::ApiResponse;
 use crate::platform::config::IdentitySourceSettings;
-use crate::platform::config::{
-    AgentPluginDefinition, CommunicationModuleSettings, RecycleBinSettings,
-};
+use crate::platform::config::{CommunicationModuleSettings, RecycleBinSettings};
 use crate::platform::license::PlatformLicenseStatus;
 
 macro_rules! typed_endpoint {
@@ -155,6 +149,19 @@ typed_endpoint!(
     ApiResponse<ApiCustomButton>
 );
 typed_endpoint!(
+    resolve_view_button_fill,
+    post,
+    "/api/forms/{formUuid}/views/{viewUuid}/custom-buttons/{buttonUuid}/resolve-fill",
+    "resolveViewButtonFill",
+    (
+        ("formUuid" = String, Path),
+        ("viewUuid" = String, Path),
+        ("buttonUuid" = String, Path)
+    ),
+    ResolveButtonFillRequest,
+    ApiResponse<ResolvedButtonFill>
+);
+typed_endpoint!(
     submit_view_button,
     post,
     "/api/forms/{formUuid}/views/{viewUuid}/custom-buttons/{buttonUuid}/submit",
@@ -164,10 +171,17 @@ typed_endpoint!(
         ("viewUuid" = String, Path),
         ("buttonUuid" = String, Path)
     ),
-    ButtonInvocation,
+    SubmitButtonFillRequest,
     ApiResponse<ApiFormRecord>
 );
-typed_endpoint!(health_check, get, "/healthz", "healthCheck", (), crate::http::router::HealthResponse);
+typed_endpoint!(
+    health_check,
+    get,
+    "/healthz",
+    "healthCheck",
+    (),
+    crate::http::router::HealthResponse
+);
 typed_endpoint!(list_custom_buttons, get, "/api/forms/{formUuid}/custom-buttons", "listCustomButtons", (("formUuid"=String,Path),("search"=Option<String>,Query),("page"=Option<u64>,Query),("pageSize"=Option<u64>,Query)), ApiResponse<ApiCustomButtonList>);
 typed_endpoint!(
     create_custom_button,
@@ -296,7 +310,14 @@ typed_endpoint!(
     UpdateRecycleBinSettingsRequest,
     ApiResponse<RecycleBinSettings>
 );
-typed_endpoint!(get_database_settings, get, "/api/settings/database", "getDatabaseSettings", (), ApiResponse<DatabaseSettingsResponse>);
+typed_endpoint!(
+    get_database_settings,
+    get,
+    "/api/settings/database",
+    "getDatabaseSettings",
+    (),
+    ApiResponse<DatabaseSettingsResponse>
+);
 typed_endpoint!(
     update_database_settings,
     put,
@@ -406,7 +427,14 @@ typed_endpoint!(
     (("employee_id" = String, Path)),
     ApiResponse<MarketPurchaseReceipt>
 );
-typed_endpoint!(install_ai_employee, post, "/api/settings/ai-employee-market/{employee_id}/install", "installAiEmployee", (("employee_id" = String, Path)), ApiResponse<crate::modules::settings::AiEmployeeInstallationStatus>);
+typed_endpoint!(
+    install_ai_employee,
+    post,
+    "/api/settings/ai-employee-market/{employee_id}/install",
+    "installAiEmployee",
+    (("employee_id" = String, Path)),
+    ApiResponse<crate::modules::settings::AiEmployeeInstallationStatus>
+);
 typed_endpoint!(
     apply_latest_platform_license,
     post,
@@ -586,7 +614,8 @@ typed_endpoint!(
     "createProvider",
     (),
     ProviderRequest,
-    ApiResponse<ProviderResponse>, 201
+    ApiResponse<ProviderResponse>,
+    201
 );
 typed_endpoint!(
     update_provider,
@@ -597,34 +626,14 @@ typed_endpoint!(
     ProviderRequest,
     ApiResponse<ProviderResponse>
 );
-typed_endpoint!(delete_provider, delete, "/api/agent/providers/{id}", "deleteProvider", (("id" = String, Path)), ApiResponse<Value>);
 typed_endpoint!(
-    list_plugins,
-    get,
-    "/api/agent/plugins",
-    "listPlugins",
-    (),
-    ApiResponse<Vec<AgentPluginDefinition>>
-);
-typed_endpoint!(
-    create_plugin,
-    post,
-    "/api/agent/plugins",
-    "createPlugin",
-    (),
-    PluginRequest,
-    ApiResponse<AgentPluginDefinition>, 201
-);
-typed_endpoint!(
-    update_plugin,
-    put,
-    "/api/agent/plugins/{id}",
-    "updatePlugin",
+    delete_provider,
+    delete,
+    "/api/agent/providers/{id}",
+    "deleteProvider",
     (("id" = String, Path)),
-    PluginRequest,
-    ApiResponse<AgentPluginDefinition>
+    ApiResponse<Value>
 );
-typed_endpoint!(delete_plugin, delete, "/api/agent/plugins/{id}", "deletePlugin", (("id" = String, Path)), ApiResponse<Value>);
 typed_endpoint!(
     get_identity_source_settings,
     get,
@@ -642,7 +651,14 @@ typed_endpoint!(
     UpdateIdentitySourceSettingsRequest,
     ApiResponse<IdentitySourceSettings>
 );
-typed_endpoint!(get_internal_identity_source_settings, get, "/api/internal/identity-source", "getInternalIdentitySourceSettings", (), ApiResponse<IdentitySourceSettings>);
+typed_endpoint!(
+    get_internal_identity_source_settings,
+    get,
+    "/api/internal/identity-source",
+    "getInternalIdentitySourceSettings",
+    (),
+    ApiResponse<IdentitySourceSettings>
+);
 typed_endpoint!(
     get_role_permissions,
     get,
@@ -771,7 +787,14 @@ typed_endpoint!(
     UpdateUserRequest,
     ApiResponse<UserResponse>
 );
-typed_endpoint!(delete_user, delete, "/api/identity/users/{userId}", "deleteUser", (("userId" = String, Path)), ApiResponse<Value>);
+typed_endpoint!(
+    delete_user,
+    delete,
+    "/api/identity/users/{userId}",
+    "deleteUser",
+    (("userId" = String, Path)),
+    ApiResponse<Value>
+);
 typed_endpoint!(
     resolve_dingtalk_login,
     post,
@@ -807,37 +830,15 @@ typed_endpoint!(
     UpdateLocalRoleRequest,
     ApiResponse<RoleResponse>
 );
-typed_endpoint!(delete_local_role, delete, "/api/identity/roles/{roleId}", "deleteLocalRole", (("roleId" = String, Path)), ApiResponse<Value>);
+typed_endpoint!(
+    delete_local_role,
+    delete,
+    "/api/identity/roles/{roleId}",
+    "deleteLocalRole",
+    (("roleId" = String, Path)),
+    ApiResponse<Value>
+);
 
-typed_endpoint!(
-    list_agent_sessions,
-    get,
-    "/api/agent/sessions",
-    "listAgentSessions",
-    (),
-    ApiResponse<Vec<ApiAgentSession>>
-);
-typed_endpoint!(
-    create_agent_session,
-    post,
-    "/api/agent/sessions",
-    "createAgentSession",
-    (),
-    CreateAgentSessionRequest,
-    ApiResponse<ApiAgentSession>, 201
-);
-typed_endpoint!(
-    update_agent_session,
-    patch,
-    "/api/agent/sessions/{sessionId}",
-    "updateAgentSession",
-    (("sessionId" = String, Path)),
-    UpdateAgentSessionRequest,
-    ApiResponse<ApiAgentSession>
-);
-#[utoipa::path(delete, path = "/api/agent/sessions/{sessionId}", operation_id = "deleteAgentSession", params(("sessionId" = String, Path)), responses((status = 204)))]
-#[allow(dead_code)]
-fn delete_agent_session() {}
 typed_endpoint!(
     list_apps,
     get,
@@ -853,7 +854,8 @@ typed_endpoint!(
     "createApp",
     (),
     CreateAppRequest,
-    ApiResponse<ApiApp>, 201
+    ApiResponse<ApiApp>,
+    201
 );
 typed_endpoint!(
     update_app,
@@ -864,7 +866,14 @@ typed_endpoint!(
     UpdateAppRequest,
     ApiResponse<ApiApp>
 );
-typed_endpoint!(delete_app, delete, "/api/apps/{appId}", "deleteApp", (("appId" = String, Path)), ApiResponse<Value>);
+typed_endpoint!(
+    delete_app,
+    delete,
+    "/api/apps/{appId}",
+    "deleteApp",
+    (("appId" = String, Path)),
+    ApiResponse<Value>
+);
 typed_endpoint!(
     list_navigation_items,
     get,
@@ -898,7 +907,8 @@ typed_endpoint!(
     "createNavigationGroup",
     (("appId" = String, Path)),
     CreateNavigationGroupRequest,
-    ApiResponse<ApiNavigationItem>, 201
+    ApiResponse<ApiNavigationItem>,
+    201
 );
 typed_endpoint!(
     update_navigation_group,
@@ -949,37 +959,197 @@ typed_endpoint!(
     "createForm",
     (("appId" = String, Path)),
     CreateFormRequest,
-    ApiResponse<ApiFormSummary>, 201
+    ApiResponse<ApiFormSummary>,
+    201
 );
 #[allow(dead_code)]
 #[utoipa::path(get, path = "/api/files/{fileId}/download", operation_id = "downloadFile", params(("fileId" = String, Path)), responses((status = 200, body = String, content_type = "application/octet-stream")))]
 fn get_uploaded_file() {}
 #[derive(utoipa::ToSchema)]
 #[allow(dead_code)]
-struct FileUploadBody { #[schema(value_type = String, format = Binary)] file: String }
+struct FileUploadBody {
+    #[schema(value_type = String, format = Binary)]
+    file: String,
+}
 #[allow(dead_code)]
 #[utoipa::path(post, path = "/api/files/upload", operation_id = "uploadFile", request_body(content = FileUploadBody, content_type = "multipart/form-data"), responses((status = 200, body = ApiResponse<UploadedFileResponse>)))]
 fn upload_file() {}
-typed_endpoint!(get_notification_settings, get, "/api/settings/notifications", "getNotificationSettings", (), ApiResponse<crate::platform::config::NotificationSettings>);
-typed_endpoint!(update_notification_settings, put, "/api/settings/notifications", "updateNotificationSettings", (), crate::platform::config::NotificationSettings, ApiResponse<crate::platform::config::NotificationSettings>);
+typed_endpoint!(
+    get_notification_settings,
+    get,
+    "/api/settings/notifications",
+    "getNotificationSettings",
+    (),
+    ApiResponse<crate::platform::config::NotificationSettings>
+);
+typed_endpoint!(
+    update_notification_settings,
+    put,
+    "/api/settings/notifications",
+    "updateNotificationSettings",
+    (),
+    crate::platform::config::NotificationSettings,
+    ApiResponse<crate::platform::config::NotificationSettings>
+);
 typed_endpoint!(list_platform_logs, get, "/api/settings/logs", "listPlatformLogs", (("level" = Option<String>, Query), ("limit" = Option<u64>, Query), ("offset" = Option<u64>, Query)), ApiResponse<PlatformLogListResponse>);
-typed_endpoint!(clear_platform_logs, delete, "/api/settings/logs", "clearPlatformLogs", (), ApiResponse<ClearPlatformLogsResponse>);
-typed_endpoint!(list_model_routes, get, "/api/settings/model-routes", "listModelRoutes", (), ApiResponse<Vec<ModelRouteResponse>>);
-typed_endpoint!(create_model_route, post, "/api/settings/model-routes", "createModelRoute", (), ModelRouteRequest, ApiResponse<ModelRouteResponse>, 201);
-typed_endpoint!(update_model_route, put, "/api/settings/model-routes/{id}", "updateModelRoute", (("id" = String, Path)), ModelRouteRequest, ApiResponse<ModelRouteResponse>);
-typed_endpoint!(delete_model_route, delete, "/api/settings/model-routes/{id}", "deleteModelRoute", (("id" = String, Path)), ApiResponse<Value>);
-typed_endpoint!(list_market_applications, get, "/api/market/applications", "listMarketApplications", (), ApiResponse<Vec<MarketProduct>>);
-typed_endpoint!(get_market_application, get, "/api/market/applications/{productId}", "getMarketApplication", (("productId" = String, Path)), ApiResponse<MarketProduct>);
-typed_endpoint!(preflight_market_application, get, "/api/market/applications/{productId}/preflight", "preflightMarketApplication", (("productId" = String, Path)), ApiResponse<MarketInstallPreflight>);
-typed_endpoint!(install_market_application, post, "/api/market/applications/{productId}/installations", "installMarketApplication", (("productId" = String, Path)), ApiResponse<MarketInstallResponse>);
-typed_endpoint!(list_market_installations, get, "/api/market/installations", "listMarketInstallations", (), ApiResponse<Vec<MarketInstallation>>);
-typed_endpoint!(preflight_market_installation, get, "/api/market/installations/{installationId}/preflight", "preflightMarketInstallation", (("installationId" = String, Path)), ApiResponse<MarketUpgradePreflight>);
-typed_endpoint!(upgrade_market_installation, post, "/api/market/installations/{installationId}/upgrade", "upgradeMarketInstallation", (("installationId" = String, Path)), ApiResponse<MarketReleaseResponse>);
-typed_endpoint!(rollback_market_installation, post, "/api/market/installations/{installationId}/rollback", "rollbackMarketInstallation", (("installationId" = String, Path)), MarketRollbackRequest, ApiResponse<MarketReleaseResponse>);
-typed_endpoint!(archive_market_installation, delete, "/api/market/installations/{installationId}", "archiveMarketInstallation", (("installationId" = String, Path)), ApiResponse<MarketInstallationStatus>);
-typed_endpoint!(restore_market_installation, post, "/api/market/installations/{installationId}/restore", "restoreMarketInstallation", (("installationId" = String, Path)), ApiResponse<MarketInstallationStatus>);
-typed_endpoint!(purge_market_installation, delete, "/api/market/installations/{installationId}/purge", "purgeMarketInstallation", (("installationId" = String, Path)), ApiResponse<MarketPurgeResponse>);
-typed_endpoint!(sync_market_applications, post, "/api/market/applications/sync", "syncMarketApplications", (), ApiResponse<MarketSyncResponse>);
+typed_endpoint!(
+    clear_platform_logs,
+    delete,
+    "/api/settings/logs",
+    "clearPlatformLogs",
+    (),
+    ApiResponse<ClearPlatformLogsResponse>
+);
+typed_endpoint!(
+    list_model_routes,
+    get,
+    "/api/settings/model-routes",
+    "listModelRoutes",
+    (),
+    ApiResponse<Vec<ModelRouteResponse>>
+);
+typed_endpoint!(
+    create_model_route,
+    post,
+    "/api/settings/model-routes",
+    "createModelRoute",
+    (),
+    ModelRouteRequest,
+    ApiResponse<ModelRouteResponse>,
+    201
+);
+typed_endpoint!(
+    update_model_route,
+    put,
+    "/api/settings/model-routes/{id}",
+    "updateModelRoute",
+    (("id" = String, Path)),
+    ModelRouteRequest,
+    ApiResponse<ModelRouteResponse>
+);
+typed_endpoint!(
+    delete_model_route,
+    delete,
+    "/api/settings/model-routes/{id}",
+    "deleteModelRoute",
+    (("id" = String, Path)),
+    ApiResponse<Value>
+);
+typed_endpoint!(
+    test_model_route,
+    post,
+    "/api/settings/model-routes/{id}/test",
+    "testModelRoute",
+    (("id" = String, Path)),
+    TestModelRouteRequest,
+    ApiResponse<TestModelRouteResponse>
+);
+typed_endpoint!(
+    fetch_model_route_models,
+    post,
+    "/api/settings/model-routes/{id}/models",
+    "fetchModelRouteModels",
+    (("id" = String, Path)),
+    TestModelRouteRequest,
+    ApiResponse<TestModelRouteResponse>
+);
+typed_endpoint!(
+    list_market_applications,
+    get,
+    "/api/market/applications",
+    "listMarketApplications",
+    (),
+    ApiResponse<Vec<MarketProduct>>
+);
+typed_endpoint!(
+    get_market_application,
+    get,
+    "/api/market/applications/{productId}",
+    "getMarketApplication",
+    (("productId" = String, Path)),
+    ApiResponse<MarketProduct>
+);
+typed_endpoint!(
+    preflight_market_application,
+    get,
+    "/api/market/applications/{productId}/preflight",
+    "preflightMarketApplication",
+    (("productId" = String, Path)),
+    ApiResponse<MarketInstallPreflight>
+);
+typed_endpoint!(
+    install_market_application,
+    post,
+    "/api/market/applications/{productId}/installations",
+    "installMarketApplication",
+    (("productId" = String, Path)),
+    ApiResponse<MarketInstallResponse>
+);
+typed_endpoint!(
+    list_market_installations,
+    get,
+    "/api/market/installations",
+    "listMarketInstallations",
+    (),
+    ApiResponse<Vec<MarketInstallation>>
+);
+typed_endpoint!(
+    preflight_market_installation,
+    get,
+    "/api/market/installations/{installationId}/preflight",
+    "preflightMarketInstallation",
+    (("installationId" = String, Path)),
+    ApiResponse<MarketUpgradePreflight>
+);
+typed_endpoint!(
+    upgrade_market_installation,
+    post,
+    "/api/market/installations/{installationId}/upgrade",
+    "upgradeMarketInstallation",
+    (("installationId" = String, Path)),
+    ApiResponse<MarketReleaseResponse>
+);
+typed_endpoint!(
+    rollback_market_installation,
+    post,
+    "/api/market/installations/{installationId}/rollback",
+    "rollbackMarketInstallation",
+    (("installationId" = String, Path)),
+    MarketRollbackRequest,
+    ApiResponse<MarketReleaseResponse>
+);
+typed_endpoint!(
+    archive_market_installation,
+    delete,
+    "/api/market/installations/{installationId}",
+    "archiveMarketInstallation",
+    (("installationId" = String, Path)),
+    ApiResponse<MarketInstallationStatus>
+);
+typed_endpoint!(
+    restore_market_installation,
+    post,
+    "/api/market/installations/{installationId}/restore",
+    "restoreMarketInstallation",
+    (("installationId" = String, Path)),
+    ApiResponse<MarketInstallationStatus>
+);
+typed_endpoint!(
+    purge_market_installation,
+    delete,
+    "/api/market/installations/{installationId}/purge",
+    "purgeMarketInstallation",
+    (("installationId" = String, Path)),
+    ApiResponse<MarketPurgeResponse>
+);
+typed_endpoint!(
+    sync_market_applications,
+    post,
+    "/api/market/applications/sync",
+    "syncMarketApplications",
+    (),
+    ApiResponse<MarketSyncResponse>
+);
 typed_endpoint!(
     ensure_workflow_process_flow,
     post,
@@ -1038,19 +1208,10 @@ typed_endpoint!(
     ApiResponse<Value>
 );
 typed_endpoint!(
-    pause_workflow_record,
+    withdraw_workflow_record,
     post,
-    "/api/forms/{formUuid}/records/{recordUuid}/workflow/pause",
-    "pauseWorkflowRecord",
-    (("formUuid" = String, Path), ("recordUuid" = String, Path)),
-    WorkflowPauseRequest,
-    ApiResponse<Value>
-);
-typed_endpoint!(
-    resume_workflow_record,
-    post,
-    "/api/forms/{formUuid}/records/{recordUuid}/workflow/resume",
-    "resumeWorkflowRecord",
+    "/api/forms/{formUuid}/records/{recordUuid}/workflow/withdraw",
+    "withdrawWorkflowRecord",
     (("formUuid" = String, Path), ("recordUuid" = String, Path)),
     ApiResponse<Value>
 );
@@ -1112,7 +1273,8 @@ typed_endpoint!(
     "createAutomationFlow",
     (("appId" = String, Path)),
     CreateAutomationFlowRequest,
-    ApiResponse<ApiAutomationFlow>, 201
+    ApiResponse<ApiAutomationFlow>,
+    201
 );
 
 typed_endpoint!(
@@ -1132,7 +1294,14 @@ typed_endpoint!(
     UpdateAutomationFlowRequest,
     ApiResponse<ApiAutomationFlow>
 );
-typed_endpoint!(delete_automation_flow, delete, "/api/automations/{automationId}", "deleteAutomationFlow", (("automationId" = String, Path)), ApiResponse<Value>);
+typed_endpoint!(
+    delete_automation_flow,
+    delete,
+    "/api/automations/{automationId}",
+    "deleteAutomationFlow",
+    (("automationId" = String, Path)),
+    ApiResponse<Value>
+);
 typed_endpoint!(
     list_automation_flow_versions,
     get,
@@ -1257,7 +1426,8 @@ typed_endpoint!(
     "createDetailForm",
     (("formUuid" = String, Path)),
     CreateDetailFormRequest,
-    ApiResponse<ApiDetailForm>, 201
+    ApiResponse<ApiDetailForm>,
+    201
 );
 typed_endpoint!(
     create_form_record,
@@ -1266,7 +1436,8 @@ typed_endpoint!(
     "createFormRecord",
     (("formUuid" = String, Path)),
     CreateFormRecordRequest,
-    ApiResponse<ApiFormRecord>, 201
+    ApiResponse<ApiFormRecord>,
+    201
 );
 typed_endpoint!(
     update_form_record,
@@ -1336,31 +1507,63 @@ typed_endpoint!(
     UpdateFormNameRequest,
     ApiResponse<ApiSchemaPayload>
 );
-typed_endpoint!(delete_form, delete, "/api/forms/{formUuid}", "deleteForm", (("formUuid" = String, Path)), ApiResponse<Value>);
+typed_endpoint!(
+    delete_form,
+    delete,
+    "/api/forms/{formUuid}",
+    "deleteForm",
+    (("formUuid" = String, Path)),
+    ApiResponse<Value>
+);
 
-
-typed_endpoint!(get_authorization_grants, get, "/api/authorization/grants", "getAuthorizationGrants", (), ApiResponse<Vec<String>>);
-typed_endpoint!(get_app, get, "/api/apps/{appId}", "getApp", (("appId" = String, Path)), ApiResponse<ApiApp>);
-typed_endpoint!(get_market_submission, get, "/api/apps/{appId}/market-submission", "getMarketSubmission", (("appId" = String, Path)), ApiResponse<Option<MarketSubmission>>);
-typed_endpoint!(submit_market_application, post, "/api/apps/{appId}/market-submission", "submitMarketApplication", (("appId" = String, Path)), ApiResponse<MarketSubmission>);
-typed_endpoint!(uninstall_ai_employee, post, "/api/settings/ai-employee-market/{employee_id}/uninstall", "uninstallAiEmployee", (("employee_id" = String, Path)), ApiResponse<crate::modules::settings::AiEmployeeInstallationStatus>);
-typed_endpoint!(get_workflow_notification_preferences, get, "/api/workflow/notification-preferences", "getWorkflowNotificationPreferences", (), ApiResponse<crate::modules::workflows::WorkflowNotificationPreferences>);
-
-
-typed_endpoint!(list_agent_workbench_sessions, get, "/api/agent/workbench/sessions", "listAgentWorkbenchSessions", (("cursor" = Option<String>, Query), ("limit" = Option<u64>, Query), ("agentId" = Option<String>, Query), ("runStatus" = Option<String>, Query), ("query" = Option<String>, Query)), ApiResponse<crate::modules::agents::ApiAgentWorkbenchSessionPage>);
-typed_endpoint!(list_archived_agent_sessions, get, "/api/agent/archived-sessions", "listArchivedAgentSessions", (), ApiResponse<Vec<ApiAgentSession>>);
-typed_endpoint!(restore_agent_session, post, "/api/agent/sessions/{sessionId}/restore", "restoreAgentSession", (("sessionId" = String, Path)), ApiResponse<ApiAgentSession>);
-#[utoipa::path(delete, path = "/api/agent/sessions/{sessionId}/purge", operation_id = "purgeAgentSession", params(("sessionId" = String, Path)), responses((status = 204)))]
-#[allow(dead_code)]
-fn purge_agent_session() {}
-typed_endpoint!(list_agent_files, get, "/api/agent/sessions/{sessionId}/files", "listAgentFiles", (("sessionId" = String, Path), ("kind" = Option<String>, Query)), ApiResponse<Vec<crate::modules::agent_files::AgentFileResponse>>);
-typed_endpoint!(list_agent_artifacts, get, "/api/agent/sessions/{sessionId}/artifacts", "listAgentArtifacts", (("sessionId" = String, Path), ("kind" = Option<String>, Query)), ApiResponse<Vec<crate::modules::agent_files::AgentFileResponse>>);
-#[utoipa::path(post, path = "/api/agent/sessions/{sessionId}/files", operation_id = "uploadAgentFile", params(("sessionId" = String, Path)), request_body(content = FileUploadBody, content_type = "multipart/form-data"), responses((status = 200, body = ApiResponse<crate::modules::agent_files::AgentFileUploadResponse>)))]
-#[allow(dead_code)]
-fn upload_agent_file() {}
-#[utoipa::path(get, path = "/api/agent/sessions/{sessionId}/files/{fileId}", operation_id = "downloadAgentFile", params(("sessionId" = String, Path), ("fileId" = String, Path)), responses((status = 200, body = String, content_type = "application/octet-stream")))]
-#[allow(dead_code)]
-fn download_agent_file() {}
+typed_endpoint!(
+    get_authorization_grants,
+    get,
+    "/api/authorization/grants",
+    "getAuthorizationGrants",
+    (),
+    ApiResponse<Vec<String>>
+);
+typed_endpoint!(
+    get_app,
+    get,
+    "/api/apps/{appId}",
+    "getApp",
+    (("appId" = String, Path)),
+    ApiResponse<ApiApp>
+);
+typed_endpoint!(
+    get_market_submission,
+    get,
+    "/api/apps/{appId}/market-submission",
+    "getMarketSubmission",
+    (("appId" = String, Path)),
+    ApiResponse<Option<MarketSubmission>>
+);
+typed_endpoint!(
+    submit_market_application,
+    post,
+    "/api/apps/{appId}/market-submission",
+    "submitMarketApplication",
+    (("appId" = String, Path)),
+    ApiResponse<MarketSubmission>
+);
+typed_endpoint!(
+    uninstall_ai_employee,
+    post,
+    "/api/settings/ai-employee-market/{employee_id}/uninstall",
+    "uninstallAiEmployee",
+    (("employee_id" = String, Path)),
+    ApiResponse<crate::modules::settings::AiEmployeeInstallationStatus>
+);
+typed_endpoint!(
+    get_workflow_notification_preferences,
+    get,
+    "/api/workflow/notification-preferences",
+    "getWorkflowNotificationPreferences",
+    (),
+    ApiResponse<crate::modules::workflows::WorkflowNotificationPreferences>
+);
 
 #[derive(OpenApi)]
 #[openapi(
@@ -1370,7 +1573,44 @@ fn download_agent_file() {}
         description = "Runtime-generated API contract for the YaYa Low Code backend."
     ),
     paths(
-        list_agent_workbench_sessions, list_archived_agent_sessions, restore_agent_session, purge_agent_session, list_agent_files, list_agent_artifacts, upload_agent_file, download_agent_file,
+        crate::modules::knowledge::list,
+        crate::modules::knowledge::create,
+        crate::modules::knowledge::documents,
+        crate::modules::knowledge::upload,
+        crate::modules::knowledge::versions,
+        crate::modules::knowledge::remove_document,
+        crate::modules::knowledge::remove_base,
+        crate::modules::knowledge::download,
+        crate::modules::knowledge::retrieval::search,
+        crate::modules::knowledge::vectors::settings,
+        crate::modules::knowledge::vectors::save,
+        crate::modules::knowledge::vectors::retry,
+        crate::modules::knowledge::retrieval::citation,
+        crate::modules::knowledge::parsing::read,
+        crate::modules::knowledge::parsing::reprocess,
+        crate::modules::agent_v2::submissions::create,
+        crate::modules::agent_v2::submissions::read,
+        crate::modules::agent_v2::submissions::upload,
+        crate::modules::agent_v2::submissions::commit,
+        crate::modules::agent_v2::submissions::abandon,
+        crate::modules::agent_v2::file_previews::list,
+        crate::modules::agent_v2::files::list,
+        crate::modules::agent_v2::files::upload,
+        crate::modules::agent_v2::files::download,
+        crate::modules::agent_v2::executions::list,
+        crate::modules::agent_v2::executions::detail,
+        crate::modules::agent_v2::executions::logs,
+        crate::modules::agent_v2::employees,
+        crate::modules::agent_v2::session_fork::fork,
+        crate::modules::agent_v2::session_deletion::action,
+        crate::modules::agent_v2::session_directory::list,
+        crate::modules::agent_v2::session_directory::update,
+        crate::modules::agent_v2::create_session,
+        crate::modules::agent_v2::session,
+        crate::modules::agent_v2::messages,
+        crate::modules::agent_v2::confirmations,
+        crate::modules::agent_v2::command,
+        crate::modules::agent_v2::events,
         get_authorization_grants,
         get_app,
         get_market_submission,
@@ -1387,6 +1627,8 @@ fn download_agent_file() {}
         create_model_route,
         update_model_route,
         delete_model_route,
+        test_model_route,
+        fetch_model_route_models,
         list_market_applications,
         get_market_application,
         preflight_market_application,
@@ -1450,10 +1692,6 @@ fn download_agent_file() {}
         create_provider,
         update_provider,
         delete_provider,
-        list_plugins,
-        create_plugin,
-        update_plugin,
-        delete_plugin,
         get_identity_source_settings,
         update_identity_source_settings,
         get_internal_identity_source_settings,
@@ -1478,10 +1716,6 @@ fn download_agent_file() {}
         create_local_role,
         update_local_role,
         delete_local_role,
-        list_agent_sessions,
-        create_agent_session,
-        update_agent_session,
-        delete_agent_session,
         list_apps,
         create_app,
         update_app,
@@ -1503,8 +1737,7 @@ fn download_agent_file() {}
         get_workflow_record_runtime,
         submit_workflow_record,
         reverse_workflow_record,
-        pause_workflow_record,
-        resume_workflow_record,
+        withdraw_workflow_record,
         approve_workflow_task,
         complete_workflow_execution,
         reject_workflow_task,
@@ -1515,6 +1748,7 @@ fn download_agent_file() {}
         execute_view_button,
         list_view_button_options,
         list_view_buttons,
+        resolve_view_button_fill,
         prepare_view_button,
         submit_view_button,
         list_custom_buttons,
@@ -1618,11 +1852,7 @@ mod tests {
                 .is_object()
         );
         assert!(
-            value["paths"]["/api/forms/{formUuid}/records/{recordUuid}/workflow/pause"]["post"]
-                .is_object()
-        );
-        assert!(
-            value["paths"]["/api/forms/{formUuid}/records/{recordUuid}/workflow/resume"]["post"]
+            value["paths"]["/api/forms/{formUuid}/records/{recordUuid}/workflow/withdraw"]["post"]
                 .is_object()
         );
         assert!(
@@ -1640,22 +1870,54 @@ mod tests {
     fn http_contracts_match_wire_formats_and_parameters() {
         let value = serde_json::to_value(document()).unwrap();
         for (path, method, operation) in [
-            ("/api/settings/notifications", "put", "updateNotificationSettings"),
+            (
+                "/api/settings/notifications",
+                "put",
+                "updateNotificationSettings",
+            ),
             ("/api/settings/model-routes", "post", "createModelRoute"),
             ("/api/settings/logs", "get", "listPlatformLogs"),
             ("/api/authorization/grants", "get", "getAuthorizationGrants"),
-            ("/api/market/installations/{installationId}/rollback", "post", "rollbackMarketInstallation"),
-            ("/api/agent/workbench/sessions", "get", "listAgentWorkbenchSessions"),
-        ] { assert_eq!(value["paths"][path][method]["operationId"], operation); }
-        assert!(value["paths"]["/api/agent/sessions/{sessionId}"]["delete"]["responses"]["204"].is_object());
-        assert!(value["paths"]["/api/settings/model-routes"]["post"]["responses"]["201"].is_object());
+            (
+                "/api/market/installations/{installationId}/rollback",
+                "post",
+                "rollbackMarketInstallation",
+            ),
+            (
+                "/api/agent/v2/submissions",
+                "post",
+                "agentV2CreateSubmission",
+            ),
+        ] {
+            assert_eq!(value["paths"][path][method]["operationId"], operation);
+        }
+        let retired: Vec<String> = serde_json::from_str(include_str!(
+            "../../agent-v2/fixtures/retired-agent-routes.json"
+        ))
+        .unwrap();
+        for path in &retired {
+            assert!(
+                value["paths"].get(path).is_none(),
+                "retired contract {path}"
+            );
+        }
+        assert!(
+            value["paths"]["/api/settings/model-routes"]["post"]["responses"]["201"].is_object()
+        );
         assert!(value["paths"]["/api/files/upload"]["post"]["requestBody"]["content"]["multipart/form-data"].is_object());
         assert!(value["paths"]["/api/files/{fileId}/download"]["get"]["responses"]["200"]["content"]["application/octet-stream"].is_object());
-        let query = value["paths"]["/api/agent/workbench/sessions"]["get"]["parameters"].as_array().unwrap();
-        for name in ["cursor", "limit", "agentId", "runStatus", "query"] { assert!(query.iter().any(|parameter| parameter["name"] == name && parameter["in"] == "query")); }
-        assert!(value["components"]["schemas"]["NotificationSettings"]["properties"]["inAppEnabled"].is_object());
-        assert!(value["components"]["schemas"]["ModelRouteResponse"]["properties"].get("apiKey").is_none());
-        assert!(value["components"]["schemas"]["MarketRollbackRequest"]["properties"]["releaseId"].is_object());
+        assert!(
+            value["components"]["schemas"]["NotificationSettings"]["properties"]["inAppEnabled"]
+                .is_object()
+        );
+        assert!(
+            value["components"]["schemas"]["ModelRouteResponse"]["properties"]
+                .get("apiKey")
+                .is_none()
+        );
+        assert!(
+            value["components"]["schemas"]["MarketRollbackRequest"]["properties"]["releaseId"]
+                .is_object()
+        );
     }
-
 }

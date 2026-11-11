@@ -1,14 +1,6 @@
-import {
-  deleteRecycleBinEntry,
-  emptyRecycleBin,
-  getRecycleBinSettings,
-  listRecycleBin,
-  restoreRecycleBinEntry,
-  updateRecycleBinSettings,
-} from "@lib/http";
-import { unwrapApiResult } from "@lib/api-request";
-import type { RecycleBinEntry, RecycleBinSettings } from "@lib/http";
-
+import { deleteRecycleBinEntry, emptyRecycleBin, getRecycleBinSettings, listRecycleBin, restoreRecycleBinEntry, updateRecycleBinSettings } from "@/shared/lib/http";
+import { unwrapApiResult } from "@/shared/lib/api-request";
+import type { RecycleBinEntry, RecycleBinSettings } from "@/shared/lib/http";
 
 export async function listRecycleBinEntries(formUuid?: string): Promise<RecycleBinEntry[]> {
   const { data, error, response } = await listRecycleBin({ query: formUuid ? { formUuid } : undefined, responseStyle: "fields" });

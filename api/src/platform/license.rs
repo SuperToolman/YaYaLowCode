@@ -1,6 +1,6 @@
 //! Platform license validation. The platform never receives a signing private key.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use reqwest::StatusCode;
@@ -26,11 +26,20 @@ pub struct PlatformAiEmployeeSkill {
     pub package_path: String,
     pub description: String,
     pub instructions: String,
+    #[serde(default)]
+    pub environment_values: BTreeMap<String, String>,
     /// Canonical DSH Plugin manifest emitted by the operation center/package
     /// installer. Kept on the signed entitlement so Host can build its
     /// employee-scoped plugin registry without reading the database directly.
     #[serde(default)]
     pub plugin_manifest_json: String,
+}
+
+impl PlatformAiEmployeeSkill {
+    /// Instructions are model-visible. Skill configuration is execution-only.
+    pub(crate) fn execution_instructions(&self) -> String {
+        self.instructions.clone()
+    }
 }
 
 #[derive(Clone, Deserialize, Serialize, ToSchema)]
@@ -50,7 +59,16 @@ pub struct PlatformAiEmployeeEntitlement {
     pub allowed_tools: Vec<String>,
     #[serde(default)]
     pub application_ids: Vec<String>,
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub knowledge: Option<EmployeeKnowledgeManifest>,
 }
+#[derive(Clone,Deserialize,Serialize,ToSchema)]
+#[serde(rename_all="camelCase",deny_unknown_fields)]
+pub struct EmployeeKnowledgeFile {pub id:String,pub name:String,pub size:i64,pub sha256:String}
+#[derive(Clone,Deserialize,Serialize,ToSchema)]
+#[serde(rename_all="camelCase",deny_unknown_fields)]
+pub struct EmployeeKnowledgeManifest {pub format_version:u32,pub version:String,pub documents:Vec<EmployeeKnowledgeFile>}
+
 
 /// Signed operation-center plugin metadata. It never contains credentials.
 #[derive(Clone, Deserialize, Serialize, ToSchema)]
@@ -69,6 +87,8 @@ pub struct PlatformPluginPackageEntitlement {
 pub struct PlatformLicenseClaims {
     pub license_id: String,
     pub subject: String,
+    #[serde(default)]
+    pub customer_name: Option<String>,
     #[serde(default = "default_deployment_type")]
     pub deployment_type: String,
     pub modules: Vec<String>,
@@ -93,11 +113,13 @@ pub struct PlatformLicenseStatus {
     pub license_center_url: Option<String>,
     pub license_id: Option<String>,
     pub subject: Option<String>,
+    pub customer_name: Option<String>,
     pub deployment_type: String,
     pub modules: Vec<String>,
     pub expires_at: Option<i64>,
     pub module_expires_at: HashMap<String, i64>,
     pub module_titles: HashMap<String, String>,
+    #[serde(serialize_with = "serialize_public_entitlements")]
     pub ai_employees: Vec<PlatformAiEmployeeEntitlement>,
     pub ai_employee_statuses: HashMap<String, String>,
     pub platform_status: String,
@@ -105,6 +127,27 @@ pub struct PlatformLicenseStatus {
     pub update_available: bool,
     pub latest_license_id: Option<String>,
     pub latest_issued_at: Option<i64>,
+}
+
+fn serialize_public_entitlements<S: serde::Serializer>(
+    employees: &[PlatformAiEmployeeEntitlement],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let mut value = serde_json::to_value(employees).map_err(serde::ser::Error::custom)?;
+    if let Some(items) = value.as_array_mut() {
+        for employee in items {
+            if let Some(skills) = employee["skills"].as_array_mut() {
+                for skill in skills {
+                    if let Some(s) = skill.as_object_mut() {
+                        s.remove("environmentValues");
+                        s.remove("encryptedEnvironmentValues");
+                        s.remove("packagePath");
+                    }
+                }
+            }
+        }
+    }
+    value.serialize(serializer)
 }
 
 fn default_deployment_type() -> String {
@@ -377,6 +420,7 @@ fn status_from_claims(
         license_center_url: Some(settings.license_center_url.clone()),
         license_id: Some(claims.license_id),
         subject: Some(claims.subject),
+        customer_name: claims.customer_name.filter(|name| !name.trim().is_empty()),
         deployment_type: claims.deployment_type,
         modules: claims.modules,
         expires_at: Some(claims.exp as i64),
@@ -403,6 +447,7 @@ fn invalid_status(reason: &str, license_center_url: Option<String>) -> PlatformL
         license_center_url,
         license_id: None,
         subject: None,
+        customer_name: None,
         deployment_type: default_deployment_type(),
         modules: Vec::new(),
         expires_at: None,
@@ -436,7 +481,56 @@ fn default_module_title(module: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::LicenseCenterEnvelope;
+    use super::{LicenseCenterEnvelope, PlatformAiEmployeeSkill};
+
+    #[test]
+    fn customer_identity_survives_license_status_and_legacy_claims() {
+        let mut value = serde_json::json!({
+            "licenseId": "lic_test", "subject": "cus_test", "customerName": "测试客户",
+            "modules": ["platform"], "exp": 2000000000,
+            "iss": "test", "aud": "test"
+        });
+        let settings = super::PlatformLicenseSettings {
+            license_center_url: "http://localhost:8779".into(),
+            license: "test".into(),
+            activated_at: "2026-11-11T00:00:00Z".into(),
+        };
+        let claims = serde_json::from_value(value.clone()).unwrap();
+        let status = super::status_from_claims(&settings, claims, true, None);
+        let response = serde_json::to_value(status).unwrap();
+        assert_eq!(response["customerName"], "测试客户");
+        assert_eq!(response["subject"], "cus_test");
+
+        value.as_object_mut().unwrap().remove("customerName");
+        let claims = serde_json::from_value(value).unwrap();
+        let status = super::status_from_claims(&settings, claims, true, None);
+        assert_eq!(status.customer_name, None);
+        assert_eq!(status.subject.as_deref(), Some("cus_test"));
+    }
+    #[test]
+    fn skill_environment_configuration_survives_package_roundtrip_and_is_scoped() {
+        let legacy = serde_json::json!({"id":"generic", "title":"Generic", "description":"", "instructions":"run"});
+        let unconfigured: PlatformAiEmployeeSkill = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(unconfigured.execution_instructions(), "run");
+        let mut configured = legacy;
+        configured["environmentValues"] = serde_json::json!({"CUSTOM_ENDPOINT":"https://example.com", "CUSTOM_TOKEN":"test-only-token"});
+        let skill: PlatformAiEmployeeSkill = serde_json::from_value(configured).unwrap();
+        let installed: PlatformAiEmployeeSkill =
+            serde_json::from_str(&serde_json::to_string(&skill).unwrap()).unwrap();
+        assert_eq!(
+            installed.environment_values["CUSTOM_ENDPOINT"],
+            "https://example.com"
+        );
+        assert!(!installed.execution_instructions().contains("CUSTOM_TOKEN"));
+        assert!(
+            !installed
+                .execution_instructions()
+                .contains("test-only-token")
+        );
+        assert!(!installed.execution_instructions().contains("--library-url"));
+        assert_eq!(installed.instructions, "run");
+        assert_eq!(unconfigured.execution_instructions(), "run");
+    }
 
     #[test]
     fn deserializes_latest_license_fields_from_operation_center() {

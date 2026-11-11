@@ -4,7 +4,6 @@ use axum::http::{HeaderMap, Method};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use serde::Deserialize;
-use serde_json::json;
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -66,6 +65,21 @@ pub(crate) async fn grants(
 ) -> Result<HashSet<String>, AppError> {
     authenticate(headers, state).await?;
     let user_id = authenticated_user_id(headers)?;
+    grants_for_user(state, user_id).await
+}
+
+/// Resolve current role grants for a persisted execution subject without retaining its JWT.
+pub(crate) async fn grants_for_user(
+    state: &AppState,
+    user_id: Uuid,
+) -> Result<HashSet<String>, AppError> {
+    let user = iam_user_entity::Entity::find_by_id(user_id)
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::Forbidden("user not found".into()))?;
+    if user.status != "active" {
+        return Err(AppError::Forbidden("user account is disabled".into()));
+    }
     let bindings = iam_user_role_entity::Entity::find()
         .filter(iam_user_role_entity::Column::UserId.eq(user_id))
         .all(&state.db)
@@ -110,29 +124,6 @@ pub(crate) async fn get_grants(
     )))
 }
 
-/// Stable identity contract for the external Cordis Agent runtime. The bearer
-/// token is still validated here; the Agent only receives the resolved subject
-/// and permission snapshot for request/session correlation.
-pub(crate) async fn get_runtime_identity(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
-    let user = current_user(&headers, &state).await?;
-    authenticate(&headers, &state).await?;
-    let grants = grants(&headers, &state).await?;
-    let mut grants = grants.into_iter().collect::<Vec<_>>();
-    grants.sort();
-    Ok(Json(success_response(
-        "agent runtime identity loaded",
-        json!({
-            "userId": user.id.to_string(),
-            "tenantId": resolved_tenant_id(&state, &user).await?.to_string(),
-            "displayName": user.display_name,
-            "grants": grants,
-        }),
-    )))
-}
-
 pub(crate) fn require_internal(headers: &HeaderMap) -> Result<(), AppError> {
     let provided = headers
         .get("x-yaya-internal-token")
@@ -160,25 +151,6 @@ pub(crate) async fn authorize_request(
         return Ok(());
     }
 
-    // Session ownership is checked in the handler; employee access must also survive revocation.
-    if let Some(session_path) = path.strip_prefix("/api/agent/sessions/") {
-        let session_uuid = session_path.split('/').next().unwrap_or_default();
-        if !path.ends_with("/restore") && !path.ends_with("/purge") {
-            if let Some(session) =
-                crate::infrastructure::entities::agent_session_entity::Entity::find()
-                    .filter(
-                        crate::infrastructure::entities::agent_session_entity::Column::SessionUuid
-                            .eq(session_uuid),
-                    )
-                    .one(&state.db)
-                    .await?
-            {
-                if !grants.contains(&format!("agent:{}:use", session.agent_id)) {
-                    return Err(AppError::Forbidden("无权使用此 AI 员工".into()));
-                }
-            }
-        }
-    }
     if let Some(required) = super::platform_permissions::route_permissions(method, path) {
         if required.is_empty()
             || required

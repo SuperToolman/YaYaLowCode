@@ -1,11 +1,5 @@
 import type { JSONContent } from "@tiptap/react";
-import {
-  emptyDraft,
-  parseDraft,
-  remainingDraft,
-  type DraftAsset,
-  type SendItem,
-} from "./draft";
+import { emptyDraft, parseDraft, remainingDraft, type DraftAsset, type SendItem } from "./draft";
 
 // A page-scoped external store keeps in-flight batches and File objects alive across conversation switches.
 export class DraftSession {

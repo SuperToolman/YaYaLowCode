@@ -98,12 +98,24 @@ select {
   z-index: 100;
   display: grid;
   place-items: center;
-  background: color-mix(in srgb, var(--color-bg-canvas) 88%, transparent);
+  background: var(--color-bg-canvas);
   cursor: progress;
 }
 
 .surface,
 .card { border-radius: var(--radius, 0.5rem) !important; }
+
+/* Keep checkbox corners rounded with the HeroUI radius token. */
+.checkbox__control,
+.checkbox__control::before {
+  --radius-md: 0.375rem;
+}
+
+.radio__control,
+.radio__indicator:empty::before {
+  --radius-lg: 9999px;
+  border-radius: 50% !important;
+}
 
 /* Keep HeroUI buttons aligned with the platform component-radius token.
    HeroUI's default button scale is radius * 3, while platform navigation

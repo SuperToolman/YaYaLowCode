@@ -99,7 +99,235 @@ impl MigratorTrait for Migrator {
             Box::new(m20261019_000086_button_automation::Migration),
             Box::new(m20261021_000087_form_owned_custom_buttons::Migration),
             Box::new(m20261021_000088_button_conditions_owned_by_definition::Migration),
+            Box::new(m20261022_000089_remove_retired_page_props::Migration),
+            Box::new(m20261026_000090_cleanup_orphan_custom_button_bindings::Migration),
+            Box::new(m20261027_000091_automation_transaction_coordinator::Migration),
+            Box::new(m20261027_000092_automation_staging_record_metadata::Migration),
+            Box::new(m20261027_000093_automation_parallel_branch_identity::Migration),
+            Box::new(m20261027_000094_automation_external_effect_intents::Migration),
+            Box::new(m20261028_000095_agent_v2::Migration),
+            Box::new(m20261028_000096_agent_v2_queue_seq::Migration),
+            Box::new(m20261028_000097_agent_v2_confirmations::Migration),
+            Box::new(m20261028_000098_agent_v2_policy::Migration),
+            Box::new(m20261028_000099_agent_v2_confirmation_scope::Migration),
+            Box::new(m20261029_000103_agent_v2_workspace::Migration),
+            Box::new(m20261102_000104_agent_v2_submissions::Migration),
+            Box::new(m20261102_000105_retire_legacy_agent_storage::Migration),
+            Box::new(m20261102_000106_agent_v2_executions::Migration),
+            Box::new(m20261103_000107_agent_v2_long_tasks::Migration),
+            Box::new(m20261105_000108_agent_v2_thinking::Migration),
+            Box::new(m20261105_000109_model_capabilities::Migration),
+            Box::new(m20261105_000110_simplify_thinking::Migration),
+            Box::new(m20261106_000111_session_directory::Migration),
+            Box::new(m20261106_000112_session_deletion::Migration),
+            Box::new(m20261106_000113_session_forks::Migration),
+            Box::new(m20261106_000114_knowledge_management::Migration),
+            Box::new(m20261109_000115_knowledge_parsing::Migration),
+            Box::new(m20261109_000116_knowledge_retrieval::Migration),
+            Box::new(m20261109_000117_knowledge_vectors::Migration),
+            Box::new(m20261109_000118_platform_knowledge_retrieval::Migration),
+            Box::new(m20261109_000119_model_provider_types::Migration),
+            Box::new(m20261109_000120_base_knowledge_retrieval::Migration),
+            Box::new(m20261110_000121_single_model_routes::Migration),
         ]
+    }
+}
+
+mod m20261028_000096_agent_v2_queue_seq {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261028_000096_agent_v2_queue_seq"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            // Explicit transaction also protects this upgrade when run standalone.
+            use sea_orm::TransactionTrait;
+            let tx = manager.get_connection().begin().await?;
+            tx.execute_unprepared(include_str!("../../../agent-v2/core/upgrade_queue_seq.sql"))
+                .await?;
+            tx.commit().await?;
+            Ok(())
+        }
+        async fn down(&self, _: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Custom(
+                "Agent V2 queue ordering must be preserved".into(),
+            ))
+        }
+    }
+}
+
+mod m20261028_000095_agent_v2 {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261028_000095_agent_v2"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(include_str!("../../../agent-v2/core/schema.sql"))
+                .await?;
+            Ok(())
+        }
+        async fn down(&self, _: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Custom(
+                "Agent V2 data requires explicit export before removal".into(),
+            ))
+        }
+    }
+}
+
+mod m20261027_000094_automation_external_effect_intents {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261027_000094_automation_external_effect_intents"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(include_str!(
+                    "../modules/automations/external_effects_upgrade.sql"
+                ))
+                .await?;
+            Ok(())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(
+                "ALTER TABLE automation_execution_external_effects DROP COLUMN IF EXISTS result_json, DROP COLUMN IF EXISTS request_context, DROP COLUMN IF EXISTS request_config;"
+            ).await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20261027_000091_automation_transaction_coordinator {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261027_000091_automation_transaction_coordinator"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(include_str!(
+                    "../modules/automations/transaction_schema.sql"
+                ))
+                .await?;
+            Ok(())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "DROP TABLE IF EXISTS automation_execution_external_effects; DROP TABLE IF EXISTS automation_execution_parallel_groups; DROP TABLE IF EXISTS automation_execution_record_changes;",
+                )
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20261027_000092_automation_staging_record_metadata {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261027_000092_automation_staging_record_metadata"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(include_str!(
+                    "../modules/automations/transaction_schema_upgrade.sql"
+                ))
+                .await?;
+            Ok(())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "ALTER TABLE automation_execution_record_changes DROP COLUMN IF EXISTS changed_fields, DROP COLUMN IF EXISTS branch_id, DROP COLUMN IF EXISTS record_updated_at, DROP COLUMN IF EXISTS record_created_at, DROP COLUMN IF EXISTS updated_by, DROP COLUMN IF EXISTS created_by, DROP COLUMN IF EXISTS schema_version, DROP COLUMN IF EXISTS record_id;",
+                )
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20261027_000093_automation_parallel_branch_identity {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261027_000093_automation_parallel_branch_identity"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(include_str!(
+                    "../modules/automations/parallel_schema_upgrade.sql"
+                ))
+                .await?;
+            Ok(())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "ALTER TABLE automation_execution_parallel_groups DROP COLUMN IF EXISTS parent_branch_id; ALTER TABLE automation_execution_tokens DROP COLUMN IF EXISTS parallel_branch_id;",
+                )
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+mod m20261026_000090_cleanup_orphan_custom_button_bindings {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261026_000090_cleanup_orphan_custom_button_bindings"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(include_str!(
+                    "../modules/custom_buttons/cleanup_orphan_bindings.sql"
+                ))
+                .await?;
+            Ok(())
+        }
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
     }
 }
 
@@ -4435,6 +4663,413 @@ mod m20261019_000086_button_automation {
         async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
             manager.get_connection().execute_unprepared("ALTER TABLE app_custom_buttons DROP CONSTRAINT IF EXISTS app_custom_buttons_action_type_check; ALTER TABLE app_custom_buttons ADD CONSTRAINT app_custom_buttons_action_type_check CHECK (action_type IN ('fill_form','open_page'));").await?;
             Ok(())
+        }
+    }
+}
+
+mod m20261022_000089_remove_retired_page_props {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261022_000089_remove_retired_page_props"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(include_str!("remove_retired_page_props.sql"))
+                .await?;
+            Ok(())
+        }
+        async fn down(&self, _: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Custom(
+                "retired page properties cannot be restored".into(),
+            ))
+        }
+    }
+}
+
+mod m20261028_000097_agent_v2_confirmations {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261028_000097_agent_v2_confirmations"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            use sea_orm::TransactionTrait;
+            let tx = manager.get_connection().begin().await?;
+            tx.execute_unprepared(include_str!(
+                "../../../agent-v2/core/upgrade_confirmations.sql"
+            ))
+            .await?;
+            tx.commit().await?;
+            Ok(())
+        }
+        async fn down(&self, _: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Custom(
+                "Export V2 confirmations and audit before rollback".into(),
+            ))
+        }
+    }
+}
+
+mod m20261028_000098_agent_v2_policy {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261028_000098_agent_v2_policy"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            use sea_orm::TransactionTrait;
+            let tx = manager.get_connection().begin().await?;
+            tx.execute_unprepared(include_str!("../../../agent-v2/core/upgrade_policy.sql"))
+                .await?;
+            tx.commit().await?;
+            Ok(())
+        }
+        async fn down(&self, _: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Custom(
+                "Export Agent V2 failure results and audit before rollback".into(),
+            ))
+        }
+    }
+}
+
+mod m20261028_000099_agent_v2_confirmation_scope {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261028_000099_agent_v2_confirmation_scope"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            use sea_orm::TransactionTrait;
+            let tx = manager.get_connection().begin().await?;
+            tx.execute_unprepared(include_str!("../../../agent-v2/core/upgrade_binding.sql"))
+                .await?;
+            tx.commit().await?;
+            Ok(())
+        }
+        async fn down(&self, _: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Custom(
+                "Confirmation identity bindings must be exported before rollback".into(),
+            ))
+        }
+    }
+}
+
+mod m20261029_000103_agent_v2_workspace {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261029_000103_agent_v2_workspace"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(include_str!("../../../agent-v2/core/upgrade_workspace.sql"))
+                .await?;
+            Ok(())
+        }
+        async fn down(&self, _: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Custom(
+                "Export session workspace files before rollback".into(),
+            ))
+        }
+    }
+}
+
+mod m20261102_000104_agent_v2_submissions {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261102_000104_agent_v2_submissions"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(include_str!(
+                    "../../../agent-v2/core/upgrade_submissions.sql"
+                ))
+                .await?;
+            Ok(())
+        }
+        async fn down(&self, _: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Custom(
+                "Preserve submission recovery and files before rollback".into(),
+            ))
+        }
+    }
+}
+
+// Keep historical migration identities for upgrades; only this final migration
+// retires the legacy store. No startup bootstrap may recreate it afterwards.
+mod m20261102_000105_retire_legacy_agent_storage {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261102_000105_retire_legacy_agent_storage"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            use sea_orm::TransactionTrait;
+            let tx = manager.get_connection().begin().await?;
+            tx.execute_unprepared(include_str!("retire_legacy_agent_storage.sql"))
+                .await?;
+            tx.commit().await?;
+            Ok(())
+        }
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Custom("Legacy Agent data retirement is irreversible; restore the pre-retirement backup with matching code instead of running down.".into()))
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "retire_legacy_agent_storage_tests.rs"]
+mod retirement_tests;
+
+mod m20261102_000106_agent_v2_executions {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261102_000106_agent_v2_executions"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            use sea_orm::TransactionTrait;
+            let tx = manager.get_connection().begin().await?;
+            tx.execute_unprepared(include_str!(
+                "../../../agent-v2/core/upgrade_executions.sql"
+            ))
+            .await?;
+            tx.commit().await
+        }
+        async fn down(&self, _: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Custom(
+                "Preserve execution history and artifacts; automatic rollback is disabled".into(),
+            ))
+        }
+    }
+}
+
+mod m20261103_000107_agent_v2_long_tasks {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261103_000107_agent_v2_long_tasks"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            use sea_orm::TransactionTrait;
+            let tx = manager.get_connection().begin().await?;
+            tx.execute_unprepared(include_str!(
+                "../../../agent-v2/core/upgrade_long_tasks.sql"
+            ))
+            .await?;
+            tx.commit().await
+        }
+        async fn down(&self, _: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Custom(
+                "Preserve execution history and artifacts; automatic rollback is disabled".into(),
+            ))
+        }
+    }
+}
+
+mod m20261105_000108_agent_v2_thinking {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str {
+            "m20261105_000108_agent_v2_thinking"
+        }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared("ALTER TABLE byom_model_routes ADD COLUMN IF NOT EXISTS thinking_enabled boolean NOT NULL DEFAULT false; ALTER TABLE byom_model_routes ADD COLUMN IF NOT EXISTS reasoning_protocol text NOT NULL DEFAULT 'openai'; ALTER TABLE agent_v2_runs ADD COLUMN IF NOT EXISTS model_selection jsonb;").await?;
+            Ok(())
+        }
+        async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+            Ok(())
+        }
+    }
+}
+
+mod m20261105_000109_model_capabilities {
+ use sea_orm_migration::prelude::*;
+ pub struct Migration;
+ impl MigrationName for Migration {fn name(&self)->&str {"m20261105_000109_model_capabilities"}}
+ #[async_trait::async_trait]
+ impl MigrationTrait for Migration {
+ async fn up(&self,m:&SchemaManager)->Result<(),DbErr> {m.get_connection().execute_unprepared("ALTER TABLE byom_model_routes ADD COLUMN thinking_only boolean NOT NULL DEFAULT false, ADD COLUMN allow_disable_thinking boolean NOT NULL DEFAULT true, ADD COLUMN default_reasoning_effort text NOT NULL DEFAULT 'auto', ADD COLUMN supported_reasoning_efforts jsonb NOT NULL DEFAULT '[]';").await?;Ok(())}
+ async fn down(&self,_:&SchemaManager)->Result<(),DbErr>{Err(DbErr::Custom("Preserve model capability configuration".into()))}
+ }
+}
+
+mod m20261105_000110_simplify_thinking {
+ use sea_orm_migration::prelude::*;
+ pub struct Migration;
+ impl MigrationName for Migration {fn name(&self)->&str {"m20261105_000110_simplify_thinking"}}
+ #[async_trait::async_trait]
+ impl MigrationTrait for Migration {
+ async fn up(&self,m:&SchemaManager)->Result<(),DbErr> {m.get_connection().execute_unprepared("ALTER TABLE byom_model_routes DROP COLUMN IF EXISTS thinking_only, DROP COLUMN IF EXISTS allow_disable_thinking, DROP COLUMN IF EXISTS supported_reasoning_efforts;").await?;Ok(())}
+ async fn down(&self,_:&SchemaManager)->Result<(),DbErr> {Err(DbErr::Custom("Thinking configuration removal is irreversible".into()))}
+ }
+}
+
+mod m20261106_000111_session_directory {
+ use sea_orm_migration::prelude::*;
+ pub struct Migration;
+ impl MigrationName for Migration {fn name(&self)->&str {"m20261106_000111_session_directory"}}
+ #[async_trait::async_trait]
+ impl MigrationTrait for Migration {
+ async fn up(&self,m:&SchemaManager)->Result<(),DbErr> {m.get_connection().execute_unprepared(include_str!("../../../agent-v2/core/upgrade_session_directory.sql")).await?;Ok(())}
+ async fn down(&self,_:&SchemaManager)->Result<(),DbErr> {Err(DbErr::Custom("Preserve session metadata".into()))}
+ }
+}
+
+mod m20261106_000112_session_deletion {
+ use sea_orm_migration::prelude::*;
+ pub struct Migration;
+ impl MigrationName for Migration {fn name(&self)->&str {"m20261106_000112_session_deletion"}}
+ #[async_trait::async_trait]
+ impl MigrationTrait for Migration {
+ async fn up(&self,m:&SchemaManager)->Result<(),DbErr> {m.get_connection().execute_unprepared(include_str!("../../../agent-v2/core/upgrade_session_deletion.sql")).await?;Ok(())}
+ async fn down(&self,_:&SchemaManager)->Result<(),DbErr> {Err(DbErr::Custom("Preserve deletion tasks".into()))}
+ }
+}
+
+mod m20261106_000113_session_forks {
+ use sea_orm_migration::prelude::*;
+ pub struct Migration;
+ impl MigrationName for Migration {fn name(&self)->&str {"m20261106_000113_session_forks"}}
+ #[async_trait::async_trait]
+ impl MigrationTrait for Migration {
+ async fn up(&self,m:&SchemaManager)->Result<(),DbErr> {m.get_connection().execute_unprepared(include_str!("../../../agent-v2/core/upgrade_forks.sql")).await?;Ok(())}
+ async fn down(&self,_:&SchemaManager)->Result<(),DbErr> {Err(DbErr::Custom("Preserve forked history".into()))}
+ }
+}
+
+mod m20261106_000114_knowledge_management {
+ use sea_orm_migration::prelude::*;
+ pub struct Migration;
+ impl MigrationName for Migration {fn name(&self)->&str {"m20261106_000114_knowledge_management"}}
+ #[async_trait::async_trait]
+ impl MigrationTrait for Migration {
+ async fn up(&self,m:&SchemaManager)->Result<(),DbErr>{m.get_connection().execute_unprepared(include_str!("../modules/knowledge/schema.sql")).await?;Ok(())}
+ async fn down(&self,_:&SchemaManager)->Result<(),DbErr>{Err(DbErr::Custom("Preserve knowledge documents".into()))}
+ }
+}
+
+
+mod m20261109_000115_knowledge_parsing {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {fn name(&self)->&str {"m20261109_000115_knowledge_parsing"}}
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self,m:&SchemaManager)->Result<(),DbErr>{m.get_connection().execute_unprepared(include_str!("../modules/knowledge/parsing.sql")).await?;Ok(())}
+        async fn down(&self,_:&SchemaManager)->Result<(),DbErr>{Err(DbErr::Custom("Preserve knowledge sources and parsing generations".into()))}
+    }
+}
+
+mod m20261109_000116_knowledge_retrieval {
+ use sea_orm_migration::prelude::*;
+ pub struct Migration;
+ impl MigrationName for Migration {fn name(&self)->&str {"m20261109_000116_knowledge_retrieval"}}
+ #[async_trait::async_trait] impl MigrationTrait for Migration {
+ async fn up(&self,m:&SchemaManager)->Result<(),DbErr>{m.get_connection().execute_unprepared(include_str!("../modules/knowledge/retrieval.sql")).await?;Ok(())}
+ async fn down(&self,_:&SchemaManager)->Result<(),DbErr>{Err(DbErr::Custom("Preserve knowledge indexes and citations".into()))}
+ }
+}
+
+mod m20261109_000117_knowledge_vectors {
+ use sea_orm_migration::prelude::*;
+ pub struct Migration;
+ impl MigrationName for Migration {fn name(&self)->&str {"m20261109_000117_knowledge_vectors"}}
+ #[async_trait::async_trait] impl MigrationTrait for Migration {
+ async fn up(&self,m:&SchemaManager)->Result<(),DbErr>{m.get_connection().execute_unprepared(include_str!("../modules/knowledge/vectors.sql")).await?;Ok(())}
+ async fn down(&self,_:&SchemaManager)->Result<(),DbErr>{Err(DbErr::Custom("Preserve knowledge vectors and profiles".into()))}
+ }
+}
+
+mod m20261109_000118_platform_knowledge_retrieval {
+ use sea_orm_migration::prelude::*;
+ pub struct Migration;
+ impl MigrationName for Migration {fn name(&self)->&str {"m20261109_000118_platform_knowledge_retrieval"}}
+ #[async_trait::async_trait] impl MigrationTrait for Migration {
+ async fn up(&self,m:&SchemaManager)->Result<(),DbErr>{m.get_connection().execute_unprepared(include_str!("../modules/knowledge/platform-retrieval.sql")).await?;Ok(())}
+ async fn down(&self,_:&SchemaManager)->Result<(),DbErr>{Err(DbErr::Custom("Preserve platform knowledge configuration and sources".into()))}
+ }
+}
+
+mod m20261109_000119_model_provider_types {
+ use sea_orm_migration::prelude::*;
+ pub struct Migration;
+ impl MigrationName for Migration {fn name(&self)->&str {"m20261109_000119_model_provider_types"}}
+ #[async_trait::async_trait] impl MigrationTrait for Migration {
+ async fn up(&self,m:&SchemaManager)->Result<(),DbErr>{m.get_connection().execute_unprepared(include_str!("../modules/model-provider-types.sql")).await?;Ok(())}
+ async fn down(&self,_:&SchemaManager)->Result<(),DbErr>{Err(DbErr::Custom("Preserve model provider type assignments".into()))}
+ }
+}
+
+mod m20261109_000120_base_knowledge_retrieval {
+ use sea_orm_migration::prelude::*;
+ pub struct Migration;
+ impl MigrationName for Migration {fn name(&self)->&str {"m20261109_000120_base_knowledge_retrieval"}}
+ #[async_trait::async_trait] impl MigrationTrait for Migration {
+ async fn up(&self,m:&SchemaManager)->Result<(),DbErr>{m.get_connection().execute_unprepared(include_str!("../modules/knowledge/base-retrieval.sql")).await?;Ok(())}
+ async fn down(&self,_:&SchemaManager)->Result<(),DbErr>{Err(DbErr::Custom("Preserve per-base retrieval configuration".into()))}
+ }
+}
+
+mod m20261110_000121_single_model_routes {
+    use sea_orm_migration::prelude::*;
+    pub struct Migration;
+    impl MigrationName for Migration {
+        fn name(&self) -> &str { "m20261110_000121_single_model_routes" }
+    }
+    #[async_trait::async_trait]
+    impl MigrationTrait for Migration {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager.get_connection().execute_unprepared(include_str!("../modules/single-model-routes.sql")).await?;
+            Ok(())
+        }
+        async fn down(&self, _: &SchemaManager) -> Result<(), DbErr> {
+            Err(DbErr::Custom("Preserve independent single-model routes".into()))
         }
     }
 }

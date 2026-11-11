@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
-import { createBackendSdkClient } from "@lib/backend-client";
-import { getApp, listAppNavigation } from "@lib/http";
-import { ApiRequestError, unwrapApiResult } from "@lib/api-request";
+import { createBackendSdkClient } from "@/shared/lib/backend-client";
+import { getApp, listAppNavigation } from "@/shared/lib/http";
+import { ApiRequestError, unwrapApiResult } from "@/shared/lib/api-request";
 
 async function requestClient() {
   const cookieStore = await cookies();

@@ -36,7 +36,15 @@ fn writable_fields(fields: &[Value]) -> Vec<Value> {
         .filter(|field| {
             if matches!(
                 field["type"].as_str(),
-                Some("subform" | "groupContainer" | "description" | "html" | "tsx" | "button")
+                Some(
+                    "subform"
+                        | "groupContainer"
+                        | "separator"
+                        | "description"
+                        | "html"
+                        | "tsx"
+                        | "button"
+                )
             ) {
                 return false;
             }

@@ -4,6 +4,29 @@ use crate::infrastructure::entities::{
 };
 use sea_orm::{ConnectOptions, Database, DbBackend, Schema, Statement};
 
+#[test]
+fn subform_parent_accepts_created_main_records_only() {
+    let mut nodes = json!([
+        {"id":"trigger-1","data":{"kind":"trigger"}},
+        {"id":"create","data":{"kind":"add-data","config":{"targetFormUuid":"customers","rows":[]}}},
+        {"id":"child","data":{"kind":"add-data","config":{"targetMode":"subtable","parentDataNodeId":"create","subformFieldId":"contacts","rows":[]}}}
+    ]);
+    let edges =
+        json!([{"source":"trigger-1","target":"create"},{"source":"create","target":"child"}]);
+    let trigger_config = json!({"triggerEvents":["button_click"]});
+    assert!(graph::validate_current_protocol(&nodes, &trigger_config).is_ok());
+    assert!(graph::validate_automation_graph(&nodes, &edges).is_ok());
+    assert_eq!(
+        get_data::source_form(&nodes, &edges, "create", None).unwrap(),
+        "customers"
+    );
+    assert!(get_data::source_form(&nodes, &edges, "child", None).is_err());
+    nodes[1]["data"]["config"]["targetMode"] = json!("subtable");
+    nodes[1]["data"]["config"]["parentDataNodeId"] = json!("trigger-1");
+    nodes[1]["data"]["config"]["subformFieldId"] = json!("contacts");
+    assert!(graph::validate_current_protocol(&nodes, &trigger_config).is_err());
+}
+
 #[tokio::test]
 #[ignore = "isolated schema; requires WORKFLOW_TEST_DATABASE_SETTINGS_PATH"]
 async fn subform_append_updates_physical_rows_and_preserves_parallel_appends() {
@@ -125,6 +148,7 @@ async fn verify(db: DatabaseConnection) {
         )]),
         operator: "test".into(),
         run_id: None,
+        branch_id: None,
     };
     let config = json!({"subformFieldId":"items","parentDataNodeId":"source","rows":[{"fieldId":"name","valueType":"value","rawValue":"new"}]});
     let flow = automation_flow_entity::Model {
@@ -148,6 +172,60 @@ async fn verify(db: DatabaseConnection) {
     let mut shared_config = config.clone();
     shared_config["targetMode"] = json!("subtable");
     shared_config["targetFormUuid"] = json!("ignored-stale-cache");
+    // 主表新增输出可以直接供后续子表追加使用，不需要额外查询节点。
+    let mut create_flow = flow.clone();
+    create_flow.nodes_json = json!([
+        {"id":"create","data":{"kind":"add-data","config":{"targetFormUuid":"parent"}}},
+        {"id":"child","data":{"kind":"add-data","config":{"targetMode":"subtable","parentDataNodeId":"create","subformFieldId":"items","rows":[{"fieldId":"name"}]}}}
+    ]);
+    create_flow.edges_json = json!([{"source":"create","target":"child"}]);
+    get_data::validate_get_nodes(
+        &db,
+        &create_flow.nodes_json,
+        &create_flow.edges_json,
+        Some("parent"),
+    )
+    .await
+    .unwrap();
+    let created = execute_add_data_node(
+        &db,
+        &create_flow,
+        &json!({"targetFormUuid":"parent","rows":[]}),
+        &context,
+    )
+    .await
+    .unwrap();
+    let created_uuid = created["__automationRecordUuid"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let created_context = AutomationExecutionContext {
+        outputs: HashMap::from([("create".into(), created)]),
+        operator: "test".into(),
+        run_id: None,
+        branch_id: None,
+    };
+    let mut child_config = shared_config.clone();
+    child_config["parentDataNodeId"] = json!("create");
+    execute_add_data_node(&db, &create_flow, &child_config, &created_context)
+        .await
+        .unwrap();
+    let created_parent = RecordRepository::new(&db)
+        .find("parent", &created_uuid)
+        .await
+        .unwrap();
+    assert_eq!(created_parent.record_data["items"][0]["name"], "new");
+    assert!(
+        RecordRepository::new(&db)
+            .find("parent", &record.record_uuid)
+            .await
+            .unwrap()
+            .record_data["items"]
+            .as_array()
+            .unwrap()
+            .len()
+            == 1
+    );
     let (a, b) = tokio::join!(
         execute_add_data_node(&db, &flow, &shared_config, &context),
         execute_add_data_node(&db, &flow, &shared_config, &context)

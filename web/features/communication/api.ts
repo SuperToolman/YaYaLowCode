@@ -1,6 +1,6 @@
-import { getCommunicationStatus } from "@lib/http";
-import { unwrapApiResult } from "@lib/api-request";
-import { uploadFile } from "@features/files/api";
+import { getCommunicationStatus } from "@/shared/lib/http";
+import { unwrapApiResult } from "@/shared/lib/api-request";
+import { uploadFile } from "@/features/files/api";
 
 export {
   createDirectConversation,
@@ -13,13 +13,13 @@ export {
   reeditCommunicationMessage,
   sendCommunicationMessage,
   updateGroupConversation,
-} from "@/app/lib/http";
+} from "@/shared/lib/http";
 
 export type {
   CommunicationConversationResponse,
   CommunicationMessageResponse,
   CommunicationUserResponse,
-} from "@/app/lib/http";
+} from "@/shared/lib/http";
 
 export async function getCommunicationAvailability() { return unwrapApiResult(await getCommunicationStatus()); }
 export function uploadCommunicationFile(file: File) { return uploadFile(file); }

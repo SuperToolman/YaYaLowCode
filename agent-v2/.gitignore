@@ -1,0 +1,7 @@
+/target/
+/cordis-host/node_modules/
+/.env
+/runtime/
+!/worker/src/runtime/
+!/worker/src/runtime/**
+!/.env.example

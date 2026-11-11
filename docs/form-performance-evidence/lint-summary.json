@@ -1,0 +1,110 @@
+{
+  "errors": 76,
+  "warnings": 18482,
+  "files": [
+    {
+      "file": "web\\app\\(protected)\\(main)\\[appId]\\[formUuid]\\components\\FormAgentPanel.tsx",
+      "errors": 1,
+      "rules": [
+        "react-hooks/set-state-in-effect"
+      ]
+    },
+    {
+      "file": "web\\app\\(protected)\\(main)\\[appId]\\components\\AppShell.tsx",
+      "errors": 1,
+      "rules": [
+        "react-hooks/set-state-in-effect"
+      ]
+    },
+    {
+      "file": "web\\app\\(protected)\\messages\\components\\MessageDisplay.tsx",
+      "errors": 1,
+      "rules": [
+        "react-hooks/purity"
+      ]
+    },
+    {
+      "file": "web\\app\\(protected)\\messages\\page.tsx",
+      "errors": 2,
+      "rules": [
+        "react-hooks/refs",
+        "@typescript-eslint/no-explicit-any"
+      ]
+    },
+    {
+      "file": "web\\features\\agent-workbench\\runtime-core.test.ts",
+      "errors": 3,
+      "rules": [
+        "@typescript-eslint/no-explicit-any",
+        "prefer-const"
+      ]
+    },
+    {
+      "file": "web\\features\\agent-workbench\\runtime.ts",
+      "errors": 4,
+      "rules": [
+        "react-hooks/refs",
+        "react-hooks/set-state-in-effect"
+      ]
+    },
+    {
+      "file": "web\\packages\\dsh-workbench-client\\src\\index.test.ts",
+      "errors": 4,
+      "rules": [
+        "@typescript-eslint/no-explicit-any"
+      ]
+    },
+    {
+      "file": "web\\public\\monaco\\vs\\assets\\css.worker-HnVq6Ewq.js",
+      "errors": 7,
+      "rules": [
+        "@typescript-eslint/no-this-alias"
+      ]
+    },
+    {
+      "file": "web\\public\\monaco\\vs\\assets\\editor.worker-Be8ye1pW.js",
+      "errors": 3,
+      "rules": [
+        "@typescript-eslint/no-this-alias"
+      ]
+    },
+    {
+      "file": "web\\public\\monaco\\vs\\assets\\html.worker-B51mlPHg.js",
+      "errors": 4,
+      "rules": [
+        "@typescript-eslint/no-this-alias"
+      ]
+    },
+    {
+      "file": "web\\public\\monaco\\vs\\assets\\json.worker-DKiEKt88.js",
+      "errors": 3,
+      "rules": [
+        "@typescript-eslint/no-this-alias"
+      ]
+    },
+    {
+      "file": "web\\public\\monaco\\vs\\assets\\ts.worker-CMbG-7ft.js",
+      "errors": 4,
+      "rules": [
+        "@typescript-eslint/no-this-alias",
+        "react-hooks/rules-of-hooks"
+      ]
+    },
+    {
+      "file": "web\\public\\monaco\\vs\\editor.api-CalNCsUg.js",
+      "errors": 37,
+      "rules": [
+        "@typescript-eslint/no-this-alias",
+        "@typescript-eslint/no-array-constructor",
+        "react-hooks/rules-of-hooks"
+      ]
+    },
+    {
+      "file": "web\\public\\monaco\\vs\\loader.js",
+      "errors": 2,
+      "rules": [
+        "@typescript-eslint/no-this-alias"
+      ]
+    }
+  ]
+}

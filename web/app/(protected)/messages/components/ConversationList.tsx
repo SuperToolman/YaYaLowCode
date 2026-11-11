@@ -1,6 +1,7 @@
-import { Card, ScrollShadow } from "@heroui/react";
-import { MyAvatar } from "@components/my-fields/MyAvatar";
-import type { CommunicationConversationResponse } from "@features/communication/api";
+import { Card, ScrollShadow, Tabs } from "@heroui/react";
+import { useState } from "react";
+import { MyAvatar } from "@/shared/ui/MyAvatar";
+import type { CommunicationConversationResponse } from "@/features/communication/api";
 
 export function ConversationList({
   conversations,
@@ -15,11 +16,32 @@ export function ConversationList({
   onSelect: (conversationId: string) => void;
   formatTime: (value: string) => string;
 }) {
+  const [filter, setFilter] = useState<"all" | "unread">("all");
+  const visibleConversations = filter === "unread"
+    ? conversations.filter((item) => item.unreadCount > 0)
+    : conversations;
+
   return (
     <Card className="flex min-h-0 min-w-0 flex-col">
-
+      <Tabs
+        selectedKey={filter}
+        onSelectionChange={(key) => setFilter(String(key) as "all" | "unread")}
+        aria-label="会话筛选"
+        className="px-2 pt-2"
+      >
+        <Tabs.List className="w-full">
+          <Tabs.Tab id="all" className="flex-1">
+            全部
+            <Tabs.Indicator />
+          </Tabs.Tab>
+          <Tabs.Tab id="unread" className="flex-1">
+            未读
+            <Tabs.Indicator />
+          </Tabs.Tab>
+        </Tabs.List>
+      </Tabs>
       <ScrollShadow className="min-h-0 flex-1 overflow-y-auto">
-        {conversations.map((item) => {
+        {visibleConversations.map((item) => {
           const avatarMember =
             item.conversationType === "group"
               ? item.members[0]
@@ -64,6 +86,11 @@ export function ConversationList({
             </button>
           );
         })}
+        {visibleConversations.length === 0 ? (
+          <p className="px-3 py-8 text-center text-sm text-[var(--color-text-secondary)]">
+            {filter === "unread" ? "没有未读会话" : "暂无会话"}
+          </p>
+        ) : null}
       </ScrollShadow>
     </Card>
   );

@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { Avatar, ComboBox, InputGroup, Label, ListBox, Tag, TagGroup } from "@heroui/react";
-import { notify } from "@lib/notify";
-import type { MailContact } from "@features/mail/api";
+import { notify } from "@/shared/lib/notify";
+import type { MailContact } from "@/features/mail/api";
 
 export function splitRecipients(value: string) {
   return value.split(/[\s,;，；]+/).map(value => value.trim()).filter(Boolean);

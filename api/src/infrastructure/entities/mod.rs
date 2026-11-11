@@ -4,9 +4,6 @@
 pub mod agent_model_provider_entity;
 pub mod agent_provider_model_entity;
 pub mod agent_resource_entity;
-pub mod agent_session_entity;
-pub mod agent_session_runtime_summary_entity;
-pub mod agent_transaction_entity;
 pub mod app_entity;
 pub mod app_navigation_entity;
 pub mod automation_edge_entity;

@@ -9,7 +9,7 @@ const eslintConfig = defineConfig([
     files: ["app/**/*.{ts,tsx}", "features/**/*.{ts,tsx}"],
     ignores: [
       "app/api/**",
-      "app/lib/api-client/**",
+      "shared/lib/api-client/**",
       "features/**/api.ts",
       "features/**/queries.ts",
       "features/**/mutations.ts",
@@ -17,8 +17,8 @@ const eslintConfig = defineConfig([
     rules: {
       "no-restricted-imports": ["error", {
         patterns: [
-          "@/app/lib/api-client",
-          "**/app/lib/api-client",
+          "@/shared/lib/api-client",
+          "**/shared/lib/api-client",
         ],
       }],
     },
@@ -32,7 +32,10 @@ const eslintConfig = defineConfig([
     "src-tauri/gen/**",
     "src-tauri/target/**",
     "next-env.d.ts",
-    "app/lib/api-client/**",
+    "shared/lib/api-client/**",
+    ".cache/**",
+    "public/monaco/**",
+    "tauri-dist/**",
   ]),
 ]);
 

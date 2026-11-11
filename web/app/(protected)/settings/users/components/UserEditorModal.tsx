@@ -1,28 +1,12 @@
 "use client";
 
-import { DisplayTag } from "@shared/DisplayTag";
+import { DisplayTag } from "@/shared/ui/DisplayTag";
 
 import { useState } from "react";
-import {
-  Alert,
-  Button,
-  Card,
-  Description,
-  InputGroup,
-  Label,
-  Modal,
-  TextField,
-  Typography,
-} from "@heroui/react";
-import { MySurface } from "@shared/ui/MySurface";
-import { RoleMultiSelect } from "@shared/RoleMultiSelect";
-import {
-  validateUserForm,
-  type EmailAddressItem,
-  type RoleItem,
-  type UserFormValues,
-  type UserItem,
-} from "@features/identity-access";
+import { Alert, Button, Card, Description, InputGroup, Label, Modal, TextField, Typography } from "@heroui/react";
+import { MySurface } from "@/shared/ui/MySurface";
+import { RoleMultiSelect } from "@/shared/ui/RoleMultiSelect";
+import { validateUserForm, type EmailAddressItem, type RoleItem, type UserFormValues, type UserItem } from "@/features/identity-access";
 import { SourceTag, UserAvatar } from "./UserIdentity";
 import { AdditionalEmailFields } from "./AdditionalEmailFields";
 

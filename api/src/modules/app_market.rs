@@ -355,7 +355,10 @@ pub(crate) async fn list_market(
                 json!(product["publisherSubject"].as_str() == Some(publisher_subject.as_str()));
         }
     }
-    Ok(Json(success_response("应用市场已读取", contract_payload(catalogue)?)))
+    Ok(Json(success_response(
+        "应用市场已读取",
+        contract_payload(catalogue)?,
+    )))
 }
 
 async fn load_market_catalogue() -> Result<(Value, String), AppError> {
@@ -402,7 +405,8 @@ pub(crate) async fn get_market_application(
         &format!("/api/market/applications/{product_id}"),
         None,
     )
-    .await.and_then(typed_market_response)
+    .await
+    .and_then(typed_market_response)
 }
 
 pub(crate) async fn preflight_market_application(
@@ -427,7 +431,8 @@ pub(crate) async fn preflight_market_application(
         .await?
         .is_some();
     Ok(Json(success_response(
-        "安装预检完成", contract_payload(json!({
+        "安装预检完成",
+        contract_payload(json!({
             "productId": product_id,
             "releaseId": release_id,
             "version": detail["version"],
@@ -587,7 +592,9 @@ pub(crate) async fn install_market_application(
     for schema in &schemas {
         if let Some(source) = schema["formUuid"].as_str() {
             if let Some(local) = form_map.get(source) {
-                let rewritten_schema = rewrite_form_references(schema["schema"].clone(), &form_map);
+                let mut rewritten_schema =
+                    rewrite_form_references(schema["schema"].clone(), &form_map);
+                crate::shared::clean_retired_page_props(&mut rewritten_schema);
                 form_schema_entity::ActiveModel {
                     id: Set(Uuid::new_v4()),
                     form_uuid: Set(local.clone()),
@@ -691,7 +698,10 @@ pub(crate) async fn install_market_application(
     txn.execute_unprepared(&format!("UPDATE market_installations SET status='installed',updated_at=NOW() WHERE installation_id='{installation_id}'")).await?;
     txn.commit().await?;
     Ok(Json(success_response(
-        "应用市场安装完成", contract_payload(json!({"installationId":installation_id,"localAppId":local_app_id,"releaseId":release_id,"disabledAutomations":automations.len()}))?,
+        "应用市场安装完成",
+        contract_payload(
+            json!({"installationId":installation_id,"localAppId":local_app_id,"releaseId":release_id,"disabledAutomations":automations.len()}),
+        )?,
     )))
 }
 
@@ -722,7 +732,10 @@ pub(crate) async fn list_market_installations(
             "events": events,
         }));
     }
-    Ok(Json(success_response("已安装市场应用已读取", contract_payload(values)?)))
+    Ok(Json(success_response(
+        "已安装市场应用已读取",
+        contract_payload(values)?,
+    )))
 }
 
 async fn load_installation(
@@ -782,7 +795,10 @@ pub(crate) async fn preflight_installation(
         blockers.extend(release_blocking_issues(&state, &installation_id, &bytes).await?);
     }
     Ok(Json(success_response(
-        "安装升级预检完成", contract_payload(json!({"installationId":installation_id,"currentReleaseId":release_id,"targetReleaseId":target_release_id,"targetVersion":detail["version"],"upToDate":release_id==target_release_id,"blockingIssues":blockers,"canUpgrade":blockers.is_empty() && release_id != target_release_id}))?,
+        "安装升级预检完成",
+        contract_payload(
+            json!({"installationId":installation_id,"currentReleaseId":release_id,"targetReleaseId":target_release_id,"targetVersion":detail["version"],"upToDate":release_id==target_release_id,"blockingIssues":blockers,"canUpgrade":blockers.is_empty() && release_id != target_release_id}),
+        )?,
     )))
 }
 
@@ -801,7 +817,8 @@ pub(crate) async fn archive_installation(
         load_installation(&state.db, &installation_id).await?;
     if status == "archived" {
         return Ok(Json(success_response(
-            "市场应用已归档", contract_payload(json!({"installationId":installation_id,"status":"archived"}))?,
+            "市场应用已归档",
+            contract_payload(json!({"installationId":installation_id,"status":"archived"}))?,
         )));
     }
     let flows = AutomationFlowEntity::find()
@@ -824,7 +841,8 @@ pub(crate) async fn archive_installation(
     txn.commit().await?;
     record_installation_event(&state.db, &installation_id, "archived", json!({})).await?;
     Ok(Json(success_response(
-        "市场应用已归档", contract_payload(json!({"installationId":installation_id,"status":"archived"}))?,
+        "市场应用已归档",
+        contract_payload(json!({"installationId":installation_id,"status":"archived"}))?,
     )))
 }
 
@@ -855,7 +873,8 @@ pub(crate) async fn restore_installation(
         .await?;
     record_installation_event(&state.db, &installation_id, "restored", json!({})).await?;
     Ok(Json(success_response(
-        "市场应用已恢复", contract_payload(json!({"installationId":installation_id,"status":"installed"}))?,
+        "市场应用已恢复",
+        contract_payload(json!({"installationId":installation_id,"status":"installed"}))?,
     )))
 }
 
@@ -1047,7 +1066,8 @@ async fn apply_nonbreaking_release(
                     _ => {}
                 }
             }
-            let rewritten = rewrite_form_references(schema["schema"].clone(), &form_map);
+            let mut rewritten = rewrite_form_references(schema["schema"].clone(), &form_map);
+            crate::shared::clean_retired_page_props(&mut rewritten);
             let mut active: form_schema_entity::ActiveModel = current.into();
             active.schema_json = Set(rewritten.clone());
             active.updated_at = Set(Utc::now().into());
@@ -1108,7 +1128,8 @@ pub(crate) async fn upgrade_installation(
     let target = detail["releaseId"].as_str().unwrap_or_default();
     if target == release_id {
         return Ok(Json(success_response(
-            "已是当前上架版本", contract_payload(json!({"installationId":installation_id,"releaseId":release_id}))?,
+            "已是当前上架版本",
+            contract_payload(json!({"installationId":installation_id,"releaseId":release_id}))?,
         )));
     }
     let blockers = release_blocking_issues(&state, &installation_id, &bytes).await?;
@@ -1129,7 +1150,8 @@ pub(crate) async fn upgrade_installation(
     )
     .await?;
     Ok(Json(success_response(
-        "市场应用升级完成", contract_payload(json!({"installationId":installation_id,"releaseId":target}))?,
+        "市场应用升级完成",
+        contract_payload(json!({"installationId":installation_id,"releaseId":target}))?,
     )))
 }
 
@@ -1152,7 +1174,8 @@ pub(crate) async fn rollback_installation(
             "此安装无法回滚；请先恢复或重新安装".into(),
         ));
     }
-    let target = request.release_id
+    let target = request
+        .release_id
         .as_deref()
         .ok_or_else(|| AppError::BadRequest("回滚必须指定 releaseId".into()))?;
     let row = state.db.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres, "SELECT version,snapshot_json::text FROM market_installation_versions WHERE installation_id=$1 AND release_id=$2", vec![installation_id.clone().into(), target.into()])).await?.ok_or_else(|| AppError::NotFound("未找到已安装的目标版本快照".into()))?;
@@ -1176,7 +1199,8 @@ pub(crate) async fn rollback_installation(
     )
     .await?;
     Ok(Json(success_response(
-        "市场应用已回滚", contract_payload(json!({"installationId":installation_id,"releaseId":target}))?,
+        "市场应用已回滚",
+        contract_payload(json!({"installationId":installation_id,"releaseId":target}))?,
     )))
 }
 
@@ -1224,7 +1248,8 @@ pub(crate) async fn purge_installation(
         let _ = fs::remove_file(path);
     }
     Ok(Json(success_response(
-        "市场应用已永久清理", contract_payload(json!({"installationId":installation_id}))?,
+        "市场应用已永久清理",
+        contract_payload(json!({"installationId":installation_id}))?,
     )))
 }
 
@@ -1410,15 +1435,26 @@ pub(crate) async fn sync_approved(
     let (catalogue, publisher_subject) = load_market_catalogue().await?;
     let updated = sync_publisher_source_apps(&state, &publisher_subject, &catalogue).await?;
     Ok(Json(success_response(
-        "应用线上版本已同步", contract_payload(json!({ "updated": updated }))?,
+        "应用线上版本已同步",
+        contract_payload(json!({ "updated": updated }))?,
     )))
 }
 
-fn contract_payload<T: serde::de::DeserializeOwned>(payload: impl serde::Serialize) -> Result<T, AppError> {
-    let value = serde_json::to_value(payload).map_err(|error| AppError::Server(std::io::Error::other(error)))?;
+fn contract_payload<T: serde::de::DeserializeOwned>(
+    payload: impl serde::Serialize,
+) -> Result<T, AppError> {
+    let value = serde_json::to_value(payload)
+        .map_err(|error| AppError::Server(std::io::Error::other(error)))?;
     serde_json::from_value(value).map_err(|error| AppError::Server(std::io::Error::other(error)))
 }
-fn typed_market_response<T: serde::de::DeserializeOwned + serde::Serialize>(response: Json<ApiResponse<Value>>) -> Result<Json<ApiResponse<T>>, AppError> {
+fn typed_market_response<T: serde::de::DeserializeOwned + serde::Serialize>(
+    response: Json<ApiResponse<Value>>,
+) -> Result<Json<ApiResponse<T>>, AppError> {
     let response = response.0;
-    Ok(Json(ApiResponse { code: response.code, message: response.message, time: response.time, data: response.data.map(contract_payload).transpose()? }))
+    Ok(Json(ApiResponse {
+        code: response.code,
+        message: response.message,
+        time: response.time,
+        data: response.data.map(contract_payload).transpose()?,
+    }))
 }

@@ -4,7 +4,7 @@ import { Avatar, FieldError, ListBox, Select } from "@heroui/react";
 import { useEffect, useMemo, useState, type Key } from "react";
 import { fetchRuntimeIdentityCatalog } from "@/features/form-runtime/api";
 import type { IdentityRole, IdentityUser, RuntimeIdentityCatalog } from "@/features/form-runtime/types";
-import type { RuntimeFieldProps, RuntimeSchemaField } from "./RuntimeFormRenderer";
+import type { RuntimeFieldProps, RuntimeSchemaField } from "@/features/form-model/runtime-types";
 
 let catalogPromise: Promise<RuntimeIdentityCatalog> | null = null;
 
@@ -90,8 +90,8 @@ export function RuntimeMemberSelect({
   }, [props.memberRoleIds, props.memberUserIds, roles, scope, source, users]);
 
   const userById = useMemo(
-    () => new Map(candidates.map((user) => [user.id, user])),
-    [candidates],
+    () => new Map(users.map((user) => [user.id, user])),
+    [users],
   );
   const options = useMemo(
     () =>

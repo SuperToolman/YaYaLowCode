@@ -12,9 +12,8 @@ use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::Level;
 
 use crate::modules::{
-    agent_config, agent_files, agents, app_market, apps, automations, byom, communication,
-    custom_buttons, dingtalk, files, forms, identity, locations, mail, navigation, recycle_bin,
-    settings, workflows,
+    agent_config, app_market, apps, automations, byom, communication, custom_buttons, dingtalk,
+    files, forms, identity, locations, mail, navigation, recycle_bin, settings, workflows,
 };
 use crate::openapi;
 use crate::platform::{authorization, error::AppError, runtime::AppState};
@@ -26,6 +25,8 @@ pub(crate) struct HealthResponse {
 
 pub(crate) fn build(state: AppState) -> Router {
     Router::new()
+        .merge(crate::modules::agent_v2::routes())
+        .merge(crate::modules::knowledge::routes())
         .route("/healthz", get(health_check))
         .route("/openapi.json", get(openapi::openapi_json))
         .route(
@@ -208,24 +209,20 @@ pub(crate) fn build(state: AppState) -> Router {
             axum::routing::put(agent_config::update_provider).delete(agent_config::delete_provider),
         )
         .route(
-            "/api/agent/plugins",
-            get(agent_config::list_plugins).post(agent_config::create_plugin),
-        )
-        .route(
-            "/api/agent/plugins/{id}",
-            axum::routing::put(agent_config::update_plugin).delete(agent_config::delete_plugin),
-        )
-        .route(
-            "/api/agent/runtime-model-route",
-            get(byom::runtime_model_route),
-        )
-        .route(
             "/api/settings/model-routes",
             get(byom::list_model_routes).post(byom::create_model_route),
         )
         .route(
             "/api/settings/model-routes/{id}",
             axum::routing::put(byom::update_model_route).delete(byom::delete_model_route),
+        )
+        .route(
+            "/api/settings/model-routes/{id}/test",
+            post(byom::test_model_route),
+        )
+        .route(
+            "/api/settings/model-routes/{id}/models",
+            post(byom::fetch_model_route_models),
         )
         .route(
             "/api/settings/identity-source",
@@ -286,86 +283,6 @@ pub(crate) fn build(state: AppState) -> Router {
         .route(
             "/api/identity/roles/{role_id}",
             axum::routing::put(identity::update_local_role).delete(identity::delete_local_role),
-        )
-        .route(
-            "/api/agent/sessions",
-            get(agents::list_agent_sessions).post(agents::create_agent_session),
-        )
-        .route(
-            "/api/agent/workbench/sessions",
-            get(agents::list_agent_workbench_sessions),
-        )
-        .route(
-            "/api/agent/archived-sessions",
-            get(agents::list_archived_agent_sessions),
-        )
-        .route(
-            "/api/agent/runtime-identity",
-            get(authorization::get_runtime_identity),
-        )
-        .route(
-            "/api/agent/runtime/reconcile-session",
-            post(agents::reconcile_agent_session),
-        )
-        .route(
-            "/api/agent/runtime-employees",
-            get(settings::list_authorized_runtime_ai_employees),
-        )
-        .route(
-            "/api/agent/sessions/{session_uuid}",
-            axum::routing::patch(agents::update_agent_session).delete(agents::delete_agent_session),
-        )
-        .route(
-            "/api/agent/sessions/{session_uuid}/restore",
-            post(agents::restore_agent_session),
-        )
-        .route(
-            "/api/agent/sessions/{session_uuid}/purge",
-            axum::routing::delete(agents::purge_archived_agent_session),
-        )
-        .route(
-            "/api/agent/sessions/{session_uuid}/files",
-            post(agent_files::upload).get(agent_files::list),
-        )
-        .route(
-            "/api/agent/sessions/{session_uuid}/files/{file_id}",
-            get(agent_files::download).delete(agent_files::delete),
-        )
-        .route(
-            "/api/agent/sessions/{session_uuid}/artifacts",
-            get(agent_files::list),
-        )
-        .route(
-            "/api/agent/sessions/{session_uuid}/artifacts/{file_id}/download",
-            get(agent_files::download),
-        )
-        .route(
-            "/api/agent/sessions/{session_uuid}/outputs",
-            post(agent_files::register_output),
-        )
-        .route(
-            "/api/agent/sessions/{session_uuid}/file-links",
-            post(agent_files::link),
-        )
-        .route(
-            "/api/agent/sessions/{session_uuid}/access",
-            get(agents::runtime_session_access),
-        )
-        .route(
-            "/api/agent/sessions/{session_uuid}/runtime-summary",
-            post(agents::upsert_agent_runtime_summary),
-        )
-        .route(
-            "/api/agent/sessions/{session_uuid}/transactions",
-            get(agents::list_transactions).post(agents::create_transaction),
-        )
-        .route(
-            "/api/agent/sessions/{session_uuid}/transactions/{action_uuid}/execute",
-            post(agents::execute_transaction),
-        )
-        .route(
-            "/api/agent/sessions/{session_uuid}/transactions/{action_uuid}/cancel",
-            post(agents::cancel_transaction),
         )
         .route("/api/apps", get(apps::list_apps).post(apps::create_app))
         .route(
@@ -519,12 +436,8 @@ pub(crate) fn build(state: AppState) -> Router {
             post(workflows::reverse_workflow_record),
         )
         .route(
-            "/api/forms/{form_uuid}/records/{record_uuid}/workflow/pause",
-            post(workflows::pause_workflow_record),
-        )
-        .route(
-            "/api/forms/{form_uuid}/records/{record_uuid}/workflow/resume",
-            post(workflows::resume_workflow_record),
+            "/api/forms/{form_uuid}/records/{record_uuid}/workflow/withdraw",
+            post(workflows::withdraw_workflow_record),
         )
         .route(
             "/api/workflow/tasks/{task_uuid}/approve",
@@ -584,6 +497,10 @@ pub(crate) fn build(state: AppState) -> Router {
         .route(
             "/api/forms/{form_uuid}/views/{view_uuid}/custom-buttons/{button_uuid}/execute",
             post(crate::modules::view_custom_buttons::execute_view_button),
+        )
+        .route(
+            "/api/forms/{form_uuid}/views/{view_uuid}/custom-buttons/{button_uuid}/resolve-fill",
+            post(crate::modules::view_custom_buttons::resolve_view_button_fill),
         )
         .route(
             "/api/forms/{form_uuid}/views/{view_uuid}/custom-buttons/{button_uuid}/submit",
@@ -672,6 +589,9 @@ async fn require_authenticated(
     next: Next,
 ) -> Result<Response, AppError> {
     match (request.method(), request.uri().path()) {
+        (_, path) if path.starts_with("/api/internal/agent-v2/") => {
+            crate::modules::agent_v2::require_worker(request.headers())?;
+        }
         (_, "/healthz")
         | (_, "/openapi.json")
         | (_, "/api/identity/local-login")
@@ -785,15 +705,7 @@ fn cache_category(path: &str) -> Option<(&'static str, u64)> {
         _ if path.contains("/automations") || path.starts_with("/api/automation") => {
             Some(("automations", 300))
         }
-        _ if path.starts_with("/api/agent/providers")
-            || path.starts_with("/api/agent/profiles")
-            || path.starts_with("/api/agent/agents")
-            || path.starts_with("/api/agent/plugins")
-            || path.starts_with("/api/agent/skills") =>
-        {
-            Some(("agent-config", 300))
-        }
-        _ if path.starts_with("/api/agent/sessions") => Some(("agent-sessions", 60)),
+        _ if path.starts_with("/api/agent/providers") => Some(("agent-config", 300)),
         _ if matches!(
             path,
             "/api/settings/notifications" | "/api/settings/communication"

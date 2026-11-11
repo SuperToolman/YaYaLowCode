@@ -1,13 +1,8 @@
 import type { ComponentProps, ReactNode } from "react";
+import { Typography } from "@heroui/react";
 
-export const groupStyleOptions = [
-  { value: "simple", label: "简约" },
-  { value: "surface", label: "Surface" },
-  { value: "bordered", label: "边框" },
-  { value: "divider", label: "分割线" },
-] as const;
-
-export type GroupStyle = (typeof groupStyleOptions)[number]["value"];
+import { type GroupTitleType, type GroupStyle } from "@/features/form-model/presentation-options";
+export { groupTitleTypeOptions, groupStyleOptions, type GroupTitleType, type GroupStyle } from "@/features/form-model/presentation-options";
 
 const groupStyleClasses: Record<GroupStyle, string> = {
   simple: "p-2",
@@ -20,6 +15,7 @@ export function FormGroup({
   title,
   description,
   groupStyle = "simple",
+  groupTitleType = "h4",
   children,
   className,
   ...props
@@ -27,6 +23,7 @@ export function FormGroup({
   title: ReactNode;
   description?: string;
   groupStyle?: GroupStyle;
+  groupTitleType?: GroupTitleType;
 }) {
   return (
     <div
@@ -35,7 +32,7 @@ export function FormGroup({
       className={`w-full min-w-0 ${groupStyleClasses[groupStyle]} ${className ?? ""}`}
     >
       <div className={`mb-2 [overflow-wrap:anywhere] ${groupStyle === "divider" ? "border-b border-[var(--color-border)] pb-2" : ""}`}>
-        <div className="text-sm font-semibold">{title}</div>
+        <Typography type={groupTitleType}>{title}</Typography>
         {description ? <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{description}</p> : null}
       </div>
       {children}

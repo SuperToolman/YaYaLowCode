@@ -3,25 +3,15 @@ export {
   listApps,
   listRoles,
   listUsers,
-} from "@lib/http";
+} from "@/shared/lib/http";
 
-import {
-  getApp,
-  ensureWorkflowProcessFlow,
-  getForm,
-  getFormSchema,
-  listAutomationFlows,
-  listFormVersions,
-  restoreFormVersion,
-  saveFormSchema,
-} from "@lib/http";
+import { getApp, ensureWorkflowProcessFlow, getForm, getFormSchema, listAutomationFlows, listFormVersions, restoreFormVersion, saveFormSchema } from "@/shared/lib/http";
 
 export { getFormSchema };
 
-import { unwrapApiResult } from "@lib/api-request";
+import { unwrapApiResult } from "@/shared/lib/api-request";
 
-export type { ApiFieldOutlineForm, App } from "@lib/http";
-
+export type { ApiFieldOutlineForm, App } from "@/shared/lib/http";
 
 export type DesignerSchemaPayload<TSchema> = {
   latestVersion: number;
@@ -40,11 +30,7 @@ export async function getDesignerForm(formUuid: string) {
   return unwrapApiResult({ data, error, response }, "无法加载表单");
 }
 
-export async function getDesignerSchema<TSchema>(formUuid: string, decode: (schema: unknown) => TSchema) {
-  const { data, error, response } = await getFormSchema({ path: { formUuid }, responseStyle: "fields" });
-  const payload = unwrapApiResult({ data, error, response }, "无法加载表单 Schema");
-  return { ...payload, schema: decode(payload.schema) };
-}
+export { getDesignerSchema } from "@/features/form-model/schema-api";
 
 export async function listDesignerVersions(formUuid: string) {
   const { data, error, response } = await listFormVersions({ path: { formUuid }, responseStyle: "fields" });

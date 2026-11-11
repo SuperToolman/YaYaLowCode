@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CommunicationConversationResponse } from "@features/communication/api";
+import type { CommunicationConversationResponse } from "@/features/communication/api";
 import { sortConversations } from "./conversation-sort";
 
 const conversation = (id: string, lastMessageAt?: string | null) =>

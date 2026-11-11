@@ -114,7 +114,9 @@ pub(crate) fn compile_form_storage_plan(
         } else {
             sql_type
         };
-        let target = if parent_subform_id.is_some() {
+        let target = if matches!(base_target, StorageTarget::Virtual) {
+            StorageTarget::Virtual
+        } else if parent_subform_id.is_some() {
             if matches!(base_target, StorageTarget::Column) {
                 StorageTarget::ChildColumn
             } else {
@@ -661,7 +663,7 @@ fn storage_mapping(component_type: &str) -> (StorageTarget, Option<&'static str>
         "subform" => (StorageTarget::ChildTable, None),
         // Presentation and executable-page nodes must never be written to a record,
         // indexed, or materialized as physical table columns.
-        "groupContainer" | "description" | "button" | "html" | "tsx" => {
+        "groupContainer" | "separator" | "description" | "button" | "html" | "tsx" => {
             (StorageTarget::Virtual, None)
         }
         _ => (StorageTarget::ExtensionJson, Some("JSONB")),
@@ -808,6 +810,26 @@ mod tests {
         ));
         assert_eq!(plan.fields[5].child_table, plan.fields[4].child_table);
         assert_eq!(index_descriptors(&plan).len(), 2);
+    }
+
+    #[test]
+    fn separator_is_virtual_including_historical_subform_children() {
+        let plan = compile_form_storage_plan(
+            "FORM-SEPARATOR",
+            &json!({"fields": [
+                {"id": "line", "type": "separator"},
+                {"id": "rows", "type": "subform"},
+                {"id": "child-line", "type": "separator", "parentGroupId": "rows"}
+            ]}),
+        )
+        .unwrap();
+        for field in [&plan.fields[0], &plan.fields[2]] {
+            assert!(matches!(field.target, StorageTarget::Virtual));
+            assert!(field.column_name.is_none());
+            assert!(field.sql_type.is_none());
+            assert!(!field.indexed);
+        }
+        assert!(index_descriptors(&plan).is_empty());
     }
 
     #[test]

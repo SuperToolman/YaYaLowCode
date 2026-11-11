@@ -1,5 +1,5 @@
-import type { RuntimeSchemaField } from "./runtime-form-types";
-import { getDateValidation, getDateValidationError } from "./date-validation";
+import type { RuntimeSchemaField } from "../../form-model/runtime-types";
+import { getDateValidation, getDateValidationError } from "../../form-model/date-validation";
 
 export function getSubformValidationKey(parentId: string, row: number, fieldId: string) {
   return `${parentId}:${row}:${fieldId}`;
@@ -26,7 +26,7 @@ export function validateRuntimeFields(
   function validate(field: RuntimeSchemaField, value: unknown, key: string) {
     const props = field.props ?? {};
     if (props.isHidden || props.isDisabled || props.isReadOnly) return;
-    if (["description", "link", "button", "html", "tsx"].includes(field.type)) return;
+    if (["description", "separator", "link", "button", "html", "tsx"].includes(field.type)) return;
     if (field.type === "groupContainer") {
       for (const child of children.get(field.id) ?? []) validate(child, values[child.id], child.id);
       return;

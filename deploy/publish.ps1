@@ -52,7 +52,7 @@ $remotePublicKey = "/tmp/yaya-$stamp-$PID-license-public.pem"
 $target = "$SshUser@$ServerIp"
 $sshOptions = @('-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=15', '-p', "$SshPort")
 $scpOptions = @('-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=15', '-P', "$SshPort")
-$excludes = @('--exclude=.git', '--exclude=.codex-openapi-target', '--exclude=node_modules', '--exclude=.next', '--exclude=api/target*', '--exclude=api/.yaya-*', '--exclude=web/.next', '--exclude=web/node_modules', '--exclude=web/.cache', '--exclude=web/src-tauri', '--exclude=web/tauri-dist', '--exclude=agent/deepseek-harness/.dsh', '--exclude=agent/deepseek-harness/node_modules', '--exclude=deploy/.env', '--exclude=deploy/secrets', '--exclude=*.log', '--exclude=.yaya-*')
+$excludes = @('--exclude=.git', '--exclude=.codex-openapi-target', '--exclude=node_modules', '--exclude=.next', '--exclude=api/target*', '--exclude=api/.yaya-*', '--exclude=web/.next', '--exclude=web/node_modules', '--exclude=web/.cache', '--exclude=web/src-tauri', '--exclude=web/tauri-dist', '--exclude=agent-v2/target*', '--exclude=agent-v2/runtime', '--exclude=agent-v2/.env', '--exclude=agent-v2/cordis-host/node_modules', '--exclude=deploy/.env', '--exclude=deploy/secrets', '--exclude=*.log', '--exclude=.yaya-*')
 $passwordBstr = [IntPtr]::Zero
 
 try {
@@ -66,7 +66,10 @@ try {
   $env:DISPLAY = 'yaya-publish'
 
   Write-Host 'Creating source package...'
-  Invoke-Native 'tar.exe' (@('-czf', $archive) + $excludes + @('-C', $repoRoot, '.'))
+  # Select only top-level entries here: tar exclude patterns can also match the
+  # live web/app/api/agent directory when attempting to exclude the retired root.
+  $sourceEntries = @(Get-ChildItem -LiteralPath $repoRoot -Force | Where-Object { $_.Name -ne 'agent' } | ForEach-Object { './' + $_.Name })
+  Invoke-Native 'tar.exe' (@('-czf', $archive) + $excludes + @('-C', $repoRoot) + $sourceEntries)
   if ($Initialize) {
     Write-Host 'Uploading initial environment configuration and public key...'
     Invoke-Native 'scp.exe' ($scpOptions + @((Join-Path $repoRoot 'deploy/.env'), "${target}:$remoteEnv"))
@@ -103,7 +106,7 @@ try {
     '# The platform uses fixed public ports. Do not retain legacy per-instance mappings.',
     'if grep -q ''^WEB_PORT='' "$install_dir/deploy/.env"; then sed -i ''s/^WEB_PORT=.*/WEB_PORT=8787/'' "$install_dir/deploy/.env"; else printf ''\nWEB_PORT=8787\n'' >> "$install_dir/deploy/.env"; fi',
     'if grep -q ''^API_PORT='' "$install_dir/deploy/.env"; then sed -i ''s/^API_PORT=.*/API_PORT=8788/'' "$install_dir/deploy/.env"; else printf ''API_PORT=8788\n'' >> "$install_dir/deploy/.env"; fi',
-    'if ! grep -q ''^AGENT_RUNTIME_SHARED_SECRET='' "$install_dir/deploy/.env"; then printf ''\nAGENT_RUNTIME_SHARED_SECRET=%s\n'' "$(openssl rand -hex 32)" >> "$install_dir/deploy/.env"; fi',
+    'if ! grep -q ''^YAYA_AGENT_V2_WORKER_SECRET='' "$install_dir/deploy/.env"; then printf ''\nYAYA_AGENT_V2_WORKER_SECRET=%s\n'' "$(openssl rand -hex 32)" >> "$install_dir/deploy/.env"; fi',
     'if ! grep -q ''^YAYA_BYOM_ENCRYPTION_KEY='' "$install_dir/deploy/.env"; then printf ''YAYA_BYOM_ENCRYPTION_KEY=%s\n'' "$(openssl rand -base64 32 | tr -d ''\n'')" >> "$install_dir/deploy/.env"; fi',
     'find "$install_dir" -mindepth 1 -maxdepth 1 ! -name deploy -exec rm -rf {} +',
     'find "$install_dir/deploy" -mindepth 1 -maxdepth 1 ! -name .env ! -name secrets -exec rm -rf {} +',
@@ -111,9 +114,11 @@ try {
     'rm -f "$archive"',
     'BUILDKIT_PROGRESS=plain CONTAINER_NAME="$container_name" docker compose -p "$compose_project" --project-directory "$install_dir/deploy" -f "$install_dir/deploy/compose.yaml" --env-file "$install_dir/deploy/.env" up -d --build --remove-orphans',
     'attempt=0',
-    'until docker exec "$container_name" curl -fsS http://127.0.0.1:8788/healthz >/dev/null && docker exec "$container_name" curl -fsS http://127.0.0.1:8789/healthz >/dev/null && docker exec "$container_name" curl -fsS -X POST http://127.0.0.1:8787/api/auth/login -H content-type:application/json --data-binary ''{"username":"yaya","password":"yaya"}'' | grep -q "\"code\":0"; do attempt=$((attempt + 1)); [ "$attempt" -lt 60 ] || { echo "Initial API/Web/Agent verification timed out." >&2; docker logs --tail 100 "$container_name" >&2 || true; exit 3; }; sleep 2; done',
-    'docker exec "$container_name" sh -lc ''command -v python3 >/dev/null 2>&1 && python3 --version''',
-    'echo "Initial data verified: API, Web, Agent, Python, and yaya super administrator are available."',
+    'until docker exec "$container_name" curl -fsS http://127.0.0.1:8788/healthz >/dev/null && docker exec "$container_name" supervisorctl status agent-v2 | grep -q RUNNING && docker exec "$container_name" curl -fsS -X POST http://127.0.0.1:8787/api/auth/login -H content-type:application/json --data-binary ''{"username":"yaya","password":"yaya"}'' | grep -q "\"code\":0"; do attempt=$((attempt + 1)); [ "$attempt" -lt 60 ] || { echo "Initial API/Web/AgentV2 verification timed out." >&2; docker logs --tail 100 "$container_name" >&2 || true; exit 3; }; sleep 2; done',
+    'docker exec "$container_name" sh -lc ''command -v python3 >/dev/null 2>&1 && python3 --version && node --version && command -v bash >/dev/null''',
+    'docker exec "$container_name" supervisorctl status agent-executor | grep -q RUNNING',
+    'docker exec "$container_name" curl -fsS http://127.0.0.1:8791/healthz | grep -q ''"backend":"local"''',
+    'echo "Initial data verified: API, Web, AgentV2, local executor, Python, Node, and yaya super administrator are available."',
     'CONTAINER_NAME="$container_name" docker compose -p "$compose_project" --project-directory "$install_dir/deploy" -f "$install_dir/deploy/compose.yaml" --env-file "$install_dir/deploy/.env" ps'
   ) -join "`n"
   $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remoteScript))

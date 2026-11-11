@@ -1,22 +1,20 @@
 "use client";
 
-import { unwrapApiResult } from "@/app/lib/api-request";
-import { submitWorkflowRecord, reverseWorkflowRecord, pauseWorkflowRecord, resumeWorkflowRecord, completeWorkflowExecution } from "@lib/http";
+import { unwrapApiResult } from "@/shared/lib/api-request";
+import { submitWorkflowRecord, reverseWorkflowRecord, withdrawWorkflowRecord, completeWorkflowExecution } from "@/shared/lib/http";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createDetailFormData, createRecord, deleteFormData, deleteRecord, postWorkflowComment, updateRecord } from "./api";
 
 export function runWorkflowRecordAction(
   formUuid: string,
   recordUuid: string,
-  action: string,
-  comment: string,
+  action: "submit" | "reverse" | "withdraw",
   signal?: AbortSignal,
 ) {
   const options = { path: { formUuid, recordUuid }, signal };
-  const result = action === "pause" ? pauseWorkflowRecord({ ...options, body: { reason: comment } })
-    : action === "submit" ? submitWorkflowRecord(options)
+  const result = action === "submit" ? submitWorkflowRecord(options)
     : action === "reverse" ? reverseWorkflowRecord(options)
-    : action === "resume" ? resumeWorkflowRecord(options) : undefined;
+    : withdrawWorkflowRecord(options);
   if (!result) throw new Error("未知流程操作");
   return result.then(response => unwrapApiResult(response));
 }

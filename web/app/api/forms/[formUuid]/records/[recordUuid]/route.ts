@@ -1,4 +1,4 @@
-import { deleteFormRecord, updateFormRecord } from "../../../../../lib/http";
+import { deleteFormRecord, updateFormRecord } from "../../../../../../shared/lib/http";
 import { createBackendSdkClient, sdkJsonResponse } from "../../../../_lib/backend-sdk-client";
 
 type Context = { params: Promise<{ formUuid: string; recordUuid: string }> };

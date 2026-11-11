@@ -1,26 +1,13 @@
 "use client";
-import { assertApiEnvelope } from "@lib/api-request";
+import { assertApiEnvelope } from "@/shared/lib/api-request";
 
-import { notifyRequestError } from "@lib/notify";
-import { useAuth } from "@components/AuthProvider";
+import { notifyRequestError } from "@/shared/lib/notify";
+import { useAuth } from "@/features/auth/components/AuthProvider";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { notify } from "@lib/notify";
-import {
-  ButtonGroup,
-  Button,
-  Input,
-  Modal,
-  Tabs,
-  TagGroup,
-  Tag,
-} from "@heroui/react";
-import { MySurface } from "@/components/ui/MySurface";
-import {
-  createLocalRole,
-  deleteLocalRole,
-  listRoles,
-  updateLocalRole,
-} from "@/features/identity-access/api";
+import { notify } from "@/shared/lib/notify";
+import { ButtonGroup, Button, Input, Modal, Tabs, TagGroup, Tag } from "@heroui/react";
+import { MySurface } from "@/shared/ui/MySurface";
+import { createLocalRole, deleteLocalRole, listRoles, updateLocalRole } from "@/features/identity-access/api";
 import { SettingsContentCard } from "../components/SettingsContentCard";
 import { ArrowRotateRight } from "@gravity-ui/icons";
 

@@ -1,4 +1,5 @@
 use crate::modules::forms;
+pub(crate) mod design_contract;
 use crate::modules::forms::dto::RestoreVersionRequest;
 use crate::platform::automation_runs::{
     RetrySource, create_automation_run, finalize_automation_run, finalize_automation_run_node_log,
@@ -126,8 +127,108 @@ pub(crate) async fn resolve_automation_execution(
         return Err(AppError::BadRequest("运行不是待核实状态".into()));
     }
     execution::sql(&txn,"INSERT INTO automation_execution_audits(id,run_id,actor_id,action,detail) VALUES($1,$2,$3,$4,$5)",vec![Uuid::new_v4().into(),run.id.into(),user.id.into(),payload.action.clone().into(),json!({"acceptDuplicateRisk":payload.accept_duplicate_risk}).into()]).await?;
+    if payload.action == "retry"
+        && txn
+            .query_one_raw(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DbBackend::Postgres,
+                "SELECT id FROM automation_execution_external_effects WHERE run_id=$1 AND status='failed' AND compensation IS NOT NULL LIMIT 1",
+                vec![run.id.into()],
+            ))
+            .await?
+            .is_some()
+    {
+        execution::sql(
+            &txn,
+            "UPDATE automation_execution_external_effects SET status='completed',error_message=NULL,updated_at=NOW() WHERE run_id=$1 AND status='failed' AND compensation IS NOT NULL",
+            vec![run.id.into()],
+        )
+        .await?;
+        txn.commit().await?;
+        let needs_attention = execution::compensate_external_effects(&state, run.id).await?;
+        let txn = state.db.begin().await?;
+        if !needs_attention {
+            execution::sql(&txn,"DELETE FROM automation_execution_record_changes WHERE run_id=$1",vec![run.id.into()]).await?;
+            if let Some(instance_id) = run.workflow_instance_id {
+                let instance =
+                    crate::infrastructure::entities::workflow_instance_entity::Entity::find_by_id(
+                        instance_id,
+                    )
+                    .one(&txn)
+                    .await?
+                    .ok_or_else(|| AppError::NotFound("instance missing".into()))?;
+                crate::modules::workflows::skip_pending_tasks(
+                    &txn,
+                    &instance,
+                    None,
+                    "外部副作用已补偿，自动化仍以失败结束",
+                    Utc::now(),
+                    None,
+                )
+                .await?;
+                crate::modules::workflows::complete_instance(
+                    &txn,
+                    &instance,
+                    "failed",
+                    "reviewing",
+                    "failed",
+                    "执行失败",
+                    "系统",
+                )
+                .await?;
+            }
+        }
+        finalize_automation_run(
+            &txn,
+            run.id,
+            if needs_attention { "needs_attention" } else { "failed" },
+            Some(if needs_attention {
+                "外部副作用补偿仍未完成，请核实处理".into()
+            } else {
+                "外部副作用补偿已完成，业务变更未提交".into()
+            }),
+        )
+        .await?;
+        txn.commit().await?;
+        return Ok(Json(success_response(
+            "已重试外部副作用补偿",
+            json!({"runId":run_uuid}),
+        )));
+    }
+    if payload.action == "retry"
+        && txn
+            .query_one_raw(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DbBackend::Postgres,
+                "SELECT id FROM automation_execution_external_effects WHERE run_id=$1 AND status='manual' LIMIT 1",
+                vec![run.id.into()],
+            ))
+            .await?
+            .is_some()
+    {
+        return Err(AppError::BadRequest(
+            "该实例有未配置撤销请求的外部副作用，需要人工处理，不能自动重试".into(),
+        ));
+    }
     if payload.action == "cancel" {
+        let outstanding_effect = txn
+            .query_one_raw(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DbBackend::Postgres,
+                "SELECT 1 FROM automation_execution_external_effects WHERE run_id=$1 AND status IN ('requesting','uncertain','completed','compensating','failed','manual') LIMIT 1",
+                vec![run.id.into()],
+            ))
+            .await?
+            .is_some();
+        if outstanding_effect {
+            return Err(AppError::BadRequest(
+                "实例仍有未确认或未补偿的外部副作用，请先完成补偿核实后再取消".into(),
+            ));
+        }
         execution::sql(&txn,"UPDATE automation_execution_tokens SET status='cancelled' WHERE run_id=$1 AND status<>'completed'",vec![run.id.into()]).await?;
+        execution::sql(
+            &txn,
+            "DELETE FROM automation_execution_record_changes WHERE run_id=$1",
+            vec![run.id.into()],
+        )
+        .await?;
         if let Some(instance_id) = run.workflow_instance_id {
             let instance =
                 crate::infrastructure::entities::workflow_instance_entity::Entity::find_by_id(
@@ -268,9 +369,20 @@ pub(crate) async fn create_automation_definition(
     app_id: &str,
     payload: Option<CreateAutomationFlowRequest>,
 ) -> Result<automation_flow_entity::Model, AppError> {
+    let tx = state.db.begin().await?;
+    let result = create_automation_definition_in_transaction(&tx, app_id, payload).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+
+pub(crate) async fn create_automation_definition_in_transaction<C: ConnectionTrait>(
+    db: &C,
+    app_id: &str,
+    payload: Option<CreateAutomationFlowRequest>,
+) -> Result<automation_flow_entity::Model, AppError> {
     AppEntity::find()
         .filter(app_entity::Column::RouteAppId.eq(app_id.to_string()))
-        .one(&state.db)
+        .one(db)
         .await?
         .ok_or_else(|| AppError::NotFound("app not found".to_string()))?;
 
@@ -298,10 +410,9 @@ pub(crate) async fn create_automation_definition(
     }
 
     if let Some(form_uuid) = trigger_form_uuid.as_deref() {
-        ensure_form_belongs_to_app(&state.db, &app_id, form_uuid).await?;
+        ensure_form_belongs_to_app(db, &app_id, form_uuid).await?;
     }
 
-    let txn = state.db.begin().await?;
     let flow = automation_flow_entity::ActiveModel {
         id: Set(Uuid::new_v4()),
         flow_uuid: Set(generate_automation_flow_uuid()),
@@ -336,11 +447,10 @@ pub(crate) async fn create_automation_definition(
         created_at: Set(now.into()),
         updated_at: Set(now.into()),
     }
-    .insert(&txn)
+    .insert(db)
     .await?;
 
-    create_automation_snapshot(&txn, &flow, None).await?;
-    txn.commit().await?;
+    create_automation_snapshot(db, &flow, None).await?;
 
     Ok(flow)
 }
@@ -644,11 +754,21 @@ pub(crate) async fn update_automation_definition(
     flow_uuid: &str,
     payload: UpdateAutomationFlowRequest,
 ) -> Result<automation_flow_entity::Model, AppError> {
-    let txn = state.db.begin().await?;
+    let tx = state.db.begin().await?;
+    let result = update_automation_definition_in_transaction(&tx, flow_uuid, payload).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+
+pub(crate) async fn update_automation_definition_in_transaction<C: ConnectionTrait>(
+    db: &C,
+    flow_uuid: &str,
+    payload: UpdateAutomationFlowRequest,
+) -> Result<automation_flow_entity::Model, AppError> {
     let flow = AutomationFlowEntity::find()
         .filter(automation_flow_entity::Column::FlowUuid.eq(flow_uuid.to_string()))
         .lock(LockType::Update)
-        .one(&txn)
+        .one(db)
         .await?
         .ok_or_else(|| AppError::NotFound("automation flow not found".to_string()))?;
     let now = Utc::now();
@@ -731,7 +851,7 @@ pub(crate) async fn update_automation_definition(
             ));
         }
         if let Some(form_uuid) = trigger_form_uuid.as_deref() {
-            ensure_form_belongs_to_app(&state.db, &app_id, form_uuid).await?;
+            ensure_form_belongs_to_app(db, &app_id, form_uuid).await?;
         }
         active_model.trigger_form_uuid = Set(trigger_form_uuid);
     }
@@ -812,7 +932,7 @@ pub(crate) async fn update_automation_definition(
     if starting {
         validate_automation_graph(&next_nodes_json, &next_edges_json)?;
     }
-    ensure_automation_node_forms_belong_to_app(&state.db, &app_id, &next_nodes_json).await?;
+    ensure_automation_node_forms_belong_to_app(db, &app_id, &next_nodes_json).await?;
     let validation_source = active_model.trigger_form_uuid.clone().unwrap();
     if effective_trigger_events == ["button_click"] && validation_source.is_none() {
         return Err(AppError::BadRequest(
@@ -820,7 +940,7 @@ pub(crate) async fn update_automation_definition(
         ));
     }
     get_data::validate_get_nodes(
-        &state.db,
+        db,
         &next_nodes_json,
         &next_edges_json,
         validation_source.as_deref(),
@@ -830,7 +950,7 @@ pub(crate) async fn update_automation_definition(
     if active_model.trigger_form_uuid.clone().unwrap() != flow.trigger_form_uuid
         || effective_trigger_events != automation_trigger_events(&flow.trigger_config)
     {
-        ensure_no_button_references(&txn, &flow.flow_uuid).await?;
+        ensure_no_button_references(db, &flow.flow_uuid).await?;
     }
     if nodes_updated {
         active_model.nodes_json = Set(next_nodes_json);
@@ -859,7 +979,7 @@ pub(crate) async fn update_automation_definition(
         let latest = AutomationFlowVersionEntity::find()
             .filter(automation_flow_version_entity::Column::FlowId.eq(flow.id))
             .order_by_desc(automation_flow_version_entity::Column::Version)
-            .one(&txn)
+            .one(db)
             .await?;
         let next_version = latest
             .map_or(flow.current_version, |v| v.version)
@@ -867,11 +987,10 @@ pub(crate) async fn update_automation_definition(
             .ok_or_else(|| AppError::BadRequest("automation version limit reached".to_string()))?;
         active_model.current_version = Set(next_version);
     }
-    let updated = active_model.update(&txn).await?;
+    let updated = active_model.update(db).await?;
     if should_create_version {
-        create_automation_snapshot(&txn, &updated, payload.change_summary).await?;
+        create_automation_snapshot(db, &updated, payload.change_summary).await?;
     }
-    txn.commit().await?;
 
     Ok(updated)
 }
@@ -906,9 +1025,19 @@ pub(crate) async fn delete_automation_definition(
     state: &AppState,
     flow_uuid: &str,
 ) -> Result<(), AppError> {
+    let tx = state.db.begin().await?;
+    let result = delete_automation_definition_in_transaction(&tx, flow_uuid).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+
+pub(crate) async fn delete_automation_definition_in_transaction<C: ConnectionTrait>(
+    db: &C,
+    flow_uuid: &str,
+) -> Result<(), AppError> {
     let flow = AutomationFlowEntity::find()
         .filter(automation_flow_entity::Column::FlowUuid.eq(flow_uuid.to_string()))
-        .one(&state.db)
+        .one(db)
         .await?
         .ok_or_else(|| AppError::NotFound("automation flow not found".to_string()))?;
 
@@ -919,29 +1048,32 @@ pub(crate) async fn delete_automation_definition(
         ));
     }
 
-    let txn = state.db.begin().await?;
     AutomationFlowEntity::find_by_id(flow.id)
         .lock_exclusive()
-        .one(&txn)
+        .one(db)
         .await?;
-    ensure_no_button_references(&txn, &flow.flow_uuid).await?;
+    db.execute_raw(sea_orm::Statement::from_sql_and_values(
+        sea_orm::DbBackend::Postgres,
+        "UPDATE app_custom_buttons SET action_config = action_config - 'automationId', updated_at = NOW() WHERE action_type = 'run_automation' AND action_config->>'automationId' = $1",
+        vec![flow.flow_uuid.clone().into()],
+    ))
+    .await?;
     AutomationFlowVersionEntity::delete_many()
         .filter(automation_flow_version_entity::Column::FlowId.eq(flow.id))
-        .exec(&txn)
+        .exec(db)
         .await?;
     AutomationNodeEntity::delete_many()
         .filter(automation_node_entity::Column::FlowId.eq(flow.id))
-        .exec(&txn)
+        .exec(db)
         .await?;
     AutomationEdgeEntity::delete_many()
         .filter(automation_edge_entity::Column::FlowId.eq(flow.id))
-        .exec(&txn)
+        .exec(db)
         .await?;
     AutomationFlowEntity::delete_many()
         .filter(automation_flow_entity::Column::Id.eq(flow.id))
-        .exec(&txn)
+        .exec(db)
         .await?;
-    txn.commit().await?;
 
     Ok(())
 }
@@ -1012,6 +1144,16 @@ pub(crate) async fn execute_automation_flows_for_event(
     }
 }
 
+fn automation_record_repository<'a, C: ConnectionTrait>(
+    db: &'a C,
+    context: &AutomationExecutionContext,
+) -> RecordRepository<'a, C> {
+    match context.run_id {
+        Some(run_id) => RecordRepository::for_automation_run(db, run_id, context.branch_id),
+        None => RecordRepository::new(db),
+    }
+}
+
 async fn execute_add_data_node<C: ConnectionTrait + TransactionTrait>(
     db: &C,
     flow: &automation_flow_entity::Model,
@@ -1060,7 +1202,7 @@ async fn execute_add_data_node<C: ConnectionTrait + TransactionTrait>(
                 Value::Array(vec![source_item.clone()]),
             );
             let row_data = build_record_data_from_rows(&rows, &scoped_outputs);
-            let record = RecordRepository::new(db)
+            let record = automation_record_repository(db, context)
                 .insert(&target_definition, row_data, &context.operator, now)
                 .await?;
             inserted.push(record_data_with_automation_identity(record));
@@ -1069,7 +1211,7 @@ async fn execute_add_data_node<C: ConnectionTrait + TransactionTrait>(
     }
 
     let row_data = build_record_data_from_rows(&rows, &context.outputs);
-    let record = RecordRepository::new(db)
+    let record = automation_record_repository(db, context)
         .insert(&target_definition, row_data, &context.operator, now)
         .await?;
     info!(
@@ -1130,7 +1272,7 @@ async fn execute_add_subform_data<C: ConnectionTrait + TransactionTrait>(
     };
     // 锁定主记录后追加数组，复用主表更新触发器同步子表物理存储，避免并行追加覆盖。
     let txn = db.begin().await?;
-    let repository = RecordRepository::new(&txn);
+    let repository = automation_record_repository(&txn, context);
     let mut inserted = Vec::new();
     for parent_id in &parent_ids {
         let parent = repository.find_for_update(parent_form, parent_id).await?;
@@ -1202,7 +1344,7 @@ async fn get_candidates<C: ConnectionTrait + TransactionTrait>(
         let form_uuid = read_json_string(config.get("formUuid"))
             .filter(|s| !s.is_empty())
             .ok_or_else(|| AppError::BadRequest("请选择来源表单".into()))?;
-        RecordRepository::new(db)
+        automation_record_repository(db, context)
             .list(&form_uuid)
             .await?
             .into_iter()
@@ -1288,7 +1430,7 @@ async fn execute_update_data_node<C: ConnectionTrait + TransactionTrait>(
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| AppError::BadRequest("update-data target form is required".to_string()))?;
     let rows = json_array_items(&config.get("rows").cloned().unwrap_or_else(|| json!([])));
-    let repository = RecordRepository::new(db);
+    let repository = automation_record_repository(db, context);
     let records = repository.list(&target_form_uuid).await?;
     let update_mode = config
         .get("updateMode")
@@ -1347,16 +1489,22 @@ async fn execute_update_data_node<C: ConnectionTrait + TransactionTrait>(
 async fn execute_delete_data_node<C: ConnectionTrait + TransactionTrait>(
     db: &C,
     flow: &automation_flow_entity::Model,
+    node_id: &str,
     config: &Value,
     context: &AutomationExecutionContext,
 ) -> Result<Value, AppError> {
-    let target_form_uuid = read_json_string(config.get("targetFormUuid"))
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| AppError::BadRequest("delete-data target form is required".to_string()))?;
+    delete_data::validate_config(config)?;
+    let target_form_uuid = delete_data::target_form(
+        &flow.nodes_json,
+        &flow.edges_json,
+        node_id,
+        config,
+        flow.trigger_form_uuid.as_deref(),
+    )?;
     let definition = forms::find_form_definition(db, &target_form_uuid).await?;
-    let repository = RecordRepository::new(db);
+    let repository = automation_record_repository(db, context);
     let records = repository.list(&target_form_uuid).await?;
-    let matched = filter_records_by_expression(records, config.get("matchRule"), context);
+    let matched = delete_data::select_records(records, config, context)?;
     let deleted_count = matched.len() as i64;
     let deleted_payloads = matched
         .iter()
@@ -1365,7 +1513,7 @@ async fn execute_delete_data_node<C: ConnectionTrait + TransactionTrait>(
 
     repository.delete_many(&matched).await?;
 
-    if deleted_count > 0 {
+    if deleted_count > 0 && context.run_id.is_none() {
         repository
             .decrement_app_records_count(&definition.app_route_app_id, deleted_count, Utc::now())
             .await?;
@@ -1495,7 +1643,7 @@ pub(crate) async fn execute_shared_node<C: ConnectionTrait + TransactionTrait>(
         "get-one" => execute_get_one_node(db, config, context).await?,
         "get-many" => execute_get_many_node(db, config, context).await?,
         "update-data" => execute_update_data_node(db, flow, config, context).await?,
-        "delete-data" => execute_delete_data_node(db, flow, config, context).await?,
+        "delete-data" => execute_delete_data_node(db, flow, node_id, config, context).await?,
         "http-request" => execute_http_request_node(config, context).await?,
         _ => {
             return Err(AppError::BadRequest(format!(
@@ -1694,8 +1842,8 @@ where
     Ok(())
 }
 
-async fn ensure_automation_node_forms_belong_to_app(
-    db: &DatabaseConnection,
+async fn ensure_automation_node_forms_belong_to_app<C: ConnectionTrait>(
+    db: &C,
     app_id: &str,
     nodes_json: &Value,
 ) -> Result<(), AppError> {
@@ -1713,7 +1861,15 @@ async fn ensure_automation_node_forms_belong_to_app(
 
         match kind {
             "initiate-approval" => {
-                initiate_approval::validate_target(db, &item.pointer("/data/config").cloned().unwrap_or_else(|| json!({})), false).await?;
+                initiate_approval::validate_target(
+                    db,
+                    &item
+                        .pointer("/data/config")
+                        .cloned()
+                        .unwrap_or_else(|| json!({})),
+                    false,
+                )
+                .await?;
             }
             "get-one" | "get-many" => {
                 if let Some(form_uuid) = config
@@ -1997,7 +2153,17 @@ fn normalize_automation_node_config(kind: &str, config: Value) -> Result<Value, 
             "url": read_json_string(object.get("url")),
             "headersText": read_json_string(object.get("headersText")),
         }),
-        "delete-data" | "http-request" => json!({
+        "delete-data" => {
+            delete_data::validate_config(&Value::Object(object.clone()))?;
+            json!({
+                "deleteMode": object.get("deleteMode").and_then(Value::as_str).unwrap_or("form"),
+                "sourceNodeId": read_json_string(object.get("sourceNodeId")),
+                "targetFormUuid": read_json_string(object.get("targetFormUuid")),
+                "filterMode": object.get("filterMode").and_then(Value::as_str).unwrap_or("rules"),
+                "rules": normalize_branch_rules(object.get("rules").cloned().unwrap_or_else(|| json!([])))?,
+            })
+        }
+        "http-request" => json!({
             "targetFormUuid": read_json_string(object.get("targetFormUuid")),
             "matchRule": read_json_string(object.get("matchRule")),
             "rows": normalize_field_mapping_rows(object.get("rows").cloned().unwrap_or_else(|| json!([]))),
@@ -2686,8 +2852,8 @@ async fn retry_automation_run_internal(
     }
 }
 
-async fn ensure_form_belongs_to_app(
-    db: &DatabaseConnection,
+async fn ensure_form_belongs_to_app<C: ConnectionTrait>(
+    db: &C,
     app_id: &str,
     form_uuid: &str,
 ) -> Result<(), AppError> {
@@ -2839,7 +3005,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        flow_matches_changed_fields, normalize_automation_node_config, validate_public_http_address,
+        flow_matches_changed_fields, normalize_automation_node_config,
+        validate_http_compensation_configs, validate_public_http_address,
     };
 
     #[test]
@@ -2873,6 +3040,23 @@ mod tests {
             Some(&changed)
         ));
     }
+
+    #[test]
+    fn validates_optional_http_compensation_request() {
+        assert!(validate_http_compensation_configs(&json!([{
+            "data": {"kind": "http-request", "config": {
+                "compensationRequest": {"method": "POST", "url": "https://example.test/cancel", "headersText": "{}", "bodyTemplate": "{}"}
+            }}
+        }])).is_ok());
+        assert!(
+            validate_http_compensation_configs(&json!([{
+                "data": {"kind": "http-request", "config": {
+                    "compensationRequest": {"method": "POST", "url": "not-a-url"}
+                }}
+            }]))
+            .is_err()
+        );
+    }
 }
 pub(crate) mod dto;
 pub(crate) mod engine;
@@ -2893,6 +3077,8 @@ mod parallel_condition_tests;
 #[path = "automations/subform_tests.rs"]
 mod subform_tests;
 
+#[path = "automations/delete_data.rs"]
+mod delete_data;
 mod get_data;
 mod initiate_approval;
 
@@ -2916,6 +3102,7 @@ pub(crate) fn validate_execution_definition(
     graph::validate_current_protocol(&flow.nodes_json, &flow.trigger_config)?;
     validate_automation_graph(&flow.nodes_json, &flow.edges_json)?;
     validate_flow_node_kinds(&flow.nodes_json, &flow.flow_type)?;
+    validate_http_compensation_configs(&flow.nodes_json)?;
     if flow.flow_type == "process" {
         if automation_trigger_events(&flow.trigger_config) != ["form_submit"] {
             return Err(AppError::BadRequest(
@@ -2931,6 +3118,61 @@ pub(crate) fn validate_execution_definition(
         return Err(AppError::BadRequest(
             "trigger flows cannot use form_submit".into(),
         ));
+    }
+    Ok(())
+}
+
+fn validate_http_compensation_configs(nodes: &Value) -> Result<(), AppError> {
+    for node in nodes.as_array().into_iter().flatten() {
+        if node.pointer("/data/kind").and_then(Value::as_str) != Some("http-request") {
+            continue;
+        }
+        let Some(compensation) = node.pointer("/data/config/compensationRequest") else {
+            continue;
+        };
+        if compensation.is_null() {
+            continue;
+        }
+        let method = compensation
+            .get("method")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
+        let url = compensation
+            .get("url")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
+        if method.is_empty()
+            || url.is_empty()
+            || !(url.starts_with("http://") || url.starts_with("https://"))
+        {
+            return Err(AppError::BadRequest(
+                "撤销请求必须配置有效的方法和 HTTP 地址".into(),
+            ));
+        }
+        if !matches!(
+            method.to_ascii_uppercase().as_str(),
+            "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
+        ) {
+            return Err(AppError::BadRequest("撤销请求方法不受支持".into()));
+        }
+        if let Some(headers) = compensation
+            .get("headersText")
+            .and_then(Value::as_str)
+            .filter(|v| !v.trim().is_empty())
+        {
+            serde_json::from_str::<Value>(headers)
+                .map_err(|_| AppError::BadRequest("撤销请求头必须是合法 JSON".into()))?;
+        }
+        if let Some(body) = compensation
+            .get("bodyTemplate")
+            .and_then(Value::as_str)
+            .filter(|v| !v.trim().is_empty())
+        {
+            serde_json::from_str::<Value>(body)
+                .map_err(|_| AppError::BadRequest("撤销请求体必须是合法 JSON".into()))?;
+        }
     }
     Ok(())
 }

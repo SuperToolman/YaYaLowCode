@@ -187,7 +187,7 @@ async fn verify(db: sea_orm::DatabaseConnection) {
         {"source":"check","target":"leaf","sourceHandle":"condition-branch:yes"}
     ]);
     let runtime = engine::MemoryRuntime { db: &state.db, flow: &automatic, outputs: std::sync::Mutex::new(HashMap::new()) };
-    let memory_context = AutomationExecutionContext { outputs: HashMap::from([("trigger-1".into(), record.record_data.clone())]), operator:"系统".into(), run_id:None };
+    let memory_context = AutomationExecutionContext { outputs: HashMap::from([("trigger-1".into(), record.record_data.clone())]), operator:"系统".into(), run_id:None, branch_id: None };
     engine::drive(&runtime, Cursor { id:Uuid::new_v4(), node:"trigger-1".into(), context:memory_context, depth:0, log_id:None, parallel_group:None }).await.unwrap();
     let comparison = new_instance(&state, &instance).await;
     start(&state, &automatic, &comparison, &record.record_data).await.unwrap();
@@ -275,7 +275,7 @@ async fn new_instance(state: &AppState, template: &workflow_instance_entity::Mod
 }
 
 fn test_targets(flow: &automation_flow_entity::Model, node: &Value, outputs: &HashMap<String, Value>) -> Vec<String> {
-    let context = AutomationExecutionContext { outputs: outputs.clone(), operator: "test".into(), run_id: None };
+    let context = AutomationExecutionContext { outputs: outputs.clone(), operator: "test".into(), run_id: None, branch_id: None };
     match engine::transition(flow, node, &context) {
         Transition::End => vec![], Transition::Continue(next) => vec![next], Transition::Split { targets, .. } => targets,
     }

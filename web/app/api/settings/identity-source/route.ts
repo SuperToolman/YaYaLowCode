@@ -1,4 +1,4 @@
-import { getIdentitySourceSettings, updateIdentitySourceSettings } from "../../../lib/http";
+import { getIdentitySourceSettings, updateIdentitySourceSettings } from "../../../../shared/lib/http";
 import { createBackendSdkClient, sdkJsonResponse } from "../../_lib/backend-sdk-client";
 
 export async function GET(request: Request) {

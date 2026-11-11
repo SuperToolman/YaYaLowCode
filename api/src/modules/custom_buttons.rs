@@ -1,5 +1,5 @@
 //! Form-owned button definitions; execution and view binding are separate capabilities.
-use crate::infrastructure::entities::custom_button_entity as button;
+use crate::infrastructure::entities::{custom_button_entity as button, form_view_entity};
 use crate::platform::authorization;
 use crate::platform::prelude::*;
 use crate::shared::success_response;
@@ -11,6 +11,9 @@ use utoipa::ToSchema;
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct FillFormConfig {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schema(required = false)]
+    pub parameters: Vec<ButtonPageParameter>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[schema(required = false)]
     pub target_app_id: String,
@@ -20,6 +23,9 @@ pub(crate) struct FillFormConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schema(required = false)]
     pub field_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schema(required = false)]
+    pub association_rules: Vec<ButtonConditionRule>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub automation_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -30,6 +36,58 @@ pub(crate) struct FillFormConfig {
     pub url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub open_mode: Option<String>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ButtonPageParameter {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub value_type: String,
+    pub value: Option<String>,
+    pub field_id: Option<String>,
+}
+pub(super) fn validate_page_parameters(
+    parameters: &[ButtonPageParameter],
+    fields: Option<&HashSet<String>>,
+) -> Result<(), AppError> {
+    let mut names = HashSet::new();
+    let mut ids = HashSet::new();
+    for parameter in parameters {
+        let name = parameter.name.trim();
+        if parameter.id.is_empty() || !ids.insert(&parameter.id) {
+            return Err(bad("参数行标识无效或重复"));
+        }
+        if name.is_empty() || name.chars().count() > 20 {
+            return Err(bad("参数名称必填且最多20字"));
+        }
+        if !names.insert(name) {
+            return Err(bad("参数名称不能重复"));
+        }
+        if [
+            "appId",
+            "formUuid",
+            "buttonPageMode",
+            "record",
+            "task",
+            "viewUuid",
+        ]
+        .contains(&name)
+        {
+            return Err(bad("参数名称不能使用平台保留名称"));
+        }
+        match parameter.value_type.as_str() {
+            "constant" => (),
+            "field" => {
+                let field = parameter.field_id.as_deref().unwrap_or("");
+                if field.is_empty() || fields.is_some_and(|fields| !fields.contains(field)) {
+                    return Err(bad("请选择有效的当前记录字段"));
+                }
+            }
+            _ => return Err(bad("参数类型无效")),
+        }
+    }
+    Ok(())
 }
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -108,7 +166,7 @@ const ICONS: &[&str] = &[
     "bolt",
     "arrow-right",
 ];
-const WRITABLE_TYPES: &[&str] = &[
+pub(super) const WRITABLE_TYPES: &[&str] = &[
     "singleLineText",
     "multiLineText",
     "richText",
@@ -128,7 +186,7 @@ const WRITABLE_TYPES: &[&str] = &[
     "associationFormField",
     "subform",
 ];
-const SYSTEM_FIELDS: &[&str] = &[
+pub(super) const SYSTEM_FIELDS: &[&str] = &[
     "instanceId",
     "instanceTitle",
     "submitter",
@@ -136,7 +194,7 @@ const SYSTEM_FIELDS: &[&str] = &[
     "createdAt",
     "updatedAt",
 ];
-const WORKFLOW_FIELDS: &[&str] = &[
+pub(super) const WORKFLOW_FIELDS: &[&str] = &[
     "workflowApprovalStatus",
     "workflowInstanceStatus",
     "workflowCurrentApprovalNode",
@@ -186,6 +244,15 @@ async fn validate_owner_form(
     if payload.disabled_reason.chars().count() > 1000 {
         return Err(bad("禁用说明最多1000字"));
     }
+    if payload.action_type == "open_page" {
+        validate_page_parameters(
+            &payload.action_config.parameters,
+            Some(&valid_condition_fields(
+                &schema.schema_json,
+                form.form_type == "workflow",
+            )),
+        )?;
+    }
     match payload.availability.mode.as_str() {
         "all" if payload.availability.rules.is_empty() => (),
         "conditions" => validate_rules(
@@ -193,6 +260,30 @@ async fn validate_owner_form(
             &valid_condition_fields(&schema.schema_json, form.form_type == "workflow"),
         )?,
         _ => return Err(bad("按钮可用条件模式无效")),
+    }
+    if payload.action_type == "fill_form" {
+        let rules = &payload.action_config.association_rules;
+        if payload.action_config.target_form_uuid == form_uuid {
+            if !rules.is_empty() {
+                return Err(bad("同表填写不能配置关联实例条件"));
+            }
+        } else {
+            if rules.is_empty() {
+                return Err(bad("需重新配置：请补充关联实例条件"));
+            }
+            let source = valid_condition_fields(&schema.schema_json, form.form_type == "workflow");
+            for rule in rules.iter().filter(|r| r.is_group != Some(true)) {
+                if rule.value_type.as_deref() == Some("field")
+                    && ![Some("hasValue"), Some("noValue")].contains(&rule.operator.as_deref())
+                    && !rule
+                        .source_field_key
+                        .as_ref()
+                        .is_some_and(|key| source.contains(key))
+                {
+                    return Err(bad("关联条件的来源字段已失效"));
+                }
+            }
+        }
     }
     Ok(form)
 }
@@ -254,6 +345,7 @@ fn validate_configuration(
         payload.action_config.target_app_id.clear();
         payload.action_config.target_form_uuid.clear();
         payload.action_config.field_ids.clear();
+        payload.action_config.association_rules.clear();
         payload.action_config.link_type = None;
         payload.action_config.page_mode = None;
         payload.action_config.url = None;
@@ -262,6 +354,7 @@ fn validate_configuration(
     }
     payload.action_config.automation_id = None;
     if payload.action_type == "open_page" {
+        validate_page_parameters(&payload.action_config.parameters, None)?;
         let config = &payload.action_config;
         if ![Some("window"), Some("sidebar")].contains(&config.open_mode.as_deref()) {
             return Err(bad("请选择打开方式"));
@@ -285,6 +378,7 @@ fn validate_configuration(
             _ => return Err(bad("链接类型无效")),
         }
         payload.action_config.field_ids.clear();
+        payload.action_config.association_rules.clear();
         return Ok(());
     }
     if payload.action_type != "fill_form" {
@@ -306,6 +400,25 @@ fn validate_configuration(
         })
         .filter_map(|f| f["id"].as_str().map(str::to_owned))
         .collect();
+    if !payload.action_config.association_rules.is_empty() {
+        let rules = payload
+            .action_config
+            .association_rules
+            .iter()
+            .cloned()
+            .map(|mut r| {
+                // Validate target-side structure independently of source-side field references.
+                if r.value_type.as_deref() == Some("field") {
+                    r.value_type = Some("value".into());
+                    r.raw_value = Some("source".into());
+                }
+                r
+            })
+            .collect::<Vec<_>>();
+        validate_rules(&rules, &valid_condition_fields(schema, _workflow))?;
+        payload.action_config.field_ids.clear();
+        return Ok(());
+    }
     let fields = &payload.action_config.field_ids;
     if fields.is_empty() || fields.len() > 500 || fields.iter().any(|id| !writable.contains(id)) {
         return Err(bad("请选择有效且可填写的业务字段"));
@@ -426,7 +539,12 @@ pub(super) async fn validate_target(
         return Ok(());
     }
     if payload.action_type == "open_page" {
-        validate_configuration(payload, &json!({}), false)?;
+        // Availability refers to the owning form, already validated there.
+        let availability = payload.availability.clone();
+        payload.availability = default_availability();
+        let result = validate_configuration(payload, &json!({}), false);
+        payload.availability = availability;
+        result?;
         if payload.action_config.link_type.as_deref() == Some("external") {
             return Ok(());
         }
@@ -478,7 +596,12 @@ pub(super) async fn validate_target(
         .one(&state.db)
         .await?
         .ok_or_else(|| bad("填写对象缺少当前表单结构"))?;
-    validate_configuration(payload, &schema.schema_json, form.form_type == "workflow")
+    // Availability belongs to the source form and is validated separately.
+    let availability = payload.availability.clone();
+    payload.availability = default_availability();
+    let result = validate_configuration(payload, &schema.schema_json, form.form_type == "workflow");
+    payload.availability = availability;
+    result
 }
 pub(super) async fn find_button(
     db: &DatabaseConnection,
@@ -635,9 +758,38 @@ pub(crate) async fn delete_custom_button(
     Path((form_uuid, uuid)): Path<(String, String)>,
 ) -> Result<Json<ApiResponse<Value>>, AppError> {
     let item = find_button(&state.db, &form_uuid, &uuid).await?;
-    button::Entity::delete_by_id(item.id)
-        .exec(&state.db)
+    let txn = state.db.begin().await?;
+    button::Entity::delete_by_id(item.id).exec(&txn).await?;
+    let views = form_view_entity::Entity::find()
+        .filter(form_view_entity::Column::FormUuid.eq(&form_uuid))
+        .all(&txn)
         .await?;
+    for view in views {
+        let Some(bindings) = view
+            .config_json
+            .get("customButtons")
+            .and_then(Value::as_array)
+        else {
+            continue;
+        };
+        let filtered: Vec<Value> = bindings
+            .iter()
+            .filter(|binding| {
+                binding.get("buttonId").and_then(Value::as_str) != Some(uuid.as_str())
+            })
+            .cloned()
+            .collect();
+        if filtered.len() == bindings.len() {
+            continue;
+        }
+        let mut config = view.config_json.clone();
+        config["customButtons"] = Value::Array(filtered);
+        let mut active: form_view_entity::ActiveModel = view.into();
+        active.config_json = Set(config);
+        active.updated_at = Set(chrono::Utc::now().into());
+        active.update(&txn).await?;
+    }
+    txn.commit().await?;
     Ok(Json(success_response("删除自定义按钮成功", json!({}))))
 }
 #[cfg(test)]

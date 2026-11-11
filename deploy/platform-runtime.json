@@ -1,0 +1,157 @@
+{
+  "webPort": 8787,
+  "apiPort": 8788,
+  "volumes": [
+    {
+      "key": "database",
+      "destination": "/var/lib/postgresql"
+    },
+    {
+      "key": "platform-state",
+      "destination": "/var/lib/yaya"
+    }
+  ],
+  "environment": [
+    {
+      "name": "POSTGRES_DB",
+      "required": true
+    },
+    {
+      "name": "POSTGRES_USER",
+      "required": true
+    },
+    {
+      "name": "POSTGRES_PASSWORD",
+      "required": true
+    },
+    {
+      "name": "VALKEY_PASSWORD",
+      "required": true
+    },
+    {
+      "name": "AUTH_TOKEN_SECRET",
+      "required": true
+    },
+    {
+      "name": "BACKEND_INTERNAL_TOKEN",
+      "required": true
+    },
+    {
+      "name": "YAYA_BYOM_ENCRYPTION_KEY",
+      "required": true
+    },
+    {
+      "name": "YAYA_AGENT_V2_WORKER_SECRET",
+      "required": true
+    },
+    {
+      "name": "DATABASE_URL",
+      "required": true
+    },
+    {
+      "name": "VALKEY_URL",
+      "required": true
+    },
+    {
+      "name": "YAYA_LICENSE_PUBLIC_KEY_PATH",
+      "required": true
+    },
+    {
+      "name": "APP_ENV",
+      "required": true,
+      "default": "production"
+    },
+    {
+      "name": "APP_HOST",
+      "required": true,
+      "default": "0.0.0.0"
+    },
+    {
+      "name": "APP_PORT",
+      "required": true,
+      "default": "8788"
+    },
+    {
+      "name": "VALKEY_CACHE_TTL_HOURS",
+      "required": true,
+      "default": "8"
+    },
+    {
+      "name": "BACKEND_API_BASE_URL",
+      "required": true,
+      "default": "http://127.0.0.1:8788"
+    },
+    {
+      "name": "YAYA_AGENT_V2_API_URL",
+      "required": true,
+      "default": "http://127.0.0.1:8788"
+    },
+    {
+      "name": "YAYA_AGENT_V2_CORDIS_HOST",
+      "required": true,
+      "default": "/app/agent-v2/cordis-host/src/host.mjs"
+    },
+    {
+      "name": "YAYA_AGENT_V2_OFFICE_PATH",
+      "required": true,
+      "default": "/usr/local/bin/yaya-agent-v2-office"
+    },
+    {
+      "name": "YAYA_AGENT_V2_EXECUTION_URL",
+      "required": true,
+      "default": "http://127.0.0.1:8791"
+    },
+    {
+      "name": "YAYA_EXECUTION_ROOT",
+      "required": true,
+      "default": "/var/lib/yaya/executions"
+    },
+    {
+      "name": "YAYA_UPLOAD_DIR",
+      "required": true,
+      "default": "/var/lib/yaya/uploads"
+    },
+    {
+      "name": "YAYA_SETTINGS_PATH",
+      "required": true,
+      "default": "/var/lib/yaya/config/database.json"
+    },
+    {
+      "name": "YAYA_VALKEY_SETTINGS_PATH",
+      "required": true,
+      "default": "/var/lib/yaya/config/valkey.json"
+    },
+    {
+      "name": "YAYA_IDENTITY_SETTINGS_PATH",
+      "required": true,
+      "default": "/var/lib/yaya/config/identity.json"
+    },
+    {
+      "name": "YAYA_NOTIFICATION_SETTINGS_PATH",
+      "required": true,
+      "default": "/var/lib/yaya/config/notifications.json"
+    },
+    {
+      "name": "YAYA_LICENSE_SETTINGS_PATH",
+      "required": true,
+      "default": "/var/lib/yaya/config/license.json"
+    },
+    {
+      "name": "YAYA_SKILLS_PATH",
+      "required": true,
+      "default": "/var/lib/yaya/skills"
+    },
+    {
+      "name": "YAYA_EXECUTION_SECRET",
+      "required": true
+    },
+    {
+      "name": "CORS_ALLOWED_ORIGINS",
+      "required": true
+    },
+    {
+      "name": "AUTH_COOKIE_SECURE",
+      "required": true
+    }
+  ]
+}

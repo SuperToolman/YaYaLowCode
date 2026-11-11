@@ -1,41 +1,21 @@
 "use client";
-import { assertApiEnvelope } from "@lib/api-request";
+import { assertApiEnvelope } from "@/shared/lib/api-request";
 
-import { notifyRequestError } from "@lib/notify";
-import { notify } from "@lib/notify";
+import { notifyRequestError } from "@/shared/lib/notify";
+import { notify } from "@/shared/lib/notify";
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import {
-  ButtonGroup,
-  Button,
-  Card,
-  Dropdown,
-  EmptyState,
-  Input,
-  Label,
-  SearchField,
-  TextArea,
-  ListBox,
-  Select,
-} from "@heroui/react";
-import { MySurface } from "@shared/ui/MySurface";
+import { ButtonGroup, Button, Dropdown, EmptyState, Fieldset, Input, Label, SearchField, TextArea, ListBox, Select } from "@heroui/react";
+import { MySurface } from "@/shared/ui/MySurface";
 import { AlertDialog } from "@heroui/react/alert-dialog";
 import { Modal } from "@heroui/react/modal";
 import { ListUl, Plus, Rocket } from "@gravity-ui/icons";
-import {
-  createApp,
-  deleteApp as deleteAppRequest,
-  listApps,
-  syncMarketplaceApplications,
-  submitAppToMarketplace,
-  updateApp,
-  type App as ApiApp,
-} from "@/features/application/api";
-import { FieldOutlineModal } from "@components/FieldOutlineModal";
-import { PageContentLayout } from "@components/PageContentLayout";
-import { useAuth } from "@components/AuthProvider";
-import { normalizeAppColorTone, type AppItem } from "@lib/apps";
+import { createApp, deleteApp as deleteAppRequest, listApps, syncMarketplaceApplications, submitAppToMarketplace, updateApp, type App as ApiApp } from "@/features/application/api";
+import { FieldOutlineModal } from "@/features/form-designer/components/FieldOutlineModal";
+import { PageContentLayout } from "@/shared/ui/PageContentLayout";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { normalizeAppColorTone, type AppItem } from "@/features/application/types";
 import { AppCard } from "./AppCard";
 
 type MyAppPageClientProps = {
@@ -124,7 +104,6 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
     const matchesScope = scope === "all" || app.owner === user?.displayName;
     return matchesQuery && matchesStatus && matchesScope;
   });
-  const totalRecords = apps.reduce((total, app) => total + app.records, 0);
 
   async function handleCreateApp() {
     startTransition(async () => {
@@ -424,32 +403,35 @@ export function MyAppPageClient({ initialApps }: MyAppPageClientProps) {
               <Modal.Header>
                 <Modal.Heading>创建应用</Modal.Heading>
               </Modal.Header>
-              <Modal.Body className="space-y-3">
-                <label className="block text-sm">
-                  应用名称
-                  <Input
-                    className="mt-1"
-                    aria-label="应用名称"
-                    value={createName}
-                    onChange={(event) =>
-                      setCreateName(event.currentTarget.value)
-                    }
-                    placeholder="请输入应用名称"
-                    autoFocus
-                  />
-                </label>
-                <label className="block text-sm">
-                  应用描述
-                  <TextArea
-                    className="mt-1"
-                    aria-label="应用描述"
-                    value={createDescription}
-                    onChange={(event) =>
-                      setCreateDescription(event.currentTarget.value)
-                    }
-                    placeholder="描述应用用途（可选）"
-                  />
-                </label>
+              <Modal.Body>
+                <Fieldset.Group>
+                  <div>
+                    <Label htmlFor="create-app-name">应用名称</Label>
+                    <Input
+                      id="create-app-name"
+                      fullWidth
+                      value={createName}
+                      onChange={(event) =>
+                        setCreateName(event.currentTarget.value)
+                      }
+                      placeholder="请输入应用名称"
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="create-app-description">应用描述</Label>
+                    <TextArea
+                      id="create-app-description"
+                      fullWidth
+                      rows={4}
+                      value={createDescription}
+                      onChange={(event) =>
+                        setCreateDescription(event.currentTarget.value)
+                      }
+                      placeholder="描述应用用途（可选）"
+                    />
+                  </div>
+                </Fieldset.Group>
               </Modal.Body>
               <Modal.Footer>
                 <Button onPress={() => setCreateOpen(false)}>取消</Button>

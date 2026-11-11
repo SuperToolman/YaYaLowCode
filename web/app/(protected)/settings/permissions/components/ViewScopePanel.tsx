@@ -1,13 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import {
-  Checkbox,
-  CheckboxGroup,
-  Description,
-  Label,
-  Radio,
-  RadioGroup,
-} from "@heroui/react";
+import { Checkbox, CheckboxGroup, Description, Label, Radio, RadioGroup } from "@heroui/react";
 import { listFormViews } from "@/features/form-runtime/api";
 import { PermissionPanel } from "./PermissionPanel";
 export function ViewScopePanel({

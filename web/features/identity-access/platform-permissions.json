@@ -63,14 +63,14 @@
           "description": "修改模型供应商、模型路由与插件配置；包含查看权限"
         },
         {
-          "key": "settings.agent-archive.view",
-          "label": "查看归档会话",
-          "description": "查看本人归档会话；管理可恢复和永久删除"
+          "key": "knowledge.global.view",
+          "label": "查看全局知识库",
+          "description": "查看全局知识库与原件；不授予应用或员工知识访问权"
         },
         {
-          "key": "settings.agent-archive.manage",
-          "label": "管理归档会话",
-          "description": "修改本人归档会话；管理可恢复和永久删除；包含查看权限"
+          "key": "knowledge.global.manage",
+          "label": "管理全局知识库",
+          "description": "创建知识库、上传文档版本及删除；包含查看权限"
         }
       ]
     },
@@ -207,7 +207,6 @@
     "settings.agent": [
       "settings.ai-employees.manage",
       "settings.models.manage",
-      "settings.agent-archive.manage",
       "settings.notifications.manage",
       "settings.communication.manage"
     ],

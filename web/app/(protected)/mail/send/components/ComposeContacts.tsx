@@ -2,7 +2,7 @@
 
 import { Avatar, Button, Card, Input, Label, ListBox, ScrollShadow, Spinner } from "@heroui/react";
 import { useState } from "react";
-import type { MailContact } from "@features/mail/api";
+import type { MailContact } from "@/features/mail/api";
 
 export function ComposeContacts({ contacts, loading, failed, disabled, onRetry, onSelect }: { contacts: MailContact[]; loading: boolean; failed: boolean; disabled: boolean; onRetry: () => void; onSelect: (email: string) => void }) {
   const [query, setQuery] = useState("");

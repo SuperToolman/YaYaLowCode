@@ -1,31 +1,14 @@
 "use client";
-import { notifyRequestError } from "@lib/notify";
-import { notify } from "@lib/notify";
+import { notifyRequestError } from "@/shared/lib/notify";
+import { notify } from "@/shared/lib/notify";
 
-import {
-  Suspense,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-} from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Button, Card, Input, Tabs } from "@heroui/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CompactThemeSwitcher } from "../components/ThemeSwitcherMenu";
-import {
-  AUTH_TOKEN_STORAGE_KEY,
-  AUTH_USER_STORAGE_KEY,
-  type AuthUser,
-  writeAuthStorage,
-} from "../lib/auth";
-import {
-  getAuthSession,
-  loginWithPassword,
-  loginWithSms,
-  sendSmsCode as requestSmsCode,
-} from "@features/auth/api";
-import { isSystemRequestError } from "@lib/api-request";
+
+import { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY, type AuthUser, writeAuthStorage } from "../../shared/lib/auth";
+import { getAuthSession, loginWithPassword, loginWithSms, sendSmsCode as requestSmsCode } from "@/features/auth/api";
+import { isSystemRequestError } from "@/shared/lib/api-request";
 
 type LoginMode = "password" | "sms" | "dingtalk";
 

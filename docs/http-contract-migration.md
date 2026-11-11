@@ -2,10 +2,10 @@
 
 ## 数据与调用边界
 
-Rust DTO / `api/src/openapi.rs` → `api/openapi/openapi.json` → HeyAPI → `web/app/lib/http.ts` → 业务封装 / 页面模型。
+Rust DTO / `api/src/openapi.rs` → `api/openapi/openapi.json` → HeyAPI → `web/shared/lib/http.ts` → 业务封装 / 页面模型。
 
 - 已补齐市场、设置、通知、授权、文件、平台 Agent 会话和文件等 HTTP 契约，包括 method、参数、请求体、响应、multipart 和二进制格式。保留已有 operationId。
-- 业务模块通过 `@lib/http` 获取生成函数及类型；生成目录可完整重建。运行时初始化在 `api-client-runtime.ts`，兼容类型别名在 `http.ts`；移除修改生成文件的补丁脚本。
+- 业务模块通过 `@/shared/lib/http` 获取生成函数及类型；生成目录 `web/shared/lib/api-client` 可完整重建。运行时初始化在 `api-client-runtime.ts`，兼容类型别名在 `http.ts`；移除修改生成文件的补丁脚本。
 - 设置、市场、记录、回收站、表单设计器、邮件、文件、身份权限、工作流和平台 Agent 封装使用生成 SDK 与公共解包。页面仍需显示成功消息的地方使用公共 envelope assertion，不自行判断业务码。
 - 动态表单 JSON、编辑器状态、UI 投影仍有独立模型；生成类型的可选值在转换处显式处理。市场外部附加字段保留为 JSON，避免丢失上游扩展数据。
 - 登录、短信、会话等 Next BFF 契约集中在 `features/auth/contracts.ts`。可用 Agent 聚合、外部 OAuth、上传下载、流式请求保留专用入口。DSH 及其专用客户端/协议排除在本次迁移之外。

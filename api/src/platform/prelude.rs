@@ -20,8 +20,7 @@ pub(crate) use tracing::{error, info};
 pub(crate) use uuid::Uuid;
 
 pub(crate) use crate::infrastructure::entities::{
-    agent_session_entity, agent_session_entity::Entity as AgentSessionEntity, app_entity,
-    app_entity::Entity as AppEntity, app_navigation_entity,
+    app_entity, app_entity::Entity as AppEntity, app_navigation_entity,
     app_navigation_entity::Entity as AppNavigationEntity, automation_edge_entity,
     automation_edge_entity::Entity as AutomationEdgeEntity, automation_flow_entity,
     automation_flow_entity::Entity as AutomationFlowEntity, automation_flow_version_entity,

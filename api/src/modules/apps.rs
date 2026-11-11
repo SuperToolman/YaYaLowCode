@@ -10,13 +10,25 @@ pub(crate) async fn list_apps(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<Vec<ApiApp>>>, AppError> {
+    let grants = authorization::grants(&headers, &state).await?;
+    let current_user = authorization::current_user(&headers, &state).await?;
+    Ok(Json(success_response(
+        "获取应用列表成功",
+        list_apps_for_subject(&state, &current_user, &grants).await?,
+    )))
+}
+
+/// Shared visibility rules for interactive users and scoped Agent executions.
+pub(crate) async fn list_apps_for_subject(
+    state: &AppState,
+    current_user: &iam_user_entity::Model,
+    grants: &std::collections::HashSet<String>,
+) -> Result<Vec<ApiApp>, AppError> {
     let items = AppEntity::find()
         .order_by_desc(app_entity::Column::CreatedAt)
         .all(&state.db)
         .await?;
 
-    let grants = authorization::grants(&headers, &state).await?;
-    let current_user = authorization::current_user(&headers, &state).await?;
     // Application managers must be able to see all applications, including
     // applications that were explicitly paused. Some deployments expose the
     // administrator role as `apps.manage` without the legacy wildcard grant.
@@ -31,7 +43,7 @@ pub(crate) async fn list_apps(
         }
     }
 
-    Ok(Json(success_response("获取应用列表成功", responses)))
+    Ok(responses)
 }
 
 pub(crate) async fn create_app(
@@ -57,8 +69,8 @@ pub(crate) async fn create_app(
     ))
 }
 
-pub(crate) async fn create_app_definition(
-    db: &DatabaseConnection,
+pub(crate) async fn create_app_definition<C: ConnectionTrait>(
+    db: &C,
     owner: &iam_user_entity::Model,
     payload: CreateAppRequest,
 ) -> Result<app_entity::Model, AppError> {
@@ -144,8 +156,8 @@ pub(crate) async fn update_app(
     )))
 }
 
-pub(crate) async fn update_app_definition(
-    db: &DatabaseConnection,
+pub(crate) async fn update_app_definition<C: ConnectionTrait>(
+    db: &C,
     app_id: &str,
     payload: UpdateAppRequest,
     current_user: &iam_user_entity::Model,

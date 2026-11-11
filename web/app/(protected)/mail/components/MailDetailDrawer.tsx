@@ -2,7 +2,7 @@
 
 import { Drawer } from "@heroui/react";
 import { Clock } from "@gravity-ui/icons";
-import type { MailDetailResponse, MailMessageIdentity } from "@features/mail/api";
+import type { MailDetailResponse, MailMessageIdentity } from "@/features/mail/api";
 import { MailBody } from "./MailBody";
 import { MailAttachments } from "./MailAttachments";
 

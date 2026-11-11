@@ -1,9 +1,9 @@
 "use client";
-import { notifyRequestError } from "@lib/notify";
+import { notifyRequestError } from "@/shared/lib/notify";
 
 import { useCallback, useRef, useState } from "react";
-import type { RuntimeFormSchema } from "@/features/form-runtime/components/runtime-form-types";
-import { notify } from "@lib/notify";
+import type { RuntimeFormSchema } from "@/features/form-model/runtime-types";
+import { notify } from "@/shared/lib/notify";
 import { useRecordMutations } from "../mutations";
 import type { FormRecord } from "../types";
 

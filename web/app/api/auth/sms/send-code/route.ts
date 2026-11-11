@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { sendSmsCode } from "@lib/http";
-import { createBackendSdkClient } from "@lib/backend-client";
+import { sendSmsCode } from "@/shared/lib/http";
+import { createBackendSdkClient } from "@/shared/lib/backend-client";
 import { sdkJsonResponse } from "../../../_lib/backend-sdk-client";
 
 export async function POST(request: Request) {

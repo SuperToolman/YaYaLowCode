@@ -1,21 +1,6 @@
-import {
-  createWorkflowComment,
-  createDetailForm,
-  createFormRecord,
-  deleteForm,
-  deleteFormRecord,
-  getFormBootstrap,
-  getFormSchema,
-  getWorkflowRecordRuntime,
-  listFormRecords,
-  listDetailForms,
-  listWorkflowComments,
-  queryFormRecords,
-  updateFormRecord,
-} from "@/app/lib/http";
-import { unwrapApiResult } from "@/app/lib/api-request";
+import { createWorkflowComment, createDetailForm, createFormRecord, deleteForm, deleteFormRecord, getFormBootstrap, getFormSchema, getWorkflowRecordRuntime, listFormRecords, listDetailForms, listWorkflowComments, queryFormRecords, updateFormRecord } from "@/shared/lib/http";
+import { unwrapApiResult } from "@/shared/lib/api-request";
 import type { FormRecord, RecordFilter, RecordsPage, RecordSort } from "./types";
-
 
 export async function getDetailForms(formUuid: string) {
   const { data, error, response } = await listDetailForms({ path: { formUuid }, responseStyle: "fields" });
@@ -110,7 +95,7 @@ export async function postWorkflowComment(formUuid: string, recordUuid: string, 
   return unwrapApiResult({ data, error, response }, "评论发布失败");
 }
 
-function toRecord(record: import("@lib/http").ApiFormRecord): FormRecord {
+function toRecord(record: import("@/shared/lib/http").ApiFormRecord): FormRecord {
   const data = record.data;
   return { ...record, data: typeof data === "object" && data !== null && !Array.isArray(data) ? Object.fromEntries(Object.entries(data)) : {} };
 }

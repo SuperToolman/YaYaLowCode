@@ -5,10 +5,10 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Card } from "@heroui/react/card";
 import { ScrollShadow } from "@heroui/react";
-import { useAuth } from "@components/AuthProvider";
-import { PageContentLayout } from "@components/PageContentLayout";
-import { getLicenseStatus } from "@features/settings/api";
-import { settingsPagePermission } from "@features/identity-access/platform-permissions";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { PageContentLayout } from "@/shared/ui/PageContentLayout";
+import { getLicenseStatus } from "@/features/settings/api";
+import { settingsPagePermission } from "@/features/identity-access/platform-permissions";
 import { Typography } from "@heroui/react";
 
 const settingsGroups = [
@@ -80,23 +80,24 @@ const settingsGroups = [
   {
     label: "AI员工",
     items: [
+      {href:"/settings/knowledge",permission:"",label:"全局知识库",description:"维护公共知识文档与版本"},
       {
-        href: "/settings/ai-employee-market",
+        href: "/settings/agent-archives",
+        permission: "agent.window",
+        label: "归档会话",
+        description: "搜索、恢复和彻底删除自己的归档会话",
+      },
+      {
+        href: "/settings/ai-employees",
         permission: "settings.ai-employees.view",
-        label: "AI 员工市场",
-        description: "安装与管理已授权的 AI 员工",
+        label: "AI员工管理",
+        description: "查看已安装员工、调用与会话统计",
       },
       {
         href: "/settings/model-providers",
         permission: "settings.models.view",
         label: "模型",
         description: "配置 Agent 使用的模型供应商与默认路由",
-      },
-      {
-        href: "/settings/agent-archive",
-        permission: "settings.agent-archive.view",
-        label: "归档会话",
-        description: "查看、恢复或永久移除已归档会话",
       },
     ],
   },

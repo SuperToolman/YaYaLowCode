@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  commitHistory,
-  createHistory,
-  redoHistory,
-  undoHistory,
-} from "./history";
+import { commitHistory, createHistory, redoHistory, undoHistory } from "./history";
 
 describe("designer history", () => {
   it("stores snapshots independently from mutable editor state", () => {

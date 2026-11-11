@@ -2,9 +2,8 @@
 param(
     [int]$BackendPort = 8788,
     [int]$FrontendPort = 8787,
-    [int]$AgentPort = 8789,
     [string]$LicensePublicKeyPath,
-    [switch]$SkipDshBuild
+    [switch]$SkipAgentV2
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,16 +11,15 @@ $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $apiRoot = Join-Path $repositoryRoot "api"
 $webRoot = Join-Path $repositoryRoot "web"
-$dshRoot = Join-Path $repositoryRoot "agent\deepseek-harness"
 $defaultLicensePublicKeyPath = Join-Path $repositoryRoot "deploy\secrets\license-public.pem"
 $backendHealthUrl = "http://127.0.0.1:$BackendPort/healthz"
-$agentHealthUrl = "http://127.0.0.1:$AgentPort/healthz"
 $backendLogDirectory = Join-Path $apiRoot "runtime\dev"
 $backendLog = Join-Path $backendLogDirectory "backend.log"
 $backendErrorLog = Join-Path $backendLogDirectory "backend-error.log"
-$agentLogDirectory = Join-Path $dshRoot "runtime\dev"
-$agentLog = Join-Path $agentLogDirectory "agent.log"
-$agentErrorLog = Join-Path $agentLogDirectory "agent-error.log"
+. (Join-Path $PSScriptRoot 'agent-v2-dev.ps1')
+. (Join-Path $PSScriptRoot 'agent-v2-execution-dev.ps1')
+. (Join-Path $PSScriptRoot 'agent-v2-process-ownership.ps1')
+$agentV2Paths = Get-AgentV2DevelopmentPaths -RepositoryRoot $repositoryRoot
 
 function Test-BackendReady {
     try {
@@ -32,14 +30,6 @@ function Test-BackendReady {
     }
 }
 
-function Test-AgentReady {
-    try {
-        $response = Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 $agentHealthUrl
-        return $response.StatusCode -eq 200
-    } catch {
-        return $false
-    }
-}
 
 function Test-PostgresReady {
     $pgIsReady = Join-Path ${env:ProgramFiles} "PostgreSQL\18\bin\pg_isready.exe"
@@ -111,6 +101,9 @@ function Stop-RunningService {
     )
 
     $processIds = Get-ListeningProcessIds -Port $Port
+    foreach ($processId in $processIds) {
+        Assert-DevelopmentProcessOwnership -ProcessId $processId -RepositoryRoot $repositoryRoot -ServiceName $ServiceName
+    }
     foreach ($processId in $processIds) {
         $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
         if (-not $process) {
@@ -184,12 +177,12 @@ if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
 
 $startedBackend = $false
 $backendProcess = $null
-$startedAgent = $false
-$agentProcess = $null
-$env:RUST_LOG = "yaya_api=debug,tower_http=info"
+$agentV2Process = $null
+$env:RUST_LOG = "yaya_api=debug,yaya_agent_v2_worker=info,tower_http=info"
 # Load local deployment credentials for development when the caller has not
 # supplied an explicit DATABASE_URL/VALKEY_URL. The checked-in deploy/.env is
 # the existing local-development source; production should inject secrets.
+$developmentValues = @{}
 $developmentEnvFile = Join-Path $repositoryRoot "deploy\.env"
 if (Test-Path -LiteralPath $developmentEnvFile) {
     $developmentValues = @{}
@@ -199,7 +192,7 @@ if (Test-Path -LiteralPath $developmentEnvFile) {
         }
     }
     if ([string]::IsNullOrWhiteSpace($env:DATABASE_URL) -and $developmentValues.ContainsKey("POSTGRES_USER") -and $developmentValues.ContainsKey("POSTGRES_PASSWORD") -and $developmentValues.ContainsKey("POSTGRES_DB")) {
-        $env:DATABASE_URL = "postgres://$($developmentValues.POSTGRES_USER):$($developmentValues.POSTGRES_PASSWORD)@127.0.0.1:5432/$($developmentValues.POSTGRES_DB)"
+        $env:DATABASE_URL = "postgres://$([uri]::EscapeDataString($developmentValues.POSTGRES_USER)):$([uri]::EscapeDataString($developmentValues.POSTGRES_PASSWORD))@127.0.0.1:5432/$($developmentValues.POSTGRES_DB)"
     }
     if ([string]::IsNullOrWhiteSpace($env:VALKEY_URL) -and $developmentValues.ContainsKey("VALKEY_PASSWORD")) {
         $env:VALKEY_URL = "redis://:$($developmentValues.VALKEY_PASSWORD)@127.0.0.1:6379/0"
@@ -223,38 +216,31 @@ if (Test-Path -LiteralPath $developmentEnvFile) {
         "ALIYUN_ACCESS_KEY_SECRET",
         "ALIYUN_SMS_SIGN_NAME",
         "ALIYUN_SMS_LOGIN_TEMPLATE_CODE",
-        "ALIYUN_SMS_REGION"
+        "ALIYUN_SMS_CODE_PARAM",
+        "ALIYUN_SMS_REGION",
+        "YAYA_BYOM_ENCRYPTION_KEY",
+        "YAYA_AGENT_V2_WORKER_SECRET"
     )) {
-        if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name)) -and $developmentValues.ContainsKey($name)) {
+        $useLocalSmsSetting = $name -like "ALIYUN_SMS_*" -and $env:APP_ENV -ne "production" -and $env:NODE_ENV -ne "production"
+        if (($useLocalSmsSetting -or [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) -and $developmentValues.ContainsKey($name)) {
             Set-Item -Path "Env:$name" -Value $developmentValues[$name]
         }
     }
 }
 # Development-only defaults. Production must inject both values from its secret
-# manager before starting the Rust API and DSH Harness.
+# manager before starting the Rust API and AgentV2 Worker.
 if ([string]::IsNullOrWhiteSpace($env:YAYA_BYOM_ENCRYPTION_KEY)) {
     $env:YAYA_BYOM_ENCRYPTION_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 }
-if ([string]::IsNullOrWhiteSpace($env:AGENT_RUNTIME_SHARED_SECRET)) {
-    $env:AGENT_RUNTIME_SHARED_SECRET = "yaya-development-agent-runtime-secret"
+if (-not $SkipAgentV2) {
+    Initialize-AgentV2DevelopmentEnvironment -RepositoryRoot $repositoryRoot -BackendPort $BackendPort
 }
-# Keep runtime data within the component that owns it. Rust and DSH must still
-# resolve one absolute per-session workspace root because they have different
-# working directories.
-$env:YAYA_AGENT_WORKSPACE_ROOT = Join-Path $repositoryRoot "agent\runtime\workspaces"
+# API, BFF and the independent Worker must agree on custom development ports.
+$env:APP_PORT = "$BackendPort"
+$env:BACKEND_API_BASE_URL = "http://127.0.0.1:$BackendPort"
 $env:YAYA_API_RUNTIME_ROOT = Join-Path $repositoryRoot "api\runtime"
 $env:YAYA_UPLOAD_DIR = Join-Path $repositoryRoot "api\runtime\uploads"
 $env:YAYA_LOG_DIRECTORY = Join-Path $repositoryRoot "api\runtime\logs"
-# The three local services share these derived endpoints. Keep them aligned
-# with the script parameters; the Host otherwise falls back to 8788/8789.
-$env:YAYA_PLATFORM_API_URL = "http://127.0.0.1:$BackendPort"
-$env:DSH_HOST = "127.0.0.1"
-$env:DSH_PORT = "$AgentPort"
-$env:AGENT_RUNTIME_BASE_URL = "http://127.0.0.1:$AgentPort"
-# Next Route Handlers can proxy SSE but cannot forward a WebSocket upgrade.
-# Local development therefore connects the browser mux directly to DSH; the
-# production reverse proxy should expose the same origin through this variable.
-$env:NEXT_PUBLIC_AGENT_RUNTIME_WS_URL = "ws://127.0.0.1:$AgentPort"
 if ([string]::IsNullOrWhiteSpace($LicensePublicKeyPath)) {
     $LicensePublicKeyPath = $defaultLicensePublicKeyPath
 }
@@ -308,10 +294,22 @@ function Assert-DatabaseSchemaPrivileges {
 if ($null -ne $developmentValues) {
     Assert-DatabaseSchemaPrivileges -Values $developmentValues
 }
+# Validate both listeners before stopping either one.
+foreach ($service in @(@{port=$BackendPort;name='backend'},@{port=$FrontendPort;name='frontend'})) {
+    foreach ($serviceProcessId in (Get-ListeningProcessIds -Port $service.port)) {
+        Assert-DevelopmentProcessOwnership -ProcessId $serviceProcessId -RepositoryRoot $repositoryRoot -ServiceName $service.name
+    }
+}
 Stop-RunningService -Port $BackendPort -ServiceName "backend"
 Stop-RunningService -Port $FrontendPort -ServiceName "frontend"
-Stop-RunningService -Port $AgentPort -ServiceName "DSH Agent"
 Stop-ExistingNextDevServer -WebDirectory $webRoot
+# Stop the Worker from this checkout before restarting API/compiling its executable.
+# Also stop it when V2 is disabled so a prior development Worker is not left running.
+Stop-PreviousAgentV2DevelopmentWorker -Paths $agentV2Paths
+if (-not $SkipAgentV2) {
+    Write-Host 'Preparing independent AgentV2 Worker and Cordis Host...'
+    Build-AgentV2DevelopmentWorker -Paths $agentV2Paths
+}
 
 function Move-LegacyRuntimePath {
     param(
@@ -322,6 +320,12 @@ function Move-LegacyRuntimePath {
     if (-not (Test-Path -LiteralPath $Source) -or (Test-Path -LiteralPath $Destination)) {
         return
     }
+    $workspacePrefix = [IO.Path]::GetFullPath($repositoryRoot).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    foreach ($candidate in @($Source, $Destination)) {
+        if (-not [IO.Path]::GetFullPath($candidate).StartsWith($workspacePrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Runtime move must stay inside this repository: $candidate"
+        }
+    }
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Destination) | Out-Null
     Move-Item -LiteralPath $Source -Destination $Destination
 }
@@ -329,9 +333,6 @@ function Move-LegacyRuntimePath {
 # Migrate pre-1.11a development data after dependent services stop. The move is
 # deliberately non-overwriting so an existing component-owned runtime wins.
 $legacyRuntimeRoot = Join-Path $repositoryRoot "runtime"
-Move-LegacyRuntimePath (Join-Path $legacyRuntimeRoot "agent-workspaces") $env:YAYA_AGENT_WORKSPACE_ROOT
-Move-LegacyRuntimePath (Join-Path $legacyRuntimeRoot "cargo-check-agent-skill") (Join-Path $repositoryRoot "agent\runtime\cargo-check-agent-skill")
-Move-LegacyRuntimePath (Join-Path $legacyRuntimeRoot "dsh-restart.log") (Join-Path $repositoryRoot "agent\runtime\logs\dsh-restart.log")
 Move-LegacyRuntimePath (Join-Path $legacyRuntimeRoot "uploads") $env:YAYA_UPLOAD_DIR
 Move-LegacyRuntimePath (Join-Path $legacyRuntimeRoot "logs") $env:YAYA_LOG_DIRECTORY
 Move-LegacyRuntimePath (Join-Path $legacyRuntimeRoot "state") (Join-Path $env:YAYA_API_RUNTIME_ROOT "state")
@@ -344,91 +345,86 @@ if ((Test-Path -LiteralPath $legacyRuntimeRoot) -and -not (Get-ChildItem -Litera
 # parses on every request. Rebuild this cache on each dev-session start.
 $nextDirectory = Join-Path $webRoot ".next"
 if (Test-Path -LiteralPath $nextDirectory) {
+    $resolvedNextDirectory = (Resolve-Path -LiteralPath $nextDirectory).Path
+    if ($resolvedNextDirectory -ne [IO.Path]::GetFullPath((Join-Path $repositoryRoot 'web/.next'))) {
+        throw 'Next.js cache path must remain inside this checkout.'
+    }
     Write-Host "Clearing stale Next.js cache..."
     Remove-Item -LiteralPath $nextDirectory -Recurse -Force -ErrorAction Stop
 }
 
-New-Item -ItemType Directory -Force -Path $backendLogDirectory | Out-Null
-Remove-Item -Force $backendLog, $backendErrorLog -ErrorAction SilentlyContinue
-Write-Host "Starting backend..."
-$backendCommand = "cargo run"
-if ($LicensePublicKeyPath) {
-    if (-not (Test-Path -LiteralPath $LicensePublicKeyPath)) {
-        throw "License verification public key was not found: $LicensePublicKeyPath"
-    }
-    $resolvedPublicKeyPath = (Resolve-Path -LiteralPath $LicensePublicKeyPath).Path
-    $escapedPublicKeyPath = $resolvedPublicKeyPath.Replace("'", "''")
-    $backendCommand = "`$env:YAYA_LICENSE_PUBLIC_KEY_PATH = '$escapedPublicKeyPath'; cargo run"
-}
-$backendProcess = Start-Process `
-    -FilePath "powershell.exe" `
-    -ArgumentList @("-NoProfile", "-Command", $backendCommand) `
-    -WorkingDirectory $apiRoot `
-    -WindowStyle Hidden `
-    -RedirectStandardOutput $backendLog `
-    -RedirectStandardError $backendErrorLog `
-    -PassThru
-$startedBackend = $true
-
-$deadline = (Get-Date).AddSeconds(60)
-while ((Get-Date) -lt $deadline -and -not (Test-BackendReady)) {
-    if ($backendProcess.HasExited) {
-        $details = if (Test-Path $backendErrorLog) { Get-Content $backendErrorLog -Raw } else { "" }
-        throw "Backend failed to start. $details"
-    }
-    Start-Sleep -Milliseconds 500
-}
-
-if (-not (Test-BackendReady)) {
-    throw "Timed out waiting for backend readiness. See $backendErrorLog"
-}
-Write-Host "Backend is ready: $backendHealthUrl"
-
+$previousExecutionUrl=$env:YAYA_AGENT_V2_EXECUTION_URL
+$previousExecutionSecret=$env:YAYA_EXECUTION_SECRET
 try {
-    New-Item -ItemType Directory -Force -Path $agentLogDirectory | Out-Null
-    Remove-Item -Force $agentLog, $agentErrorLog -ErrorAction SilentlyContinue
-    if (-not (Test-Path -LiteralPath (Join-Path $dshRoot "package.json"))) {
-        throw "DSH workspace was not found at $dshRoot"
-    }
-    if (-not $SkipDshBuild) {
-        Write-Host "Building DSH workspace..."
-        & pnpm.cmd --dir $dshRoot build
+    $executionProcess = if (-not $SkipAgentV2) { Initialize-AgentV2ExecutionDevelopment -RepositoryRoot $repositoryRoot }
+    New-Item -ItemType Directory -Force -Path $backendLogDirectory | Out-Null
+    Remove-Item -Force $backendLog, $backendErrorLog -ErrorAction SilentlyContinue
+    # Compilation (including Cargo lock waits) is not service startup. A cold
+    # Rust build can exceed the readiness deadline by several minutes.
+    Write-Host "Building backend..."
+    Push-Location $apiRoot
+    try {
+        & cargo build --locked
         if ($LASTEXITCODE -ne 0) {
-            throw "DSH build failed. Fix the DSH build errors, or use -SkipDshBuild when build artifacts are already current."
+            throw "Backend build failed. See the Cargo errors above."
         }
+    } finally {
+        Pop-Location
     }
-    Write-Host "Starting YaYa Agent Host..."
-    $agentProcess = Start-Process `
-        -FilePath "pnpm.cmd" `
-        -ArgumentList @("yaya-agent-host") `
-        -WorkingDirectory $dshRoot `
+    Write-Host "Starting backend..."
+    $backendCommand = "cargo run --locked"
+    if ($LicensePublicKeyPath) {
+        if (-not (Test-Path -LiteralPath $LicensePublicKeyPath)) {
+            throw "License verification public key was not found: $LicensePublicKeyPath"
+        }
+        $resolvedPublicKeyPath = (Resolve-Path -LiteralPath $LicensePublicKeyPath).Path
+        $escapedPublicKeyPath = $resolvedPublicKeyPath.Replace("'", "''")
+        $backendCommand = "`$env:YAYA_LICENSE_PUBLIC_KEY_PATH = '$escapedPublicKeyPath'; cargo run --locked"
+    }
+    $backendProcess = Start-Process `
+        -FilePath "powershell.exe" `
+        -ArgumentList @("-NoProfile", "-Command", $backendCommand) `
+        -WorkingDirectory $apiRoot `
         -WindowStyle Hidden `
-        -RedirectStandardOutput $agentLog `
-        -RedirectStandardError $agentErrorLog `
+        -RedirectStandardOutput $backendLog `
+        -RedirectStandardError $backendErrorLog `
         -PassThru
-    $startedAgent = $true
+    $startedBackend = $true
 
     $deadline = (Get-Date).AddSeconds(60)
-    while ((Get-Date) -lt $deadline -and -not (Test-AgentReady)) {
-        if ($agentProcess.HasExited) {
-            $details = if (Test-Path $agentErrorLog) { Get-Content $agentErrorLog -Raw } else { "" }
-            throw "DSH failed to start. $details"
+    while ((Get-Date) -lt $deadline -and -not (Test-BackendReady)) {
+        if ($backendProcess.HasExited) {
+            $details = if (Test-Path $backendErrorLog) { Get-Content $backendErrorLog -Raw } else { "" }
+            throw "Backend failed to start. $details"
         }
         Start-Sleep -Milliseconds 500
     }
-    if (-not (Test-AgentReady)) {
-        throw "Timed out waiting for DSH readiness. See $agentErrorLog"
-    }
-    Write-Host "YaYa Agent Host is ready: $agentHealthUrl"
 
+    if (-not (Test-BackendReady)) {
+        throw "Timed out waiting for backend readiness. See $backendErrorLog"
+    }
+    Write-Host "Backend is ready: $backendHealthUrl"
+
+    if (-not $SkipAgentV2) {
+        $agentV2Process = Start-AgentV2DevelopmentWorker -Paths $agentV2Paths
+        Write-Host "AgentV2 Worker is ready. Logs: $($agentV2Paths.Log)"
+        Write-Host "AgentV2 page: http://127.0.0.1:$FrontendPort/agent-v2"
+    }
     Write-Host "Starting frontend: http://127.0.0.1:$FrontendPort"
     & pnpm --dir $webRoot dev --hostname 127.0.0.1 --port $FrontendPort
     if ($LASTEXITCODE -ne 0) {
         throw "Frontend exited with code $LASTEXITCODE."
     }
 } finally {
-    if ($startedAgent -and $agentProcess -and -not $agentProcess.HasExited) {
-        Stop-ProcessTree -ProcessId $agentProcess.Id -ServiceName "DSH Agent"
+    # Do not leave a stopped development manager configured in the caller's shell.
+    $env:YAYA_AGENT_V2_EXECUTION_URL=$previousExecutionUrl
+    $env:YAYA_EXECUTION_SECRET=$previousExecutionSecret
+    if ($executionProcess -and -not $executionProcess.HasExited) { Stop-ProcessTree -ProcessId $executionProcess.Id -ServiceName 'AgentV2 Execution Manager' }
+    if ($agentV2Process) {
+        if (-not $agentV2Process.HasExited) {
+            Stop-ProcessTree -ProcessId $agentV2Process.Id -ServiceName 'AgentV2 Worker'
+        }
+        Remove-Item -LiteralPath $agentV2Paths.ProcessFile -Force -ErrorAction SilentlyContinue
     }
     if ($startedBackend -and $backendProcess -and -not $backendProcess.HasExited) {
         Stop-ProcessTree -ProcessId $backendProcess.Id -ServiceName "Backend"

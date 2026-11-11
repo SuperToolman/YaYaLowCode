@@ -1,4 +1,4 @@
-import type { RuntimeFormSchema } from "@features/form-runtime/components";
+import type { RuntimeFormSchema } from "@/features/form-model/runtime-types";
 
 /** Converts a detail form to the single-column runtime layout expected by record editing. */
 export function normalizeDetailFormSchema(

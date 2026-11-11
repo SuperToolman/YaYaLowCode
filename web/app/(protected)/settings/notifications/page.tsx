@@ -1,16 +1,16 @@
 "use client";
-import { notifyRequestError } from "@lib/notify";
-import { useAuth } from "@components/AuthProvider";
+import { notifyRequestError } from "@/shared/lib/notify";
+import { useAuth } from "@/features/auth/components/AuthProvider";
 
 import { useEffect, useState } from "react";
 import { Button, Input, Surface, Switch } from "@heroui/react";
-import { notify } from "@lib/notify";
-import { isRequestAborted, unwrapApiResult } from "@lib/api-request";
-import { getNotificationSettings, updateNotificationSettings } from "@lib/http";
+import { notify } from "@/shared/lib/notify";
+import { isRequestAborted, unwrapApiResult } from "@/shared/lib/api-request";
+import { getNotificationSettings, updateNotificationSettings } from "@/shared/lib/http";
 import { Field } from "../components/Field";
 import { SettingsContentCard } from "../components/SettingsContentCard";
 
-type NotificationSettings = import("@lib/http").NotificationSettings;
+type NotificationSettings = import("@/shared/lib/http").NotificationSettings;
 
 export default function NotificationSettingsPage() {
   const { hasPermission } = useAuth();

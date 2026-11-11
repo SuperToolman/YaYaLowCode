@@ -1,7 +1,8 @@
 import type { MouseEventHandler } from "react";
 import { isAttachmentOnlyMessage } from "./file-presentation";
-import { MySurface } from "@shared/ui/MySurface";
-import { MessageAvatar, MessageBubbleContent, type MessageBubbleProps } from "./MessageBubble";
+import { MySurface } from "@/shared/ui/MySurface";
+import { MessageAvatar, MessageBubbleContent } from "./MessageBubbleContent";
+import type { MessageBubbleProps } from "./message-bubble-types";
 
 type MainProps = MessageBubbleProps & { onContextMenu: MouseEventHandler<HTMLDivElement> };
 

@@ -19,3 +19,5 @@ pub mod record_validation;
 mod record_validation_database_tests;
 
 pub mod platform_permissions;
+
+pub mod record_access;

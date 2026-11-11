@@ -16,6 +16,10 @@ services:
       APP_PORT: 8788
       ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:-}
       ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:-}
+      ALIYUN_SMS_SIGN_NAME: ${ALIYUN_SMS_SIGN_NAME:-}
+      ALIYUN_SMS_LOGIN_TEMPLATE_CODE: ${ALIYUN_SMS_LOGIN_TEMPLATE_CODE:-}
+      ALIYUN_SMS_CODE_PARAM: ${ALIYUN_SMS_CODE_PARAM:-code}
+      ALIYUN_SMS_REGION: ${ALIYUN_SMS_REGION:-cn-hangzhou}
       POSTGRES_DB: ${POSTGRES_DB:-yaya_low_code}
       POSTGRES_USER: ${POSTGRES_USER:-yaya}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
@@ -27,33 +31,27 @@ services:
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
       BACKEND_INTERNAL_TOKEN: ${BACKEND_INTERNAL_TOKEN:?set BACKEND_INTERNAL_TOKEN in deploy/.env}
-      AGENT_RUNTIME_SHARED_SECRET: ${AGENT_RUNTIME_SHARED_SECRET:?set AGENT_RUNTIME_SHARED_SECRET in deploy/.env}
-      YAYA_AGENT_WORKSPACE_ROOT: ${YAYA_AGENT_WORKSPACE_ROOT:-/var/lib/yaya/agent-workspaces}
-      YAYA_AGENT_WORKSPACE_MAX_BYTES: ${YAYA_AGENT_WORKSPACE_MAX_BYTES:-1073741824}
-      YAYA_AGENT_WORKSPACE_MAX_FILES: ${YAYA_AGENT_WORKSPACE_MAX_FILES:-10000}
-      YAYA_AGENT_WORKSPACE_RETENTION_DAYS: ${YAYA_AGENT_WORKSPACE_RETENTION_DAYS:-30}
+      YAYA_AGENT_V2_WORKER_SECRET: ${YAYA_AGENT_V2_WORKER_SECRET:?set YAYA_AGENT_V2_WORKER_SECRET in deploy/.env}
+      YAYA_AGENT_V2_API_URL: http://127.0.0.1:8788
+      YAYA_AGENT_V2_CORDIS_HOST: /app/agent-v2/cordis-host/src/host.mjs
+      YAYA_AGENT_V2_OFFICE_PATH: /usr/local/bin/yaya-agent-v2-office
+      YAYA_AGENT_V2_EXECUTION_URL: http://127.0.0.1:8791
+      YAYA_EXECUTION_ROOT: /var/lib/yaya/executions
+      YAYA_EXECUTION_SECRET: ${YAYA_EXECUTION_SECRET:-${YAYA_AGENT_V2_WORKER_SECRET}}
+      YAYA_AGENT_V2_MAX_COMPLETION_TOKENS: ${YAYA_AGENT_V2_MAX_COMPLETION_TOKENS:-8192}
       YAYA_BYOM_ENCRYPTION_KEY: ${YAYA_BYOM_ENCRYPTION_KEY:?set YAYA_BYOM_ENCRYPTION_KEY in deploy/.env}
       BACKEND_API_BASE_URL: http://127.0.0.1:8788
       YAYA_LICENSE_PUBLIC_KEY_PATH: /run/secrets/license-public.pem
       YAYA_UPLOAD_DIR: /var/lib/yaya/uploads
       YAYA_SETTINGS_PATH: /var/lib/yaya/config/database.json
       YAYA_VALKEY_SETTINGS_PATH: /var/lib/yaya/config/valkey.json
-      YAYA_AGENT_SETTINGS_PATH: /var/lib/yaya/config/agent-settings.json
-      YAYA_PLATFORM_AGENT_ASSISTANT_SETTINGS_PATH: /var/lib/yaya/config/agent-assistant.json
       YAYA_IDENTITY_SETTINGS_PATH: /var/lib/yaya/config/identity.json
       YAYA_NOTIFICATION_SETTINGS_PATH: /var/lib/yaya/config/notifications.json
       YAYA_LICENSE_SETTINGS_PATH: /var/lib/yaya/config/license.json
       YAYA_SKILLS_PATH: /var/lib/yaya/skills
-      AGENT_RUNTIME_BASE_URL: ${AGENT_RUNTIME_BASE_URL:-http://127.0.0.1:8789}
-      YAYA_PLATFORM_API_URL: http://127.0.0.1:8788
-      DSH_HOST: 127.0.0.1
-      DSH_PORT: 8789
-      DSH_PROFILE: web
-      DSH_HOME: /var/lib/yaya/agent
     volumes:
       - postgres-data:/var/lib/postgresql
       - api-state:/var/lib/yaya
-      - agent-state:/var/lib/yaya/agent
       - ./secrets/license-public.pem:/run/secrets/license-public.pem:ro
     ports:
       - "${WEB_PORT:-8787}:8787"
@@ -65,7 +63,7 @@ services:
       retries: 6
 
 
+
 volumes:
   postgres-data:
   api-state:
-  agent-state:

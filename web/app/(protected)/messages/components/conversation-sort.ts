@@ -1,4 +1,4 @@
-import type { CommunicationConversationResponse } from "@features/communication/api";
+import type { CommunicationConversationResponse } from "@/features/communication/api";
 
 export function sortConversations(
   conversations: CommunicationConversationResponse[],

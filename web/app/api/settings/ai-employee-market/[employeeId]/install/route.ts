@@ -8,5 +8,7 @@ export async function POST(
   return proxyBackendJson(
     request,
     `/api/settings/ai-employee-market/${encodeURIComponent(employeeId)}/install`,
+    "POST",
+    30 * 60_000,
   );
 }

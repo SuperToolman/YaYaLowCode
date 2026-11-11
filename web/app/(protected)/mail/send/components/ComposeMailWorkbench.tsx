@@ -1,45 +1,15 @@
 "use client";
-import { notifyRequestError } from "@lib/notify";
+import { notifyRequestError } from "@/shared/lib/notify";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Avatar,
-  Button,
-  ButtonGroup,
-  Card,
-  Input,
-  Label,
-  Modal,
-  TextField,
-} from "@heroui/react";
+import { Avatar, Button, ButtonGroup, Card, Input, Label, Modal, TextField } from "@heroui/react";
 import { Envelope, Eye, Paperclip, Xmark } from "@gravity-ui/icons";
-import { notify } from "@lib/notify";
-import {
-  getMailComposeContext,
-  getRecentMailContacts,
-  type MailContact,
-  sendMail,
-  type MailComposeContext,
-} from "@features/mail/api";
-import {
-  MailSelect,
-  isMailAddress,
-  emptyRecipients,
-  recipientAddresses,
-  type RecipientValue,
-} from "./MailSelect";
+import { notify } from "@/shared/lib/notify";
+import { getMailComposeContext, getRecentMailContacts, type MailContact, sendMail, type MailComposeContext } from "@/features/mail/api";
+import { MailSelect, isMailAddress, emptyRecipients, recipientAddresses, type RecipientValue } from "./MailSelect";
 import { ComposeContacts } from "./ComposeContacts";
-import {
-  MailRichTextEditor,
-  type MailBodyValue,
-  type MailEditorHandle,
-} from "./MailRichTextEditor";
-import {
-  ComposeAttachments,
-  encodeAttachment,
-  MAX_ATTACHMENT_BYTES,
-  type ComposeAttachment,
-} from "./ComposeAttachments";
+import { RichTextEditor } from "@/shared/ui/RichTextEditor";
+import { ComposeAttachments, encodeAttachment, MAX_ATTACHMENT_BYTES, type ComposeAttachment } from "./ComposeAttachments";
 import { MailBody } from "../../components/MailBody";
 
 type Field = "to" | "cc" | "bcc";
@@ -61,7 +31,7 @@ export function ComposeMailWorkbench({
   const [visibleBcc, setVisibleBcc] = useState(false);
   const [activeField, setActiveField] = useState<Field>("to");
   const [subject, setSubject] = useState("");
-  const [body, setBody] = useState<MailBodyValue>({ html: "", text: "" });
+  const [body, setBody] = useState<{ html: string; text: string }>({ html: "", text: "" });
   const [attachments, setAttachments] = useState<ComposeAttachment[]>([]);
   const [context, setContext] = useState<MailComposeContext | null>(null);
   const [contactsLoading, setContactsLoading] = useState(true);
@@ -70,7 +40,6 @@ export function ComposeMailWorkbench({
   const [contacts, setContacts] = useState<MailContact[]>([]);
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
-  const editor = useRef<MailEditorHandle>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const loadGeneration = useRef(0);
   const loadContext = useCallback(async () => {
@@ -194,7 +163,6 @@ export function ComposeMailWorkbench({
       setSubject("");
       setBody({ html: "", text: "" });
       setAttachments([]);
-      editor.current?.reset();
       onSent();
     } catch (cause) {
       notifyRequestError(cause, cause instanceof Error ? cause.message : "邮件发送失败");
@@ -325,10 +293,16 @@ export function ComposeMailWorkbench({
                 )
               }
             />
-            <MailRichTextEditor
-              ref={editor}
+            <RichTextEditor
+              ariaLabel="正文"
+              value={body.html}
+              inputFormat="html"
+              outputFormat="all"
               disabled={sending}
-              onChange={setBody}
+              placeholder="请输入邮件正文"
+              className="min-h-0 flex-1"
+              contentClassName="min-h-80"
+              onChange={({ html, text }) => setBody({ html, text })}
             />
           </div>
           <footer className="flex shrink-0 items-center gap-2 text-xs">

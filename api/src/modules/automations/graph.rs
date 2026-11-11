@@ -423,6 +423,9 @@ pub(super) fn validate_current_protocol(
         if matches!(kind, "get-one" | "get-many") {
             super::get_data::validate_query_config(&config)?;
         }
+        if kind == "delete-data" {
+            super::delete_data::validate_config(&config)?;
+        }
         validate_config_references(&config, matches!(kind, "condition" | "parallel-condition"))?;
         if kind == "add-data"
             && config.get("targetMode").and_then(Value::as_str) == Some("subtable")
@@ -442,10 +445,15 @@ pub(super) fn validate_current_protocol(
                 .unwrap();
             if !nodes.as_array().into_iter().flatten().any(|item| {
                 item.get("id").and_then(Value::as_str) == Some(source)
-                    && matches!(
+                    && (matches!(
                         item.pointer("/data/kind").and_then(Value::as_str),
                         Some("trigger" | "get-one" | "get-many")
-                    )
+                    ) || (item.pointer("/data/kind").and_then(Value::as_str)
+                        == Some("add-data")
+                        && item
+                            .pointer("/data/config/targetMode")
+                            .and_then(Value::as_str)
+                            != Some("subtable")))
             }) {
                 return Err(AppError::BadRequest("子表来源数据节点无效".into()));
             }

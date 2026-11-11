@@ -1,44 +1,17 @@
 "use client";
-import { notifyRequestError } from "@lib/notify";
-import { useAuth } from "@components/AuthProvider";
+import { notifyRequestError } from "@/shared/lib/notify";
+import { useAuth } from "@/features/auth/components/AuthProvider";
 
-import { DisplayTag } from "@shared/DisplayTag";
+import { DisplayTag } from "@/shared/ui/DisplayTag";
 
 import { useMemo, useState } from "react";
-import { notify } from "@lib/notify";
-import {
-  UserEditorModal,
-  type UserEditorValues,
-} from "./components/UserEditorModal";
+import { notify } from "@/shared/lib/notify";
+import { UserEditorModal, type UserEditorValues } from "./components/UserEditorModal";
 import { SourceTag, UserAvatar } from "./components/UserIdentity";
-import {
-  Alert,
-  Card,
-  Button,
-  ButtonGroup,
-  Dropdown,
-  Modal,
-  Popover,
-  SearchField,
-  Table,
-  ToggleButton,
-  ToggleButtonGroup,
-  Typography,
-} from "@heroui/react";
-import {
-  type UpdateUserRequest,
-  toUpdateUserRequest,
-  initializeUserCredentials,
-  useUserManagement,
-} from "@features/identity-access";
-import {
-  ArrowRotateRight,
-  CircleInfo,
-  Ellipsis,
-  Key,
-  Plus,
-} from "@gravity-ui/icons";
-import { filterUsers, type UserItem } from "@features/identity-access";
+import { Alert, Card, Button, ButtonGroup, Dropdown, Modal, Popover, SearchField, Table, ToggleButton, ToggleButtonGroup, Typography } from "@heroui/react";
+import { type UpdateUserRequest, toUpdateUserRequest, initializeUserCredentials, useUserManagement } from "@/features/identity-access";
+import { ArrowRotateRight, CircleInfo, Ellipsis, Key, Plus } from "@gravity-ui/icons";
+import { filterUsers, type UserItem } from "@/features/identity-access";
 
 type SourceFilter = "all" | "local" | "dingtalk";
 type StatusFilter = "all" | "active" | "inactive";

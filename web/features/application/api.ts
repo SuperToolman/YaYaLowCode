@@ -13,9 +13,9 @@ export {
   updateApp,
   updateFormName,
   updateNavigationGroup,
-} from "@/app/lib/http";
-import * as sdk from "@lib/http";
-import { unwrapApiResult } from "@lib/api-request";
+} from "@/shared/lib/http";
+import * as sdk from "@/shared/lib/http";
+import { unwrapApiResult } from "@/shared/lib/api-request";
 
 export async function syncMarketplaceApplications() { return unwrapApiResult(await sdk.syncMarketApplications()); }
 export async function submitAppToMarketplace(appId: string) { return unwrapApiResult(await sdk.submitMarketApplication({ path: { appId } })); }
@@ -30,4 +30,4 @@ export async function rollbackMarketplaceInstallation(installationId: string, re
 export async function archiveMarketplaceInstallation(installationId: string) { return unwrapApiResult(await sdk.archiveMarketInstallation({ path: { installationId } })); }
 export async function restoreMarketplaceInstallation(installationId: string) { return unwrapApiResult(await sdk.restoreMarketInstallation({ path: { installationId } })); }
 export async function purgeMarketplaceInstallation(installationId: string) { return unwrapApiResult(await sdk.purgeMarketInstallation({ path: { installationId } })); }
-export type { App } from "@lib/http";
+export type { App } from "@/shared/lib/http";

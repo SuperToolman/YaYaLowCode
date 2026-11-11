@@ -3,7 +3,7 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
 import { PointerSensor, useSensor, useSensors, type DragEndEvent, type DragOverEvent, type DragStartEvent } from "@dnd-kit/core";
 import { reorderNavigationItem } from "@/features/application/api";
-import { invalidateAppResources } from "@lib/app-resources";
+import { invalidateAppResources } from "@/features/application/resources";
 import { canDropNavigationItem, expandGroupsFromItems } from "./navigation-utils";
 import type { DragState, NavigationItem, NavigationDragData, NavigationDropData } from "./types";
 import { NAVIGATION_DRAG_ACTIVATION } from "./navigation-interaction";

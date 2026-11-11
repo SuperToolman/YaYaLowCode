@@ -2,12 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { getAutomationFlow } from "@features/automation-editor/api";
-import { getForm } from "@features/form-runtime/api";
-import {
-  AUTOMATION_TITLE_CHANGED_EVENT,
-  type AutomationTitleChangedDetail,
-} from "./automation-title-events";
+import { getAutomationFlow } from "@/features/automation-editor/api";
+import { getForm } from "@/features/form-runtime/api";
+import { AUTOMATION_TITLE_CHANGED_EVENT, type AutomationTitleChangedDetail } from "@/features/automation-editor/model/title-events";
 
 export function AppCurrentPageTitle({ appId }: { appId: string }) {
   const pathname = usePathname();

@@ -1,8 +1,8 @@
-import { notifyRequestError } from "@lib/notify";
+import { notifyRequestError } from "@/shared/lib/notify";
 import { useEffect, useState } from "react";
-import { notify } from "@lib/notify";
+import { notify } from "@/shared/lib/notify";
 import { Button, Checkbox, Input, Modal, Tabs } from "@heroui/react";
-import { createDirectConversation, createGroupConversation, listCommunicationUsers, type CommunicationConversationResponse, type CommunicationUserResponse } from "@features/communication/api";
+import { createDirectConversation, createGroupConversation, listCommunicationUsers, type CommunicationConversationResponse, type CommunicationUserResponse } from "@/features/communication/api";
 
 export function NewConversationModal({ open, onClose, onCreated, messageOf }: { open: boolean; onClose: () => void; onCreated: (id: string) => void; messageOf: (value: unknown) => string }) {
   const [users, setUsers] = useState<CommunicationUserResponse[]>([]);

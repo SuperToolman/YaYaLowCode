@@ -172,6 +172,12 @@ async fn verify(db: DatabaseConnection, queries: std::sync::Arc<std::sync::atomi
             "",
         );
     db.execute_unprepared(&fixture_schema).await.unwrap();
+    db.execute_unprepared(include_str!("transaction_schema.sql"))
+        .await
+        .unwrap();
+    db.execute_unprepared(include_str!("parallel_schema_upgrade.sql"))
+        .await
+        .unwrap();
     db.execute_unprepared("CREATE TABLE workflow_branch_tokens(id UUID PRIMARY KEY,instance_id UUID);CREATE TABLE im_business_message_bindings(message_id UUID PRIMARY KEY,business_id UUID,business_type TEXT,status TEXT);CREATE TABLE im_messages(id UUID PRIMARY KEY,message_uuid TEXT,payload_json JSONB)").await.unwrap();
     let (shutdown, _) = tokio::sync::watch::channel(false);
     let worker_shutdown = shutdown.clone();
@@ -311,6 +317,35 @@ async fn verify(db: DatabaseConnection, queries: std::sync::Arc<std::sync::atomi
         .execute_unprepared("DROP TRIGGER inject_checkpoint ON automation_execution_tokens")
         .await
         .unwrap();
+    // A later node failure rolls back records written by earlier nodes in the run.
+    let rollback_flow = fixture_flow(
+        &state.db,
+        "trigger",
+        json!([
+            {"id":"trigger-1","data":{"kind":"trigger"}},
+            {"id":"first-write","data":{"kind":"add-data","config":{"targetFormUuid":"test-form","rows":[]}}},
+            {"id":"second-write","data":{"kind":"add-data","config":{"targetFormUuid":"missing-form","rows":[]}}}
+        ]),
+        json!([
+            {"source":"trigger-1","target":"first-write"},
+            {"source":"first-write","target":"second-write"}
+        ]),
+    )
+    .await;
+    let txn = state.db.begin().await.unwrap();
+    let rollback_run = start(&txn, &rollback_flow, ExecutionPolicy::Background, None).await;
+    txn.commit().await.unwrap();
+    assert!(drive_execution(&state, rollback_run).await.is_err());
+    assert_eq!(
+        RecordRepository::new(&state.db)
+            .list("test-form")
+            .await
+            .unwrap()
+            .len(),
+        1,
+        "the first add-data node must roll back when the second node fails"
+    );
+    assert_eq!(status(&state.db, rollback_run).await, "failed");
     // Artificially interrupted HTTP visit must never be replayed by recovery.
     let txn = state.db.begin().await.unwrap();
     let uncertain = start(&txn, &flow, ExecutionPolicy::Background, None).await;
@@ -511,36 +546,26 @@ async fn verify(db: DatabaseConnection, queries: std::sync::Arc<std::sync::atomi
         .await
         .is_err()
     );
-    // Pause and resume use the same queue; no second human task is created.
+    // A second instance still gets one human task on the shared execution queue.
     let mut active: workflow_instance_entity::ActiveModel = instance.clone().into();
     active.id = Set(Uuid::new_v4());
     active.instance_uuid = Set(Uuid::new_v4().to_string());
     active.started_at = Set(Utc::now());
-    let paused = active.insert(&state.db).await.unwrap();
+    let queued_instance = active.insert(&state.db).await.unwrap();
     let txn = state.db.begin().await.unwrap();
-    let paused_run = start(&txn, &process, ExecutionPolicy::Inline, Some(paused.id)).await;
+    let queued_run = start(
+        &txn,
+        &process,
+        ExecutionPolicy::Inline,
+        Some(queued_instance.id),
+    )
+    .await;
     txn.commit().await.unwrap();
-    drive_execution(&state, paused_run).await.unwrap();
-    let _ = workflows::pause_workflow_record(
-        State(state.clone()),
-        headers.clone(),
-        Path(("test-form".into(), record.record_uuid.clone())),
-        Json(workflows::WorkflowPauseRequest { reason: None }),
-    )
-    .await
-    .unwrap();
-    assert_eq!(status(&state.db, paused_run).await, "paused");
-    let _ = workflows::resume_workflow_record(
-        State(state.clone()),
-        headers.clone(),
-        Path(("test-form".into(), record.record_uuid.clone())),
-    )
-    .await
-    .unwrap();
-    assert_eq!(status(&state.db, paused_run).await, "waiting");
+    drive_execution(&state, queued_run).await.unwrap();
+    assert_eq!(status(&state.db, queued_run).await, "waiting");
     assert_eq!(
         workflow_task_entity::Entity::find()
-            .filter(workflow_task_entity::Column::InstanceId.eq(paused.id))
+            .filter(workflow_task_entity::Column::InstanceId.eq(queued_instance.id))
             .all(&state.db)
             .await
             .unwrap()
@@ -848,6 +873,7 @@ async fn verify(db: DatabaseConnection, queries: std::sync::Arc<std::sync::atomi
             outputs: HashMap::from([("trigger-1".into(), json!({"amount":100}))]),
             operator: "test".into(),
             run_id: None,
+            branch_id: None,
         };
         engine::drive(
             &memory,

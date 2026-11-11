@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { ApiRequestError } from "../../lib/api-request";
+import { ApiRequestError } from "../../../shared/lib/api-request";
 
-export { createBackendSdkClient } from "../../lib/backend-client";
-
+export { createBackendSdkClient } from "../../../shared/lib/backend-client";
 
 type SdkResult = {
   data?: unknown;

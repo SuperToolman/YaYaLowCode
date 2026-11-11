@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { createLoginResponse } from "../../_lib";
-import { verifySmsCode } from "@lib/http";
-import { createBackendSdkClient } from "@lib/backend-client";
+import { verifySmsCode } from "@/shared/lib/http";
+import { createBackendSdkClient } from "@/shared/lib/backend-client";
 
 export async function POST(request: Request) {
   let body: { mobile?: string; code?: string };

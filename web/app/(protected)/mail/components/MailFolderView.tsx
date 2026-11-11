@@ -1,10 +1,10 @@
 "use client";
-import { notifyRequestError } from "@lib/notify";
+import { notifyRequestError } from "@/shared/lib/notify";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Description, ScrollShadow } from "@heroui/react";
-import { notify } from "@lib/notify";
-import { listMailMessages, getMailMessage, type MailPageResponse, type MailDetailResponse, type MailMessageIdentity } from "@features/mail/api";
+
+import { listMailMessages, getMailMessage, type MailPageResponse, type MailDetailResponse, type MailMessageIdentity } from "@/features/mail/api";
 import { MailTable } from "./MailTable";
 import { MailDetailDrawer } from "./MailDetailDrawer";
 
