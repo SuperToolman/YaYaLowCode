@@ -1290,6 +1290,87 @@
         }
       }
     },
+    "/api/apps/{appId}/market-export": {
+      "post": {
+        "tags": [],
+        "operationId": "exportMarketPackage",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportPackageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/apps/{appId}/market-preflight": {
+      "post": {
+        "tags": [],
+        "operationId": "preflightMarketPublication",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicationScopeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/apps/{appId}/market-submission": {
       "get": {
         "tags": [],
@@ -1330,6 +1411,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -2689,6 +2780,44 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_FormBootstrapResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forms/{formUuid}/conditions/evaluate": {
+      "post": {
+        "tags": [],
+        "operationId": "evaluateFormConditions",
+        "parameters": [
+          {
+            "name": "formUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluateConditionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_bool"
                 }
               }
             }
@@ -4182,6 +4311,52 @@
         }
       }
     },
+    "/api/identity/operations/exchange": {
+      "post": {
+        "tags": [],
+        "operationId": "exchangeOperationsAccess",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Exchange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Login"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/identity/operations/logout": {
+      "post": {
+        "tags": [],
+        "operationId": "logoutOperationsAccess",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/identity/organization-units": {
       "get": {
         "tags": [],
@@ -5333,6 +5508,160 @@
         }
       }
     },
+    "/api/market/application-orders": {
+      "get": {
+        "tags": [],
+        "operationId": "applicationOrders",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ApplicationOrder"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/application-orders/{orderId}/action": {
+      "post": {
+        "tags": [],
+        "operationId": "applicationOrderAction",
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApplicationOrder"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/application-orders/{orderId}/simulate-payment": {
+      "post": {
+        "tags": [],
+        "operationId": "applicationSimulatePayment",
+        "parameters": [
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApplicationOrder"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/application-revenues": {
+      "get": {
+        "tags": [],
+        "operationId": "applicationRevenues",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ApplicationRevenue"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/application-submissions": {
+      "get": {
+        "tags": [],
+        "operationId": "listMarketSubmissionRecords",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/application-submissions/{id}/retry": {
+      "post": {
+        "tags": [],
+        "operationId": "retryMarketSubmission",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MarketSubmission"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/market/applications": {
       "get": {
         "tags": [],
@@ -5390,6 +5719,108 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_MarketProduct"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/applications/{productId}/checkout": {
+      "post": {
+        "tags": [],
+        "operationId": "applicationCheckout",
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApplicationOrder"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/applications/{productId}/commercial": {
+      "get": {
+        "tags": [],
+        "operationId": "applicationCommercialVersions",
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_CommercialVersion"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [],
+        "operationId": "applicationSubmitCommercial",
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommercialSubmission"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Value"
                 }
               }
             }
@@ -5642,6 +6073,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_MarketReleaseResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/market/publication-capabilities": {
+      "get": {
+        "tags": [],
+        "operationId": "getMarketPublicationCapabilities",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PublicationCapabilities"
                 }
               }
             }
@@ -7614,6 +8063,24 @@
           "id": {
             "type": "string"
           },
+          "marketApplicationType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "marketInstallationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "marketProductName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "name": {
             "type": "string"
           },
@@ -8595,6 +9062,24 @@
               "id": {
                 "type": "string"
               },
+              "marketApplicationType": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "marketInstallationId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "marketProductName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "name": {
                 "type": "string"
               },
@@ -9412,6 +9897,74 @@
               "version": {
                 "type": "integer",
                 "format": "int32"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_ApplicationOrder": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "orderId",
+              "orderNo",
+              "subject",
+              "productId",
+              "status",
+              "amountCents",
+              "simulation",
+              "owned",
+              "snapshot",
+              "releaseId"
+            ],
+            "properties": {
+              "amountCents": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "orderId": {
+                "type": "string"
+              },
+              "orderNo": {
+                "type": "string"
+              },
+              "owned": {
+                "type": "boolean"
+              },
+              "productId": {
+                "type": "string"
+              },
+              "releaseId": {
+                "type": "string"
+              },
+              "simulation": {
+                "type": "boolean"
+              },
+              "snapshot": {
+                "$ref": "#/components/schemas/ApplicationOrderSnapshot"
+              },
+              "status": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
               }
             }
           },
@@ -10350,6 +10903,58 @@
           }
         }
       },
+      "ApiResponse_Login": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "id",
+              "username",
+              "displayName",
+              "operationsSession",
+              "operationsActor",
+              "expiresAt"
+            ],
+            "properties": {
+              "displayName": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "id": {
+                "type": "string"
+              },
+              "operationsActor": {
+                "type": "string"
+              },
+              "operationsSession": {
+                "type": "string"
+              },
+              "username": {
+                "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
       "ApiResponse_MailComposeContext": {
         "type": "object",
         "required": [
@@ -10595,7 +11200,7 @@
             "type": "object",
             "required": [
               "installationId",
-              "localAppId",
+              "memberAppIds",
               "releaseId",
               "disabledAutomations"
             ],
@@ -10607,8 +11212,11 @@
               "installationId": {
                 "type": "string"
               },
-              "localAppId": {
-                "type": "string"
+              "memberAppIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               },
               "releaseId": {
                 "type": "string"
@@ -10674,7 +11282,6 @@
             "type": "object",
             "required": [
               "productId",
-              "publisherAppId",
               "publisherSubject",
               "name",
               "description",
@@ -10683,16 +11290,65 @@
               "status"
             ],
             "properties": {
+              "applicationType": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "commercialId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "commercialReady": {
+                "type": "boolean"
+              },
+              "currency": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "description": {
                 "type": "string"
+              },
+              "members": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "$ref": "#/components/schemas/MarketMember"
+                }
               },
               "name": {
                 "type": "string"
               },
-              "productId": {
-                "type": "string"
+              "owned": {
+                "type": "boolean"
               },
-              "publisherAppId": {
+              "pendingOrderId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "priceCents": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64"
+              },
+              "pricingMode": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "productId": {
                 "type": "string"
               },
               "publisherOwned": {
@@ -10874,6 +11530,18 @@
                 "type": "string"
               },
               "applicantSubject": {
+                "type": "string"
+              },
+              "fingerprint": {
+                "type": "string"
+              },
+              "productId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reviewReason": {
                 "type": "string"
               },
               "snapshot": {},
@@ -11153,6 +11821,18 @@
                     "type": "string"
                   },
                   "applicantSubject": {
+                    "type": "string"
+                  },
+                  "fingerprint": {
+                    "type": "string"
+                  },
+                  "productId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "reviewReason": {
                     "type": "string"
                   },
                   "snapshot": {},
@@ -11505,6 +12185,41 @@
               },
               "websiteUrl": {
                 "type": "string"
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_PublicationCapabilities": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "enabled",
+              "canPublish"
+            ],
+            "properties": {
+              "canPublish": {
+                "type": "boolean"
+              },
+              "enabled": {
+                "type": "boolean"
               }
             }
           },
@@ -12459,6 +13174,24 @@
                 "id": {
                   "type": "string"
                 },
+                "marketApplicationType": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "marketInstallationId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "marketProductName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "name": {
                   "type": "string"
                 },
@@ -13013,6 +13746,157 @@
           }
         }
       },
+      "ApiResponse_Vec_ApplicationOrder": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "orderId",
+                "orderNo",
+                "subject",
+                "productId",
+                "status",
+                "amountCents",
+                "simulation",
+                "owned",
+                "snapshot",
+                "releaseId"
+              ],
+              "properties": {
+                "amountCents": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "orderId": {
+                  "type": "string"
+                },
+                "orderNo": {
+                  "type": "string"
+                },
+                "owned": {
+                  "type": "boolean"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "releaseId": {
+                  "type": "string"
+                },
+                "simulation": {
+                  "type": "boolean"
+                },
+                "snapshot": {
+                  "$ref": "#/components/schemas/ApplicationOrderSnapshot"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "subject": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_Vec_ApplicationRevenue": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "orderId",
+                "productId",
+                "publisherSubject",
+                "amountCents",
+                "platformCents",
+                "grossCents",
+                "rateBasisPoints",
+                "status",
+                "simulation"
+              ],
+              "properties": {
+                "amountCents": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "grossCents": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "orderId": {
+                  "type": "string"
+                },
+                "platformCents": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "productId": {
+                  "type": "string"
+                },
+                "publisherSubject": {
+                  "type": "string"
+                },
+                "rateBasisPoints": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "settlementId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "simulation": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
       "ApiResponse_Vec_ButtonAutomationOption": {
         "type": "object",
         "required": [
@@ -13043,6 +13927,56 @@
                   "type": "string"
                 },
                 "sourceFormUuid": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponse_Vec_CommercialVersion": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "releaseId",
+                "config",
+                "status",
+                "reason"
+              ],
+              "properties": {
+                "config": {
+                  "$ref": "#/components/schemas/CommercialConfig"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "releaseId": {
                   "type": "string"
                 },
                 "status": {
@@ -13351,13 +14285,13 @@
                 "installationId",
                 "productId",
                 "releaseId",
-                "localAppId",
+                "memberAppIds",
                 "status",
                 "installedAt",
                 "updatedAt",
-                "legacyMapping",
                 "versions",
-                "events"
+                "events",
+                "members"
               ],
               "properties": {
                 "archivedAt": {
@@ -13378,11 +14312,15 @@
                 "installedAt": {
                   "type": "string"
                 },
-                "legacyMapping": {
-                  "type": "boolean"
+                "memberAppIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
                 },
-                "localAppId": {
-                  "type": "string"
+                "members": {
+                  "type": "array",
+                  "items": {}
                 },
                 "productId": {
                   "type": "string"
@@ -13431,7 +14369,6 @@
               "type": "object",
               "required": [
                 "productId",
-                "publisherAppId",
                 "publisherSubject",
                 "name",
                 "description",
@@ -13440,16 +14377,65 @@
                 "status"
               ],
               "properties": {
+                "applicationType": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "commercialId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "commercialReady": {
+                  "type": "boolean"
+                },
+                "currency": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "description": {
                   "type": "string"
+                },
+                "members": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "$ref": "#/components/schemas/MarketMember"
+                  }
                 },
                 "name": {
                   "type": "string"
                 },
-                "productId": {
-                  "type": "string"
+                "owned": {
+                  "type": "boolean"
                 },
-                "publisherAppId": {
+                "pendingOrderId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "priceCents": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "int64"
+                },
+                "pricingMode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "productId": {
                   "type": "string"
                 },
                 "publisherOwned": {
@@ -14077,6 +15063,32 @@
           }
         }
       },
+      "ApiResponse_Vec_bool": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "time"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "boolean"
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
       "ApiResponse_WorkflowCommentListResponse": {
         "type": "object",
         "required": [
@@ -14320,6 +15332,143 @@
           "version": {
             "type": "integer",
             "format": "int32"
+          }
+        }
+      },
+      "ApplicationOrder": {
+        "type": "object",
+        "required": [
+          "orderId",
+          "orderNo",
+          "subject",
+          "productId",
+          "status",
+          "amountCents",
+          "simulation",
+          "owned",
+          "snapshot",
+          "releaseId"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "orderNo": {
+            "type": "string"
+          },
+          "owned": {
+            "type": "boolean"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "releaseId": {
+            "type": "string"
+          },
+          "simulation": {
+            "type": "boolean"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/ApplicationOrderSnapshot"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          }
+        }
+      },
+      "ApplicationOrderSnapshot": {
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "pricingMode",
+          "priceCents",
+          "currency",
+          "licenseModel"
+        ],
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "licenseModel": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "priceCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pricingMode": {
+            "type": "string"
+          }
+        }
+      },
+      "ApplicationRevenue": {
+        "type": "object",
+        "required": [
+          "id",
+          "orderId",
+          "productId",
+          "publisherSubject",
+          "amountCents",
+          "platformCents",
+          "grossCents",
+          "rateBasisPoints",
+          "status",
+          "simulation"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "grossCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "platformCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "publisherSubject": {
+            "type": "string"
+          },
+          "rateBasisPoints": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "settlementId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "simulation": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
           }
         }
       },
@@ -14618,6 +15767,22 @@
         },
         "additionalProperties": false
       },
+      "CheckoutRequest": {
+        "type": "object",
+        "required": [
+          "idempotencyKey",
+          "commercialId"
+        ],
+        "properties": {
+          "commercialId": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "ClearDingTalkDataResponse": {
         "type": "object",
         "required": [
@@ -14758,6 +15923,83 @@
             }
           }
         ]
+      },
+      "CommercialConfig": {
+        "type": "object",
+        "required": [
+          "pricingMode",
+          "priceCents",
+          "currency",
+          "licenseModel",
+          "publisherRateBasisPoints",
+          "description"
+        ],
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "licenseModel": {
+            "type": "string"
+          },
+          "priceCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pricingMode": {
+            "type": "string"
+          },
+          "publisherRateBasisPoints": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommercialSubmission": {
+        "type": "object",
+        "required": [
+          "releaseId",
+          "config"
+        ],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/CommercialConfig"
+          },
+          "releaseId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommercialVersion": {
+        "type": "object",
+        "required": [
+          "id",
+          "releaseId",
+          "config",
+          "status",
+          "reason"
+        ],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/CommercialConfig"
+          },
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "releaseId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
       },
       "CommunicationAttachmentResponse": {
         "type": "object",
@@ -15781,6 +17023,23 @@
         },
         "additionalProperties": false
       },
+      "EvaluateConditionsRequest": {
+        "type": "object",
+        "required": [
+          "rules",
+          "records"
+        ],
+        "properties": {
+          "records": {
+            "type": "array",
+            "items": {}
+          },
+          "rules": {
+            "type": "array",
+            "items": {}
+          }
+        }
+      },
       "Evidence": {
         "type": "object",
         "required": [
@@ -15903,6 +17162,17 @@
           }
         }
       },
+      "Exchange": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        }
+      },
       "ExecuteButtonRequest": {
         "type": "object",
         "required": [
@@ -16019,6 +17289,47 @@
             "type": "string"
           }
         }
+      },
+      "ExportPackageRequest": {
+        "type": "object",
+        "required": [
+          "fingerprint",
+          "selectedAppIds",
+          "version"
+        ],
+        "properties": {
+          "fingerprint": {
+            "type": "string"
+          },
+          "packageName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selectedAppIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "submissionType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targetProductId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "FilePreview": {
         "type": "object",
@@ -16609,6 +17920,38 @@
           }
         }
       },
+      "Login": {
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "displayName",
+          "operationsSession",
+          "operationsActor",
+          "expiresAt"
+        ],
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "operationsActor": {
+            "type": "string"
+          },
+          "operationsSession": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
       "MailAttachment": {
         "type": "object",
         "required": [
@@ -16860,7 +18203,7 @@
         "type": "object",
         "required": [
           "installationId",
-          "localAppId",
+          "memberAppIds",
           "releaseId",
           "disabledAutomations"
         ],
@@ -16872,8 +18215,11 @@
           "installationId": {
             "type": "string"
           },
-          "localAppId": {
-            "type": "string"
+          "memberAppIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "releaseId": {
             "type": "string"
@@ -16886,13 +18232,13 @@
           "installationId",
           "productId",
           "releaseId",
-          "localAppId",
+          "memberAppIds",
           "status",
           "installedAt",
           "updatedAt",
-          "legacyMapping",
           "versions",
-          "events"
+          "events",
+          "members"
         ],
         "properties": {
           "archivedAt": {
@@ -16913,11 +18259,15 @@
           "installedAt": {
             "type": "string"
           },
-          "legacyMapping": {
-            "type": "boolean"
+          "memberAppIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
-          "localAppId": {
-            "type": "string"
+          "members": {
+            "type": "array",
+            "items": {}
           },
           "productId": {
             "type": "string"
@@ -16990,11 +18340,25 @@
           }
         }
       },
+      "MarketMember": {
+        "type": "object",
+        "required": [
+          "appId",
+          "name"
+        ],
+        "properties": {
+          "appId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "MarketProduct": {
         "type": "object",
         "required": [
           "productId",
-          "publisherAppId",
           "publisherSubject",
           "name",
           "description",
@@ -17003,16 +18367,65 @@
           "status"
         ],
         "properties": {
+          "applicationType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commercialId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commercialReady": {
+            "type": "boolean"
+          },
+          "currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "description": {
             "type": "string"
+          },
+          "members": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/MarketMember"
+            }
           },
           "name": {
             "type": "string"
           },
-          "productId": {
-            "type": "string"
+          "owned": {
+            "type": "boolean"
           },
-          "publisherAppId": {
+          "pendingOrderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "priceCents": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "pricingMode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "productId": {
             "type": "string"
           },
           "publisherOwned": {
@@ -17155,6 +18568,18 @@
             "type": "string"
           },
           "applicantSubject": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "productId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewReason": {
             "type": "string"
           },
           "snapshot": {},
@@ -17824,9 +19249,84 @@
           }
         }
       },
+      "PublicationCapabilities": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "canPublish"
+        ],
+        "properties": {
+          "canPublish": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PublicationScopeRequest": {
+        "type": "object",
+        "required": [
+          "selectedAppIds"
+        ],
+        "properties": {
+          "selectedAppIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "PublishRequest": {
+        "type": "object",
+        "required": [
+          "fingerprint",
+          "selectedAppIds",
+          "commercial"
+        ],
+        "properties": {
+          "commercial": {
+            "$ref": "#/components/schemas/CommercialConfig"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "newProduct": {
+            "type": "boolean"
+          },
+          "packageName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "productId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selectedAppIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "QueryFormRecordsRequest": {
         "type": "object",
         "properties": {
+          "conditionRules": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {}
+          },
           "filters": {
             "type": "array",
             "items": {

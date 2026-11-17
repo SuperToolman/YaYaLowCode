@@ -1,0 +1,71 @@
+.records-table__root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.records-table__scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+}
+
+.records-table__content {
+  table-layout: fixed;
+  height: auto;
+  overflow: visible;
+}
+
+/* Sticky positioning is the only addition to HeroUI's column appearance. */
+.records-table__column {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface-secondary);
+  white-space: nowrap;
+}
+
+.records-table__row {
+  height: auto;
+}
+
+.records-table__cell[data-pin] {
+  position: sticky;
+  z-index: 1;
+}
+
+.records-table__column[data-pin] {
+  z-index: 4;
+}
+
+/* Composite HeroUI's translucent hover color over the surface for frozen
+   cells, so horizontally scrolling content cannot show through them. */
+.records-table__row:hover > .records-table__cell[data-pin],
+.records-table__row[data-hovered="true"] > .records-table__cell[data-pin] {
+  background: color-mix(in oklab, var(--surface) 40%, var(--surface-secondary) 60%);
+}
+
+.records-table__row[data-record-selected="true"] > .records-table__cell {
+  background: var(--accent-soft);
+}
+
+/* Keep the existing row-number/checkbox interaction in its control column. */
+.records-table__selection {
+  padding-inline: 0;
+  text-align: center;
+}
+
+.records-table__selection:focus-within > span {
+  opacity: 1;
+}
+
+.records-table__selection:focus-within > span:first-child {
+  opacity: 0;
+}
+
+@media (hover: none) {
+  .records-table__selection > span { opacity: 1; }
+  .records-table__selection > span:first-child { opacity: 0; }
+}

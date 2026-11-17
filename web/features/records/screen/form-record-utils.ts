@@ -272,19 +272,21 @@ export function estimateTableColumnWidth(
   minWidth = 0,
   maxWidth = 320,
   adornmentWidth = 0,
+  fontSize = 12,
+  horizontalPadding = 12,
 ) {
   const widestTextWidth = values.reduce(
     (widest, value) => {
       const text = value.trim();
       if (!text || text === "-") return widest;
-      return Math.max(widest, estimateTableTextWidth(text));
+      return Math.max(widest, estimateTableTextWidth(text) * fontSize / 12);
     },
     0,
   );
 
   return Math.min(
     maxWidth,
-    Math.max(minWidth, Math.ceil(widestTextWidth + 12 + adornmentWidth)),
+    Math.max(minWidth, Math.ceil(widestTextWidth + horizontalPadding + adornmentWidth)),
   );
 }
 

@@ -1,6 +1,8 @@
 "use client";
 import { evaluateRuleTree } from "@/features/conditions/evaluate";
 import { validateRuleTree } from "@/features/conditions";
+import { readConditionPath } from "@/features/conditions";
+import { evaluateConditions } from "@/features/conditions/api";
 
 import { FieldError, Label, ListBox, Select } from "@heroui/react";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type Key } from "react";
@@ -72,18 +74,31 @@ export function RuntimeAssociationField({
     () => applySettings(records, props),
     [props, records],
   );
+  const [relatedDefaults, setRelatedDefaults] = useState<{ signature: string; ids: Set<string> }>();
+  const relatedDefaultRules = props.associationDefaultRules?.some(rule => [rule.fieldKey, rule.sourceFieldKey].some(key => key && readConditionPath(key).path.length));
+  const defaultSignature = JSON.stringify([props.associationFormId, props.associationDefaultRules, relatedDefaultRules ? visibleRecords : []]);
+  useEffect(() => {
+    if (!relatedDefaultRules || !props.associationFormId || !allowDefault) return;
+    let active = true;
+    const [formId, rules, candidates] = JSON.parse(defaultSignature) as [string, NonNullable<RuntimeFieldProps["associationDefaultRules"]>, AssociationRecord[]];
+    void evaluateConditions(formId, rules, candidates.map(record => record.data)).then(matches => {
+      if (active) setRelatedDefaults({ signature: defaultSignature, ids: new Set(candidates.filter((_,index) => matches[index]).map(record => record.id)) });
+    }).catch(() => { if (active) setRelatedDefaults({ signature: defaultSignature, ids: new Set() }); });
+    return () => { active = false; };
+  }, [relatedDefaultRules, props.associationFormId, allowDefault, defaultSignature]);
   useEffect(() => {
     if (selectedId) defaultHandled.current = true;
     if (!allowDefault || defaultHandled.current || props.isDisabled || props.isReadOnly || !props.associationFormId || props.defaultValueType !== "filter" || !props.associationDefaultRules?.length || !records.length) return;
     if (validateRuleTree(props.associationDefaultRules)) return;
+    if (relatedDefaultRules && relatedDefaults?.signature !== defaultSignature) return;
     defaultHandled.current = true;
     const record = visibleRecords.reduce<AssociationRecord | undefined>((latest, item) => {
-      if (!evaluateRuleTree(props.associationDefaultRules!, item.data)) return latest;
+      if (relatedDefaultRules ? !relatedDefaults?.ids.has(item.id) : !evaluateRuleTree(props.associationDefaultRules!, item.data)) return latest;
       if (!latest || Date.parse(item.createdAt) > Date.parse(latest.createdAt)) return item;
       return latest;
     }, undefined);
     if (record) transaction(() => { onChange(record.id); onFill(record.data); });
-  }, [allowDefault, selectedId, props, records, visibleRecords, onChange, onFill, transaction]);
+  }, [allowDefault, selectedId, props, records, visibleRecords, onChange, onFill, transaction, relatedDefaultRules, relatedDefaults, defaultSignature]);
 
   const selected = visibleRecords.find((record) => record.id === selectedId);
   const primary = (record: AssociationRecord) =>

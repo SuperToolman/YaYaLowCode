@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "package:platform": "node package-platform.mjs",
-    "test:package": "node --test package-platform.test.mjs"
+    "test:package": "node --test package-platform.test.mjs docker-proxy.test.mjs"
   },
   "description": "Yaya low-code platform. package:platform builds, smoke-tests, and exports a complete offline Linux image ZIP.",
   "engines": { "node": ">=24" },

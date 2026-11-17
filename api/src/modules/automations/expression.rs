@@ -1,6 +1,6 @@
 //! Expression evaluation and data-template helpers for automation nodes.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 
 use serde_json::{Value, json};
 
@@ -132,52 +132,7 @@ pub(crate) fn evaluate_record_rule_group(
 }
 
 fn evaluate_record_rule(rule: &Value, record_data: &Value) -> bool {
-    let field_key = read_json_string(rule.get("fieldKey")).unwrap_or_default();
-    let operator = read_json_string(rule.get("operator")).unwrap_or_else(|| "eq".to_string());
-    let expected = if rule["valueType"] == "field" {
-        normalize_scalar(
-            &record_data
-                .get(rule["sourceFieldKey"].as_str().unwrap_or(""))
-                .cloned()
-                .unwrap_or(Value::Null),
-        )
-    } else {
-        read_json_string(rule.get("rawValue")).unwrap_or_default()
-    };
-    let actual_values = record_data
-        .get(&field_key)
-        .cloned()
-        .into_iter()
-        .collect::<Vec<_>>();
-
-    match operator.as_str() {
-        "hasValue" => actual_values.iter().any(value_has_content),
-        "noValue" => {
-            actual_values.is_empty() || actual_values.iter().all(|value| !value_has_content(value))
-        }
-        "neq" => {
-            actual_values.is_empty()
-                || actual_values
-                    .iter()
-                    .all(|value| normalize_scalar(value) != expected)
-        }
-        "inAny" => {
-            let expected_items = parse_multi_values(&expected);
-            actual_values
-                .iter()
-                .any(|value| expected_items.contains(&normalize_scalar(value)))
-        }
-        "notInAny" => {
-            let expected_items = parse_multi_values(&expected);
-            actual_values.is_empty()
-                || actual_values
-                    .iter()
-                    .all(|value| !expected_items.contains(&normalize_scalar(value)))
-        }
-        _ => actual_values
-            .iter()
-            .any(|value| normalize_scalar(value) == expected),
-    }
+    crate::platform::conditions::evaluate(&[rule.clone()], rule["parentId"].as_str(), record_data)
 }
 
 pub(super) fn evaluate_context_expression(
@@ -333,15 +288,6 @@ pub(super) fn normalize_scalar(value: &Value) -> String {
     }
 }
 
-pub(super) fn parse_multi_values(value: &str) -> HashSet<String> {
-    value
-        .split(',')
-        .map(str::trim)
-        .filter(|item| !item.is_empty())
-        .map(ToString::to_string)
-        .collect()
-}
-
 pub(super) fn value_has_content(value: &Value) -> bool {
     match value {
         Value::Null => false,
@@ -356,6 +302,12 @@ pub(super) fn resolve_source_field_values(
     outputs: &HashMap<String, Value>,
     source_field_key: &str,
 ) -> Vec<Value> {
+    let decoded = crate::platform::conditions::reference(source_field_key).ok();
+    if let Some(reference) = decoded.filter(|r| !r.path.is_empty()) {
+        let Some((node_id,_)) = reference.root.split_once(':') else { return vec![]; };
+        let Some(source) = outputs.get(node_id) else { return vec![]; };
+        return match source { Value::Array(items) => items.iter().filter_map(|item| item.get(source_field_key).cloned()).collect(), Value::Object(_) => source.get(source_field_key).cloned().into_iter().collect(), _ => vec![] };
+    }
     let Some((node_id, field_id)) = source_field_key.split_once(':') else {
         return Vec::new();
     };

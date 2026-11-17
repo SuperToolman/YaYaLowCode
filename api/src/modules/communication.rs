@@ -1059,6 +1059,10 @@ pub(crate) async fn communication_websocket(
     );
     authorization::authenticate(&auth_headers, &state).await?;
     let current = authorization::current_user(&auth_headers, &state).await?;
+    let operations_connection=crate::platform::operations_access::is_operator(&current);
+    if operations_connection {
+        authorization::authorize_request(&auth_headers,&state,&axum::http::Method::GET,"/api/communication/ws").await?;
+    }
     state.im_metrics.inc("im_ws_connections");
     let mut receiver = state.subscribe_communication_events();
     Ok(websocket
@@ -1067,10 +1071,21 @@ pub(crate) async fn communication_websocket(
             let mut last_sent_mailbox_seq = 0i64;
             let mut device_id = "unknown".to_string();
             let mut transient_events = VecDeque::new();
+            let mut operations_check=tokio::time::interval(std::time::Duration::from_secs(15));
             loop {
                 tokio::select! {
+                _ = operations_check.tick(), if operations_connection => {
+                    if authorization::current_user(&auth_headers,&state).await.is_err() {
+                        let _=socket.send(WebSocketMessage::Close(None)).await;
+                        break;
+                    }
+                }
                 incoming = socket.recv() => {
                     let Some(Ok(WebSocketMessage::Text(text))) = incoming else { break; };
+                    if operations_connection && authorization::authorize_request(&auth_headers,&state,&axum::http::Method::POST,"/api/communication/ws").await.is_err() {
+                        let _=socket.send(WebSocketMessage::Close(None)).await;
+                        break;
+                    }
                     let Ok(value) = serde_json::from_str::<Value>(&text) else { continue; };
                     let request_id = value.get("requestId").and_then(Value::as_str).unwrap_or_default();
                     let action = value.get("action").and_then(Value::as_str).or_else(|| value.get("type").and_then(Value::as_str)).unwrap_or_default();

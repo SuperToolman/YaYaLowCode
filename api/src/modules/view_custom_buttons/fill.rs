@@ -65,7 +65,7 @@ pub(super) async fn validate_association(
             && !rule
                 .source_field_key
                 .as_ref()
-                .is_some_and(|key| keys.contains(key))
+                .is_some_and(|key| keys.contains(&crate::platform::conditions::root_key(key)))
         {
             return Err(bad("关联条件来源字段已失效，请重新配置"));
         }
@@ -109,6 +109,9 @@ fn has_value(value: &Value) -> bool {
     }
 }
 fn typed_value(raw: &str, field: Option<&Value>) -> Result<Value, AppError> {
+    if raw.starts_with(crate::platform::conditions::VALUE_PREFIX) {
+        return crate::platform::conditions::literal(raw);
+    }
     let kind = field
         .and_then(|f| f["type"].as_str())
         .unwrap_or("singleLineText");
@@ -175,13 +178,15 @@ fn resolve_rules(
                 } else {
                     data
                 }
+            } else if rule.raw_value.as_deref().is_some_and(|s| s.starts_with(crate::platform::conditions::VALUE_PREFIX)) {
+                crate::platform::conditions::literal(rule.raw_value.as_deref().unwrap())?
             } else if rule.operator.as_deref().unwrap_or("eq") == "eq" {
                 typed_value(rule.raw_value.as_deref().unwrap_or(""), field)?
             } else {
                 json!(rule.raw_value.as_deref().unwrap_or(""))
             };
             value["valueType"] = json!("value");
-            value["rawValue"] = json!(scalar(&data));
+            value["rawValue"] = json!(if data.is_string() && !rule.raw_value.as_deref().is_some_and(|s| s.starts_with(crate::platform::conditions::VALUE_PREFIX)) { scalar(&data) } else { format!("{}{}", crate::platform::conditions::VALUE_PREFIX, data) });
             expected.insert(rule.id.clone(), data);
         }
         resolved.push(value);
@@ -254,7 +259,7 @@ fn defaults_group(
     result.unwrap_or_default()
 }
 
-async fn rule_data<C: ConnectionTrait>(
+async fn base_rule_data<C: ConnectionTrait>(
     db: &C,
     record: &StoredFormRecord,
     rules: &[Value],
@@ -282,6 +287,14 @@ async fn rule_data<C: ConnectionTrait>(
         data["submitterOrganization"] = json!(organization);
     }
     Ok(data)
+}
+
+async fn rule_data<C: ConnectionTrait>(db: &C, record: &StoredFormRecord, rules: &[Value], source_side: bool) -> Result<Value, AppError> {
+    let mut records = vec![base_rule_data(db,record,rules).await?];
+    let property = if source_side { "sourceFieldKey" } else { "fieldKey" };
+    let keys: Vec<_> = rules.iter().filter_map(|r| r[property].as_str()).filter(|key| key.starts_with(crate::platform::conditions::PATH_PREFIX)).map(str::to_string).collect();
+    crate::platform::condition_query::hydrate(db, &RecordRepository::new(db), &record.form_uuid, &keys, &mut records).await?;
+    Ok(records.remove(0))
 }
 
 fn replay(
@@ -315,14 +328,12 @@ async fn matching_records<C: ConnectionTrait>(
     let mut page = 1;
     loop {
         let (items, total) = repository.list_page(target, page, 100).await?;
-        for record in items {
-            if automations::expression::evaluate_record_rule_group(
-                rules,
-                None,
-                &rule_data(db, &record, rules).await?,
-            ) {
-                records.push(record);
-            }
+        let mut data = Vec::new();
+        for record in &items { data.push(base_rule_data(db,record,rules).await?); }
+        let keys: Vec<_> = rules.iter().filter_map(|r| r["fieldKey"].as_str()).filter(|key| key.starts_with(crate::platform::conditions::PATH_PREFIX)).map(str::to_string).collect();
+        crate::platform::condition_query::hydrate(db,&repository,target,&keys,&mut data).await?;
+        for (record,data) in items.into_iter().zip(data) {
+            if automations::expression::evaluate_record_rule_group(rules,None,&data) { records.push(record); }
         }
         if page * 100 >= total as u64 {
             break;
@@ -422,6 +433,7 @@ pub(crate) async fn resolve_view_button_fill(
                 .iter()
                 .map(|r| json!(r))
                 .collect::<Vec<_>>(),
+            true,
         )
         .await?,
         &target_schema,
@@ -612,12 +624,13 @@ pub(crate) async fn submit_view_button(
                 .iter()
                 .map(|r| json!(r))
                 .collect::<Vec<_>>(),
+            true,
         )
         .await?,
         &target_schema,
     )?;
     if let Some(record) = &preliminary {
-        let data = rule_data(&state.db, record, &pre_rules).await?;
+        let data = rule_data(&state.db, record, &pre_rules, false).await?;
         if (same && record.record_uuid != source.record_uuid)
             || (!same
                 && !automations::expression::evaluate_record_rule_group(&pre_rules, None, &data))
@@ -682,6 +695,7 @@ pub(crate) async fn submit_view_button(
                 .iter()
                 .map(|r| json!(r))
                 .collect::<Vec<_>>(),
+            true,
         )
         .await?,
         &target_schema,

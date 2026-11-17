@@ -80,7 +80,7 @@ async fn verify_application_deletion(db: DatabaseConnection) {
         CREATE TABLE automation_flow_versions (flow_id UUID REFERENCES automation_flows(id));
         CREATE TABLE automation_nodes (flow_id UUID REFERENCES automation_flows(id));
         CREATE TABLE automation_edges (flow_id UUID REFERENCES automation_flows(id));
-        CREATE TABLE market_installations (installation_id UUID PRIMARY KEY, local_app_id TEXT);
+        CREATE TABLE market_installations (installation_id UUID PRIMARY KEY);
         CREATE TABLE market_installation_resources (installation_id UUID);
         CREATE TABLE market_installation_versions (installation_id UUID);
         CREATE TABLE market_installation_events (installation_id UUID);
@@ -104,10 +104,6 @@ async fn verify_application_deletion(db: DatabaseConnection) {
             INSERT INTO app_custom_buttons VALUES ('{app_id}'),('{app_id}');
             INSERT INTO app_navigation_items VALUES ('{app_id}');
             INSERT INTO iam_role_permissions VALUES ('app:{app_id}:display'),('form:{app_id}_basic:display');
-            INSERT INTO market_installations VALUES (gen_random_uuid(),'{app_id}');
-            INSERT INTO market_installation_resources SELECT installation_id FROM market_installations WHERE local_app_id='{app_id}';
-            INSERT INTO market_installation_versions SELECT installation_id FROM market_installations WHERE local_app_id='{app_id}';
-            INSERT INTO market_installation_events SELECT installation_id FROM market_installations WHERE local_app_id='{app_id}';
             INSERT INTO automation_flows (id,flow_uuid,app_route_app_id,name,status,current_version,flow_type,trigger_form_uuid,trigger_config,nodes_json,edges_json,created_by,updated_by,created_at,updated_at)
                 SELECT gen_random_uuid(),'{app_id}_' || kind,'{app_id}',kind,'enabled',1,kind,
                     CASE WHEN kind='process' THEN '{app_id}_workflow' WHEN kind='trigger' THEN '{app_id}_basic' ELSE NULL END,
@@ -208,10 +204,10 @@ async fn verify_application_deletion(db: DatabaseConnection) {
         ("workflow_notifications", 1),
         ("workflow_notification_dispatch", 1),
         ("workflow_comments", 1),
-        ("market_installations", 1),
-        ("market_installation_resources", 1),
-        ("market_installation_versions", 1),
-        ("market_installation_events", 1),
+        ("market_installations", 0),
+        ("market_installation_resources", 0),
+        ("market_installation_versions", 0),
+        ("market_installation_events", 0),
     ] {
         assert_eq!(
             count(&db, table).await,

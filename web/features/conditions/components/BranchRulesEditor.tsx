@@ -1,12 +1,14 @@
 "use client";
 
-import { Button, ButtonGroup, Dropdown, Input, ListBox, Select } from "@heroui/react";
+import { Button, ButtonGroup, Dropdown, ListBox, Select } from "@heroui/react";
 import { Plus as AddIcon, TrashBin as TrashIcon } from "@gravity-ui/icons";
 const branchOperatorLabel = (operator: BranchRuleOperator) => branchOperators.find((item) => item.id === operator)?.label ?? "等于";
 import { branchOperators, type BranchRule, type BranchRuleOperator } from "@/features/conditions";
 import type { SourceFieldChoice } from "@/features/conditions";
-import { FieldSelect, type FieldSelectOption } from "@/features/form-controls/components/FieldSelect";
-function SourceFieldSelect({ options, value, onChange, ariaLabel = "来源字段" }: { options: readonly FieldSelectOption[]; value: string; onChange: (value: string) => void; ariaLabel?: string }) { return <FieldSelect options={options} value={value} onChange={onChange} ariaLabel={ariaLabel} placeholder="" />; }
+import { ConditionFieldSelect, useConditionField } from "./ConditionFieldSelect";
+import { ConditionValueEditor } from "./ConditionValueEditor";
+import { compatibleFields, operatorIds } from "../value";
+const SourceFieldSelect = ConditionFieldSelect;
 
 export function BranchRulesEditor({
   rules,
@@ -141,9 +143,9 @@ function BranchRuleItem({
   ) => void;
   onRemoveConditionRule: (ruleId: string) => void;
 }) {
-  const selectedField = sourceFieldChoices.find(
-    (item) => item.key === rule.fieldKey,
-  );
+  const selectedField = useConditionField(sourceFieldChoices, rule.fieldKey ?? "");
+  const comparisonField = useConditionField(comparisonFieldChoices ?? sourceFieldChoices, rule.valueType === "field" ? rule.sourceFieldKey ?? "" : "");
+  const allowedOperators = operatorIds(selectedField);
   const childRules = rules.filter((item) => item.parentId === rule.id);
   // Structural groups are invisible in the editor and must not make a level
   // eligible for nesting on their own.
@@ -164,8 +166,8 @@ function BranchRuleItem({
                 options={sourceFieldChoices}
                 ariaLabel={targetFieldLabel}
                 value={rule.fieldKey ?? ""}
-                onChange={(value) =>
-                  onConditionRuleChange(rule.id, "fieldKey", value)
+                onChange={(value, field) =>
+                  { onConditionRuleChange(rule.id, "fieldKey", value); onConditionRuleChange(rule.id, "operator", operatorIds(field)[0]); onConditionRuleChange(rule.id, "rawValue", ""); onConditionRuleChange(rule.id, "sourceFieldKey", ""); }
                 }
               />
             </div>
@@ -173,9 +175,11 @@ function BranchRuleItem({
               aria-label="条件运算符"
               className="w-max min-w-max"
               selectedKey={operator}
-              onSelectionChange={(key) =>
-                onConditionRuleChange(rule.id, "operator", String(key ?? "eq"))
-              }
+              onSelectionChange={(key) => {
+                onConditionRuleChange(rule.id, "operator", String(key ?? "eq"));
+                onConditionRuleChange(rule.id, "rawValue", "");
+                if (["between", "inAny", "notInAny"].includes(String(key))) onConditionRuleChange(rule.id, "valueType", "value");
+              }}
             >
               <Select.Trigger>
                 <Select.Value>{branchOperatorLabel(operator)}</Select.Value>
@@ -183,10 +187,11 @@ function BranchRuleItem({
               </Select.Trigger>
               <Select.Popover className="rounded-lg">
                 <ListBox>
-                  {branchOperators.map((item) => (
+                  {branchOperators.filter(item => allowedOperators.includes(item.id) || item.id === operator).map((item) => (
                     <ListBox.Item
                       key={item.id}
                       id={item.id}
+                      isDisabled={!allowedOperators.includes(item.id)}
                       textValue={item.label}
                     >
                       {item.label}
@@ -229,7 +234,7 @@ function BranchRuleItem({
                       <ListBox.Item id="value" textValue="值">
                         值
                       </ListBox.Item>
-                      <ListBox.Item id="field" textValue="字段">
+                      <ListBox.Item id="field" textValue="字段" isDisabled={["between", "inAny", "notInAny"].includes(operator)}>
                         字段
                       </ListBox.Item>
                     </ListBox>
@@ -239,13 +244,14 @@ function BranchRuleItem({
                   {valueType === "field" ? (
                     <SourceFieldSelect
                       options={comparisonFieldChoices ?? sourceFieldChoices}
+                      compatible={field => compatibleFields(selectedField, field)}
                       value={rule.sourceFieldKey ?? ""}
                       onChange={(value) =>
                         onConditionRuleChange(rule.id, "sourceFieldKey", value)
                       }
                     />
                   ) : (
-                    <BranchRuleValueInput
+                    <ConditionValueEditor
                       field={selectedField}
                       operator={operator}
                       value={rule.rawValue ?? ""}
@@ -301,6 +307,8 @@ function BranchRuleItem({
         </div>
       ) : null}
 
+      {!rule.isGroup && selectedField && !allowedOperators.includes(operator) ? <p role="alert" className="text-xs text-danger">当前运算符不适用于此字段，请重新选择。</p> : null}
+      {!rule.isGroup && !hideValue && valueType === "field" && comparisonField && !compatibleFields(selectedField, comparisonField) ? <p role="alert" className="text-xs text-danger">比较字段类型或关联目标不一致，请选择兼容字段。</p> : null}
       {childRules.length > 0 ? (
         <div
           className={`relative ml-8 w-max min-w-[568px] rounded-md border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 py-4 pl-8 ${rule.isGroup ? "mt-0" : "mt-5"}`}
@@ -353,100 +361,5 @@ function BranchRuleItem({
         </div>
       ) : null}
     </div>
-  );
-}
-
-function BranchRuleValueInput({
-  field,
-  operator,
-  value,
-  onChange,
-}: {
-  field?: SourceFieldChoice;
-  operator: BranchRuleOperator;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  if (
-    field?.options?.length &&
-    (field.fieldType === "select" || field.fieldType === "radio")
-  ) {
-    if (operator === "inAny" || operator === "notInAny") {
-      return (
-        <Input
-          aria-label="匹配值"
-          className="h-9 min-h-9"
-          placeholder="多个选项值用逗号分隔"
-          value={value}
-          onChange={(event) => onChange(event.currentTarget.value)}
-        />
-      );
-    }
-
-    return (
-      <Select
-        aria-label="匹配值"
-        selectedKey={value || "none"}
-        onSelectionChange={(key) =>
-          onChange(String(key === "none" ? "" : (key ?? "")))
-        }
-      >
-        <Select.Trigger>
-          <Select.Value>
-            {field.options.find((option) => option.value === value)?.label ??
-              "选择匹配值"}
-          </Select.Value>
-          <Select.Indicator />
-        </Select.Trigger>
-        <Select.Popover className="rounded-lg">
-          <ListBox>
-            <ListBox.Item id="none" textValue="未配置">
-              未配置
-            </ListBox.Item>
-            {field.options.map((option) => (
-              <ListBox.Item
-                key={option.value}
-                id={option.value}
-                textValue={option.label}
-              >
-                {option.label}
-              </ListBox.Item>
-            ))}
-          </ListBox>
-        </Select.Popover>
-      </Select>
-    );
-  }
-
-  if (
-    field?.fieldType === "multiLineText" ||
-    field?.fieldType === "description"
-  ) {
-    return (
-      <textarea
-        className="min-h-[84px] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition-colors focus:border-[var(--color-primary)]"
-        placeholder={
-          operator === "inAny" || operator === "notInAny"
-            ? "多个值用逗号分隔"
-            : "输入匹配值"
-        }
-        value={value}
-        onChange={(event) => onChange(event.currentTarget.value)}
-      />
-    );
-  }
-
-  return (
-    <Input
-      aria-label="匹配值"
-      className="h-9 min-h-9"
-      placeholder={
-        operator === "inAny" || operator === "notInAny"
-          ? "多个值用逗号分隔"
-          : "输入匹配值"
-      }
-      value={value}
-      onChange={(event) => onChange(event.currentTarget.value)}
-    />
   );
 }

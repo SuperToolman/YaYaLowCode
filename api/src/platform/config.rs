@@ -394,13 +394,6 @@ pub fn save_valkey_settings(settings: &ValkeySettings) -> Result<(), std::io::Er
     fs::rename(temporary_path, path)
 }
 
-pub fn import_skill_package(
-    skill: &mut AgentSkillDefinition,
-    archive: &[u8],
-) -> Result<(), String> {
-    import_skill_package_at(skill, archive, &skill_packages_root())
-}
-
 pub(crate) fn import_skill_package_at(
     skill: &mut AgentSkillDefinition,
     archive: &[u8],
@@ -519,12 +512,6 @@ fn skill_package_name(value: &str) -> String {
         .chars()
         .take(80)
         .collect::<String>()
-}
-
-fn skill_packages_root() -> PathBuf {
-    std::env::var_os("YAYA_SKILLS_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| api_runtime_root().join("skills"))
 }
 
 pub fn load_identity_source_settings() -> Option<IdentitySourceSettings> {

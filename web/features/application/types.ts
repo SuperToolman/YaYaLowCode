@@ -13,6 +13,9 @@ export type AppItem = {
   ownerAvatarUrl?: string | null;
   records: number;
   deploymentType?: "local" | "online";
+  marketInstallationId?: string | null;
+  marketProductName?: string | null;
+  marketApplicationType?: string | null;
   onlineVersion?: string | null;
   onlineReleaseId?: string | null;
 };

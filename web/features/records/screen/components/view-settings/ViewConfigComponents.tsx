@@ -16,6 +16,7 @@ export type ViewFieldOption = {
   label: string;
   type: string;
   typeLabel: string;
+  props?: import("@/features/form-model/runtime-types").RuntimeFieldProps;
   linkedFieldIds?: string[];
   parentSubformId?: string;
   isSubformGroup?: boolean;

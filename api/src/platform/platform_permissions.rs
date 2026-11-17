@@ -217,7 +217,7 @@ pub(crate) fn route_permissions(method: &Method, path: &str) -> Option<Vec<&'sta
     if path == "/api/agent/system-ai/status" {
         return Some(vec!["agent.window"]);
     }
-    if path.starts_with("/api/apps/") && path.ends_with("/market-submission") {
+    if path.starts_with("/api/apps/") && (path.ends_with("/market-submission") || path.ends_with("/market-preflight") || path.ends_with("/market-export")) {
         return pair("market.apps.view", "market.apps.manage");
     }
     if path.starts_with("/api/market/") {

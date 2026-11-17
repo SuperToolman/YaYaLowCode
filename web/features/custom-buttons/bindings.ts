@@ -1,5 +1,6 @@
 import { evaluateRuleTree } from "@/features/conditions/evaluate";
 import type { SourceFieldChoice } from "@/features/conditions";
+import { conditionRoot, validateRuleTree } from "@/features/conditions";
 import type { FormRecord } from "@/features/records/types";
 import type { ButtonDefinition } from "./model";
 
@@ -15,12 +16,12 @@ export function validateButtonConditions(availability: ButtonDefinition["availab
     const seen = new Set([rule.id]); let parent = rule.parentId;
     while (parent) { if (!ids.has(parent) || seen.has(parent)) return "条件组结构无效"; seen.add(parent); parent = rules.find(r => r.id === parent)?.parentId; }
     if (rule.isGroup) { if (!rules.some(r => r.parentId === rule.id)) return "条件组不能为空"; continue; }
-    if (!keys.has(rule.fieldKey || "")) return "条件字段已失效，请重新选择";
+    if (!keys.has(conditionRoot(rule.fieldKey || ""))) return "条件字段已失效，请重新选择";
     if (rule.operator === "hasValue" || rule.operator === "noValue") continue;
-    if (rule.valueType === "field") { if (!keys.has(rule.sourceFieldKey || "")) return "比较字段已失效，请重新选择"; }
+    if (rule.valueType === "field") { if (!keys.has(conditionRoot(rule.sourceFieldKey || ""))) return "比较字段已失效，请重新选择"; }
     else if (!rule.rawValue?.trim()) return "请填写条件比较值";
   }
-  return "";
+  return validateRuleTree(rules, keys) ?? "";
 }
 export function evaluateBinding(button: Pick<ButtonDefinition, "availability">, record: FormRecord): boolean {
   if (button.availability.mode === "all") return true;
@@ -31,8 +32,8 @@ export function validateAssociationRules(rules: import("@/features/conditions").
   const targetKeys = new Set(targets.map(field => field.key));
   const sourceKeys = new Set(sources.map(field => field.key));
   for (const rule of rules.filter(rule => !rule.isGroup)) {
-    if (!targetKeys.has(rule.fieldKey || "")) return "关联条件目标字段已失效";
-    if (rule.valueType === "field" && !["hasValue", "noValue"].includes(rule.operator || "eq") && !sourceKeys.has(rule.sourceFieldKey || "")) return "关联条件来源字段已失效";
+    if (!targetKeys.has(conditionRoot(rule.fieldKey || ""))) return "关联条件目标字段已失效";
+    if (rule.valueType === "field" && !["hasValue", "noValue"].includes(rule.operator || "eq") && !sourceKeys.has(conditionRoot(rule.sourceFieldKey || ""))) return "关联条件来源字段已失效";
   }
   return validateButtonConditions({ mode: "conditions", rules: rules.map(rule => rule.valueType === "field" ? { ...rule, valueType: "value", rawValue: "source" } : rule) }, targets);
 }

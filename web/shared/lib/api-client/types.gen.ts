@@ -179,6 +179,9 @@ export type ApiApp = {
     desc: string;
     icon: string;
     id: string;
+    marketApplicationType?: string | null;
+    marketInstallationId?: string | null;
+    marketProductName?: string | null;
     name: string;
     onlineReleaseId?: string | null;
     onlineVersion?: string | null;
@@ -419,6 +422,9 @@ export type ApiResponseApiApp = {
         desc: string;
         icon: string;
         id: string;
+        marketApplicationType?: string | null;
+        marketInstallationId?: string | null;
+        marketProductName?: string | null;
         name: string;
         onlineReleaseId?: string | null;
         onlineVersion?: string | null;
@@ -622,6 +628,24 @@ export type ApiResponseApiSchemaPayload = {
         latestVersion: number;
         schema: unknown;
         version: number;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponseApplicationOrder = {
+    code: number;
+    data?: {
+        amountCents: number;
+        orderId: string;
+        orderNo: string;
+        owned: boolean;
+        productId: string;
+        releaseId: string;
+        simulation: boolean;
+        snapshot: ApplicationOrderSnapshot;
+        status: string;
+        subject: string;
     };
     message: string;
     time: string;
@@ -869,6 +893,20 @@ export type ApiResponseInitializeLocalCredentialsResponse = {
     time: string;
 };
 
+export type ApiResponseLogin = {
+    code: number;
+    data?: {
+        displayName: string;
+        expiresAt: number;
+        id: string;
+        operationsActor: string;
+        operationsSession: string;
+        username: string;
+    };
+    message: string;
+    time: string;
+};
+
 export type ApiResponseMailComposeContext = {
     code: number;
     data?: {
@@ -930,7 +968,7 @@ export type ApiResponseMarketInstallResponse = {
     data?: {
         disabledAutomations: number;
         installationId: string;
-        localAppId: string;
+        memberAppIds: Array<string>;
         releaseId: string;
     };
     message: string;
@@ -950,10 +988,18 @@ export type ApiResponseMarketInstallationStatus = {
 export type ApiResponseMarketProduct = {
     code: number;
     data?: {
+        applicationType?: string | null;
+        commercialId?: string | null;
+        commercialReady?: boolean;
+        currency?: string | null;
         description: string;
+        members?: Array<MarketMember> | null;
         name: string;
+        owned?: boolean;
+        pendingOrderId?: string | null;
+        priceCents?: number | null;
+        pricingMode?: string | null;
         productId: string;
-        publisherAppId: string;
         publisherOwned?: boolean | null;
         publisherSubject: string;
         releaseId: string;
@@ -1003,6 +1049,9 @@ export type ApiResponseMarketSubmission = {
         appId: string;
         appName: string;
         applicantSubject?: string;
+        fingerprint?: string;
+        productId?: string | null;
+        reviewReason?: string;
         snapshot: unknown;
         status: string;
         submissionId: string;
@@ -1079,6 +1128,9 @@ export type ApiResponseOptionMarketSubmission = {
         appId: string;
         appName: string;
         applicantSubject?: string;
+        fingerprint?: string;
+        productId?: string | null;
+        reviewReason?: string;
         snapshot: unknown;
         status: string;
         submissionId: string;
@@ -1165,6 +1217,16 @@ export type ApiResponseProviderResponse = {
         models: Array<string>;
         name: string;
         websiteUrl: string;
+    };
+    message: string;
+    time: string;
+};
+
+export type ApiResponsePublicationCapabilities = {
+    code: number;
+    data?: {
+        canPublish: boolean;
+        enabled: boolean;
     };
     message: string;
     time: string;
@@ -1397,6 +1459,9 @@ export type ApiResponseVecApiApp = {
         desc: string;
         icon: string;
         id: string;
+        marketApplicationType?: string | null;
+        marketInstallationId?: string | null;
+        marketProductName?: string | null;
         name: string;
         onlineReleaseId?: string | null;
         onlineVersion?: string | null;
@@ -1529,12 +1594,62 @@ export type ApiResponseVecApiNavigationItem = {
     time: string;
 };
 
+export type ApiResponseVecApplicationOrder = {
+    code: number;
+    data?: Array<{
+        amountCents: number;
+        orderId: string;
+        orderNo: string;
+        owned: boolean;
+        productId: string;
+        releaseId: string;
+        simulation: boolean;
+        snapshot: ApplicationOrderSnapshot;
+        status: string;
+        subject: string;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecApplicationRevenue = {
+    code: number;
+    data?: Array<{
+        amountCents: number;
+        grossCents: number;
+        id: string;
+        orderId: string;
+        platformCents: number;
+        productId: string;
+        publisherSubject: string;
+        rateBasisPoints: number;
+        settlementId?: string | null;
+        simulation: boolean;
+        status: string;
+    }>;
+    message: string;
+    time: string;
+};
+
 export type ApiResponseVecButtonAutomationOption = {
     code: number;
     data?: Array<{
         id: string;
         name: string;
         sourceFormUuid: string;
+        status: string;
+    }>;
+    message: string;
+    time: string;
+};
+
+export type ApiResponseVecCommercialVersion = {
+    code: number;
+    data?: Array<{
+        config: CommercialConfig;
+        id: string;
+        reason: string;
+        releaseId: string;
         status: string;
     }>;
     message: string;
@@ -1615,8 +1730,8 @@ export type ApiResponseVecMarketInstallation = {
         events: Array<MarketInstallationEvent>;
         installationId: string;
         installedAt: string;
-        legacyMapping: boolean;
-        localAppId: string;
+        memberAppIds: Array<string>;
+        members: Array<unknown>;
         productId: string;
         releaseId: string;
         status: string;
@@ -1630,10 +1745,18 @@ export type ApiResponseVecMarketInstallation = {
 export type ApiResponseVecMarketProduct = {
     code: number;
     data?: Array<{
+        applicationType?: string | null;
+        commercialId?: string | null;
+        commercialReady?: boolean;
+        currency?: string | null;
         description: string;
+        members?: Array<MarketMember> | null;
         name: string;
+        owned?: boolean;
+        pendingOrderId?: string | null;
+        priceCents?: number | null;
+        pricingMode?: string | null;
         productId: string;
-        publisherAppId: string;
         publisherOwned?: boolean | null;
         publisherSubject: string;
         releaseId: string;
@@ -1783,6 +1906,13 @@ export type ApiResponseVecViewButtonRuntime = {
     time: string;
 };
 
+export type ApiResponseVecBool = {
+    code: number;
+    data?: Array<boolean>;
+    message: string;
+    time: string;
+};
+
 export type ApiResponseWorkflowCommentListResponse = {
     code: number;
     data?: {
@@ -1848,6 +1978,42 @@ export type ApiSchemaPayload = {
     latestVersion: number;
     schema: unknown;
     version: number;
+};
+
+export type ApplicationOrder = {
+    amountCents: number;
+    orderId: string;
+    orderNo: string;
+    owned: boolean;
+    productId: string;
+    releaseId: string;
+    simulation: boolean;
+    snapshot: ApplicationOrderSnapshot;
+    status: string;
+    subject: string;
+};
+
+export type ApplicationOrderSnapshot = {
+    currency: string;
+    description: string;
+    licenseModel: string;
+    name: string;
+    priceCents: number;
+    pricingMode: string;
+};
+
+export type ApplicationRevenue = {
+    amountCents: number;
+    grossCents: number;
+    id: string;
+    orderId: string;
+    platformCents: number;
+    productId: string;
+    publisherSubject: string;
+    rateBasisPoints: number;
+    settlementId?: string | null;
+    simulation: boolean;
+    status: string;
 };
 
 export type ArchiveAction = {
@@ -1926,6 +2092,11 @@ export type ButtonPageParameter = {
     value?: string | null;
 };
 
+export type CheckoutRequest = {
+    commercialId: string;
+    idempotencyKey: string;
+};
+
 export type ClearDingTalkDataResponse = {
     deletedOrganizationUnits: number;
     deletedRolePermissions: number;
@@ -1953,6 +2124,28 @@ export type Command = {
 } | {
     clientCommandId: string;
     kind: 'cancel';
+};
+
+export type CommercialConfig = {
+    currency: string;
+    description: string;
+    licenseModel: string;
+    priceCents: number;
+    pricingMode: string;
+    publisherRateBasisPoints: number;
+};
+
+export type CommercialSubmission = {
+    config: CommercialConfig;
+    releaseId: string;
+};
+
+export type CommercialVersion = {
+    config: CommercialConfig;
+    id: string;
+    reason: string;
+    releaseId: string;
+    status: string;
 };
 
 export type CommunicationAttachmentResponse = {
@@ -2219,6 +2412,11 @@ export type EmployeeKnowledgeManifest = {
     version: string;
 };
 
+export type EvaluateConditionsRequest = {
+    records: Array<unknown>;
+    rules: Array<unknown>;
+};
+
 export type Evidence = {
     baseId: string;
     chunkId: string;
@@ -2246,6 +2444,10 @@ export type EvidenceSource = {
     kind: string;
     location: unknown;
     versionId: string;
+};
+
+export type Exchange = {
+    code: string;
 };
 
 export type ExecuteButtonRequest = {
@@ -2279,6 +2481,15 @@ export type ExecutionRecord = {
     status: string;
     timeoutSeconds?: number | null;
     updatedAt: string;
+};
+
+export type ExportPackageRequest = {
+    fingerprint: string;
+    packageName?: string | null;
+    selectedAppIds: Array<string>;
+    submissionType?: string | null;
+    targetProductId?: string | null;
+    version: string;
 };
 
 export type FilePreview = {
@@ -2436,6 +2647,15 @@ export type LocationResponse = {
     parentId?: string | null;
 };
 
+export type Login = {
+    displayName: string;
+    expiresAt: number;
+    id: string;
+    operationsActor: string;
+    operationsSession: string;
+    username: string;
+};
+
 export type MailAttachment = {
     contentType: string;
     filename: string;
@@ -2503,7 +2723,7 @@ export type MarketInstallPreflight = {
 export type MarketInstallResponse = {
     disabledAutomations: number;
     installationId: string;
-    localAppId: string;
+    memberAppIds: Array<string>;
     releaseId: string;
 };
 
@@ -2512,8 +2732,8 @@ export type MarketInstallation = {
     events: Array<MarketInstallationEvent>;
     installationId: string;
     installedAt: string;
-    legacyMapping: boolean;
-    localAppId: string;
+    memberAppIds: Array<string>;
+    members: Array<unknown>;
     productId: string;
     releaseId: string;
     status: string;
@@ -2538,11 +2758,24 @@ export type MarketInstallationVersion = {
     version: string;
 };
 
-export type MarketProduct = {
-    description: string;
+export type MarketMember = {
+    appId: string;
     name: string;
+};
+
+export type MarketProduct = {
+    applicationType?: string | null;
+    commercialId?: string | null;
+    commercialReady?: boolean;
+    currency?: string | null;
+    description: string;
+    members?: Array<MarketMember> | null;
+    name: string;
+    owned?: boolean;
+    pendingOrderId?: string | null;
+    priceCents?: number | null;
+    pricingMode?: string | null;
     productId: string;
-    publisherAppId: string;
     publisherOwned?: boolean | null;
     publisherSubject: string;
     releaseId: string;
@@ -2583,6 +2816,9 @@ export type MarketSubmission = {
     appId: string;
     appName: string;
     applicantSubject?: string;
+    fingerprint?: string;
+    productId?: string | null;
+    reviewReason?: string;
     snapshot: unknown;
     status: string;
     submissionId: string;
@@ -2771,7 +3007,26 @@ export type ProviderResponse = {
     websiteUrl: string;
 };
 
+export type PublicationCapabilities = {
+    canPublish: boolean;
+    enabled: boolean;
+};
+
+export type PublicationScopeRequest = {
+    selectedAppIds: Array<string>;
+};
+
+export type PublishRequest = {
+    commercial: CommercialConfig;
+    fingerprint: string;
+    newProduct?: boolean;
+    packageName?: string | null;
+    productId?: string | null;
+    selectedAppIds: Array<string>;
+};
+
 export type QueryFormRecordsRequest = {
+    conditionRules?: Array<unknown> | null;
     filters?: Array<RecordFilterRule>;
     page?: number | null;
     pageSize?: number | null;
@@ -3892,6 +4147,36 @@ export type CreateFormResponses = {
 
 export type CreateFormResponse = CreateFormResponses[keyof CreateFormResponses];
 
+export type ExportMarketPackageData = {
+    body: ExportPackageRequest;
+    path: {
+        appId: string;
+    };
+    query?: never;
+    url: '/api/apps/{appId}/market-export';
+};
+
+export type ExportMarketPackageResponses = {
+    200: Array<number>;
+};
+
+export type ExportMarketPackageResponse = ExportMarketPackageResponses[keyof ExportMarketPackageResponses];
+
+export type PreflightMarketPublicationData = {
+    body: PublicationScopeRequest;
+    path: {
+        appId: string;
+    };
+    query?: never;
+    url: '/api/apps/{appId}/market-preflight';
+};
+
+export type PreflightMarketPublicationResponses = {
+    200: ApiResponseValue;
+};
+
+export type PreflightMarketPublicationResponse = PreflightMarketPublicationResponses[keyof PreflightMarketPublicationResponses];
+
 export type GetMarketSubmissionData = {
     body?: never;
     path: {
@@ -3908,7 +4193,7 @@ export type GetMarketSubmissionResponses = {
 export type GetMarketSubmissionResponse = GetMarketSubmissionResponses[keyof GetMarketSubmissionResponses];
 
 export type SubmitMarketApplicationData = {
-    body?: never;
+    body: PublishRequest;
     path: {
         appId: string;
     };
@@ -4511,6 +4796,21 @@ export type GetFormBootstrapResponses = {
 };
 
 export type GetFormBootstrapResponse = GetFormBootstrapResponses[keyof GetFormBootstrapResponses];
+
+export type EvaluateFormConditionsData = {
+    body: EvaluateConditionsRequest;
+    path: {
+        formUuid: string;
+    };
+    query?: never;
+    url: '/api/forms/{formUuid}/conditions/evaluate';
+};
+
+export type EvaluateFormConditionsResponses = {
+    200: ApiResponseVecBool;
+};
+
+export type EvaluateFormConditionsResponse = EvaluateFormConditionsResponses[keyof EvaluateFormConditionsResponses];
 
 export type ListViewButtonOptionsData = {
     body?: never;
@@ -5127,6 +5427,32 @@ export type LocalLoginResponses = {
 
 export type LocalLoginResponse = LocalLoginResponses[keyof LocalLoginResponses];
 
+export type ExchangeOperationsAccessData = {
+    body: Exchange;
+    path?: never;
+    query?: never;
+    url: '/api/identity/operations/exchange';
+};
+
+export type ExchangeOperationsAccessResponses = {
+    200: ApiResponseLogin;
+};
+
+export type ExchangeOperationsAccessResponse = ExchangeOperationsAccessResponses[keyof ExchangeOperationsAccessResponses];
+
+export type LogoutOperationsAccessData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/identity/operations/logout';
+};
+
+export type LogoutOperationsAccessResponses = {
+    200: ApiResponseValue;
+};
+
+export type LogoutOperationsAccessResponse = LogoutOperationsAccessResponses[keyof LogoutOperationsAccessResponses];
+
 export type ListOrganizationUnitsData = {
     body?: never;
     path?: never;
@@ -5676,6 +6002,90 @@ export type SendMailResponses = {
 
 export type SendMailResponse2 = SendMailResponses[keyof SendMailResponses];
 
+export type ApplicationOrdersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/market/application-orders';
+};
+
+export type ApplicationOrdersResponses = {
+    200: ApiResponseVecApplicationOrder;
+};
+
+export type ApplicationOrdersResponse = ApplicationOrdersResponses[keyof ApplicationOrdersResponses];
+
+export type ApplicationOrderActionData = {
+    body: unknown;
+    path: {
+        orderId: string;
+    };
+    query?: never;
+    url: '/api/market/application-orders/{orderId}/action';
+};
+
+export type ApplicationOrderActionResponses = {
+    200: ApiResponseApplicationOrder;
+};
+
+export type ApplicationOrderActionResponse = ApplicationOrderActionResponses[keyof ApplicationOrderActionResponses];
+
+export type ApplicationSimulatePaymentData = {
+    body: unknown;
+    path: {
+        orderId: string;
+    };
+    query?: never;
+    url: '/api/market/application-orders/{orderId}/simulate-payment';
+};
+
+export type ApplicationSimulatePaymentResponses = {
+    200: ApiResponseApplicationOrder;
+};
+
+export type ApplicationSimulatePaymentResponse = ApplicationSimulatePaymentResponses[keyof ApplicationSimulatePaymentResponses];
+
+export type ApplicationRevenuesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/market/application-revenues';
+};
+
+export type ApplicationRevenuesResponses = {
+    200: ApiResponseVecApplicationRevenue;
+};
+
+export type ApplicationRevenuesResponse = ApplicationRevenuesResponses[keyof ApplicationRevenuesResponses];
+
+export type ListMarketSubmissionRecordsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/market/application-submissions';
+};
+
+export type ListMarketSubmissionRecordsResponses = {
+    200: ApiResponseValue;
+};
+
+export type ListMarketSubmissionRecordsResponse = ListMarketSubmissionRecordsResponses[keyof ListMarketSubmissionRecordsResponses];
+
+export type RetryMarketSubmissionData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/market/application-submissions/{id}/retry';
+};
+
+export type RetryMarketSubmissionResponses = {
+    200: ApiResponseMarketSubmission;
+};
+
+export type RetryMarketSubmissionResponse = RetryMarketSubmissionResponses[keyof RetryMarketSubmissionResponses];
+
 export type ListMarketApplicationsData = {
     body?: never;
     path?: never;
@@ -5716,6 +6126,51 @@ export type GetMarketApplicationResponses = {
 };
 
 export type GetMarketApplicationResponse = GetMarketApplicationResponses[keyof GetMarketApplicationResponses];
+
+export type ApplicationCheckoutData = {
+    body: CheckoutRequest;
+    path: {
+        productId: string;
+    };
+    query?: never;
+    url: '/api/market/applications/{productId}/checkout';
+};
+
+export type ApplicationCheckoutResponses = {
+    200: ApiResponseApplicationOrder;
+};
+
+export type ApplicationCheckoutResponse = ApplicationCheckoutResponses[keyof ApplicationCheckoutResponses];
+
+export type ApplicationCommercialVersionsData = {
+    body?: never;
+    path: {
+        productId: string;
+    };
+    query?: never;
+    url: '/api/market/applications/{productId}/commercial';
+};
+
+export type ApplicationCommercialVersionsResponses = {
+    200: ApiResponseVecCommercialVersion;
+};
+
+export type ApplicationCommercialVersionsResponse = ApplicationCommercialVersionsResponses[keyof ApplicationCommercialVersionsResponses];
+
+export type ApplicationSubmitCommercialData = {
+    body: CommercialSubmission;
+    path: {
+        productId: string;
+    };
+    query?: never;
+    url: '/api/market/applications/{productId}/commercial';
+};
+
+export type ApplicationSubmitCommercialResponses = {
+    200: ApiResponseValue;
+};
+
+export type ApplicationSubmitCommercialResponse = ApplicationSubmitCommercialResponses[keyof ApplicationSubmitCommercialResponses];
 
 export type InstallMarketApplicationData = {
     body?: never;
@@ -5849,6 +6304,19 @@ export type UpgradeMarketInstallationResponses = {
 };
 
 export type UpgradeMarketInstallationResponse = UpgradeMarketInstallationResponses[keyof UpgradeMarketInstallationResponses];
+
+export type GetMarketPublicationCapabilitiesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/market/publication-capabilities';
+};
+
+export type GetMarketPublicationCapabilitiesResponses = {
+    200: ApiResponsePublicationCapabilities;
+};
+
+export type GetMarketPublicationCapabilitiesResponse = GetMarketPublicationCapabilitiesResponses[keyof GetMarketPublicationCapabilitiesResponses];
 
 export type EmptyRecycleBinData = {
     body?: never;

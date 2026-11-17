@@ -200,6 +200,15 @@ pub(crate) struct QueryFormRecordsRequest {
     pub(crate) filters: Vec<RecordFilterRule>,
     #[serde(default)]
     pub(crate) sorts: Vec<RecordSortRule>,
+    #[serde(default)]
+    pub(crate) condition_rules: Option<Vec<Value>>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct EvaluateConditionsRequest {
+    pub(crate) rules: Vec<Value>,
+    pub(crate) records: Vec<Value>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -211,6 +220,7 @@ pub(crate) struct SaveSchemaRequest {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct RestoreVersionRequest {
+    #[allow(dead_code, reason = "Accepted for API compatibility; restoring only reads the historical schema")]
     pub(crate) change_log: Option<String>,
 }
 

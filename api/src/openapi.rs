@@ -33,7 +33,7 @@ use crate::modules::files::UploadedFileResponse;
 use crate::modules::forms::{
     ApiAppFieldOutline, ApiDetailForm, ApiFormRecord, ApiFormRecordList, ApiFormSummary,
     ApiFormVersionSummary, ApiSchemaPayload, CreateDetailFormRequest, CreateFormRecordRequest,
-    CreateFormRequest, FormBootstrapResponse, FormViewResponse, QueryFormRecordsRequest,
+    CreateFormRequest, FormBootstrapResponse, FormViewResponse, QueryFormRecordsRequest, EvaluateConditionsRequest,
     RestoreVersionRequest, SaveFormViewRequest, SaveSchemaRequest, UpdateFormNameRequest,
     UpdateFormRecordRequest, ValidateRecordRequest,
 };
@@ -770,6 +770,23 @@ typed_endpoint!(
     ApiResponse<crate::modules::identity::SendSmsCodeResponse>
 );
 typed_endpoint!(
+    exchange_operations_access,
+    post,
+    "/api/identity/operations/exchange",
+    "exchangeOperationsAccess",
+    (),
+    crate::platform::operations_access::Exchange,
+    ApiResponse<crate::platform::operations_access::Login>
+);
+typed_endpoint!(
+    logout_operations_access,
+    post,
+    "/api/identity/operations/logout",
+    "logoutOperationsAccess",
+    (),
+    ApiResponse<serde_json::Value>
+);
+typed_endpoint!(
     verify_sms_code,
     post,
     "/api/identity/sms/login",
@@ -1053,6 +1070,13 @@ typed_endpoint!(
     TestModelRouteRequest,
     ApiResponse<TestModelRouteResponse>
 );
+typed_endpoint!(application_commercial_versions,get,"/api/market/applications/{productId}/commercial","applicationCommercialVersions",(("productId" = String,Path)),ApiResponse<Vec<CommercialVersion>>);
+typed_endpoint!(application_submit_commercial,post,"/api/market/applications/{productId}/commercial","applicationSubmitCommercial",(("productId" = String,Path)),CommercialSubmission,ApiResponse<Value>);
+typed_endpoint!(application_checkout,post,"/api/market/applications/{productId}/checkout","applicationCheckout",(("productId" = String,Path)),CheckoutRequest,ApiResponse<ApplicationOrder>);
+typed_endpoint!(application_orders,get,"/api/market/application-orders","applicationOrders",(),ApiResponse<Vec<ApplicationOrder>>);
+typed_endpoint!(application_revenues,get,"/api/market/application-revenues","applicationRevenues",(),ApiResponse<Vec<ApplicationRevenue>>);
+typed_endpoint!(application_simulate_payment,post,"/api/market/application-orders/{orderId}/simulate-payment","applicationSimulatePayment",(("orderId" = String,Path)),Value,ApiResponse<ApplicationOrder>);
+typed_endpoint!(application_order_action,post,"/api/market/application-orders/{orderId}/action","applicationOrderAction",(("orderId" = String,Path)),Value,ApiResponse<ApplicationOrder>);
 typed_endpoint!(
     list_market_applications,
     get,
@@ -1401,6 +1425,7 @@ typed_endpoint!(
     QueryFormRecordsRequest,
     ApiResponse<ApiFormRecordList>
 );
+typed_endpoint!(evaluate_form_conditions, post, "/api/forms/{formUuid}/conditions/evaluate", "evaluateFormConditions", (("formUuid" = String, Path)), EvaluateConditionsRequest, ApiResponse<Vec<bool>>);
 typed_endpoint!(
     validate_form_record,
     post,
@@ -1532,6 +1557,15 @@ typed_endpoint!(
     (("appId" = String, Path)),
     ApiResponse<ApiApp>
 );
+#[utoipa::path(post, path = "/api/apps/{appId}/market-export", operation_id = "exportMarketPackage", params(("appId" = String, Path)), request_body = crate::modules::app_market::ExportPackageRequest, responses((status = 200, body = Vec<u8>, content_type = "application/zip")))]
+#[allow(dead_code, reason = "OpenAPI declaration only; the HTTP router uses the real handler")]
+fn export_market_package() {}
+
+typed_endpoint!(market_publish_preflight, post, "/api/apps/{appId}/market-preflight", "preflightMarketPublication", (("appId" = String, Path)), PublicationScopeRequest, ApiResponse<Value>);
+typed_endpoint!(market_submission_records, get, "/api/market/application-submissions", "listMarketSubmissionRecords", (), ApiResponse<Value>);
+typed_endpoint!(market_submission_retry, post, "/api/market/application-submissions/{id}/retry", "retryMarketSubmission", (("id" = String, Path)), ApiResponse<MarketSubmission>);
+
+typed_endpoint!(market_publication_capabilities, get, "/api/market/publication-capabilities", "getMarketPublicationCapabilities", (), ApiResponse<PublicationCapabilities>);
 typed_endpoint!(
     get_market_submission,
     get,
@@ -1546,6 +1580,7 @@ typed_endpoint!(
     "/api/apps/{appId}/market-submission",
     "submitMarketApplication",
     (("appId" = String, Path)),
+    PublishRequest,
     ApiResponse<MarketSubmission>
 );
 typed_endpoint!(
@@ -1613,6 +1648,11 @@ typed_endpoint!(
         crate::modules::agent_v2::events,
         get_authorization_grants,
         get_app,
+        market_publish_preflight,
+        market_submission_records,
+        market_submission_retry,
+        market_publication_capabilities,
+        export_market_package,
         get_market_submission,
         submit_market_application,
         uninstall_ai_employee,
@@ -1629,6 +1669,13 @@ typed_endpoint!(
         delete_model_route,
         test_model_route,
         fetch_model_route_models,
+        application_commercial_versions,
+        application_submit_commercial,
+        application_checkout,
+        application_orders,
+        application_revenues,
+        application_simulate_payment,
+        application_order_action,
         list_market_applications,
         get_market_application,
         preflight_market_application,
@@ -1707,6 +1754,8 @@ typed_endpoint!(
         create_local_user,
         initialize_local_credentials,
         local_login,
+        exchange_operations_access,
+        logout_operations_access,
         send_sms_code,
         verify_sms_code,
         update_user,
@@ -1776,6 +1825,7 @@ typed_endpoint!(
         delete_form_view,
         list_form_records,
         query_form_records,
+        evaluate_form_conditions,
         validate_form_record,
         get_form_bootstrap,
         list_detail_forms,

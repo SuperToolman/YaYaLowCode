@@ -2,6 +2,8 @@
 
 pub mod api;
 pub mod authorization;
+pub mod instance_identity;
+pub mod operations_access;
 pub mod automation_runs;
 pub mod config;
 pub mod error;
@@ -11,6 +13,8 @@ pub mod logging;
 pub mod prelude;
 pub mod rbac;
 pub mod records;
+pub mod conditions;
+pub mod condition_query;
 pub mod runtime;
 
 pub mod record_validation;

@@ -13,6 +13,11 @@
   ],
   "environment": [
     {
+      "name": "YAYA_MARKET_PUBLICATION_ENABLED",
+      "required": false,
+      "default": "false"
+    },
+    {
       "name": "POSTGRES_DB",
       "required": true
     },
@@ -151,6 +156,14 @@
     },
     {
       "name": "AUTH_COOKIE_SECURE",
+      "required": true
+    },
+    {
+      "name": "YAYA_PLATFORM_ADMIN_MOBILE",
+      "required": true
+    },
+    {
+      "name": "YAYA_PLATFORM_INSTANCE_ID",
       "required": true
     }
   ]

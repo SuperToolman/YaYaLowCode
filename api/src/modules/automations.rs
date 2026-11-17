@@ -1154,6 +1154,58 @@ fn automation_record_repository<'a, C: ConnectionTrait>(
     }
 }
 
+async fn filter_records_with_relations<C: ConnectionTrait>(db: &C, context: &AutomationExecutionContext, form: &str, records: Vec<StoredFormRecord>, rules: Option<&Value>) -> Result<Vec<StoredFormRecord>,AppError> {
+    let rules = rules.and_then(Value::as_array).cloned().unwrap_or_default();
+    if rules.is_empty() { return Ok(records); }
+    crate::platform::condition_query::compile(db,form,&rules,&mut vec![]).await?;
+    let mut data: Vec<_> = records.iter().cloned().map(record_data_with_automation_identity).collect();
+    let keys: Vec<_> = rules.iter().filter(|r| r["isGroup"] != true).flat_map(|r| {
+        let mut keys = vec![r["fieldKey"].as_str().unwrap_or("").to_string()];
+        if r["valueType"] == "field" { keys.push(r["sourceFieldKey"].as_str().unwrap_or("").to_string()); } keys
+    }).collect();
+    for rule in rules.iter().filter(|r| r["isGroup"] != true) {
+        let plan = crate::platform::condition_query::resolve(db,form,rule["fieldKey"].as_str().unwrap_or("")).await?;
+        crate::platform::condition_query::validate_operand(&plan,rule)?;
+    }
+    crate::platform::condition_query::hydrate(db,&automation_record_repository(db,context),form,&keys,&mut data).await?;
+    Ok(records.into_iter().zip(data).filter(|(_,data)| crate::platform::conditions::evaluate(&rules,None,data)).map(|(record,_)| record).collect())
+}
+
+async fn prepare_condition_context<C: ConnectionTrait>(db: &C, flow: &automation_flow_entity::Model, config: &Value, context: &mut AutomationExecutionContext) -> Result<(),AppError> {
+    use crate::platform::{conditions,condition_query};
+    let mut by_node: HashMap<String,Vec<(String,Value)>> = HashMap::new();
+    for branch in config["branches"].as_array().into_iter().flatten().filter(|b| b["mode"] == "rules" && b["entryMode"] != "otherwise") {
+        let rules = branch["rules"].as_array().ok_or_else(|| conditions::bad("条件规则无效"))?;
+        conditions::validate_rules(rules)?;
+        for rule in rules.iter().filter(|r| r["isGroup"] != true) {
+            for property in if rule["valueType"] == "field" { vec!["fieldKey","sourceFieldKey"] } else { vec!["fieldKey"] } {
+                let key = rule[property].as_str().unwrap_or(""); let reference = conditions::reference(key)?;
+                if reference.path.is_empty() { continue; }
+                let (node,_) = reference.root.split_once(':').ok_or_else(|| conditions::bad("条件来源节点无效"))?;
+                by_node.entry(node.into()).or_default().push((key.into(),rule.clone()));
+            }
+        }
+    }
+    for (node,items) in by_node {
+        let form = get_data::source_form(&flow.nodes_json,&flow.edges_json,&node,flow.trigger_form_uuid.as_deref())?;
+        let mut records = get_data::node_candidates(context.outputs.get(&node))?;
+        let mut keys = vec![];
+        for (key,rule) in &items {
+            let reference = conditions::reference(key)?;
+            let (_,field) = reference.root.split_once(':').unwrap();
+            let local = format!("{}{}",conditions::PATH_PREFIX,json!({"root":field,"path":reference.path}));
+            let plan = condition_query::resolve(db,&form,&local).await?;
+            if rule["fieldKey"] == *key { condition_query::validate_operand(&plan,rule)?; }
+            keys.push((key.clone(),local));
+        }
+        condition_query::hydrate(db,&automation_record_repository(db,context),&form,&keys.iter().map(|(_,local)| local.clone()).collect::<Vec<_>>(),&mut records).await?;
+        for record in &mut records { if let Some(map) = record.as_object_mut() { for (key,local) in &keys { let value = map.remove(local).unwrap_or(Value::Null); map.insert(key.clone(),value); } } }
+        let output = if context.outputs.get(&node).is_some_and(Value::is_array) { json!(records) } else { records.into_iter().next().unwrap_or(Value::Null) };
+        context.outputs.insert(node,output);
+    }
+    Ok(())
+}
+
 async fn execute_add_data_node<C: ConnectionTrait + TransactionTrait>(
     db: &C,
     flow: &automation_flow_entity::Model,
@@ -1329,7 +1381,7 @@ async fn get_candidates<C: ConnectionTrait + TransactionTrait>(
     context: &AutomationExecutionContext,
 ) -> Result<Vec<Value>, AppError> {
     get_data::validate_query_config(config)?;
-    let candidates = if config.get("sourceMode").and_then(Value::as_str) == Some("data-node") {
+    let mut candidates = if config.get("sourceMode").and_then(Value::as_str) == Some("data-node") {
         let id = read_json_string(config.get("dataNodeId")).unwrap_or_default();
         get_data::node_candidates(context.outputs.get(&id))?
     } else if config.get("sourceMode").and_then(Value::as_str) == Some("trigger") {
@@ -1351,7 +1403,21 @@ async fn get_candidates<C: ConnectionTrait + TransactionTrait>(
             .map(record_data_with_automation_identity)
             .collect()
     };
-    Ok(get_data::filter_candidates(candidates, config))
+    if config["filterMode"] == "rules" {
+        let keys: Vec<_> = config["rules"].as_array().into_iter().flatten().filter(|r| r["isGroup"] != true).flat_map(|r| [r["fieldKey"].as_str(), if r["valueType"] == "field" { r["sourceFieldKey"].as_str() } else { None }]).flatten().filter(|key| key.starts_with(crate::platform::conditions::PATH_PREFIX)).map(str::to_string).collect();
+        if !keys.is_empty() {
+            let form = if let Some(form) = config["formUuid"].as_str().filter(|s| !s.is_empty()) { form.to_string() }
+            else { candidates.iter().find_map(|record| record["__automationFormUuid"].as_str()).map(str::to_string).ok_or_else(|| AppError::BadRequest("关联条件需要有效的来源表单配置".into()))? };
+            for rule in config["rules"].as_array().into_iter().flatten().filter(|r| r["isGroup"] != true) {
+                let plan = crate::platform::condition_query::resolve(db,&form,rule["fieldKey"].as_str().unwrap_or("")).await?;
+                crate::platform::condition_query::validate_operand(&plan,rule)?;
+            }
+            crate::platform::condition_query::hydrate(db,&automation_record_repository(db,context),&form,&keys,&mut candidates).await?;
+        }
+    }
+    let mut filtered = get_data::filter_candidates(candidates, config);
+    for record in &mut filtered { if let Some(map) = record.as_object_mut() { map.retain(|key,_| !key.starts_with(crate::platform::conditions::PATH_PREFIX)); } }
+    Ok(filtered)
 }
 
 async fn execute_get_one_node<C: ConnectionTrait + TransactionTrait>(
@@ -1376,6 +1442,7 @@ async fn execute_get_many_node<C: ConnectionTrait + TransactionTrait>(
 
 pub(crate) fn record_data_with_automation_identity(record: StoredFormRecord) -> Value {
     let mut data = record.record_data.as_object().cloned().unwrap_or_default();
+    data.insert("__automationFormUuid".into(),json!(record.form_uuid));
     inject_automation_system_fields(
         &mut data,
         &record.record_uuid,
@@ -1458,7 +1525,7 @@ async fn execute_update_data_node<C: ConnectionTrait + TransactionTrait>(
             .filter(|record| source_record_uuids.contains(record.record_uuid.as_str()))
             .collect()
     } else {
-        filter_records_by_rules(records, config.get("rules"))
+        filter_records_with_relations(db,context,&target_form_uuid,records,config.get("rules")).await?
     };
     let patch = build_record_data_from_rows(&rows, &context.outputs);
     let now = Utc::now();
@@ -1504,7 +1571,9 @@ async fn execute_delete_data_node<C: ConnectionTrait + TransactionTrait>(
     let definition = forms::find_form_definition(db, &target_form_uuid).await?;
     let repository = automation_record_repository(db, context);
     let records = repository.list(&target_form_uuid).await?;
-    let matched = delete_data::select_records(records, config, context)?;
+    let matched = if config["deleteMode"] != "data-node" && config["filterMode"] != "all" {
+        filter_records_with_relations(db,context,&target_form_uuid,records,config.get("rules")).await?
+    } else { delete_data::select_records(records, config, context)? };
     let deleted_count = matched.len() as i64;
     let deleted_payloads = matched
         .iter()
@@ -1637,11 +1706,20 @@ pub(crate) async fn execute_shared_node<C: ConnectionTrait + TransactionTrait>(
     context: &mut AutomationExecutionContext,
 ) -> Result<(), AppError> {
     let output = match kind {
-        "trigger" | "condition" | "parallel-condition" => return Ok(()),
+        "trigger" => return Ok(()),
+        "condition" | "parallel-condition" => {
+            prepare_condition_context(db,flow,config,context).await?;
+            return Ok(());
+        },
         "initiate-approval" => initiate_approval::execute(db, config, context).await?,
         "add-data" => execute_add_data_node(db, flow, config, context).await?,
-        "get-one" => execute_get_one_node(db, config, context).await?,
-        "get-many" => execute_get_many_node(db, config, context).await?,
+        "get-one" | "get-many" => {
+            let mut config = config.clone();
+            if config["filterMode"] == "rules" {
+                config["formUuid"] = json!(get_data::source_form(&flow.nodes_json,&flow.edges_json,node_id,flow.trigger_form_uuid.as_deref())?);
+            }
+            if kind == "get-one" { execute_get_one_node(db, &config, context).await? } else { execute_get_many_node(db, &config, context).await? }
+        },
         "update-data" => execute_update_data_node(db, flow, config, context).await?,
         "delete-data" => execute_delete_data_node(db, flow, node_id, config, context).await?,
         "http-request" => execute_http_request_node(config, context).await?,
@@ -1728,7 +1806,7 @@ fn validate_public_http_address(address: IpAddr) -> Result<(), AppError> {
     }
 }
 
-async fn create_automation_snapshot<C>(
+pub(crate) async fn create_automation_snapshot<C>(
     db: &C,
     flow: &automation_flow_entity::Model,
     change_summary: Option<String>,
@@ -2210,6 +2288,7 @@ fn normalize_branch_rules(data: Value) -> Result<Value, AppError> {
             ));
         }
 
+        if raw.get("operator").and_then(Value::as_str).is_some_and(|op| !crate::platform::conditions::OPERATORS.contains(&op)) { return Err(AppError::BadRequest("条件运算符无效".into())); }
         let operator = normalize_branch_rule_operator(raw.get("operator").and_then(Value::as_str));
         rules.push(json!({
             "id": rule_id,
@@ -2359,6 +2438,9 @@ fn normalize_branch_rule_operator(value: Option<&str>) -> &'static str {
         "notInAny" => "notInAny",
         "hasValue" => "hasValue",
         "noValue" => "noValue",
+        "contains" => "contains", "notContains" => "notContains",
+        "gt" => "gt", "gte" => "gte", "lt" => "lt", "lte" => "lte", "between" => "between",
+        "containsAny" => "containsAny", "containsAll" => "containsAll", "containsNone" => "containsNone",
         _ => "eq",
     }
 }
@@ -2728,48 +2810,14 @@ fn evaluate_branch_rule_group(
 fn evaluate_branch_rule(rule: &Value, context: &AutomationExecutionContext) -> bool {
     let field_key = read_json_string(rule.get("fieldKey")).unwrap_or_default();
     let operator = read_json_string(rule.get("operator")).unwrap_or_else(|| "eq".to_string());
-    let expected = if rule.get("valueType").and_then(Value::as_str) == Some("field") {
-        read_json_string(rule.get("sourceFieldKey"))
-            .and_then(|field_key| {
-                resolve_source_field_values(&context.outputs, &field_key)
-                    .into_iter()
-                    .next()
-            })
-            .map(|value| normalize_scalar(&value))
-            .unwrap_or_default()
-    } else {
-        read_json_string(rule.get("rawValue")).unwrap_or_default()
-    };
-    let actual_values = resolve_source_field_values(&context.outputs, &field_key);
-
-    match operator.as_str() {
-        "hasValue" => actual_values.iter().any(value_has_content),
-        "noValue" => {
-            actual_values.is_empty() || actual_values.iter().all(|value| !value_has_content(value))
-        }
-        "neq" => {
-            actual_values.is_empty()
-                || actual_values
-                    .iter()
-                    .all(|value| normalize_scalar(value) != expected)
-        }
-        "inAny" => {
-            let expected_items = parse_multi_values(&expected);
-            actual_values
-                .iter()
-                .any(|value| expected_items.contains(&normalize_scalar(value)))
-        }
-        "notInAny" => {
-            let expected_items = parse_multi_values(&expected);
-            actual_values.is_empty()
-                || actual_values
-                    .iter()
-                    .all(|value| !expected_items.contains(&normalize_scalar(value)))
-        }
-        _ => actual_values
-            .iter()
-            .any(|value| normalize_scalar(value) == expected),
-    }
+    let expected = if rule["valueType"] == "field" {
+        resolve_source_field_values(&context.outputs,rule["sourceFieldKey"].as_str().unwrap_or("")).into_iter().next().unwrap_or(Value::Null)
+    } else { crate::platform::conditions::literal(rule["rawValue"].as_str().unwrap_or("")).unwrap_or(Value::Null) };
+    let values = resolve_source_field_values(&context.outputs,&field_key);
+    let negative = ["neq","notInAny","noValue","notContains","containsNone"].contains(&operator.as_str());
+    if values.is_empty() { return negative; }
+    if negative { values.iter().all(|value| crate::platform::conditions::compare(value,&operator,&expected)) }
+    else { values.iter().any(|value| crate::platform::conditions::compare(value,&operator,&expected)) }
 }
 
 async fn retry_automation_run_internal(

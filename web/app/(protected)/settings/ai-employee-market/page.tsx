@@ -6,14 +6,28 @@ import { notify } from "@/shared/lib/notify";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDownToLine, ArrowRotateRight, CircleExclamation, FaceRobot, Magnifier, ShoppingCart, TrashBin } from "@gravity-ui/icons";
+import {
+  ArrowDownToLine,
+  ArrowRotateRight,
+  CircleExclamation,
+  FaceRobot,
+  Magnifier,
+  ShoppingCart,
+  TrashBin,
+} from "@gravity-ui/icons";
 import { Button, Chip, Modal, Popover, Tabs, Tooltip } from "@heroui/react";
 import { MySurface } from "@/shared/ui/MySurface";
 import { openLicenseUpdatePrompt } from "@/features/settings/components/LicenseManagementModal";
 import { PaymentModal } from "@/features/settings/components/PaymentModal";
 import { SettingsContentCard } from "../components/SettingsContentCard";
+import { EmployeeCapabilities } from "@/features/settings/components/EmployeeCapabilities";
 import { EmployeeKnowledgePanel } from "@/features/knowledge/EmployeeKnowledgePanel";
-import { getAiEmployees, installMarketAiEmployee, testMarketAiEmployeePurchase, uninstallMarketAiEmployee } from "@/features/settings/api";
+import {
+  getAiEmployees,
+  installMarketAiEmployee,
+  testMarketAiEmployeePurchase,
+  uninstallMarketAiEmployee,
+} from "@/features/settings/api";
 
 type MarketEmployee = import("@/shared/lib/http").AiEmployeeMarketItem;
 
@@ -397,10 +411,16 @@ export default function AiEmployeeMarketPage({
                           </Tabs.Tab>
                         </Tabs.List>
                       </Tabs.ListContainer>
-                      <Tabs.Panel id="basic" className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
+                      <Tabs.Panel
+                        id="basic"
+                        className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
+                      >
                         <div className="space-y-4">
                           <section className="relative isolate overflow-hidden rounded-2xl bg-gradient-to-br from-[var(--color-primary-soft)] via-[var(--color-bg-surface)] to-[var(--color-accent-soft)] p-5 shadow-[var(--shadow-sm)]">
-                            <FaceRobot aria-hidden="true" className="pointer-events-none absolute -right-5 -top-5 -z-10 h-36 w-36 -rotate-12 text-[var(--color-primary)] opacity-[0.08]" />
+                            <FaceRobot
+                              aria-hidden="true"
+                              className="pointer-events-none absolute -right-5 -top-5 -z-10 h-36 w-36 -rotate-12 text-[var(--color-primary)] opacity-[0.08]"
+                            />
                             <div className="mb-5 flex flex-wrap items-center gap-2">
                               <Chip size="sm" variant="soft" color="accent">
                                 {selectedEmployee.category || "未分类"}
@@ -412,7 +432,10 @@ export default function AiEmployeeMarketPage({
                             </div>
                             <div className="mb-3 flex items-center gap-2">
                               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--color-primary)] text-white">
-                                <FaceRobot aria-hidden="true" className="h-4 w-4" />
+                                <FaceRobot
+                                  aria-hidden="true"
+                                  className="h-4 w-4"
+                                />
                               </span>
                               <h3 className="text-base font-semibold text-[var(--color-text-primary)]">
                                 员工简介
@@ -423,11 +446,19 @@ export default function AiEmployeeMarketPage({
                             </p>
                           </section>
 
-                          <section aria-label="版本与安装" className="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2">
+                          <section
+                            aria-label="版本与安装"
+                            className="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2"
+                          >
                             <div className="rounded-2xl bg-[var(--color-primary-soft)] p-4 shadow-[var(--shadow-xs)]">
                               <div className="mb-3 flex items-center gap-2 text-[var(--color-primary)]">
-                                <ArrowRotateRight aria-hidden="true" className="h-4 w-4" />
-                                <h3 className="text-xs font-medium">最新版本</h3>
+                                <ArrowRotateRight
+                                  aria-hidden="true"
+                                  className="h-4 w-4"
+                                />
+                                <h3 className="text-xs font-medium">
+                                  最新版本
+                                </h3>
                               </div>
                               <p className="break-words text-xl font-semibold tracking-tight text-[var(--color-text-primary)]">
                                 v{selectedEmployee.version}
@@ -436,10 +467,19 @@ export default function AiEmployeeMarketPage({
                                 当前市场发布版本
                               </p>
                             </div>
-                            <div className={`rounded-2xl p-4 shadow-[var(--shadow-xs)] ${selectedEmployee.installed ? "bg-[var(--color-success-soft)]" : "bg-[var(--color-control-soft)]"}`}>
-                              <div className={`mb-3 flex items-center gap-2 ${selectedEmployee.installed ? "text-[var(--color-success)]" : "text-[var(--color-text-secondary)]"}`}>
-                                <ArrowDownToLine aria-hidden="true" className="h-4 w-4" />
-                                <h3 className="text-xs font-medium">已安装版本</h3>
+                            <div
+                              className={`rounded-2xl p-4 shadow-[var(--shadow-xs)] ${selectedEmployee.installed ? "bg-[var(--color-success-soft)]" : "bg-[var(--color-control-soft)]"}`}
+                            >
+                              <div
+                                className={`mb-3 flex items-center gap-2 ${selectedEmployee.installed ? "text-[var(--color-success)]" : "text-[var(--color-text-secondary)]"}`}
+                              >
+                                <ArrowDownToLine
+                                  aria-hidden="true"
+                                  className="h-4 w-4"
+                                />
+                                <h3 className="text-xs font-medium">
+                                  已安装版本
+                                </h3>
                               </div>
                               <p className="break-words text-xl font-semibold tracking-tight text-[var(--color-text-primary)]">
                                 {selectedEmployee.installed
@@ -449,119 +489,69 @@ export default function AiEmployeeMarketPage({
                                   : "未安装"}
                               </p>
                               <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">
-                                {selectedEmployee.installed ? "员工与 Skill 文件已安装" : "安装后即可开始任务"}
+                                {selectedEmployee.installed
+                                  ? "员工与 Skill 文件已安装"
+                                  : "安装后即可开始任务"}
                               </p>
                             </div>
                           </section>
 
-                          <section aria-label="价格与授权" className="overflow-hidden rounded-2xl bg-[var(--color-bg-surface)] shadow-[var(--shadow-sm)]">
+                          <section
+                            aria-label="价格与授权"
+                            className="overflow-hidden rounded-2xl bg-[var(--color-bg-surface)] shadow-[var(--shadow-sm)]"
+                          >
                             <div className="flex flex-wrap items-center justify-between gap-3 bg-[var(--color-accent-soft)] px-5 py-4">
                               <div className="flex items-center gap-2 text-[var(--color-text-primary)]">
                                 <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--color-bg-surface)] text-[var(--color-accent)]">
-                                  <ShoppingCart aria-hidden="true" className="h-4 w-4" />
+                                  <ShoppingCart
+                                    aria-hidden="true"
+                                    className="h-4 w-4"
+                                  />
                                 </span>
-                                <h3 className="text-sm font-medium">价格与授权</h3>
+                                <h3 className="text-sm font-medium">
+                                  价格与授权
+                                </h3>
                               </div>
                               <div className="flex flex-wrap items-baseline gap-2">
                                 <span className="text-2xl font-semibold tracking-tight text-[var(--color-text-primary)]">
                                   {formatMoney(selectedEmployee.priceCents)}
                                 </span>
                                 <span className="text-xs text-[var(--color-text-secondary)]">
-                                  / {billingText[selectedEmployee.billingCycle] || selectedEmployee.billingCycle}
+                                  /{" "}
+                                  {billingText[selectedEmployee.billingCycle] ||
+                                    selectedEmployee.billingCycle}
                                 </span>
                               </div>
                             </div>
-                            <dl className="px-5 py-4 text-sm">
+                            <MySurface className="px-5 py-4 text-sm">
                               <EmployeeDetail
                                 label="授权有效期"
                                 value={
-                                  selectedEmployee.owned || selectedEmployee.installed
+                                  selectedEmployee.owned ||
+                                  selectedEmployee.installed
                                     ? selectedEmployee.expiresAt
                                       ? `${formatExpiry(selectedEmployee.expiresAt)}${selectedEmployee.expiresAt < currentTimestamp ? "（已过期）" : ""}`
                                       : "永久有效"
                                     : "未购买"
                                 }
                               />
-                            </dl>
+                            </MySurface>
                           </section>
                         </div>
                       </Tabs.Panel>
-                      <Tabs.Panel id="capabilities" className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
-                        <section aria-label="员工能力">
-                          <h3>allowedTools</h3>
-                          {selectedEmployee.allowedTools != null ? (
-                            <>
-                              <div className="flex flex-wrap gap-2">
-                                <Chip
-                                  size="sm"
-                                  color={
-                                    selectedEmployee.allowedTools.includes(
-                                      "skill_run_script",
-                                    )
-                                      ? "success"
-                                      : "warning"
-                                  }
-                                >
-                                  脚本运行：
-                                  {selectedEmployee.allowedTools.includes(
-                                    "skill_run_script",
-                                  )
-                                    ? "已开放"
-                                    : "未开放"}
-                                </Chip>
-                                <Chip
-                                  size="sm"
-                                  color={
-                                    selectedEmployee.allowedTools.includes(
-                                      "workspace_execute_code",
-                                    )
-                                      ? "success"
-                                      : "warning"
-                                  }
-                                >
-                                  代码与终端执行：
-                                  {selectedEmployee.allowedTools.includes(
-                                    "workspace_execute_code",
-                                  )
-                                    ? "已开放"
-                                    : "未开放"}
-                                </Chip>
-                              </div>
-                              <p>
-                                共 {selectedEmployee.allowedTools.length}{" "}
-                                项明确能力；依赖安装需要代码与终端执行能力。
-                              </p>
-                              <MySurface>
-                                <pre className="overflow-x-auto whitespace-pre-wrap break-words">
-                                  <code>
-                                    {JSON.stringify(
-                                      {
-                                        allowedTools:
-                                          selectedEmployee.allowedTools,
-                                      },
-                                      null,
-                                      2,
-                                    )}
-                                  </code>
-                                </pre>
-                              </MySurface>
-                              {selectedEmployee.allowedTools.length === 0 ? (
-                                <p>
-                                  当前员工包未配置明确工具能力，仍可使用基础文件与
-                                  Skill 资源读取工具。
-                                </p>
-                              ) : null}
-                            </>
-                          ) : (
-                            <p>
-                              {selectedEmployee.installed
-                                ? "当前安装包能力信息不可用，请重新同步员工包。"
-                                : "尚未安装，安装后可查看实际员工能力。"}
-                            </p>
-                          )}
-                        </section>
+                      <Tabs.Panel
+                        id="capabilities"
+                        className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
+                      >
+                        <EmployeeCapabilities
+                          allowedTools={selectedEmployee.allowedTools}
+                          installed={selectedEmployee.installed}
+                        />
                       </Tabs.Panel>
-                      <Tabs.Panel id="knowledge" className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
+                      <Tabs.Panel
+                        id="knowledge"
+                        className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
+                      >
                         <EmployeeKnowledgePanel
                           key={selectedEmployee.id}
                           employeeId={selectedEmployee.id}
@@ -574,7 +564,8 @@ export default function AiEmployeeMarketPage({
                   <Modal.Footer className="shrink-0">
                     {selectedEmployee.installed ? (
                       <div className="mt-auto flex justify-end gap-2 pt-3">
-                        {selectedEmployee.installedVersion !== selectedEmployee.version ? (
+                        {selectedEmployee.installedVersion !==
+                        selectedEmployee.version ? (
                           <Button
                             size="sm"
                             isPending={syncingId === selectedEmployee.id}
@@ -661,7 +652,9 @@ function EmployeeDetail({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 space-y-1">
       <dt className="text-xs text-[var(--color-text-secondary)]">{label}</dt>
-      <dd className="break-words font-medium leading-6 text-[var(--color-text-primary)]">{value}</dd>
+      <dd className="break-words font-medium leading-6 text-[var(--color-text-primary)]">
+        {value}
+      </dd>
     </div>
   );
 }

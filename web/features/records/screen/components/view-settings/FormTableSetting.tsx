@@ -10,6 +10,10 @@ import type { ViewConfig, ViewConfigMode } from "@/features/records/screen/model
 
 import { ViewCustomButtonBindings } from "@/features/custom-buttons/components/ViewCustomButtonBindings";
 
+import { BranchRulesEditor } from "@/features/conditions/components/BranchRulesEditor";
+import { addRule, removeRuleTree, updateRule, validateRuleTree, type BranchRule } from "@/features/conditions";
+import { viewConditionRules } from "../../model/view-conditions";
+
 type Props = {
   appId: string;
   viewName: string;
@@ -30,6 +34,7 @@ type Props = {
   queryableFields: ViewFieldOption[];
   orderedFields: ViewFieldOption[];
   sensors: SensorDescriptor<SensorOptions>[];
+  isDetailForm?: boolean;
 };
 
 export function FormTableSetting({
@@ -52,6 +57,7 @@ export function FormTableSetting({
   queryableFields,
   orderedFields,
   sensors,
+  isDetailForm = false,
 }: Props) {
   const [draft, setDraft] = useState(initialDraft);
   const [fieldSearch, setFieldSearch] = useState("");
@@ -235,6 +241,10 @@ export function FormTableSetting({
     [orderedFields, viewFieldTree],
   );
 
+  const conditionRules = useMemo(() => draft ? viewConditionRules(draft) : [], [draft]);
+  const conditionFields = useMemo(() => queryableFields.map(field => ({ key: field.id, label: field.label, fieldType: ["createdAt", "updatedAt"].includes(field.id) ? "dateTime" : field.type === "builtin" ? "singleLineText" : field.type, props: field.props, options: (field.props?.options ?? []).map(option => typeof option === "string" ? { label: option, value: option } : option) })), [queryableFields]);
+  const conditionError = conditionRules.length ? validateRuleTree(conditionRules, new Set(conditionFields.map(field => field.key))) : undefined;
+  const changeConditions = (change: (rules: BranchRule[]) => BranchRule[]) => setDraft(current => current ? { ...current, filters: [], conditionVersion: 2, conditionRules: change(viewConditionRules(current)) } : current);
   const section = mode ?? "filters";
   return (
     <Drawer.Backdrop
@@ -334,150 +344,11 @@ export function FormTableSetting({
               ) : null}
               {draft && section === "filters" ? (
                 <div className="space-y-3">
-                  {draft.filters.map((rule) => (
-                    <div
-                      key={rule.id}
-                      className="grid grid-cols-[minmax(0,1fr)_130px_minmax(0,1fr)_36px] items-center gap-2"
-                    >
-                      <Select
-                        selectedKey={rule.fieldId}
-                        aria-label="筛选字段"
-                        onSelectionChange={(key) =>
-                          setDraft((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  filters: current.filters.map((item) =>
-                                    item.id === rule.id
-                                      ? {
-                                          ...item,
-                                          fieldId: String(key ?? ""),
-                                        }
-                                      : item,
-                                  ),
-                                }
-                              : current,
-                          )
-                        }
-                      >
-                        <Select.Trigger>
-                          <Select.Value />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {queryableFields.map((field) => (
-                              <ListBox.Item key={field.id} id={field.id}>
-                                {field.label}
-                              </ListBox.Item>
-                            ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
-                      <Select
-                        selectedKey={rule.operator}
-                        aria-label="筛选条件"
-                        onSelectionChange={(key) =>
-                          setDraft((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  filters: current.filters.map((item) =>
-                                    item.id === rule.id
-                                      ? {
-                                          ...item,
-                                          operator: String(
-                                            key,
-                                          ) as ViewConfig["filters"][number]["operator"],
-                                        }
-                                      : item,
-                                  ),
-                                }
-                              : current,
-                          )
-                        }
-                      >
-                        <Select.Trigger>
-                          <Select.Value />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            {[
-                              ["contains", "包含"],
-                              ["equals", "等于"],
-                              ["notEquals", "不等于"],
-                              ["greaterThan", "大于"],
-                              ["lessThan", "小于"],
-                            ].map(([id, label]) => (
-                              <ListBox.Item key={id} id={id}>
-                                {label}
-                              </ListBox.Item>
-                            ))}
-                          </ListBox>
-                        </Select.Popover>
-                      </Select>
-                      <Input
-                        aria-label="筛选值"
-                        value={rule.value}
-                        placeholder="请输入值"
-                        onChange={(event) =>
-                          setDraft((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  filters: current.filters.map((item) =>
-                                    item.id === rule.id
-                                      ? { ...item, value: event.target.value }
-                                      : item,
-                                  ),
-                                }
-                              : current,
-                          )
-                        }
-                      />
-                      <Button
-                        isIconOnly
-                        variant="ghost"
-                        aria-label="删除筛选条件"
-                        onPress={() =>
-                          setDraft((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  filters: current.filters.filter(
-                                    (item) => item.id !== rule.id,
-                                  ),
-                                }
-                              : current,
-                          )
-                        }
-                      >
-                        <TrashBin />
-                      </Button>
-                    </div>
-                  ))}
-                  <Button
-                    variant="ghost"
-                    onPress={() =>
-                      setDraft((current) =>
-                        current
-                          ? {
-                              ...current,
-                              filters: [
-                                ...current.filters,
-                                {
-                                  id: `filter-${Date.now()}`,
-                                  fieldId: queryableFields[0]?.id ?? "",
-                                  operator: "contains",
-                                  value: "",
-                                },
-                              ],
-                            }
-                          : current,
-                      )
-                    }
-                  >
-                    + 添加筛选条件
-                  </Button>
+                  {isDetailForm ? <p className="text-sm text-[var(--color-text-secondary)]">明细表单暂不支持视图筛选。</p> : <BranchRulesEditor rules={conditionRules} sourceFieldChoices={conditionFields}
+                    onAddConditionRule={(parent, sibling, count) => changeConditions(rules => addRule(rules, parent, sibling, count))}
+                    onConditionRuleChange={(id, key, value) => changeConditions(rules => updateRule(rules, id, key, value))}
+                    onRemoveConditionRule={id => changeConditions(rules => removeRuleTree(rules, id))} />}
+                  {conditionError ? <p role="alert" className="text-danger">{conditionError}</p> : null}
                 </div>
               ) : null}
               {draft && section === "sorts" ? (
@@ -714,7 +585,7 @@ export function FormTableSetting({
               取消
             </Button>
             <Button
-              isDisabled={!draft}
+              isDisabled={!draft || !!conditionError}
               onPress={() => draft && onApply(draft)}
             >
               应用调整

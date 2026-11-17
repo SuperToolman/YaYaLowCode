@@ -48,6 +48,13 @@ async fn main() -> Result<(), AppError> {
         return Ok(());
     }
 
+    if let Some(arg)=std::env::args().nth(1).filter(|s|s=="--market-reset-preview"||s=="--market-reset") {
+        let confirmation=if arg=="--market-reset"{Some(std::env::args().nth(2).ok_or_else(||AppError::BadRequest("需要预览生成的确认凭据".into()))?)}else{None};
+        let db=Database::connect(AppConfig::from_env().database_url).await?;
+        let result=modules::app_market::reset::command(&db,confirmation.as_deref()).await?;
+        println!("{}",serde_json::to_string_pretty(&result).unwrap());return Ok(());
+    }
+
     // `cargo run` is the local development entry point, so keep its contract current.
     #[cfg(debug_assertions)]
     openapi::export_to_file(&openapi_output).map_err(AppError::Server)?;
@@ -65,6 +72,7 @@ async fn main() -> Result<(), AppError> {
     infrastructure::legacy_bootstrap::ensure_file_tables(&db).await?;
     infrastructure::migrator::reconcile_legacy_names(&db).await?;
     infrastructure::migrator::Migrator::up(&db, None).await?;
+    platform::instance_identity::initialize(&db).await?;
     if std::env::args().any(|arg| arg == "--migrate-only") {
         info!("database migrations completed; no worker or HTTP server started");
         return Ok(());

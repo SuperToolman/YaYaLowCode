@@ -28,6 +28,8 @@ pub(crate) fn build(state: AppState) -> Router {
         .merge(crate::modules::agent_v2::routes())
         .merge(crate::modules::knowledge::routes())
         .route("/healthz", get(health_check))
+        .route("/api/identity/operations/exchange", post(crate::platform::operations_access::exchange))
+        .route("/api/identity/operations/logout", post(crate::platform::operations_access::logout))
         .route("/openapi.json", get(openapi::openapi_json))
         .route(
             "/api/locations",
@@ -295,6 +297,17 @@ pub(crate) fn build(state: AppState) -> Router {
             "/api/apps/{app_id}/market-submission",
             get(app_market::get).post(app_market::submit),
         )
+        .route("/api/market/application-submissions", get(app_market::list_submissions))
+        .route("/api/market/application-submissions/{id}/retry", post(app_market::retry_submission))
+        .route("/api/market/publication-capabilities", get(app_market::publication_capabilities))
+        .route("/api/apps/{app_id}/market-preflight", post(app_market::preflight))
+        .route("/api/apps/{app_id}/market-export", post(app_market::export_package))
+        .route("/api/market/applications/{product_id}/commercial",get(app_market::commercial_versions).post(app_market::submit_commercial))
+        .route("/api/market/application-orders",get(app_market::orders))
+        .route("/api/market/application-revenues",get(app_market::revenues))
+        .route("/api/market/application-orders/{order_id}/simulate-payment",post(app_market::simulate_payment))
+        .route("/api/market/application-orders/{order_id}/action",post(app_market::order_action))
+        .route("/api/market/applications/{product_id}/checkout",post(app_market::checkout))
         .route("/api/market/applications", get(app_market::list_market))
         .route(
             "/api/market/applications/{product_id}",
@@ -526,6 +539,7 @@ pub(crate) fn build(state: AppState) -> Router {
             "/api/forms/{form_uuid}/records/query",
             axum::routing::post(forms::query_form_records),
         )
+        .route("/api/forms/{form_uuid}/conditions/evaluate", post(forms::evaluate_form_conditions))
         .route(
             "/api/forms/{form_uuid}/bootstrap",
             get(forms::get_form_bootstrap),
@@ -595,6 +609,7 @@ async fn require_authenticated(
         (_, "/healthz")
         | (_, "/openapi.json")
         | (_, "/api/identity/local-login")
+        | (_, "/api/identity/operations/exchange")
         | (_, "/api/identity/sms/send-code")
         | (_, "/api/identity/sms/login")
         | (_, "/api/identity/dingtalk/session")
@@ -615,6 +630,7 @@ async fn require_authenticated(
         "/healthz"
             | "/openapi.json"
             | "/api/identity/local-login"
+            | "/api/identity/operations/exchange"
             | "/api/identity/sms/send-code"
             | "/api/identity/sms/login"
             | "/api/identity/dingtalk/session"

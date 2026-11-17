@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "sourceHash": "52046e3bbb238ab2d4fca4ba9bf46083db3decda500779d443f14114418872f8",
+  "sourceHash": "cde8589d99659e0060f2244ab7a1fa1cb665827553270a96897901bf6d7689fe",
   "componentContractVersion": 1,
   "components": [
     {
@@ -3143,6 +3143,36 @@
             },
             {
               "const": "noValue"
+            },
+            {
+              "const": "contains"
+            },
+            {
+              "const": "notContains"
+            },
+            {
+              "const": "gt"
+            },
+            {
+              "const": "gte"
+            },
+            {
+              "const": "lt"
+            },
+            {
+              "const": "lte"
+            },
+            {
+              "const": "between"
+            },
+            {
+              "const": "containsAny"
+            },
+            {
+              "const": "containsAll"
+            },
+            {
+              "const": "containsNone"
             }
           ]
         },

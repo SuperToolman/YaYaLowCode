@@ -523,7 +523,12 @@ fn validate_config_references(value: &Value, condition: bool) -> Result<(), AppE
             for (key, value) in map {
                 if key == "sourceFieldKey" || (condition && key == "fieldKey") {
                     if let Some(reference) = value.as_str().filter(|s| !s.is_empty()) {
-                        validate_reference(reference)?;
+                        if !condition && map.contains_key("operator") && map.contains_key("fieldKey") {
+                            crate::platform::conditions::reference(reference)?;
+                        } else {
+                            let reference = crate::platform::conditions::reference(reference)?;
+                            validate_reference(&reference.root)?;
+                        }
                     } else if field_reference
                         || (condition
                             && key == "fieldKey"

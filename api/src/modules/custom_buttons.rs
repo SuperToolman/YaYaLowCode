@@ -261,6 +261,9 @@ async fn validate_owner_form(
         )?,
         _ => return Err(bad("按钮可用条件模式无效")),
     }
+    if payload.availability.mode == "conditions" {
+        crate::platform::condition_query::compile(&state.db,form_uuid,&payload.availability.rules.iter().map(|r| json!(r)).collect::<Vec<_>>(),&mut vec![]).await?;
+    }
     if payload.action_type == "fill_form" {
         let rules = &payload.action_config.association_rules;
         if payload.action_config.target_form_uuid == form_uuid {
@@ -273,12 +276,18 @@ async fn validate_owner_form(
             }
             let source = valid_condition_fields(&schema.schema_json, form.form_type == "workflow");
             for rule in rules.iter().filter(|r| r.is_group != Some(true)) {
+                let target = crate::platform::condition_query::resolve(&state.db,&payload.action_config.target_form_uuid,rule.field_key.as_deref().unwrap_or("")).await?;
+                crate::platform::condition_query::validate_operand(&target,&json!(rule))?;
+                if rule.value_type.as_deref() == Some("field") && ![Some("hasValue"),Some("noValue")].contains(&rule.operator.as_deref()) {
+                    let other = crate::platform::condition_query::resolve(&state.db,form_uuid,rule.source_field_key.as_deref().unwrap_or("")).await?;
+                    crate::platform::condition_query::validate_pair(&target,&other)?;
+                }
                 if rule.value_type.as_deref() == Some("field")
                     && ![Some("hasValue"), Some("noValue")].contains(&rule.operator.as_deref())
                     && !rule
                         .source_field_key
                         .as_ref()
-                        .is_some_and(|key| source.contains(key))
+                        .is_some_and(|key| source.contains(&crate::platform::conditions::root_key(key)))
                 {
                     return Err(bad("关联条件的来源字段已失效"));
                 }
@@ -471,12 +480,12 @@ pub(super) fn validate_rules(
         if !rule
             .field_key
             .as_ref()
-            .is_some_and(|key| fields.contains(key))
+            .is_some_and(|key| fields.contains(&crate::platform::conditions::root_key(key)))
         {
             return Err(bad("条件字段不存在"));
         }
         let operator = rule.operator.as_deref().unwrap_or("eq");
-        if !["eq", "neq", "inAny", "notInAny", "hasValue", "noValue"].contains(&operator) {
+        if !crate::platform::conditions::OPERATORS.contains(&operator) {
             return Err(bad("条件运算符无效"));
         }
         let value_type = rule.value_type.as_deref().unwrap_or("value");
@@ -490,7 +499,7 @@ pub(super) fn validate_rules(
             if !rule
                 .source_field_key
                 .as_ref()
-                .is_some_and(|key| fields.contains(key))
+                .is_some_and(|key| fields.contains(&crate::platform::conditions::root_key(key)))
             {
                 return Err(bad("比较字段不存在"));
             }

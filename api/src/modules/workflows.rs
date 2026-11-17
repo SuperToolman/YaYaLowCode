@@ -1283,12 +1283,6 @@ pub(crate) async fn skip_pending_tasks<C: ConnectionTrait>(
     Ok(())
 }
 
-pub(crate) async fn role_assignees(
-    state: &AppState,
-    role_ids: Option<&Vec<Value>>,
-) -> Result<Vec<String>, AppError> {
-    role_assignees_in(&state.db, role_ids).await
-}
 async fn role_assignees_in<C: ConnectionTrait>(
     db: &C,
     role_ids: Option<&Vec<Value>>,

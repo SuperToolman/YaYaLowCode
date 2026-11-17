@@ -24,6 +24,7 @@ pub(crate) struct ViewButtonRuntime {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct ButtonInvocation {
     pub record_id: String,
+    #[allow(dead_code, reason = "Accepted for API compatibility; authorization uses the persisted record")]
     pub data: Option<Value>,
 }
 fn bindings(config: &Value) -> Result<Vec<ViewButtonBinding>, AppError> {
@@ -45,6 +46,9 @@ pub(crate) async fn validate_view_config(
     form_uuid: &str,
     config: &Value,
 ) -> Result<(), AppError> {
+    if let Some(rules) = config.get("conditionRules").and_then(Value::as_array).filter(|rules| !rules.is_empty()) {
+        crate::platform::condition_query::compile(&state.db,form_uuid,rules,&mut vec![]).await?;
+    }
     let rows = bindings(config)?;
     if rows.len() > 100 {
         return Err(AppError::BadRequest("一个视图最多绑定100个按钮".into()));
@@ -218,7 +222,12 @@ async fn check_invocation(
             };
             data["submitterOrganization"] = json!(organization);
         }
-        if !automations::expression::evaluate_record_rule_group(&rules, None, &data) {
+        let (_,targets) = crate::platform::condition_query::compile(&state.db,form_uuid,&rules,&mut vec![]).await?;
+        for target in targets { authorization::authorize_request(headers,state,&Method::GET,&format!("/api/forms/{target}/records")).await?; }
+        let keys: Vec<_> = rules.iter().flat_map(|r| [r["fieldKey"].as_str(),if r["valueType"] == "field" {r["sourceFieldKey"].as_str()} else {None}]).flatten().map(str::to_string).collect();
+        let mut records = vec![data];
+        crate::platform::condition_query::hydrate(&state.db,&RecordRepository::new(&state.db),form_uuid,&keys,&mut records).await?;
+        if !automations::expression::evaluate_record_rule_group(&rules, None, &records.remove(0)) {
             return Err(AppError::BadRequest(
                 if definition.disabled_reason.trim().is_empty() {
                     "当前数据不满足按钮可用条件".into()
@@ -263,6 +272,20 @@ async fn check_invocation(
     }
     if definition.action_type == "fill_form" {
         fill::validate_association(state, &definition, form_uuid).await?;
+        for rule in definition.action_config.association_rules.iter().filter(|r| r.is_group != Some(true)) {
+            let mut references = vec![(definition.action_config.target_form_uuid.as_str(),rule.field_key.as_deref().unwrap_or(""))];
+            if rule.value_type.as_deref() == Some("field") && ![Some("hasValue"),Some("noValue")].contains(&rule.operator.as_deref()) {
+                references.push((form_uuid,rule.source_field_key.as_deref().unwrap_or("")));
+            }
+            let mut plans=Vec::new();
+            for (form,key) in references {
+                let plan=crate::platform::condition_query::resolve(&state.db,form,key).await?;
+                for (_,target) in &plan.hops { authorization::authorize_request(headers,state,&Method::GET,&format!("/api/forms/{}/records",target.form_uuid)).await?; }
+                plans.push(plan);
+            }
+            crate::platform::condition_query::validate_operand(&plans[0],&json!(rule))?;
+            if plans.len() == 2 { crate::platform::condition_query::validate_pair(&plans[0],&plans[1])?; }
+        }
         authorization::authorize_request(
             headers,
             state,

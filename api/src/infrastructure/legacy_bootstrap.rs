@@ -268,14 +268,7 @@ pub(crate) async fn ensure_identity_tables(db: &DatabaseConnection) -> Result<()
             '{"protected": true, "source": "local"}'::jsonb,
             NOW(),
             NOW()
-        ) ON CONFLICT (id) DO UPDATE SET
-            display_name = EXCLUDED.display_name,
-            status = 'active',
-            is_admin = TRUE,
-            is_boss = TRUE,
-            real_authed = TRUE,
-            extension_json = iam_users.extension_json || '{"protected": true, "source": "local"}'::jsonb,
-            updated_at = NOW();
+        ) ON CONFLICT (id) DO NOTHING;
 
         UPDATE iam_users
         SET primary_organization_unit_id = '00000000-0000-4000-8000-000000000010'
@@ -292,7 +285,15 @@ pub(crate) async fn ensure_identity_tables(db: &DatabaseConnection) -> Result<()
         "#,
     )
     .await?;
-    db.execute_unprepared("INSERT INTO iam_local_credentials (user_id, username, password, created_at, updated_at) VALUES ('00000000-0000-4000-8000-000000000001', 'yaya', 'yaya', NOW(), NOW()) ON CONFLICT (user_id) DO UPDATE SET username = 'yaya', password = 'yaya', updated_at = NOW();").await?;
+    // Development convenience only. Never reset an existing credential on restart.
+    if std::env::var("APP_ENV").as_deref() != Ok("production")
+        && std::env::var("YAYA_PLATFORM_ADMIN_MOBILE").unwrap_or_default().trim().is_empty()
+    {
+        db.execute_unprepared("INSERT INTO iam_local_credentials (user_id, username, password, created_at, updated_at) VALUES ('00000000-0000-4000-8000-000000000001', 'yaya', 'yaya', NOW(), NOW()) ON CONFLICT DO NOTHING;").await?;
+    }
+    if std::env::var("APP_ENV").as_deref() == Ok("production") {
+        db.execute_unprepared("DELETE FROM iam_local_credentials WHERE user_id='00000000-0000-4000-8000-000000000001' AND username='yaya' AND password='yaya'").await?;
+    }
     db.execute_unprepared(
         r#"
         INSERT INTO iam_external_identities (

@@ -52,6 +52,7 @@ export async function getRecordsPage(input: {
   filters: RecordFilter[];
   sorts: RecordSort[];
   detail: boolean;
+  conditionRules?: import("@/features/conditions").BranchRule[];
 }): Promise<RecordsPage> {
   const result = input.detail
     ? await listFormRecords({
@@ -61,7 +62,7 @@ export async function getRecordsPage(input: {
       })
     : await queryFormRecords({
         path: { formUuid: input.formUuid },
-        body: { page: input.page, pageSize: input.pageSize, filters: input.filters, sorts: input.sorts },
+        body: { page: input.page, pageSize: input.pageSize, filters: input.filters, sorts: input.sorts, conditionRules: input.conditionRules },
         responseStyle: "fields",
       });
   const page = unwrapApiResult(result, "无法加载表单记录");

@@ -6,6 +6,9 @@ import { jsonRequest, requestApi } from "@/shared/lib/api-request";
 export function loginWithPassword(username: string, password: string) {
   return requestApi<LoginSession>("/api/auth/login", { ...jsonRequest({ username, password }, { method: "POST" }), suppressAuthNotification: true });
 }
+export function loginWithOperations(code: string) {
+  return requestApi<LoginSession>("/api/auth/operations", { ...jsonRequest({ code }, { method: "POST" }), suppressAuthNotification: true });
+}
 
 export function getAuthSession() {
   return requestApi<LoginSession>("/api/auth/session", { cache: "no-store", suppressAuthNotification: true });

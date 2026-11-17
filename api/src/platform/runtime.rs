@@ -57,20 +57,10 @@ impl ImMetrics {
             *counters.entry(name).or_default() += 1;
         }
     }
-
-    pub(crate) fn snapshot(&self) -> BTreeMap<&'static str, u64> {
-        self.counters
-            .read()
-            .map(|value| value.clone())
-            .unwrap_or_default()
-    }
 }
 
 pub(crate) trait EventBus: Send + Sync {
-    fn publish(
-        &self,
-        event: ImDeliveryEvent,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + '_>>;
+    fn publish(&self, event: ImDeliveryEvent);
     fn subscribe(&self) -> broadcast::Receiver<ImDeliveryEvent>;
 }
 
@@ -80,26 +70,12 @@ pub(crate) struct LocalEventBus {
 }
 
 impl EventBus for LocalEventBus {
-    fn publish(
-        &self,
-        event: ImDeliveryEvent,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + '_>> {
-        Box::pin(async move {
-            self.sender
-                .send(event)
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        })
+    fn publish(&self, event: ImDeliveryEvent) {
+        let _ = self.sender.send(event);
     }
 
     fn subscribe(&self) -> broadcast::Receiver<ImDeliveryEvent> {
         self.sender.subscribe()
-    }
-}
-
-impl LocalEventBus {
-    pub(crate) fn publish_now(&self, event: ImDeliveryEvent) {
-        let _ = self.sender.send(event);
     }
 }
 
@@ -131,7 +107,7 @@ impl AppState {
                     .map(str::to_string)
             };
             let number_field = |name: &str| data.get(name).and_then(serde_json::Value::as_i64);
-            self.event_bus.publish_now(ImDeliveryEvent {
+            self.event_bus.publish(ImDeliveryEvent {
                 event: event_type.to_string(),
                 request_id: string_field("requestId"),
                 user_id: string_field("userId"),

@@ -34,20 +34,24 @@ export function LicenseManagementModal({
   updateOnly?: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { hasPermission } = useAuth();
+  const { hasPermission, permissionsReady } = useAuth();
   const [status, setStatus] = useState<LicenseStatus | null>(null);
   const [licenseCenterUrl, setLicenseCenterUrl] = useState("");
   const [license, setLicense] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   async function load() {
     setLoading(true);
+    setLoadError("");
     try {
       const payload = await getLicenseStatus();
       setStatus(payload);
       setLicenseCenterUrl(payload.licenseCenterUrl ?? "");
     } catch (error) {
+      setStatus(null);
+      setLoadError(error instanceof Error ? error.message : "请检查 API 服务。");
       notifyRequestError(error, "无法读取许可证状态", {
         description:
           error instanceof Error ? error.message : "请检查 API 服务。",
@@ -138,10 +142,13 @@ export function LicenseManagementModal({
                 <p className="font-semibold">
                   {loading
                     ? "正在检查许可证"
+                    : loadError || !status
+                      ? "无法读取许可证状态"
                     : active
                       ? "许可证有效"
                       : "许可证无效"}
                 </p>
+                {loadError ? <p className="mt-1 opacity-90">{loadError}</p> : null}
                 {!loading && !active && status?.reason ? (
                   <p className="mt-1 opacity-90">{status.reason}</p>
                 ) : null}
@@ -191,7 +198,7 @@ export function LicenseManagementModal({
                   </div>
                 </dl>
               ) : null}
-              {canManage && !isUpdatePrompt ? (
+              {canManage && !loadError && !isUpdatePrompt ? (
                 <div className="space-y-4 border-t border-[var(--color-border)] pt-5">
                   <label className="block text-sm font-medium text-[var(--color-text-primary)]">
                     运营管理平台 API 地址
@@ -221,7 +228,7 @@ export function LicenseManagementModal({
                     />
                   </label>
                 </div>
-              ) : !canManage ? (
+              ) : !canManage && permissionsReady && !loadError ? (
                 <p className="text-sm text-[var(--color-text-secondary)]">
                   当前账号没有更新平台签名的权限，请联系平台管理员。
                 </p>
@@ -239,7 +246,7 @@ export function LicenseManagementModal({
               ) : null}
               {canManage && isUpdatePrompt ? (
                 <Button
-                  isDisabled={loading || saving}
+                  isDisabled={loading || saving || Boolean(loadError)}
                   isPending={saving}
                   onPress={() => void applyLatest()}
                 >
@@ -250,6 +257,7 @@ export function LicenseManagementModal({
                   isDisabled={
                     loading ||
                     saving ||
+                    Boolean(loadError) ||
                     !licenseCenterUrl.trim() ||
                     !license.trim()
                   }

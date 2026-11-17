@@ -7,5 +7,5 @@ export async function GET(request: Request, { params }: { params: Promise<{ appI
 
 export async function POST(request: Request, { params }: { params: Promise<{ appId: string }> }) {
   const { appId } = await params;
-  return proxyBackendJson(request, `/api/apps/${encodeURIComponent(appId)}/market-submission`);
+  return proxyBackendJson(request, `/api/apps/${encodeURIComponent(appId)}/market-submission`, "POST", 120_000);
 }

@@ -66,6 +66,7 @@ export function useParentRecordsQuery(formUuid?: string) {
 }
 
 export function useRecordsQuery(input: {
+  conditionRules?: import("@/features/conditions").BranchRule[];
   formUuid: string;
   page: number;
   pageSize: number;
@@ -76,7 +77,7 @@ export function useRecordsQuery(input: {
   initialData?: { items: unknown[]; total: number; page: number; pageSize: number };
 }) {
   return useQuery({
-    queryKey: ["form-records", input.formUuid, input.page, input.pageSize, input.filters, input.sorts],
+    queryKey: ["form-records", input.formUuid, input.page, input.pageSize, input.filters, input.sorts, input.conditionRules],
     enabled: input.enabled,
     queryFn: () => getRecordsPage(input),
     initialData: input.initialData,

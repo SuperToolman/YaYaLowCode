@@ -220,6 +220,8 @@ pub(super) async fn resume_branch(
 ) -> Result<(), AppError> {
     common::drive_execution(state, run_id(&state.db, instance.id).await?).await
 }
+#[cfg(test)]
+#[allow(dead_code, reason = "Helper retained for the standalone parallel workflow database regression fixture")]
 pub(super) async fn resume_queued(
     state: &AppState,
     _: &automation_flow_entity::Model,

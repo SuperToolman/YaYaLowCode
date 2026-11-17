@@ -102,6 +102,7 @@ pub(crate) enum AtomicStep {
     Stopped,
 }
 
+#[allow(dead_code, reason = "Fallback runtime contract; production executes human nodes through atomic_step")]
 pub(crate) enum StepResult {
     Continue,
     Waiting,

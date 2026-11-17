@@ -249,6 +249,7 @@ export function FormHomeRecords({
           field.label,
         ].join("."),
         type: field.type,
+        props: field.props,
         typeLabel: getViewFieldTypeLabel(field.type),
         parentSubformId: getSubformAncestors(
           field,
@@ -419,7 +420,7 @@ export function FormHomeRecords({
   );
   const recordFilters = useMemo(
     () =>
-      effectiveViewConfig.filters
+      (effectiveViewConfig.conditionRules ? [] : effectiveViewConfig.filters)
         .filter(
           (rule) =>
             rule.value.trim() &&
@@ -438,7 +439,7 @@ export function FormHomeRecords({
           )[rule.operator],
           value: rule.value,
         })),
-    [effectiveViewConfig.filters, queryableViewFields],
+    [effectiveViewConfig.filters, effectiveViewConfig.conditionRules, queryableViewFields],
   );
   const recordSorts = useMemo(
     () =>
@@ -458,6 +459,7 @@ export function FormHomeRecords({
     formUuid,
     page: recordPage,
     pageSize: recordPageSize,
+    conditionRules: executionRecordId ? undefined : effectiveViewConfig.conditionRules,
     filters: executionRecordId
       ? [{ fieldId: "instanceId", operator: "eq", value: executionRecordId }]
       : recordFilters,
@@ -1406,6 +1408,7 @@ export function FormHomeRecords({
 
       {(
         <FormTableSetting
+          isDetailForm={isDetailForm}
           appId={appId}
           viewName={formViews.activeFormView?.name ?? ""}
           savedViewName={formViews.activeFormView?.name ?? ""}
@@ -1432,6 +1435,7 @@ export function FormHomeRecords({
             typeLabel: getViewFieldTypeLabel(field.type),
           }))}
           queryableFields={queryableViewFields.map((field) => ({
+            ...field,
             id: field.id,
             label: field.label,
             type: field.type,

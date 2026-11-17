@@ -11,13 +11,13 @@ export type ButtonDraft = {
   disabledReason: string;
 };
 export type ButtonDefinition = ButtonDraft & { id: string; appId: string; formUuid: string; targetFormName?: string | null; updatedAt: string; createdAt: string };
-export type SchemaField = { id: string; type: string; label?: string; parentGroupId?: string | null; props?: { isReadOnly?: boolean; isDisabled?: boolean; isHidden?: boolean; options?: { label: string; value: string }[] } };
+export type SchemaField = { id: string; type: string; label?: string; parentGroupId?: string | null; props?: import("@/features/form-model/runtime-types").RuntimeFieldProps };
 export const WRITABLE_TYPES = new Set(["singleLineText", "multiLineText", "richText", "number", "radio", "checkbox", "select", "multiSelect", "date", "dateRange", "attachment", "imageUpload", "member", "department", "countryCity", "cascader", "associationFormField", "subform"]);
 const systemKeys = new Set<string>([...BUILTIN_RECORD_FIELDS, ...WORKFLOW_BUILTIN_RECORD_FIELDS].map((field) => field.id));
 export function writableFields(fields: SchemaField[]) { return fields.filter((f) => WRITABLE_TYPES.has(f.type) && !systemKeys.has(f.id) && !f.props?.isReadOnly && !f.props?.isDisabled && !f.props?.isHidden); }
 export function conditionFields(fields: SchemaField[], workflow: boolean): SourceFieldChoice[] {
   return [
-    ...fields.filter((f) => (WRITABLE_TYPES.has(f.type) || f.type === "serialNumber") && !systemKeys.has(f.id)).map((f) => ({ key: f.id, label: f.label || f.id, fieldType: f.type, options: f.props?.options ?? [] })),
+    ...fields.filter((f) => (WRITABLE_TYPES.has(f.type) || f.type === "serialNumber") && !systemKeys.has(f.id)).map((f) => ({ key: f.id, label: f.label || f.id, fieldType: f.type, props: f.props, options: (f.props?.options ?? []).map(option => typeof option === "string" ? { label: option, value: option } : option) })),
     ...(workflow ? [...BUILTIN_RECORD_FIELDS, ...WORKFLOW_BUILTIN_RECORD_FIELDS] : BUILTIN_RECORD_FIELDS).map((f) => ({ key: f.id, label: f.label, fieldType: f.id === "createdAt" || f.id === "updatedAt" ? "date" : "singleLineText", options: [], isSystem: true })),
   ];
 }

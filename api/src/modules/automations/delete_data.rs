@@ -216,6 +216,7 @@ pub(super) async fn validate_nodes<C: ConnectionTrait>(
             fields.extend(get_data::automation_system_field_ids());
             get_data::validate_query_rules(config.get("rules"), Some(&fields))
                 .map_err(|_| AppError::BadRequest("删除条件规则不完整或目标字段失效".into()))?;
+            crate::platform::condition_query::compile(db,&form_uuid,config["rules"].as_array().unwrap(),&mut vec![]).await?;
         }
     }
     Ok(())

@@ -1,4 +1,5 @@
 import type { BranchRule, BranchRuleOperator } from "@/features/form-model/condition-types";
+import { conditionRoot, decodeConditionValue } from "./value";
 
 export const branchOperators: Array<{ id: BranchRuleOperator; label: string }> =
   [
@@ -8,6 +9,16 @@ export const branchOperators: Array<{ id: BranchRuleOperator; label: string }> =
     { id: "notInAny", label: "不等于任意一个" },
     { id: "hasValue", label: "有值" },
     { id: "noValue", label: "无值" },
+    { id: "contains", label: "包含" },
+    { id: "notContains", label: "不包含" },
+    { id: "gt", label: "大于 / 晚于" },
+    { id: "gte", label: "大于等于 / 不早于" },
+    { id: "lt", label: "小于 / 早于" },
+    { id: "lte", label: "小于等于 / 不晚于" },
+    { id: "between", label: "区间（含边界）" },
+    { id: "containsAny", label: "包含任意一个" },
+    { id: "containsAll", label: "包含全部" },
+    { id: "containsNone", label: "不包含任意一个" },
   ];
 
 export function createBranchRule(parentId?: string): BranchRule {
@@ -50,13 +61,8 @@ export function normalizeBranchRule(value: unknown): BranchRule | null {
 export function normalizeBranchRuleOperator(
   value: unknown,
 ): BranchRuleOperator {
-  return value === "neq" ||
-    value === "inAny" ||
-    value === "notInAny" ||
-    value === "hasValue" ||
-    value === "noValue"
-    ? value
-    : "eq";
+  // Preserve unknown operators so validation can report them instead of changing meaning.
+  return (typeof value === "string" && value ? value : "eq") as BranchRuleOperator;
 }
 
 export function validateRuleTree(
@@ -65,6 +71,7 @@ export function validateRuleTree(
 ): string | undefined {
   if (!rules.length || !rules.some((rule) => !rule.isGroup))
     return "按条件过滤至少需要一条有效规则";
+  if (rules.length > 200) return "条件最多支持200条";
   const ids = new Set(rules.map((rule) => rule.id));
   if (ids.size !== rules.length) return "筛选规则 ID 重复";
   for (const rule of rules) {
@@ -82,18 +89,26 @@ export function validateRuleTree(
         return "筛选条件组不能为空";
       continue;
     }
-    if (!rule.fieldKey || (fieldIds && !fieldIds.has(rule.fieldKey)))
+    if (!rule.fieldKey || !conditionRoot(rule.fieldKey) || (fieldIds && !fieldIds.has(conditionRoot(rule.fieldKey))))
       return "请选择有效的筛选字段";
     if (
-      !rule.operator ||
-      !branchOperators.some((item) => item.id === rule.operator)
+      !branchOperators.some((item) => item.id === (rule.operator ?? "eq"))
     )
       return "请选择有效的筛选运算符";
     if (
-      !(["hasValue", "noValue"] as string[]).includes(rule.operator) &&
-      (rule.valueType === "field" ? !rule.sourceFieldKey || Boolean(fieldIds && !fieldIds.has(rule.sourceFieldKey)) : !rule.rawValue?.trim())
+      !(["hasValue", "noValue"] as string[]).includes(rule.operator ?? "eq") &&
+      (rule.valueType === "field" ? !rule.sourceFieldKey || !conditionRoot(rule.sourceFieldKey) || Boolean(fieldIds && !fieldIds.has(conditionRoot(rule.sourceFieldKey))) : !rule.rawValue?.trim() || decodeConditionValue(rule.rawValue) === null)
     )
       return "请填写筛选值";
+    if (rule.operator === "between" && rule.valueType !== "field") {
+      const value = decodeConditionValue(rule.rawValue);
+      if (!Array.isArray(value) || value.length !== 2 || value.some(item => item === "" || item === null) || value[0]! > value[1]!) return "请填写有效的区间上下界";
+    }
+    if (rule.valueType !== "field" && !["hasValue", "noValue"].includes(rule.operator ?? "eq")) {
+      const value = decodeConditionValue(rule.rawValue);
+      if (Array.isArray(value) && (!value.length || value.some(item => item === null || typeof item === "string" && !item.trim()))) return "请补全匹配值";
+      if (typeof value === "string" && !value.trim() && !["hasValue", "noValue"].includes(rule.operator ?? "eq")) return "请填写筛选值";
+    }
   }
 }
 

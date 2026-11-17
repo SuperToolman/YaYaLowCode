@@ -4,7 +4,10 @@ export type BranchRuleOperator =
   | "inAny"
   | "notInAny"
   | "hasValue"
-  | "noValue";
+  | "noValue"
+  | "contains" | "notContains"
+  | "gt" | "gte" | "lt" | "lte" | "between"
+  | "containsAny" | "containsAll" | "containsNone";
 
 export type BranchRule = {
   id: string;
@@ -24,4 +27,5 @@ export type SourceFieldChoice = {
   fieldType: string;
   options: { label: string; value: string }[];
   isSystem?: boolean;
+  props?: import("./runtime-types").RuntimeFieldProps;
 };

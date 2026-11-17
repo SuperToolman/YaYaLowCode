@@ -21,13 +21,15 @@ export function getDynamicColumnWidth(
 ) {
   const titleWidth = Math.min(
     maxWidth,
-    estimateTableColumnWidth([label], 24, maxWidth) + (sortable ? 20 : 0),
+    estimateTableColumnWidth([label], 32, maxWidth, 0, 12, 32) + (sortable ? 20 : 0),
   );
   const contentWidth = estimateTableColumnWidth(
     values,
-    24,
+    32,
     maxWidth,
     adornmentWidth,
+    14,
+    32,
   );
   return Math.min(maxWidth, Math.max(titleWidth, contentWidth));
 }

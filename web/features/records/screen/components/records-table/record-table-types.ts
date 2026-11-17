@@ -1,6 +1,19 @@
 import type { RuntimeFormSchema, RuntimeSchemaField } from "@/features/form-model/runtime-types";
 import type { FormRecord } from "@/features/records/types";
 import type { AssociationFormData } from "@/features/records/types";
+import type { ReactNode } from "react";
+
+export type RecordDataColumn = {
+  id: string;
+  header: ReactNode | (() => ReactNode);
+  cell: (record: RecordTableRow) => ReactNode;
+  size: number;
+  minSize?: number;
+  maxSize?: number;
+  enableSorting?: boolean;
+  pin?: "left" | "right";
+  fixedWidth?: number;
+};
 
 type SchemaField = RuntimeSchemaField;
 export type FormSchema = RuntimeFormSchema;

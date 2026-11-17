@@ -4,6 +4,7 @@ const AUTH_COOKIE_NAME = "yaya-auth-token";
 
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
+  if (pathname === "/operations-login") return NextResponse.next();
   const token = request.cookies.get(AUTH_COOKIE_NAME)?.value ?? null;
   const authenticated = hasUsableToken(token);
 

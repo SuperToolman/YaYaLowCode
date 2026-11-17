@@ -5,6 +5,7 @@ use crate::platform::prelude::*;
 use crate::shared::*;
 use axum::http::HeaderMap;
 use axum::http::StatusCode;
+use sea_orm::{Statement,DatabaseBackend};
 
 pub(crate) async fn list_apps(
     State(state): State<AppState>,
@@ -209,6 +210,33 @@ async fn app_response(db: &DatabaseConnection, app: app_entity::Model) -> Result
         .and_then(|user| user.avatar_url);
     let mut response = ApiApp::from(app);
     response.owner_avatar_url = owner_avatar_url;
+    if matches!(
+        response.deployment_type.as_str(),
+        "market" | "market_archived"
+    ) {
+        if let Some(row) = db
+            .query_one_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"SELECT i.installation_id::text AS installation_id,
+                          COALESCE(v.snapshot_json->>'packageName', '已购应用包') AS package_name,
+                          COALESCE(v.snapshot_json->>'applicationType',
+                            CASE WHEN (SELECT COUNT(*) FROM market_installation_members x
+                                       WHERE x.installation_id=i.installation_id)>1
+                                 THEN 'suite' ELSE 'single' END) AS application_type
+                   FROM market_installation_members m
+                   JOIN market_installations i ON i.installation_id=m.installation_id
+                   LEFT JOIN market_installation_versions v
+                     ON v.installation_id=i.installation_id AND v.release_id=i.release_id
+                   WHERE m.local_app_id=$1"#,
+                vec![response.id.clone().into()],
+            ))
+            .await?
+        {
+            response.market_installation_id = Some(row.try_get("", "installation_id")?);
+            response.market_product_name = row.try_get("", "package_name")?;
+            response.market_application_type = Some(row.try_get("", "application_type")?);
+        }
+    }
     Ok(response)
 }
 
@@ -247,6 +275,20 @@ pub(crate) async fn delete_app_definition(
         ));
     }
 
+    if state
+        .db
+        .query_one_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT 1 FROM market_installation_members WHERE local_app_id=$1",
+            vec![app_id.into()],
+        ))
+        .await?
+        .is_some()
+    {
+        return Err(AppError::BadRequest(
+            "套应用成员不能单独删除，请在应用市场管理整套安装".into(),
+        ));
+    }
     let txn = state.db.begin().await?;
     deletion::delete_app_contents(&txn, app_id).await?;
     txn.commit().await?;

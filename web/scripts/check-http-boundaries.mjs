@@ -6,7 +6,8 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const generatedConsumers = new Set(["shared/lib/http.ts", "shared/lib/api-client-runtime.ts", "shared/lib/backend-client.ts"]);
 // Next owns these contracts; they are deliberately absent from Rust OpenAPI.
 const bffRequests = new Map([
-  ["features/auth/api.ts", /^\/api\/auth\/(login|logout|session|sms\/login|sms\/send-code)$/],
+  ["features/auth/api.ts", /^\/api\/auth\/(login|logout|session|operations|sms\/login|sms\/send-code)$/],
+  ["features/settings/platform-package-api.ts", /^\/api\/settings\/platform-package(?:\/\$\{encodeURIComponent\(id\)\}(?:\/download\?check=true)?)?$/],
 ]);
 const failures = [];
 function walk(directory) {

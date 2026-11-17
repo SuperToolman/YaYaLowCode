@@ -22,6 +22,7 @@ export type PaymentModalProps = {
   productTitle?: string;
   amountCents?: number;
   billingLabel?: string;
+  completionDescription?: string;
   onTestPaymentComplete?: () => boolean | void | Promise<boolean | void>;
 };
 
@@ -30,7 +31,7 @@ const paymentMethods: Array<{ id: PaymentMethod; label: string; description: str
   { id: "wechat", label: "微信支付", description: "使用微信扫码完成支付", icon: "微", iconClassName: "bg-[#07c160]" },
 ];
 
-export function PaymentModal({ isOpen, onOpenChange, remittanceAccount = null, enterpriseVerificationHref = "#", onVerifyEnterprise, productTitle, amountCents, billingLabel, onTestPaymentComplete }: PaymentModalProps) {
+export function PaymentModal({ isOpen, onOpenChange, remittanceAccount = null, enterpriseVerificationHref = "#", onVerifyEnterprise, productTitle, amountCents, billingLabel, completionDescription = "模拟支付会在运营端创建订单、登记回款并签发新许可证。", onTestPaymentComplete }: PaymentModalProps) {
   const [tab, setTab] = useState<PaymentTab>("online");
   const [method, setMethod] = useState<PaymentMethod | null>(null);
   const [testingPayment, setTestingPayment] = useState(false);
@@ -85,7 +86,7 @@ export function PaymentModal({ isOpen, onOpenChange, remittanceAccount = null, e
                   <RemittanceDetails account={remittanceAccount} enterpriseVerificationHref={enterpriseVerificationHref} onVerifyEnterprise={onVerifyEnterprise} />
                 </Tabs.Panel>
               </Tabs>
-              {onTestPaymentComplete ? <div className="flex items-center justify-between gap-4 border-t border-[var(--color-border)] pt-4"><p className="text-xs text-[var(--color-text-secondary)]">模拟支付会在运营端创建订单、登记回款并签发新许可证。</p><Button variant="secondary" isPending={testingPayment} isDisabled={testingPayment} onPress={() => void completeTestPayment()}>{testingPayment ? "正在模拟支付" : "测试支付完成"}</Button></div> : null}
+              {onTestPaymentComplete ? <div className="flex items-center justify-between gap-4 border-t border-[var(--color-border)] pt-4"><p className="text-xs text-[var(--color-text-secondary)]">{completionDescription}</p><Button variant="secondary" isPending={testingPayment} isDisabled={testingPayment} onPress={() => void completeTestPayment()}>{testingPayment ? "正在模拟支付" : "测试支付完成"}</Button></div> : null}
             </Modal.Body>
           </Modal.Dialog>
         </Modal.Container>

@@ -219,6 +219,7 @@ if (Test-Path -LiteralPath $developmentEnvFile) {
         "ALIYUN_SMS_CODE_PARAM",
         "ALIYUN_SMS_REGION",
         "YAYA_BYOM_ENCRYPTION_KEY",
+        "YAYA_MARKET_PUBLICATION_ENABLED",
         "YAYA_AGENT_V2_WORKER_SECRET"
     )) {
         $useLocalSmsSetting = $name -like "ALIYUN_SMS_*" -and $env:APP_ENV -ne "production" -and $env:NODE_ENV -ne "production"

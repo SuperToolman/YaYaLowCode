@@ -1352,6 +1352,7 @@ pub(crate) async fn list_form_records(
 pub(crate) async fn query_form_records(
     State(state): State<AppState>,
     Path(form_uuid): Path<String>,
+    headers: HeaderMap,
     Json(request): Json<QueryFormRecordsRequest>,
 ) -> Result<Json<ApiResponse<ApiFormRecordList>>, AppError> {
     if request.filters.len() > 20 {
@@ -1406,6 +1407,12 @@ pub(crate) async fn query_form_records(
     }
 
     let (page, page_size) = normalize_record_pagination(request.page, request.page_size);
+    if let Some(rules) = request.condition_rules.as_ref().filter(|r| !r.is_empty()) {
+        let (_, targets) = crate::platform::condition_query::compile(&state.db, &form_uuid, rules, &mut vec![]).await?;
+        for target in targets {
+            authorization::authorize_request(&headers, &state, &axum::http::Method::GET, &format!("/api/forms/{target}/records")).await?;
+        }
+    }
     let (items, total) = RecordRepository::new(&state.db)
         .query_page(&form_uuid, &request, &field_kinds, page, page_size)
         .await?;
@@ -1424,6 +1431,27 @@ pub(crate) async fn query_form_records(
         page_size,
     };
     Ok(Json(success_response("查询表单数据成功", response)))
+}
+
+/// Evaluate draft or node-independent record values with authorized relation reads.
+pub(crate) async fn evaluate_form_conditions(
+    State(state): State<AppState>, Path(form_uuid): Path<String>, headers: HeaderMap,
+    Json(request): Json<EvaluateConditionsRequest>,
+) -> Result<Json<ApiResponse<Vec<bool>>>,AppError> {
+    use crate::platform::{conditions,condition_query};
+    if request.records.len() > 200 { return Err(conditions::bad("条件批量判断最多200条记录")); }
+    let (_,targets) = condition_query::compile(&state.db,&form_uuid,&request.rules,&mut vec![]).await?;
+    for target in targets { authorization::authorize_request(&headers,&state,&axum::http::Method::GET,&format!("/api/forms/{target}/records")).await?; }
+    let mut records = request.records;
+    if records.iter().any(|record| !record.is_object()) { return Err(conditions::bad("条件判断记录必须为对象")); }
+    let keys: Vec<_> = request.rules.iter().filter(|r| r["isGroup"] != true).flat_map(|rule| {
+        let mut keys = vec![rule["fieldKey"].as_str().unwrap_or("").to_string()];
+        if rule["valueType"] == "field" { keys.push(rule["sourceFieldKey"].as_str().unwrap_or("").to_string()); } keys
+    }).collect();
+    // Never trust client-provided values for resolved paths.
+    for record in &mut records { record.as_object_mut().unwrap().retain(|key,_| !key.starts_with(conditions::PATH_PREFIX)); }
+    condition_query::hydrate(&state.db,&RecordRepository::new(&state.db),&form_uuid,&keys,&mut records).await?;
+    Ok(Json(success_response("条件判断成功",records.iter().map(|data| conditions::evaluate(&request.rules,None,data)).collect())))
 }
 
 pub(crate) fn collect_queryable_field_kinds(
@@ -2169,6 +2197,13 @@ pub(crate) async fn save_form_schema_definition_in_transaction<C: ConnectionTrai
     let applied = load_schema_version_for_connection(db, &form_uuid, next_version).await?;
     if !is_detail_form {
         sync_current_storage_plan(db, &form_uuid, next_version, &applied.schema_json).await?;
+    }
+    // Resolve after applying inside this transaction so self-relations use the new schema.
+    for field in applied.schema_json["fields"].as_array().into_iter().flatten().filter(|field| field["type"] == "associationFormField" && field["props"]["defaultValueType"] == "filter") {
+        if let Some(rules)=field["props"]["associationDefaultRules"].as_array().filter(|rules| !rules.is_empty()) {
+            let target=field["props"]["associationFormId"].as_str().ok_or_else(|| AppError::BadRequest("默认值筛选缺少关联表单".into()))?;
+            crate::platform::condition_query::compile(db,target,rules,&mut vec![]).await?;
+        }
     }
 
     Ok((

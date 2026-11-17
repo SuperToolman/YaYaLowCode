@@ -74,10 +74,6 @@ pub(crate) async fn delete_app_contents<C: ConnectionTrait>(
     }
     for sql in [
         "DELETE FROM form_definitions WHERE app_route_app_id = $1",
-        "DELETE FROM market_installation_resources WHERE installation_id IN (SELECT installation_id FROM market_installations WHERE local_app_id = $1)",
-        "DELETE FROM market_installation_versions WHERE installation_id IN (SELECT installation_id FROM market_installations WHERE local_app_id = $1)",
-        "DELETE FROM market_installation_events WHERE installation_id IN (SELECT installation_id FROM market_installations WHERE local_app_id = $1)",
-        "DELETE FROM market_installations WHERE local_app_id = $1",
         "DELETE FROM apps WHERE route_app_id = $1",
     ] {
         db.execute_raw(Statement::from_sql_and_values(

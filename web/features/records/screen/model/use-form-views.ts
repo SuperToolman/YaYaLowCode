@@ -8,6 +8,8 @@ export type ViewFilterOperator = "contains" | "equals" | "notEquals" | "greaterT
 export type ViewFilterRule = { id: string; fieldId: string; operator: ViewFilterOperator; value: string };
 export type ViewSortRule = { id: string; fieldId: string; direction: "asc" | "desc" };
 export type ViewConfig = {
+  conditionVersion?: 2;
+  conditionRules?: import("@/features/conditions").BranchRule[];
   customButtons?: import("@/features/custom-buttons/bindings").ButtonBinding[];
   visibleFieldIds: string[];
   sortableFieldIds: string[];

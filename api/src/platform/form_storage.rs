@@ -673,7 +673,7 @@ fn storage_mapping(component_type: &str) -> (StorageTarget, Option<&'static str>
 fn is_indexable_component(component_type: &str) -> bool {
     matches!(
         component_type,
-        "singleLineText" | "number" | "radio" | "select" | "date" | "member" | "department"
+        "singleLineText" | "number" | "radio" | "select" | "date" | "member" | "department" | "associationFormField"
     )
 }
 

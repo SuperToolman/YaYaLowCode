@@ -643,18 +643,18 @@ export function CustomButtonConfigModal({
                               })
                             }
                             onConditionRuleChange={(id, key, value) =>
-                              setDraft({
-                                ...draft,
+                              setDraft(current => ({
+                                ...current,
                                 availability: {
-                                  ...draft.availability,
+                                  ...current.availability,
                                   rules: updateRule(
-                                    draft.availability.rules,
+                                    current.availability.rules,
                                     id,
                                     key,
                                     value,
                                   ),
                                 },
-                              })
+                              }))
                             }
                           />
                         </div>

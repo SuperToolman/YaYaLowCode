@@ -1,10 +1,9 @@
 "use client";
 
 import { createContext, useContext } from "react";
-import { Avatar } from "@heroui/react";
+import { Avatar, Checkbox } from "@heroui/react";
 import { getMemberLabel } from "@/features/form-runtime/member-display";
 import type { IdentityUser } from "@/features/form-runtime/types";
-import { MyTableCheckbox } from "@/shared/ui/MyTable";
 import type { RecordTableRow } from "./record-table-types";
 
 type TableSelectionContextValue = {
@@ -25,13 +24,17 @@ export function SelectionHeader() {
     selection.pageIds.length > 0 &&
     selection.pageIds.every((id) => selection.selectedIds.has(id));
   return (
-    <MyTableCheckbox
-      ariaLabel="全选当前页"
+    <Checkbox
+      slot={null}
+      aria-label="全选当前页"
       isSelected={allSelected}
+      isIndeterminate={!allSelected && selection.pageIds.some((id) => selection.selectedIds.has(id))}
       onChange={(selected) =>
         selection.onPageChange(new Set(selected ? selection.pageIds : []))
       }
-    />
+    >
+      <Checkbox.Content><Checkbox.Control><Checkbox.Indicator /></Checkbox.Control></Checkbox.Content>
+    </Checkbox>
   );
 }
 
@@ -48,18 +51,21 @@ export function SelectionCell({
   return (
     <>
       <span
-        className={`!text-[12px] ${isSelected ? "opacity-0" : "transition-opacity group-hover:opacity-0"}`}
+        className={`${isSelected ? "opacity-0" : "transition-opacity group-hover:opacity-0"}`}
       >
         {rowNumber}
       </span>
       <span
         className={`absolute inset-0 flex items-center justify-center transition-opacity ${isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
       >
-        <MyTableCheckbox
-          ariaLabel={`选择第 ${rowNumber} 行`}
+        <Checkbox
+          slot={null}
+          aria-label={`选择第 ${rowNumber} 行`}
           isSelected={isSelected}
           onChange={(selected) => selection.onRowChange(recordId, selected)}
-        />
+        >
+          <Checkbox.Content><Checkbox.Control><Checkbox.Indicator /></Checkbox.Control></Checkbox.Content>
+        </Checkbox>
       </span>
     </>
   );

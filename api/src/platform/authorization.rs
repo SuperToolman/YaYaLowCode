@@ -15,8 +15,12 @@ use crate::platform::{error::AppError, prelude::ApiResponse, rbac, runtime::AppS
 use crate::shared::success_response;
 
 #[derive(Deserialize)]
-struct Claims {
+pub(crate) struct Claims {
     sub: String,
+    #[serde(default)]
+    pub(crate) operations_session: Option<String>,
+    #[serde(default)]
+    pub(crate) operations_actor: Option<String>,
 }
 
 pub(crate) async fn authenticate(headers: &HeaderMap, state: &AppState) -> Result<(), AppError> {
@@ -31,11 +35,17 @@ pub(crate) async fn current_user(
     headers: &HeaderMap,
     state: &AppState,
 ) -> Result<iam_user_entity::Model, AppError> {
+    current_user_for_request(headers,state,None).await
+}
+async fn current_user_for_request(headers:&HeaderMap,state:&AppState,request:Option<(&str,&str)>)->Result<iam_user_entity::Model,AppError> {
     let user_id = authenticated_user_id(headers)?;
-    iam_user_entity::Entity::find_by_id(user_id)
+    let user = iam_user_entity::Entity::find_by_id(user_id)
         .one(&state.db)
         .await?
-        .ok_or_else(|| AppError::Forbidden("authentication required".into()))
+        .ok_or_else(|| AppError::Forbidden("authentication required".into()))?;
+    let claims=claims(headers)?;
+    super::operations_access::validate(&user,claims.operations_session.as_deref(),claims.operations_actor.as_deref(),request).await?;
+    Ok(user)
 }
 
 /// Resolve the user's effective tenant. New accounts normally have the
@@ -146,7 +156,8 @@ pub(crate) async fn authorize_request(
     method: &Method,
     path: &str,
 ) -> Result<(), AppError> {
-    let grants = grants(headers, state).await?;
+    let user=current_user_for_request(headers,state,Some((method.as_str(),path))).await?;
+    let grants=grants_for_user(state,user.id).await?;
     if grants.contains("*") {
         return Ok(());
     }
@@ -269,6 +280,9 @@ async fn required_permission(
             form_development_permission(state, form_uuid, "view_development").await
         }
         ["api", "forms", form_uuid, ..] => {
+            if method == Method::POST && (segments.get(3) == Some(&"records") && segments.get(4) == Some(&"query") || segments.get(3) == Some(&"conditions") && segments.get(4) == Some(&"evaluate")) {
+                return Ok(Some(format!("form:{form_uuid}:display")));
+            }
             if method == Method::DELETE && segments.len() == 3 {
                 return form_development_permission(state, form_uuid, "delete_form").await;
             }
@@ -332,6 +346,10 @@ fn form_action(method: &Method, resource: Option<&str>) -> &'static str {
 }
 
 fn authenticated_user_id(headers: &HeaderMap) -> Result<Uuid, AppError> {
+    Uuid::parse_str(&claims(headers)?.sub)
+        .map_err(|_| AppError::Forbidden("invalid authentication token".into()))
+}
+pub(crate) fn claims(headers: &HeaderMap) -> Result<Claims, AppError> {
     let token = headers
         .get("authorization")
         .and_then(|value| value.to_str().ok())
@@ -349,6 +367,5 @@ fn authenticated_user_id(headers: &HeaderMap) -> Result<Uuid, AppError> {
     .map_err(|_| AppError::Forbidden("invalid authentication token".into()))?
     .claims;
 
-    Uuid::parse_str(&claims.sub)
-        .map_err(|_| AppError::Forbidden("invalid authentication token".into()))
+    Ok(claims)
 }

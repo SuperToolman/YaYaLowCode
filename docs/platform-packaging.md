@@ -1,5 +1,7 @@
 # 平台离线镜像部署包
 
+开发环境也可由系统管理员在 `/settings/about` 点击“打包离线镜像”，通过 HeroUI 模态框确认版本、架构、环境变量及数据卷，启动后台任务并下载 ZIP。复用本文脚本，不增加另一种包格式。详见 [开发环境离线打包](development-offline-packaging.md)。
+
 在项目根使用 Node.js 24 和 Docker Buildx。打包工具是 `scripts/` 下的独立 Node.js 包，配置、锁文件和依赖均放在该目录；根目录不安装 Node.js 依赖：
 
 ```powershell

@@ -151,6 +151,29 @@ mod connection_tests {
     use super::*;
 
     #[test]
+    fn rejects_invalid_nonce_lengths_without_panicking() {
+        for length in [0, 1, 11, 13, 32] {
+            let encoded = format!("v1:{}:AA==", STANDARD.encode(vec![0_u8; length]));
+            assert!(matches!(decrypt(&encoded), Err(AppError::BadRequest(_))));
+        }
+    }
+
+    #[test]
+    fn array_nonce_preserves_ciphertext_compatibility() {
+        // AES-256-GCM known-answer vector: zero key/nonce and empty plaintext.
+        let cipher = Aes256Gcm::new_from_slice(&[0_u8; 32]).unwrap();
+        let nonce_bytes = [0_u8; 12];
+        let nonce = Nonce::from(nonce_bytes);
+        let plain = b"";
+        let encrypted = cipher.encrypt(&nonce, plain.as_ref()).unwrap();
+        assert_eq!(encrypted, [0x53, 0x0f, 0x8a, 0xfb, 0xc7, 0x45, 0x36, 0xb9,
+            0xa9, 0x63, 0xb4, 0xf1, 0xc4, 0xcb, 0x73, 0x8b]);
+        // The persisted v1 format stores the same 12 nonce bytes in Base64.
+        let decoded: [u8; 12] = STANDARD.decode(STANDARD.encode(nonce_bytes)).unwrap().try_into().unwrap();
+        assert_eq!(cipher.decrypt(&Nonce::from(decoded), encrypted.as_ref()).unwrap(), plain);
+    }
+
+    #[test]
     fn rejects_legacy_multi_model_payloads() {
         let legacy = serde_json::json!({"name":"provider","apiBaseUrl":"https://example.com/v1","models":["a","b"],"defaultChatModel":"a"});
         assert!(serde_json::from_value::<ModelRouteRequest>(legacy).is_err());
@@ -542,7 +565,7 @@ pub(crate) fn encrypt(plain: &str) -> Result<String, AppError> {
     let mut nonce = [0_u8; 12];
     OsRng.fill_bytes(&mut nonce);
     let encrypted = cipher()?
-        .encrypt(Nonce::from_slice(&nonce), plain.as_bytes())
+        .encrypt(&Nonce::from(nonce), plain.as_bytes())
         .map_err(|_| AppError::BadRequest("模型密钥加密失败".to_string()))?;
     Ok(format!(
         "v1:{}:{}",
@@ -563,11 +586,14 @@ pub(crate) fn decrypt(encoded: &str) -> Result<String, AppError> {
     let nonce = STANDARD
         .decode(nonce)
         .map_err(|_| AppError::BadRequest("保存的模型密钥无法解密".to_string()))?;
+    let nonce: [u8; 12] = nonce
+        .try_into()
+        .map_err(|_| AppError::BadRequest("保存的模型密钥无法解密".to_string()))?;
     let ciphertext = STANDARD
         .decode(ciphertext)
         .map_err(|_| AppError::BadRequest("保存的模型密钥无法解密".to_string()))?;
     let plain = cipher()?
-        .decrypt(Nonce::from_slice(&nonce), ciphertext.as_ref())
+        .decrypt(&Nonce::from(nonce), ciphertext.as_ref())
         .map_err(|_| AppError::BadRequest("保存的模型密钥无法解密".to_string()))?;
     String::from_utf8(plain).map_err(|_| AppError::BadRequest("保存的模型密钥无效".to_string()))
 }

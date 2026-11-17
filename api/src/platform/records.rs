@@ -105,6 +105,22 @@ where
         self.overlay_automation_changes(form_uuid, records).await
     }
 
+    /// Batch relation loading, including the current run's staged changes.
+    pub(crate) async fn find_many(&self, form_uuid: &str, ids: &[String]) -> Result<Vec<StoredFormRecord>, AppError> {
+        if ids.is_empty() { return Ok(vec![]); }
+        let plan = self.storage_plan(form_uuid).await?;
+        let mut found = Vec::new();
+        for chunk in ids.chunks(500) {
+            let placeholders = (1..=chunk.len()).map(|i| format!("${i}")).collect::<Vec<_>>().join(",");
+            let rows = self.db.query_all_raw(Statement::from_sql_and_values(DbBackend::Postgres,
+                format!("SELECT {} FROM \"{}\" WHERE deleted_at IS NULL AND record_uuid IN ({placeholders})", base_select_columns(&plan), plan.main_table),
+                chunk.iter().map(|id| SeaValue::from(id.clone())).collect::<Vec<_>>())).await?;
+            for row in rows { found.push(stored_record_from_row(&row,form_uuid)?); }
+        }
+        let visible = self.overlay_automation_changes(form_uuid,found).await?;
+        Ok(visible.into_iter().filter(|r| ids.contains(&r.record_uuid)).collect())
+    }
+
     pub(crate) async fn list_page(
         &self,
         form_uuid: &str,
@@ -259,6 +275,12 @@ where
             predicates.push(predicate);
         }
 
+        if let Some(rules) = &request.condition_rules {
+            if !rules.is_empty() {
+                predicates.push(super::condition_query::compile(self.db, form_uuid, rules, &mut values).await?.0);
+            }
+        }
+
         let where_sql = if predicates.is_empty() {
             "TRUE".to_string()
         } else {
@@ -299,6 +321,7 @@ where
         if order_parts.is_empty() {
             order_parts.push("created_at DESC".to_string());
         }
+        order_parts.push("record_uuid ASC".to_string());
 
         values.push(SeaValue::BigInt(Some(page_size as i64)));
         let limit_placeholder = values.len();

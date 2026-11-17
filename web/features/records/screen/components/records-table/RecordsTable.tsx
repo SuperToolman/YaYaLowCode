@@ -2,9 +2,8 @@
 
 import { notifyRequestError } from "@/shared/lib/notify";
 import { notify } from "@/shared/lib/notify";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Chip, Link as HeroLink, ListBox, Select, type SortDescriptor } from "@heroui/react";
-import type { ColumnDef } from "@tanstack/react-table";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Button, Chip, Link as HeroLink, ListBox, Select, Table, type SortDescriptor } from "@heroui/react";
 import { AlertDialog } from "@heroui/react/alert-dialog";
 import { Modal } from "@heroui/react/modal";
 import { Pagination } from "@heroui/react/pagination";
@@ -18,22 +17,25 @@ import { getAssociationPrimaryValue, getAssociationRecordId, getBuiltinRecordVal
 import type { ViewConfig, ViewSortRule } from "@/features/records/screen/model/use-form-views";
 import type { FormRecord } from "@/features/records/types";
 import { MySurface } from "@/shared/ui/MySurface";
-import { MyTable, type MyTableColumnMeta } from "@/shared/ui/MyTable";
 import { CustomButtonFillDrawer } from "@/features/custom-buttons/components/CustomButtonFillDrawer";
 import { CustomButtonPageDrawer, type CustomButtonPageTarget } from "@/features/records/screen/actions/CustomButtonPageDrawer";
 import { buttonPageUrl } from "@/features/custom-buttons/model";
 import { CustomButtonIcon } from "@/features/custom-buttons/icons";
 import { getViewButtons, prepareButton, executeButton } from "@/features/custom-buttons/api";
 import { evaluateBinding, type ButtonBinding } from "@/features/custom-buttons/bindings";
+import { hasRelatedConditions, useButtonConditions } from "@/features/custom-buttons/use-button-conditions";
 import { DEFAULT_DISABLED_REASON, type ButtonDefinition } from "@/features/custom-buttons/model";
 import { RecordRowActions } from "@/features/records/screen/components/records-table/RecordRowActions";
 import { useCopyRecord } from "@/features/records/model/use-copy-record";
 import { WorkflowBuiltinTag } from "@/features/records/screen/components/records-table/WorkflowBuiltinTag";
 import { RecordImagesCell } from "@/features/records/screen/components/records-table/RecordImagesCell";
 import { getSubformDataRows, getSubformInstanceCount, type SubformDataRow } from "@/features/records/screen/components/records-table/subform-rows";
-import type { FormSchema, RecordTableRow, AssociationDetail } from "./record-table-types";
+import type { FormSchema, RecordTableRow, AssociationDetail, RecordDataColumn } from "./record-table-types";
 import { TableSelectionContext, SelectionHeader, SelectionCell, RecordMembersCell, RecordSubmitterCell } from "./RecordTableCells";
 import { getDynamicColumnWidth, useRecordTableLayout, useRecordTableValues } from "./use-record-table-layout";
+
+import { useRecordTableSizing } from "./use-record-table-sizing";
+import styles from "./RecordsTable.module.css";
 
 type SchemaField = RuntimeSchemaField;
 
@@ -174,6 +176,7 @@ export function RecordsTable({
     recordId: string;
     viewUuid: string;
   } | null>(null);
+  const matchesRelatedButton = useButtonConditions(urlParams.formUuid, buttonDefinitions, records);
   const [buttonPage, setButtonPage] = useState<CustomButtonPageTarget | null>(null);
   const [executingButtons, setExecutingButtons] = useState<Set<string>>(
     new Set(),
@@ -200,6 +203,7 @@ export function RecordsTable({
   }, [
     urlParams.formUuid,
     customButtonViewUuid,
+    matchesRelatedButton,
     customButtonConfigDirty,
     bindingKey,
   ]);
@@ -342,34 +346,30 @@ export function RecordsTable({
     ? getBuiltinRecordValues(detailRecord, formName, formType === "workflow")
     : null;
   const workflowActionRef = useRef(onWorkflowAction);
-  workflowActionRef.current = onWorkflowAction;
+  useEffect(() => { workflowActionRef.current = onWorkflowAction; }, [onWorkflowAction]);
 
-  const myTableColumns = useMemo<ColumnDef<RecordTableRow, unknown>[]>(() => {
-    const selectionColumn: ColumnDef<RecordTableRow, unknown> = {
+  const dataColumns = useMemo<RecordDataColumn[]>(() => {
+    const selectionColumn: RecordDataColumn = {
       id: "selection",
       size: 44,
       minSize: 44,
       maxSize: 44,
-      meta: {
-        pin: "left",
-        fixedWidth: 44,
-        headerClassName: "text-center",
-        cellClassName: "text-center",
-      } satisfies MyTableColumnMeta,
+      pin: "left",
+      fixedWidth: 44,
       header: () => (
         <div className="flex items-center justify-center">
           <SelectionHeader />
         </div>
       ),
-      cell: ({ row }) => row.original.subformId ? null : (
+      cell: (record) => record.subformId ? null : (
         <SelectionCell
-          recordId={row.original.id}
-          rowNumber={row.original.rowNumber}
+          recordId={record.id}
+          rowNumber={record.rowNumber}
         />
       ),
     };
     const dataColumns = tableColumns.map(
-      (column): ColumnDef<RecordTableRow, unknown> => {
+      (column): RecordDataColumn => {
         const { field, index } = column;
         const id =
           column.kind === "combinedInstance"
@@ -383,29 +383,25 @@ export function RecordsTable({
             ? businessColumnWidths[index]
             : column.kind === "subformSummary"
               ? getDynamicColumnWidth(field.label, records.map((record) => String(getSubformInstanceCount(record.data, id))), false, 180)
-              : builtInColumnWidths[index]);
-        const meta: MyTableColumnMeta = {
-          pin: frozenFieldIds.includes(id) ? "left" : undefined,
-        };
+              : column.kind === "combinedInstance"
+                ? getDynamicColumnWidth(field.label, records.flatMap((record) => {
+                    const values = recordDisplayValues.get(record.id)?.builtIns;
+                    return [values?.instanceTitle ?? "", values?.instanceId ?? ""];
+                  }), sortableFieldIds.includes(id), 360)
+                : column.kind === "combinedSubmitter"
+                  ? getDynamicColumnWidth(field.label, records.flatMap((record) => {
+                      const values = recordDisplayValues.get(record.id)?.builtIns;
+                      return [values?.submitter ?? "", values?.submitterOrganization ?? ""];
+                    }), sortableFieldIds.includes(id), 260, 32)
+                  : builtInColumnWidths[index]);
         return {
           id,
-          accessorFn: (record) =>
-            column.kind === "combinedInstance"
-              ? (record.displayValues.builtIns.instanceTitle ?? "")
-              : column.kind === "combinedSubmitter"
-                ? (record.displayValues.builtIns.submitter ?? "")
-                : column.kind === "subformSummary"
-                  ? String(record.subformCounts?.[id] ?? 0)
-                : (record.displayValues.fields[id] ??
-                  record.displayValues.builtIns[id] ??
-                  ""),
           header: field.label,
           size: defaultWidth,
           minSize: Math.min(column.kind === "subformSummary" ? 48 : 80, defaultWidth),
           enableSorting: column.kind !== "subformSummary" && sortableFieldIds.includes(id),
-          meta,
-          cell: ({ row }) => {
-            const record = row.original;
+          pin: frozenFieldIds.includes(id) ? "left" : undefined,
+          cell: (record) => {
             if (column.kind === "subformSummary") {
               if (record.subformId !== column.parentSubformId) return null;
               const count = record.subformCounts?.[id] ?? 0;
@@ -444,10 +440,10 @@ export function RecordsTable({
                   className="min-w-0 leading-tight"
                   title={`${record.displayValues.builtIns.instanceTitle} (${record.displayValues.builtIns.instanceId})`}
                 >
-                  <span className="block truncate !text-xs">
+                  <span className="block truncate">
                     {record.displayValues.builtIns.instanceTitle}
                   </span>
-                  <span className="mt-0.5 block truncate !text-[10px] text-[var(--color-text-secondary)]">
+                  <span className="mt-0.5 block truncate text-xs text-[var(--color-text-secondary)]">
                     {record.displayValues.builtIns.instanceId}
                   </span>
                 </div>
@@ -540,14 +536,14 @@ export function RecordsTable({
         };
       },
     );
-    const actionColumn: ColumnDef<RecordTableRow, unknown> = {
+    const actionColumn: RecordDataColumn = {
       id: "actions",
       header: "操作",
-      size: 180,
-      minSize: 180,
-      meta: { pin: "right", fixedWidth: 180 },
-      cell: ({ row }) => {
-        const record = row.original;
+      size: 200,
+      minSize: 200,
+      pin: "right",
+      fixedWidth: 200,
+      cell: (record) => {
         if (record.subformId) return null;
         return (
           <RecordRowActions
@@ -566,7 +562,7 @@ export function RecordsTable({
                 !missingAutomation &&
                 !customButtonConfigDirty &&
                 !executingButtons.has(actionKey) &&
-                evaluateBinding(button, record);
+                (hasRelatedConditions(button) ? matchesRelatedButton(button.id, record.id) : evaluateBinding(button, record));
               return [
                 {
                   id: `custom-${button.id}`,
@@ -694,6 +690,7 @@ export function RecordsTable({
     subformParents,
     executingButtons,
     buttonDefinitions,
+    matchesRelatedButton,
     customButtonBindings,
     customButtonConfigDirty,
     customButtonViewUuid,
@@ -711,12 +708,48 @@ export function RecordsTable({
     frozenFieldIds,
     expandedSubformKeys,
     records,
+    recordDisplayValues,
     memberUsers,
     savedColumnWidths,
     sortableFieldIds,
     submitting,
     tableColumns,
   ]);
+
+  const { columns: layoutColumns, width: tableWidth, onResizeStart, onResize, onResizeEnd } = useRecordTableSizing(dataColumns, savedColumnWidths, (columnWidths) =>
+    onViewConfigChange({ columnWidths }),
+  );
+  const treeColumn = hasSubforms
+    ? (tableColumns.find((column) => column.kind === "subformSummary")?.field.id ?? tableColumns[0]?.field.id)
+    : undefined;
+  const rowHeaderId = layoutColumns.find((column) => column.id !== "selection")?.id
+    ?? layoutColumns[0]?.id;
+
+  function renderTableRow(record: RecordTableRow): ReactNode {
+    return (
+      <Table.Row
+        key={record.id}
+        id={record.id}
+        textValue={record.id}
+        data-record-selected={selectedRecordIds.has(record.id) || undefined}
+        className={`group ${styles["records-table__row"]}`}
+      >
+        {layoutColumns.map((column) => (
+          <Table.Cell
+            key={column.id}
+            data-pin={column.pin}
+            style={column.style}
+            className={`${styles["records-table__cell"]} ${column.id === "selection" ? styles["records-table__selection"] : ""}`}
+          >
+            {column.cell(record)}
+          </Table.Cell>
+        ))}
+        {record.children?.length ? (
+          <Table.Collection items={record.children}>{renderTableRow}</Table.Collection>
+        ) : null}
+      </Table.Row>
+    );
+  }
 
   function openDetail(record: FormRecord, editing = false) {
     setDetailRecord(record);
@@ -839,33 +872,65 @@ export function RecordsTable({
                 onPageSelectionChange(pageIds, selectedPageIds),
             }}
           >
-            <MyTable
-              ariaLabel="表单提交数据"
-              data={tableRows}
-              columns={myTableColumns}
-              getRowId={(record) => record.id}
-              getSubRows={(record) => record.children}
-              treeColumn={hasSubforms ? (tableColumns.find((column) => column.kind === "subformSummary")?.field.id ?? tableColumns[0]?.field.id) : undefined}
-              showTreeExpander={false}
-              isExpandableRow={(record) => !record.subformId && hasSubforms}
-              expandedKeys={expandedRowKeys}
-              className="flex-1"
-              sortDescriptor={sortDescriptor}
-              onSortChange={handleSortChange}
-              selectedRowIds={selectedRecordIds}
-              columnSizing={savedColumnWidths}
-              onColumnSizingChange={(sizing) =>
-                onViewConfigChange({ columnWidths: sizing })
-              }
-              emptyState={
-                <div>
-                  <div className="text-base font-medium">暂无数据</div>
-                  <div className="mt-2 text-sm text-[var(--color-text-secondary)]">
-                    当前表单还没有提交记录，可以先通过“新增”填写一条数据。
-                  </div>
-                </div>
-              }
-            />
+            <Table className={styles["records-table__root"]}>
+              <Table.ResizableContainer
+                className={styles["records-table__scroll"]}
+                onResizeStart={onResizeStart}
+                onResize={onResize}
+                onResizeEnd={onResizeEnd}
+              >
+                <Table.Content
+                  aria-label="表单提交数据"
+                  className={styles["records-table__content"]}
+                  style={{ width: tableWidth, minWidth: tableWidth }}
+                  selectionMode="none"
+                  treeColumn={treeColumn}
+                  expandedKeys={treeColumn ? expandedRowKeys : undefined}
+                  sortDescriptor={sortDescriptor}
+                  onSortChange={handleSortChange}
+                >
+                  <Table.Header>
+                    {layoutColumns.map((column) => (
+                      <Table.Column
+                        key={column.id}
+                        id={column.id}
+                        width={column.width}
+                        minWidth={column.minWidth}
+                        maxWidth={column.maxWidth}
+                        isRowHeader={column.id === rowHeaderId}
+                        allowsSorting={column.enableSorting === true}
+                        data-pin={column.pin}
+                        style={column.style}
+                        className={`${styles["records-table__column"]} ${column.id === "selection" ? styles["records-table__selection"] : ""}`}
+                      >
+                        {({ sortDirection }) => (
+                          <>
+                            {column.enableSorting ? (
+                              <Table.SortableColumnHeader sortDirection={sortDirection}>
+                                {typeof column.header === "function" ? column.header() : column.header}
+                              </Table.SortableColumnHeader>
+                            ) : typeof column.header === "function" ? column.header() : column.header}
+                            {column.fixedWidth === undefined ? (
+                              <Table.ColumnResizer aria-label={`调整${typeof column.header === "string" ? column.header : column.id}列宽`} />
+                            ) : null}
+                          </>
+                        )}
+                      </Table.Column>
+                    ))}
+                  </Table.Header>
+                  <Table.Body renderEmptyState={() => (
+                    <div className="py-12 text-center">
+                      <div className="text-base font-medium">暂无数据</div>
+                      <div className="mt-2 text-sm text-[var(--color-text-secondary)]">
+                        当前表单还没有提交记录，可以先通过“新增”填写一条数据。
+                      </div>
+                    </div>
+                  )}>
+                    {tableRows.map(renderTableRow)}
+                  </Table.Body>
+                </Table.Content>
+              </Table.ResizableContainer>
+            </Table>
           </TableSelectionContext.Provider>
         </MySurface>
         <MySurface className="shrink-0 min-w-0 overflow-hidden p-0">

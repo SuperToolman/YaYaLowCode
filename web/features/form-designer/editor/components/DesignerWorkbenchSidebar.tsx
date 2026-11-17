@@ -227,6 +227,7 @@ function renderDesignerPanelContent({
 }
 
 const INDEXABLE_FIELD_TYPES = new Set<PlacedField["type"]>([
+  "associationFormField",
   "singleLineText",
   "number",
   "radio",

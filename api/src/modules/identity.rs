@@ -325,6 +325,9 @@ fn normalize_mobile(value: &str) -> Result<String, AppError> {
 }
 
 async fn send_aliyun_sms(mobile: &str, code: &str) -> Result<(), AppError> {
+    if !std::env::var("YAYA_PLATFORM_INSTANCE_ID").unwrap_or_default().is_empty() {
+        return crate::platform::operations_access::send_sms(mobile,code).await;
+    }
     let access_key = std::env::var("ALIYUN_ACCESS_KEY_ID")
         .map_err(|_| AppError::Server(std::io::Error::other("短信服务未配置")))?;
     let access_secret = std::env::var("ALIYUN_ACCESS_KEY_SECRET")
@@ -735,6 +738,7 @@ pub(crate) async fn initialize_local_credentials(
         ));
     }
     let users = iam_user_entity::Entity::find()
+        .filter(sea_orm::sea_query::Expr::cust("COALESCE(extension_json->>'source','') <> 'operations'"))
         .order_by_asc(iam_user_entity::Column::DisplayName)
         .all(&state.db)
         .await?;
@@ -861,6 +865,7 @@ pub(crate) async fn list_users(
     State(state): State<AppState>,
 ) -> Result<Json<ApiResponse<Vec<UserResponse>>>, AppError> {
     let users = iam_user_entity::Entity::find()
+        .filter(sea_orm::sea_query::Expr::cust("COALESCE(extension_json->>'source','') <> 'operations'"))
         .order_by_asc(iam_user_entity::Column::DisplayName)
         .all(&state.db)
         .await?;
@@ -1034,6 +1039,9 @@ pub(crate) async fn update_user(
         .one(&state.db)
         .await?
         .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
+    if crate::platform::operations_access::is_operator(&user) {
+        return Err(AppError::Forbidden("运维身份由运营平台维护，不可通过客户用户管理修改".into()));
+    }
     let current_roles = iam_user_role_entity::Entity::find()
         .filter(iam_user_role_entity::Column::UserId.eq(id))
         .all(&state.db)
@@ -1287,6 +1295,11 @@ pub(crate) async fn delete_user(
     }
     let id =
         Uuid::parse_str(&user_id).map_err(|_| AppError::NotFound("user not found".to_string()))?;
+    if let Some(user) = iam_user_entity::Entity::find_by_id(id).one(&state.db).await? {
+        if crate::platform::operations_access::is_operator(&user) {
+            return Err(AppError::Forbidden("运维身份由运营平台维护，不可删除".into()));
+        }
+    }
     let roles = iam_user_role_entity::Entity::find()
         .filter(iam_user_role_entity::Column::UserId.eq(id))
         .all(&state.db)

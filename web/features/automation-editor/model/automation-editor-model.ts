@@ -1,3 +1,4 @@
+import { validateRuleTree } from "@/features/conditions";
 import type { WorkflowNodeKind, FieldValueType, DataSourceMode, AddTargetMode, AddRecordMode, UpdateMode, FieldOption, SourceFieldChoice, FormFieldDescriptor, FormSchemaDescriptor, TriggerConfig, ConditionBranch, ConditionConfig, GetDataConfig, AddDataConfig, InitiateApprovalConfig, ActionConfig, AssigneeConfig, CopyConfig, WorkflowNodeConfig, WorkflowNodeData, WorkflowNode, WorkflowEdge, FlowState, NodeSummaryContext } from "./editor-types";
 export type { WorkflowNodeKind, FieldValueType, DataSourceMode, AddTargetMode, AddRecordMode, UpdateMode, FieldOption, SourceFieldChoice, FormFieldDescriptor, FormSchemaDescriptor, TriggerConfig, ConditionBranch, ConditionConfig, LegacyBranchRule, LegacyBranchRuleOperator, GetDataConfig, LegacyFieldMappingRow, AddDataConfig, InitiateApprovalConfig, ActionConfig, AssigneeConfig, CopyConfig, MemberOption, RoleOption, WorkflowNodeConfig, WorkflowNodeData, WorkflowNode, PaletteNodeKind, NodeMenuItem, WorkflowEdgeData, WorkflowEdge, FlowState, InsertContext, NodeSummaryContext } from "./editor-types";
 import { MarkerType } from "@xyflow/react";
@@ -23,7 +24,7 @@ export function buildRecordFieldChoices(fields: FormFieldDescriptor[], workflow 
     ...systemFields.map((field) => ({
       key: field.id,
       label: field.id === "workflowSubmitter" ? "流程提交人" : field.label,
-      fieldType: ["submitter", "workflowSubmitter"].includes(field.id) ? "member" : field.id === "createdAt" || field.id === "updatedAt" ? "date" : "singleLineText",
+      fieldType: field.id === "createdAt" || field.id === "updatedAt" ? "dateTime" : "singleLineText",
       options: [],
       isSystem: true,
     })),
@@ -597,26 +598,7 @@ export function validateGetNodeConfiguration(node: WorkflowNode, nodes: Workflow
 }
 
 export function validateGetFilterRules(rules: BranchRule[], fieldIds?: Set<string>): string | undefined {
-  if (!rules.length || !rules.some((rule) => !rule.isGroup)) return "按条件过滤至少需要一条有效规则";
-  const ids = new Set(rules.map((rule) => rule.id));
-  if (ids.size !== rules.length) return "筛选规则 ID 重复";
-  for (const rule of rules) {
-    if (!rule.id || (rule.parentId && !ids.has(rule.parentId))) return "筛选规则分组无效";
-    const visited = new Set([rule.id]);
-    let parent = rule.parentId;
-    while (parent) {
-      if (visited.has(parent)) return "筛选规则分组不能循环引用";
-      visited.add(parent);
-      parent = rules.find((item) => item.id === parent)?.parentId;
-    }
-    if (rule.isGroup) {
-      if (!rules.some((item) => item.parentId === rule.id)) return "筛选条件组不能为空";
-      continue;
-    }
-    if (!rule.fieldKey || (fieldIds && !fieldIds.has(rule.fieldKey))) return "请选择有效的筛选字段";
-    if (!rule.operator || !branchOperators.some((item) => item.id === rule.operator)) return "请选择有效的筛选运算符";
-    if (!["hasValue", "noValue"].includes(rule.operator) && !rule.rawValue?.trim()) return "请填写筛选值";
-  }
+  return validateRuleTree(rules, fieldIds);
 }
 
 export function buildGetManySourceOptions(

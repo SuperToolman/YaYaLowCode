@@ -20,6 +20,9 @@ pub(crate) struct ApiApp {
     pub(crate) owner_avatar_url: Option<String>,
     pub(crate) records: i64,
     pub(crate) deployment_type: String,
+    pub(crate) market_installation_id: Option<String>,
+    pub(crate) market_product_name: Option<String>,
+    pub(crate) market_application_type: Option<String>,
     pub(crate) online_version: Option<String>,
     pub(crate) online_release_id: Option<String>,
 }
@@ -52,6 +55,9 @@ impl From<app_entity::Model> for ApiApp {
             owner_avatar_url: None,
             records: value.records_count,
             deployment_type: value.deployment_type,
+            market_installation_id: None,
+            market_product_name: None,
+            market_application_type: None,
             online_version: value.online_version,
             online_release_id: value.online_release_id,
         }

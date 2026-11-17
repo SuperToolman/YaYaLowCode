@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { verifyAuthToken } from "../_lib";
 
-type TokenPayload = { sub?: string; name?: string; username?: string; exp?: number };
 
 export function GET(request: NextRequest) {
   const token = request.cookies.get("yaya-auth-token")?.value;
-  const payload = token ? readPayload(token) : null;
+  const payload = token ? verifyAuthToken(token) : null;
   if (!token || !payload || typeof payload.sub !== "string" || typeof payload.name !== "string" || typeof payload.username !== "string") {
     return NextResponse.json({ code: 401, message: "未登录", data: null }, { status: 401 });
   }
@@ -15,13 +15,3 @@ export function GET(request: NextRequest) {
   });
 }
 
-function readPayload(token: string): TokenPayload | null {
-  try {
-    const [, encodedPayload] = token.split(".");
-    if (!encodedPayload) return null;
-    const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as TokenPayload;
-    return typeof payload.exp === "number" && payload.exp * 1000 > Date.now() ? payload : null;
-  } catch {
-    return null;
-  }
-}

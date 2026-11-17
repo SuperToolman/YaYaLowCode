@@ -41,6 +41,7 @@ pub(super) fn validate_query_rules(
     value: Option<&Value>,
     fields: Option<&HashSet<String>>,
 ) -> Result<(), AppError> {
+    if let Some(rules) = value.and_then(Value::as_array) { crate::platform::conditions::validate_rules(rules)?; }
     let invalid = || AppError::BadRequest("获取节点筛选规则不完整、字段失效或分组无效".into());
     let rules = value
         .and_then(Value::as_array)
@@ -99,24 +100,24 @@ pub(super) fn validate_query_rules(
             .and_then(Value::as_str)
             .filter(|s| !s.trim().is_empty())
             .ok_or_else(invalid)?;
-        if fields.is_some_and(|f| !f.contains(field)) {
+        if fields.is_some_and(|f| !f.contains(&crate::platform::conditions::root_key(field))) {
             return Err(invalid());
         }
         let operator = rule
             .get("operator")
             .and_then(Value::as_str)
             .ok_or_else(invalid)?;
-        if !matches!(
-            operator,
-            "eq" | "neq" | "inAny" | "notInAny" | "hasValue" | "noValue"
-        ) || rule
+        if !crate::platform::conditions::OPERATORS.contains(&operator) || rule
             .get("valueType")
             .and_then(Value::as_str)
-            .is_some_and(|t| t != "value")
+            .is_some_and(|t| !["value", "field"].contains(&t))
         {
             return Err(invalid());
         }
-        if !matches!(operator, "hasValue" | "noValue")
+        if rule["valueType"] == "field" && !matches!(operator, "hasValue" | "noValue") {
+            let key = rule["sourceFieldKey"].as_str().ok_or_else(invalid)?;
+            if fields.is_some_and(|fields| !fields.contains(&crate::platform::conditions::root_key(key))) { return Err(invalid()); }
+        } else if !matches!(operator, "hasValue" | "noValue")
             && !rule
                 .get("rawValue")
                 .and_then(Value::as_str)
@@ -209,6 +210,12 @@ pub(super) fn source_form(
                 .filter(|s| !s.trim().is_empty())
                 .map(str::to_string)
                 .ok_or_else(|| AppError::BadRequest("请选择来源表单".into()));
+        }
+        if config.get("sourceMode").and_then(Value::as_str) == Some("trigger") {
+            return trigger_form
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .ok_or_else(|| AppError::BadRequest("触发表单未配置".into()));
         }
         let source = config
             .get("dataNodeId")
@@ -307,6 +314,7 @@ pub(crate) async fn validate_get_nodes<C: ConnectionTrait>(
     trigger_form: Option<&str>,
 ) -> Result<(), AppError> {
     super::delete_data::validate_consumed_sources(nodes, edges)?;
+    validate_condition_nodes(db,nodes,edges,trigger_form).await?;
     for node in nodes.as_array().into_iter().flatten().filter(|node| {
         node.pointer("/data/kind").and_then(Value::as_str) == Some("add-data")
             && node
@@ -389,9 +397,54 @@ pub(crate) async fn validate_get_nodes<C: ConnectionTrait>(
         let config = node.pointer("/data/config").unwrap();
         if config.get("filterMode").and_then(Value::as_str) == Some("rules") {
             validate_query_rules(config.get("rules"), Some(&fields))?;
+            crate::platform::condition_query::compile(db,&form_uuid,config["rules"].as_array().unwrap(),&mut vec![]).await?;
         }
     }
     super::delete_data::validate_nodes(db, nodes, edges, trigger_form).await?;
+    Ok(())
+}
+
+async fn validate_condition_nodes<C: ConnectionTrait>(db: &C, nodes: &Value, edges: &Value, trigger: Option<&str>) -> Result<(), AppError> {
+    use crate::platform::{conditions,condition_query};
+    for node in nodes.as_array().into_iter().flatten() {
+        let config = &node["data"]["config"];
+        match node["data"]["kind"].as_str().unwrap_or("") {
+            "update-data" if config["updateMode"] != "data-node" => {
+                if let Some(rules) = config["rules"].as_array().filter(|rules| !rules.is_empty()) {
+                    let form = config["targetFormUuid"].as_str().ok_or_else(|| conditions::bad("请选择更新目标表单"))?;
+                    condition_query::compile(db,form,rules,&mut vec![]).await?;
+                }
+            },
+            "condition" | "parallel-condition" => {
+                for branch in config["branches"].as_array().into_iter().flatten().filter(|branch| branch["mode"] == "rules" && branch["entryMode"] != "otherwise") {
+                    let rules = branch["rules"].as_array().ok_or_else(|| conditions::bad("条件规则无效"))?;
+                    conditions::validate_rules(rules)?;
+                    for rule in rules.iter().filter(|r| r["isGroup"] != true) {
+                        let mut plans = Vec::new();
+                        for property in if rule["valueType"] == "field" { vec!["fieldKey","sourceFieldKey"] } else { vec!["fieldKey"] } {
+                            let reference = conditions::reference(rule[property].as_str().unwrap_or(""))?;
+                            let (source,field) = reference.root.split_once(':').ok_or_else(|| conditions::bad("条件来源节点无效"))?;
+                            let current=node["id"].as_str().unwrap_or("");
+                            let mut seen=HashSet::new(); let mut pending=vec![current];
+                            while let Some(target)=pending.pop() { for edge in edges.as_array().into_iter().flatten().filter(|edge| edge["target"] == target) { if let Some(id)=edge["source"].as_str() { if seen.insert(id) { pending.push(id); } } } }
+                            if source == current || !seen.contains(source) { return Err(conditions::bad("条件只能引用上游节点字段")); }
+                            let form = match source_form(nodes,edges,source,trigger) {
+                                Ok(form) => form,
+                                Err(_) if reference.path.is_empty() => continue, // HTTP and actor outputs have no form schema.
+                                Err(error) => return Err(error),
+                            };
+                            let local = format!("{}{}",conditions::PATH_PREFIX,json!({"root":field,"path":reference.path}));
+                            let plan = condition_query::resolve(db,&form,&local).await?;
+                            if property == "fieldKey" { condition_query::validate_operand(&plan,rule)?; }
+                            plans.push(plan);
+                        }
+                        if plans.len() == 2 { condition_query::validate_pair(&plans[0],&plans[1])?; }
+                    }
+                }
+            },
+            _ => (),
+        }
+    }
     Ok(())
 }
 
@@ -505,6 +558,20 @@ mod tests {
         let mut invalid = nodes.clone();
         invalid[1]["data"]["config"]["dataNodeId"] = json!("many");
         assert!(source_form(&invalid, &edges, "one", Some("FORM-1")).is_err());
+    }
+
+    #[test]
+    fn downstream_sources_resolve_trigger_queries_without_cached_node_or_form() {
+        let nodes = json!([
+            {"id":"one","data":{"kind":"get-one","config":{"sourceMode":"trigger"}}},
+            {"id":"many","data":{"kind":"get-many","config":{"sourceMode":"data-node","dataNodeId":"one"}}}
+        ]);
+        let edges = json!([{"source":"one","target":"many"}]);
+        assert_eq!(
+            source_form(&nodes, &edges, "many", Some("FORM-1")).unwrap(),
+            "FORM-1"
+        );
+        assert!(source_form(&nodes, &edges, "many", None).is_err());
     }
 
     #[tokio::test]

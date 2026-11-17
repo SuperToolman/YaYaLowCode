@@ -1,6 +1,12 @@
 pub use sea_orm_migration::prelude::*;
 
 pub struct Migrator;
+#[path = "customer_instance_migration.rs"]
+mod m20261112_000122_customer_instance_delivery;
+#[cfg(test)]
+pub(crate) async fn customer_delivery_test_migration(db:&sea_orm::DatabaseConnection)->Result<(),DbErr>{
+    m20261112_000122_customer_instance_delivery::Migration.up(&SchemaManager::new(db)).await
+}
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -129,6 +135,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20261109_000119_model_provider_types::Migration),
             Box::new(m20261109_000120_base_knowledge_retrieval::Migration),
             Box::new(m20261110_000121_single_model_routes::Migration),
+            Box::new(m20261112_000122_customer_instance_delivery::Migration),
+            Box::new(m20261114_000123_market_suites::Migration),
         ]
     }
 }
@@ -5072,4 +5080,12 @@ mod m20261110_000121_single_model_routes {
             Err(DbErr::Custom("Preserve independent single-model routes".into()))
         }
     }
+}
+
+mod m20261114_000123_market_suites {
+ use sea_orm_migration::prelude::*;
+ #[derive(DeriveMigrationName)] pub struct Migration;
+ #[async_trait::async_trait] impl MigrationTrait for Migration {
+  async fn up(&self,manager:&SchemaManager)->Result<(),DbErr>{manager.get_connection().execute_unprepared(include_str!("../modules/app_market/schema.sql")).await?;Ok(())}
+ }
 }

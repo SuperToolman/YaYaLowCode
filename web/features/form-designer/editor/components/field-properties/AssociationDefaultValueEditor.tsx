@@ -9,6 +9,7 @@ import { getFormSchema } from "@/features/form-designer";
 import { addRule, removeRuleTree, updateRule, validateRuleTree, type BranchRule, type SourceFieldChoice } from "@/features/conditions";
 import type { FieldPropsChangeHandler, PlacedField } from "../../designer-types";
 import { DefaultValueTypeSegmented } from "./DefaultValueTypeSegmented";
+import { conditionRoot } from "@/features/conditions";
 
 export function AssociationDefaultValueEditor({ field, onPropsChange }: {
   field: PlacedField;
@@ -28,13 +29,13 @@ export function AssociationDefaultValueEditor({ field, onPropsChange }: {
         if (cancelled) return;
         if (error || data?.code !== 0) throw new Error("无法加载关联表单字段");
         const schema = data.data?.schema as { fields?: PlacedField[] } | undefined;
-        setChoices((schema?.fields ?? []).filter(item => !item.parentGroupId && !["groupContainer", "separator", "subform", "description", "button", "html", "tsx"].includes(item.type)).map(item => ({ key: item.id, label: item.label, fieldType: item.type, options: (item.props.options ?? []).map(option => typeof option === "string" ? { label: option, value: option } : option) })));
+        setChoices((schema?.fields ?? []).filter(item => !item.parentGroupId && !["groupContainer", "separator", "subform", "description", "button", "html", "tsx"].includes(item.type)).map(item => ({ key: item.id, label: item.label, fieldType: item.type, props: item.props, options: (item.props.options ?? []).map(option => typeof option === "string" ? { label: option, value: option } : option) })));
         setStatus("ready");
       }).catch(() => { if (!cancelled) setStatus("error"); });
     return () => { cancelled = true; };
   }, [formId, open]);
 
-  const validation = rules.length ? validateRuleTree(rules, new Set(choices.map(item => item.key))) || rules.some(rule => rule.valueType === "field" && !choices.some(item => item.key === rule.sourceFieldKey)) && "请选择有效的比较字段" : undefined;
+  const validation = rules.length ? validateRuleTree(rules, new Set(choices.map(item => item.key))) || rules.some(rule => rule.valueType === "field" && !choices.some(item => item.key === conditionRoot(rule.sourceFieldKey ?? ""))) && "请选择有效的比较字段" : undefined;
   const save = () => {
     onPropsChange(field.id, { associationDefaultRules: rules, defaultValueType: "filter", defaultValue: "", defaultValueFormula: "", defaultValueLinkage: "" });
     setOpen(false);

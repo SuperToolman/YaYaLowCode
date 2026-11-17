@@ -9,6 +9,7 @@ import { useAuth } from "@/features/auth/components/AuthProvider";
 import { openLicenseManagementModal } from "@/features/settings/components/LicenseManagementModal";
 import { SettingsContentCard } from "../components/SettingsContentCard";
 import { getLicenseStatus, getValkeyRuntimeStatus, type ValkeyRuntimeStatus } from "@/features/settings/api";
+import { PlatformPackageModal } from "@/features/settings/components/PlatformPackageModal";
 
 type LicenseStatus = import("@/shared/lib/http").PlatformLicenseStatus;
 
@@ -20,6 +21,7 @@ export default function AboutPlatformClient({ changelog }: {
   const [refreshingChangelog, startChangelogRefresh] = useTransition();
   const [license, setLicense] = useState<LicenseStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [packageOpen, setPackageOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,6 +65,7 @@ export default function AboutPlatformClient({ changelog }: {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {process.env.NODE_ENV === "development" && hasPermission("*") ? <Button size="sm" onPress={() => setPackageOpen(true)}>打包离线镜像</Button> : null}
               <Chip color={license?.valid ? "success" : "danger"}>
                 {loading
                   ? "正在检查"
@@ -163,6 +166,7 @@ export default function AboutPlatformClient({ changelog }: {
           </div>
         </div>
       </SettingsContentCard>
+      {process.env.NODE_ENV === "development" && hasPermission("*") ? <PlatformPackageModal open={packageOpen} onOpenChange={setPackageOpen} /> : null}
     </section>
   );
 }

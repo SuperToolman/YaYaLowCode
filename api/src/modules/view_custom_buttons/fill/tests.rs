@@ -63,6 +63,19 @@ fn nested_groups_and_non_equality_do_not_invent_defaults() {
     assert_eq!(defaults["tags"], Some(json!(["one", "two"])));
 }
 
+#[test]
+fn typed_ranges_arrays_and_related_source_values_keep_their_types() {
+    let path=format!("{}{}",crate::platform::conditions::PATH_PREFIX,json!({"root":"company","path":["amount"]}));
+    let values=rules(json!([
+        {"id":"range","fieldKey":path,"operator":"between","rawValue":"__condition_value_v2__:[2,10]"},
+        {"id":"tags","fieldKey":"tags","operator":"containsAll","rawValue":"__condition_value_v2__:[\"a\",\"b\"]"},
+        {"id":"amount","fieldKey":"amount","operator":"eq","valueType":"field","sourceFieldKey":path}
+    ]));
+    let (resolved,expected)=resolve_rules(&values,&json!({path.clone():0}),&test_schema()).unwrap();
+    assert!(automations::expression::evaluate_record_rule_group(&resolved,None,&json!({path:5,"tags":["a","b"],"amount":0})));
+    assert_eq!(expected["amount"],json!(0));
+}
+
 pub(crate) async fn verify(state: &AppState, headers: &HeaderMap, role: Uuid, source_id: &str) {
     use crate::infrastructure::entities::iam_role_permission_entity;
     let now = Utc::now();

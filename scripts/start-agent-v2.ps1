@@ -9,7 +9,7 @@ foreach ($profilePath in @((Join-Path $repositoryRoot 'deploy/.env'),(Join-Path 
         foreach ($line in Get-Content -LiteralPath $profilePath) {
             if ($line -match '^([A-Z][A-Z0-9_]*)=(.*)$') {
                 $settingName=$matches[1];$settingValue=$matches[2].Trim().Trim('"',"'")
-                if (($settingName -in @('DATABASE_URL','AUTH_TOKEN_SECRET','YAYA_BYOM_ENCRYPTION_KEY','YAYA_LICENSE_PUBLIC_KEY_PATH','YAYA_LICENSE_PUBLIC_KEY_PEM')) -or $settingName.StartsWith('YAYA_AGENT_V2_')) {
+                if (($settingName -in @('DATABASE_URL','AUTH_TOKEN_SECRET','YAYA_BYOM_ENCRYPTION_KEY','YAYA_LICENSE_PUBLIC_KEY_PATH','YAYA_LICENSE_PUBLIC_KEY_PEM','YAYA_MARKET_PUBLICATION_ENABLED')) -or $settingName.StartsWith('YAYA_AGENT_V2_')) {
                     if (-not [Environment]::GetEnvironmentVariable($settingName)) { [Environment]::SetEnvironmentVariable($settingName,$settingValue,'Process') }
                 }
             }

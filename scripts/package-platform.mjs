@@ -6,17 +6,21 @@ import { createHash, randomBytes, randomUUID, generateKeyPairSync } from 'node:c
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import archiver from 'archiver';
+import { dockerEnvironment } from './docker-proxy.mjs';
 // Node 24 executes this exact parser used by /settings/about (no copied regex).
 import { latestChangelogVersion } from '../web/features/settings/model/changelog.ts';
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-function docker(args, { capture = false } = {}) {
+export async function docker(args, { capture = false, timeout = 0 } = {}) {
   const desktopCli = process.platform === 'win32' && process.env.LOCALAPPDATA
     ? path.join(process.env.LOCALAPPDATA, 'Programs', 'DockerDesktop', 'resources', 'bin', 'docker.exe') : '';
   const binary = process.env.DOCKER_CLI || (desktopCli && existsSync(desktopCli) ? desktopCli : 'docker');
-  const env = path.isAbsolute(binary) ? { ...process.env, PATH: path.dirname(binary) + path.delimiter + (process.env.PATH || '') } : process.env;
+  // Buildx fetches registry credentials from the CLI process. Docker Desktop's
+  // daemon proxy alone does not configure this Windows host-side HTTP client.
+  const proxyEnvironment = await dockerEnvironment();
+  const env = path.isAbsolute(binary) ? { ...proxyEnvironment, PATH: path.dirname(binary) + path.delimiter + (proxyEnvironment.PATH || '') } : proxyEnvironment;
   return new Promise((resolve, reject) => {
-    const child = spawn(binary, args, { cwd: repository, env, stdio: capture ? ['ignore', 'pipe', 'inherit'] : 'inherit', windowsHide: true });
+    const child = spawn(binary, args, { cwd: repository, env, timeout, stdio: capture ? ['ignore', 'pipe', 'inherit'] : 'inherit', windowsHide: true });
     let stdout = '';
     if (capture) child.stdout.setEncoding('utf8').on('data', chunk => { stdout = (stdout + chunk).slice(-65536); });
     child.once('error', error => reject(new Error(`无法启动 Docker CLI（${binary}）：${error.message}`)));
@@ -39,6 +43,8 @@ function randomSecrets() {
     APP_PORT: '8788',
     POSTGRES_DB: 'yaya_low_code',
     POSTGRES_USER: 'yaya',
+    YAYA_PLATFORM_ADMIN_MOBILE: '13800138000',
+    YAYA_PLATFORM_INSTANCE_ID: randomUUID(),
     BACKEND_API_BASE_URL: 'http://127.0.0.1:8788',
     YAYA_AGENT_V2_API_URL: 'http://127.0.0.1:8788',
     YAYA_AGENT_V2_CORDIS_HOST: '/app/agent-v2/cordis-host/src/host.mjs',
@@ -91,8 +97,8 @@ async function smokeTest(image, run = docker) {
   }
 }
 
-async function deploymentManifest(root, imageEnvironment) {
-  const runtime = JSON.parse(await readFile(path.join(root, 'deploy', 'platform-runtime.json'), 'utf8'));
+async function deploymentManifest(root, imageEnvironment, confirmedRuntime) {
+  const runtime = confirmedRuntime ?? JSON.parse(await readFile(path.join(root, 'deploy', 'platform-runtime.json'), 'utf8'));
   if (!Array.isArray(runtime.volumes) || !Array.isArray(runtime.environment) || !runtime.webPort || !runtime.apiPort) throw new Error('deploy/platform-runtime.json 部署清单不完整');
   const variables = new Map(imageEnvironment.map(entry => {
     const i = entry.indexOf('='); return [entry.slice(0, i), { name: entry.slice(0, i), default: entry.slice(i + 1), required: false }];
@@ -101,14 +107,23 @@ async function deploymentManifest(root, imageEnvironment) {
   return { ...runtime, environment: [...variables.values()] };
 }
 
-export async function releasePlatform({ root = repository, output = path.join(root, 'dist', 'releases'), platform = 'linux/amd64', run = docker, verify = smokeTest } = {}) {
+export async function releasePlatform({ root = repository, output = path.join(root, 'dist', 'releases'), platform = 'linux/amd64', run = docker, verify = smokeTest, expectedVersion, expectedRuntimeHash, onProgress = async () => {} } = {}) {
   const changelog = await readFile(path.join(root, 'CHANGELOG.md'), 'utf8');
   const version = latestChangelogVersion(changelog);
   if (!version || !/^\d+(?:\.\d+)+(?:[a-zA-Z][\w.-]*|-[\w.-]+)?$/.test(version) || version.length > 64) throw new Error('CHANGELOG.md 缺少可用版本，无法发布');
+  if (expectedVersion && version !== expectedVersion) throw new Error('平台版本已变更，请重新确认包信息后再打包');
+  let confirmedRuntime;
+  if (expectedRuntimeHash) {
+    const runtimeSource = await readFile(path.join(root, 'deploy', 'platform-runtime.json'), 'utf8');
+    if (createHash('sha256').update(runtimeSource).digest('hex') !== expectedRuntimeHash) throw new Error('部署配置已变更，请重新确认环境变量与数据卷后再打包');
+    confirmedRuntime = JSON.parse(runtimeSource);
+  }
   if (!['linux/amd64', 'linux/arm64'].includes(platform)) throw new Error('仅支持 linux/amd64 或 linux/arm64');
   const packageId = randomUUID();
   const imageTag = `yaya-platform:${version}-${packageId}`;
+  await onProgress('build', '正在构建 Linux 平台镜像（首次构建可能需要较长时间）');
   await run(['buildx', 'build', '--load', '--platform', platform, '--build-arg', `CARGO_REGISTRIES_CRATES_IO_INDEX=${process.env.CARGO_REGISTRIES_CRATES_IO_INDEX || 'sparse+https://rsproxy.cn/index/'}`, '--build-arg', `DEBIAN_MIRROR=${process.env.DEBIAN_MIRROR || 'http://mirrors.aliyun.com/debian'}`, '--build-arg', `DEBIAN_SECURITY_MIRROR=${process.env.DEBIAN_SECURITY_MIRROR || 'http://mirrors.aliyun.com/debian-security'}`, '--build-arg', `NEXT_PUBLIC_BACKEND_WS_URL=${process.env.NEXT_PUBLIC_BACKEND_WS_URL || ''}`, '--tag', imageTag, '--file', path.join(root, 'deploy', 'Dockerfile.single'), root]);
+  await onProgress('verify', '正在启动临时容器，验证 Web 和 API 健康状态');
   await verify(imageTag, run);
   const inspected = JSON.parse(await run(['image', 'inspect', '--format', '{{json .}}', imageTag], { capture: true }));
   if (!/^sha256:[a-f0-9]{64}$/.test(inspected.Id) || `${inspected.Os}/${inspected.Architecture}` !== platform) throw new Error('构建镜像 ID 或架构不匹配');
@@ -120,17 +135,20 @@ export async function releasePlatform({ root = repository, output = path.join(ro
   const imageTar = path.join(exportRoot, 'image.tar');
   let archive, stream, closed;
   try {
+    await onProgress('export', '正在导出离线镜像归档');
     await run(['image', 'save', '--output', imageTar, imageTag]);
     const size = (await stat(imageTar)).size;
     if (size === 0 || size > 16 * 1024 ** 3) throw new Error('镜像归档为空或超过 16 GiB');
+    await onProgress('hash', '正在计算镜像归档 SHA-256');
     const hash = createHash('sha256');
     for await (const chunk of createReadStream(imageTar)) hash.update(chunk);
     const manifest = {
       packageType: 'yaya-platform', formatVersion: 3, artifactType: 'offline-image',
       version, packageId, builtAt: new Date().toISOString(),
-      deployment: await deploymentManifest(root, inspected.Config?.Env ?? []),
+      deployment: await deploymentManifest(root, inspected.Config?.Env ?? [], confirmedRuntime),
       image: { id: inspected.Id, tag: imageTag, platform, archive: 'image.tar', size, sha256: hash.digest('hex'), environment: inspected.Config?.Env ?? [] },
     };
+    await onProgress('archive', '正在生成离线 ZIP 包');
     archive = archiver('zip', { zlib: { level: 6 }, forceZip64: true });
     stream = createWriteStream(temporary, { flags: 'wx' });
     closed = once(stream, 'close');
